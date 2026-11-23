@@ -154,13 +154,19 @@ describe("Home (smoke)", () => {
     expect(card.textContent).toContain("6 live");
   });
 
-  it("Upcoming: View all opens a list holding quoted AND booked jobs; a full read prints n+", () => {
+  it("Upcoming: View all opens a list holding quoted AND booked jobs; `8+` only when there are more than 8", () => {
     const job = (i: number) => ({ id: `u${i}`, name: `Job ${i}`, projectNumber: `${2400 + i}`, status: i === 0 ? "QUOTED" : "CONFIRMED", rentalStartDate: Date.now() + 86_400_000 });
+    const header = () => screen.getByRole("heading", { name: "Upcoming" }).parentElement!;
+    // Exactly 8: the read (limit + 1) came back with 8, so there is no 9th.
     m.upcoming = Array.from({ length: 8 }, (_, i) => job(i));
+    const { unmount } = render(<DashboardPage />);
+    expect(header().textContent).toMatch(/Upcoming\s*8(?!\+)/);
+    unmount();
+    // 9 back from the read: more than 8.
+    m.upcoming = Array.from({ length: 9 }, (_, i) => job(i));
     render(<DashboardPage />);
-    const header = screen.getByRole("heading", { name: "Upcoming" }).parentElement!;
-    expect(header.textContent).toContain("8+");
-    const viewAll = within(header).getByRole("link", { name: "View all ›" });
+    expect(header().textContent).toContain("8+");
+    const viewAll = within(header()).getByRole("link", { name: "View all ›" });
     expect(viewAll.getAttribute("href")).toBe("/projects?status=QUOTED,AWAITING_PAYMENT,CONFIRMED,PREPPING");
     m.upcoming = [];
   });

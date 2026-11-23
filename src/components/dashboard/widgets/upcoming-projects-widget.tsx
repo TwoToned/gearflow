@@ -67,8 +67,8 @@ export function UpcomingProjectsWidget({ orgId }: { orgId: string | undefined })
   }
   return (
     <>
-      {/* The read stops at HOME_UPCOMING_LIMIT: having all of them means there may be more. */}
-      <WidgetCount>{upcoming.length >= HOME_UPCOMING_LIMIT ? `${HOME_UPCOMING_LIMIT}+` : upcoming.length}</WidgetCount>
+      {/* The read returns one past HOME_UPCOMING_LIMIT: `8+` only when there really are more than 8. */}
+      <WidgetCount>{upcoming.length > HOME_UPCOMING_LIMIT ? `${HOME_UPCOMING_LIMIT}+` : upcoming.length}</WidgetCount>
       <div className="grid gap-x-8 sm:grid-cols-2 [&>a:first-child]:border-t-0 sm:[&>a:nth-child(2)]:border-t-0">
         {upcoming.slice(0, 4).map((p) => (
           <UpcomingRow key={p.id} job={p} />

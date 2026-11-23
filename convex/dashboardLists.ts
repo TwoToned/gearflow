@@ -94,7 +94,8 @@ export const upcoming = query({
       const p = doc as unknown as ProjectDoc;
       if (p.isTemplate !== true && UPCOMING_STATUSES.has(p.status ?? "")) {
         candidates.push(p);
-        if (candidates.length >= HOME_UPCOMING_LIMIT) break;
+        // One past the limit, so the widget can tell "exactly 8" from "more than 8".
+        if (candidates.length > HOME_UPCOMING_LIMIT) break;
       }
     }
 

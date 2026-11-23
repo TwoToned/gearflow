@@ -16,5 +16,8 @@ export const BOOKED_STATUSES = ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING"] as 
  */
 export const HOME_UPCOMING_STATUSES = ["QUOTED", ...BOOKED_STATUSES] as const;
 
-/** `dashboardLists.upcoming` returns at most this many rows; the widget header prints `n+` once it got that many. */
+/**
+ * Home's Upcoming counts up to this many; `dashboardLists.upcoming` reads ONE more,
+ * so the header prints `8+` only when there really are more than 8.
+ */
 export const HOME_UPCOMING_LIMIT = 8;

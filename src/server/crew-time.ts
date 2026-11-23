@@ -14,6 +14,7 @@ import { timesheetCsv, type TimesheetCsvRow } from "@/lib/timesheet-csv";
 import { timesheetExportFiltersSchema, type TimesheetExportFilters } from "@/lib/validations/crew";
 import type { z } from "zod";
 import { deriveEntryMoney, type EntryMoney } from "../../convex/lib/timeEntryMoney";
+import { crewPayVisible } from "../../convex/lib/crewPayRule";
 
 // The time-entry reads + CRUD + status machine are browser-direct (Phase 3):
 // convex/crewTimeEntriesWrites.ts + convex/crewTimeEntries.ts (allEntries/forMember).
@@ -24,13 +25,14 @@ import { deriveEntryMoney, type EntryMoney } from "../../convex/lib/timeEntryMon
 type ExportFilters = z.output<typeof timesheetExportFiltersSchema>;
 
 /**
- * D49: pay columns only for a signed-in manager+ (the same `isManagerPlusRole`
- * the Convex reads use). An API-key actor never gets them here — keys reach
- * pay only through the Convex reads, where `noFinancials` is enforced.
+ * D49: the pay columns follow THE crew-pay rule (`crewPayVisible`, the same
+ * function `canSeeCrewPay` decides with). The ambient API-key actor carries no
+ * `noFinancials` flag here, so a key counts as noFinancials (fail closed) —
+ * keys read pay through the Convex reads, where the flag is known.
  */
 async function callerSeesPay(): Promise<boolean> {
-  if (getAmbientActor()) return false;
-  return isManagerPlusRole(await getCurrentRole());
+  const actor = getAmbientActor();
+  return crewPayVisible({ managerPlus: isManagerPlusRole(await getCurrentRole()), noFinancials: actor?.actorType === "apiKey" });
 }
 
 /** One predicate per export filter; an unset filter passes. */

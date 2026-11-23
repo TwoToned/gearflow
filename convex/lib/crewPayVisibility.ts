@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getAuthContext, isAgentNoFinancials, isCallerManagerPlus } from "./auth";
+import { crewPayVisible } from "./crewPayRule";
 
 /**
  * May this caller see crew PAY (rates, estimated cost, timesheet totals)?
@@ -11,6 +12,7 @@ import { getAuthContext, isAgentNoFinancials, isCallerManagerPlus } from "./auth
  * offer sheet's people list cannot disagree.
  */
 export async function canSeeCrewPay(ctx: QueryCtx | MutationCtx, orgId: string): Promise<boolean> {
-  if (!(await isCallerManagerPlus(ctx, orgId))) return false;
-  return !(await isAgentNoFinancials(ctx, await getAuthContext(ctx)));
+  const managerPlus = await isCallerManagerPlus(ctx, orgId);
+  if (!managerPlus) return false;
+  return crewPayVisible({ managerPlus, noFinancials: await isAgentNoFinancials(ctx, await getAuthContext(ctx)) });
 }

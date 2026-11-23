@@ -498,9 +498,13 @@ resolved = blank — and never stored. The entry that CARRIES a shared charge is
 most advanced one (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the
 earliest; never "the earliest" alone, or a later draft steals it. Every read that
 returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`,
-`crewDashboard.pickerList`, the timesheet CSV) gates it on `canSeeCrewPay` (`convex/lib/crewPayVisibility.ts`: manager+ and not a
-`noFinancials` key); add a new pay-bearing read to that list, don't hide a column
-client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
+`crewDashboard.pickerList`, `crewRoles.listForSettings`) gates it on `canSeeCrewPay`
+(`convex/lib/crewPayVisibility.ts`), which decides with THE one rule,
+`crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ and not a `noFinancials`
+key). The Node-side timesheet CSV has no Convex ctx, so it calls that same
+`crewPayVisible` directly (an API-key actor counts as noFinancials there — fail
+closed). Never write a second "who sees pay" check; add a new pay-bearing read to
+that list, and don't hide a column client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
 `crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /
 approve / query log one activity row per entry with the prior state, and their ONE
 Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior

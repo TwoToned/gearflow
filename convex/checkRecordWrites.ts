@@ -24,6 +24,7 @@ import {
   type AdHocCheckDetails,
 } from "./lib/adHocCheck";
 import { deleteMaintenanceWithLinks, existingMaintenanceIds, requireUntouchedMaintenance } from "./lib/undoMaintenance";
+import { deleteSavePhotos } from "./lib/undoPhotos";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — the densest warehouse-check state
@@ -579,13 +580,15 @@ export const saveAdHocCheck = mutation({
 // forward save's own server-written audit row, never from the caller. Refuses as a
 // whole — changing nothing — outside the 10-minute server-clock window, when the asset
 // was checked again since (its newest check record isn't this save's), its condition
-// moved since, any check record is gone or holds photos, any maintenance record it
-// opened has been touched, it was already undone, or a different user saved it. Otherwise deletes exactly that save's check records
-// and the maintenance records (+ asset links) it created, restores the condition
-// exactly (unsetting it when it was absent) and appends an UNDO activity row; audit
-// rows themselves are append-only (R-8.11.4).
+// moved since, any check record is gone, any maintenance record it opened has been
+// touched, it was already undone, or a different user saved it. Otherwise deletes
+// exactly that save's check records, the maintenance records (+ asset links) it
+// created and the photo files they held (unless another record on the asset references
+// them; `convex/lib/undoPhotos.ts`), restores the condition exactly (unsetting it when
+// it was absent) and appends an UNDO activity row; audit rows themselves are
+// append-only (R-8.11.4).
 export const undoAdHocCheckNative = mutation({
-  returns: v.object({ ok: v.boolean() }),
+  returns: v.object({ ok: v.boolean(), photosDeleted: v.number() }),
   args: {
     orgId: v.string(),
     forwardAuditId: v.string(),
@@ -611,6 +614,12 @@ export const undoAdHocCheckNative = mutation({
 
     for (const r of records) await ctx.db.delete(r._id);
     for (const m of maintenance) await deleteMaintenanceWithLinks(ctx, m);
+    // The photos uploaded for this save go with it (overseer ruling): only files no
+    // other record on the asset references.
+    const photosDeleted = await deleteSavePhotos(ctx, {
+      orgId: a.orgId, assetId: details.assetId, photos: [...records.map((r) => r.photos), ...maintenance.map((m) => m.photos)],
+      ownRecordIds: details.recordIds, ownMaintenanceIds: details.createdMaintenanceIds,
+    });
     if (details.conditionChanged) {
       await ctx.db.patch(asset._id, { condition: details.conditionBefore ?? undefined, updatedAt: details.updatedAtBefore ?? undefined });
     }
@@ -618,10 +627,10 @@ export const undoAdHocCheckNative = mutation({
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UNDO", entityType: "checkRecord",
       entityId: forward.entityId, entityName: forward.entityName, userId: actor.userId, userName: actor.userName,
-      summary: `Undid ad-hoc check (${records.length} items)`,
-      details: { undoOf: forward.id }, assetId: details.assetId, createdAt: a.now,
+      summary: `Undid ad-hoc check (${records.length} items${photosDeleted ? `, ${photosDeleted} photos deleted` : ""})`,
+      details: { undoOf: forward.id, photosDeleted }, assetId: details.assetId, createdAt: a.now,
     });
-    return { ok: true };
+    return { ok: true, photosDeleted };
   },
 });
 

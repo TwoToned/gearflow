@@ -116,10 +116,6 @@ export async function requireUntouchedCheckRecords(
     if (!r || r.organizationId !== orgId || r.context !== "AD_HOC" || r.assetId !== details.assetId) {
       throw new ConvexError("This check's records changed since: it can't be undone");
     }
-    // Photos are evidence uploaded BEFORE the save (their files exist on their own).
-    // Deleting the records would orphan them, deleting the files would destroy what the
-    // tester attached — neither is the exact reverse, so a check with photos stays.
-    if ((r.photos?.length ?? 0) > 0) throw new ConvexError("This check has photos attached: it can't be undone");
     out.push(r);
   }
   return out;

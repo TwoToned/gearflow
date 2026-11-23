@@ -157,19 +157,24 @@ function useCheckSave(s: CheckModeDeps & {
     tagRef.current = s.tag;
   });
 
-  const announce = (asset: ScanAsset, auditId: string, snapshot: CheckDraft, reversible: boolean) => {
+  const announce = (asset: ScanAsset, auditId: string, snapshot: CheckDraft) => {
     const tag = asset.assetTag;
+    const hadPhotos = Object.values(snapshot.states).some((st) => st.photos.length > 0);
     const performUndo = async () => {
       await writes.undoAdHocCheck(auditId);
       s.markUndone(auditId);
-      if (tagRef.current) return;
-      s.draft.restore(snapshot);
-      s.reload(tag);
+      if (!tagRef.current) {
+        // The Undo deleted the photos' files with the records (overseer ruling), so the
+        // draft comes back without them — a FAIL then asks for its photo again.
+        s.draft.restore(withoutPhotos(snapshot));
+        s.reload(tag);
+      }
+      return hadPhotos ? "Undone · photos need re-adding" : undefined;
     };
     return announceListWrite({
       title: s.failCount > 0 ? `Saved check on ${tag} · ${s.failCount} failed` : `Saved check on ${tag}`,
       undoneTitle: `Check on ${tag} undone`,
-      performUndo: reversible ? performUndo : undefined,
+      performUndo,
     });
   };
 
@@ -182,7 +187,7 @@ function useCheckSave(s: CheckModeDeps & {
     try {
       const res = await writes.saveAdHocCheck({ assetId: asset.id, checks, condition: s.condition, notes: snapshot.notes.trim() || undefined });
       s.play("success");
-      const undo = announce(asset, res.auditId, snapshot, !checks.some((c) => (c.photos?.length ?? 0) > 0));
+      const undo = announce(asset, res.auditId, snapshot);
       s.addLastScan({
         id: res.auditId, mode: "check", tag: asset.assetTag, name: asset.modelName, verdict: s.failCount > 0 ? "failed" : "clean",
         at: Date.now(), assetId: asset.id, undo,
@@ -198,6 +203,10 @@ function useCheckSave(s: CheckModeDeps & {
   };
 
   return { saving, save };
+}
+
+function withoutPhotos(d: CheckDraft): CheckDraft {
+  return { ...d, states: Object.fromEntries(Object.entries(d.states).map(([id, st]) => [id, { ...st, photos: [] }])) };
 }
 
 /** The model's check items, live (stable args, so the subscription settles). */

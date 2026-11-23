@@ -60,7 +60,7 @@ Quality check system integrated into the warehouse prep/return flow. Warehouse o
 ### Check Records
 
 `pullItem`, `prepItemDirect`, `prepItemsBatch`, `deprepItem`, `deprepKit`, `deprepItemsBatch`,
-`unpackItem`, `lookupAssetForAdHocCheck`, `getCheckHistory`, `getModelFailureAnalytics` are
+`unpackItem`, `getCheckHistory`, `getModelFailureAnalytics` are
 still server actions in `src/server/check-records.ts`. The five `completeCheckAnd*` /
 `saveAdHocCheck` mutations below moved browser-direct to Convex — called via
 `src/hooks/use-check-record-writes.ts`:
@@ -78,7 +78,6 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 | `checkRecordWrites.saveAdHocCheck` | warehouse.scan | Standalone check (AD_HOC context) + condition (D50) + check-level `notes` |
 | `checkRecordWrites.undoAdHocCheckNative` | warehouse.scan | Exact reverse of one ad-hoc check (`danger: "high"`) |
 | `scanLookup.checkCard({ orgId, value })` | warehouse read | The Scan page's card: asset/kit/bulk/T&T-only/unknown + Where, On job, Last check, check-item count, Last T&T |
-| `lookupAssetForAdHocCheck(tag)` | read | Asset lookup for ad-hoc page (superseded by `checkCard`; deleted with the `/check` page in Phase 16 slice 2) |
 | `getCheckHistory(assetId, context?)` | read | All records for an asset |
 | `getModelFailureAnalytics(modelId)` | read | Per-check-item failure rates |
 
@@ -97,12 +96,24 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   `updatedAtBefore`, exactly the check-record ids this call inserted, and exactly the
   maintenance records it opened (incident report / predictive record — re-read after the
   cores, since PM can dedup-skip). Check-level `notes` go there too (Q8).
-- **`undoAdHocCheckNative({ orgId, forwardAuditId, … })`** takes ids only. It refuses as a
-  whole when the condition moved since, a check record is gone, a maintenance record it
-  opened is no longer `SCHEDULED` at the save's stamp (Q9), it was undone already, or a
-  different user saved it. Otherwise it deletes exactly that save's records and
-  maintenance (+ links), restores the condition exactly (unset when it was absent) and
-  appends an `UNDO` row; audit rows stay append-only.
+- **`undoAdHocCheckNative({ orgId, forwardAuditId, … })`** takes ids only and returns
+  `{ ok, photosDeleted }`. It refuses as a whole — changing nothing — for anyone but the
+  person who saved it, more than 10 minutes after the save on the SERVER clock (the save
+  stamps `serverSavedAt`; one `UNDO_WINDOW_MS` in `convex/lib/undoWindow.ts`, shared with
+  the T&T undo), when the asset was checked again since (its newest check record isn't
+  this save's — so it never restores a condition over a later check, or deletes the
+  `[Auto]` PM record a later fail deduped against), when the condition moved since, a
+  check record is gone, a maintenance record it opened is no longer `SCHEDULED` at the
+  save's stamp (Q9), or it was undone already. Otherwise it deletes exactly that save's
+  records and maintenance (+ links), restores the condition exactly (unset when it was
+  absent) and appends an `UNDO` row; audit rows stay append-only.
+- **Photos go with the Undo** (overseer ruling 2026-11-23). A FAIL's required photo was
+  uploaded for this save, so the Undo also deletes its files — the `_storage` blob, its
+  thumbnail, their `storedFiles` rows and the `fileUploads` row
+  (`convex/lib/undoPhotos.ts`) — but only a file no OTHER check or maintenance record on
+  the asset references, and only this org's. The Scan page restores the draft WITHOUT the
+  photos and toasts `Undone · photos need re-adding`, so every save (a failed one too)
+  keeps its one Undo.
 
 ### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 
@@ -125,7 +136,7 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 
 ### Warehouse
 
-- **Item Check Form** (`item-check-form.tsx`): Sheet slide-over with check items. Pass/Fail buttons (Fail LEFT red, Pass RIGHT green), measurement with auto-pass/fail, dropdown with isFail, "Pass All" with 3-second undo toast. Supports embedded mode for ad-hoc page. **Keyboard shortcuts:** `P` pass focused PASS_FAIL row, `F` fail, `A` pass all remaining, `↑`/`↓` move focused-row cursor (skips non-PASS_FAIL rows), `Enter` submit when all answered. Shortcuts are suppressed when focus is on a text input / textarea / number input, while submitting, or with a modifier key held. The focused row gets a `ring-2 ring-primary` highlight. A desktop-only hint bar shows the available keys in the footer.
+- **Item Check Form** (`item-check-form.tsx`): Sheet slide-over with check items. Pass/Fail buttons (Fail LEFT red, Pass RIGHT green), measurement with auto-pass/fail, dropdown with isFail, "Pass All" with 3-second undo toast. The item rows are `CheckItemFields` (`check-item-fields.tsx`) and the completion / payload / blocker rules `src/lib/check-item-state.ts` — the SAME rows the Scan page renders inline (there is no `embedded` mode any more). **Keyboard shortcuts** (`use-check-hotkeys.ts`): `P` pass focused PASS_FAIL row, `F` fail, `A` pass all remaining, `↑`/`↓` move focused-row cursor (skips non-PASS_FAIL rows), `Enter` submit when all answered. Shortcuts are suppressed when focus is on a text input / textarea / number input, while submitting, or with a modifier key held. The focused row gets a `ring-2 ring-primary` highlight. A desktop-only hint bar shows the available keys in the footer.
 - **Close-Out Tab** (`close-out-tab.tsx`): Summary stats, exceptions table, two-step close confirmation.
 - **Batch Close-Out**: Multi-select on warehouse dashboard for returned projects.
 
@@ -133,17 +144,33 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 
 - **Checks Tab** (`asset-checks-tab.tsx`): Timeline of all check records grouped by session. Filter by context.
 
-### Ad-Hoc Check
+### Ad-Hoc Check → the Scan page's Check mode (Phase 16, spec §9i)
 
-- **Route** (`/check/[assetTag]`): Standalone page to check any asset outside a project.
-- **Scan feedback**: Uses the shared `useScanFeedback` hook (`@/hooks/use-scan-feedback`,
-  see FEATUREDOCS/12 §"Scan Feedback (Audio + Haptics)" and FEATUREDOCS/14 §"Audio / Scan
-  Feedback") with a `<ScanFeedbackToggle>` in the page header, controlling both audio and
-  vibration. `exception` plays once when the tag lookup resolves and the asset isn't found
-  (unknown tag); `submitMutation` plays `success` on save and `error` on failure. Each call
-  now also passes a `{ label, outcome }` entry (`<ScanHistoryStrip>` renders above the scan
-  input) — `saveAdHocCheck` isn't one of the six warehouse writes, so `entry.undo` is
-  always omitted here. See FEATUREDOCS/12 §"Scan History Strip".
+- **Route** `/scan?mode=check&tag=` (`src/app/(app)/scan/page.tsx`, `src/components/scan/*`;
+  NAV Warehouse › Scan). `/check/[assetTag]` is a server redirect into it, so old links and
+  printed codes keep working. The URL is the loaded state (one Zod schema,
+  `src/lib/scan-page.ts`).
+- **One pipeline.** The dock's wedge and camera (`ScanDock`, camera closes on a read), the
+  bottom-nav Scan (`useScanTarget`), a Last scans row tap and the deep link all end in ONE
+  `scan(tag)` (`use-scan-session.ts`): the same tag again toasts `already open`; a tag (or a
+  mode change, or Clear) over unsaved answers asks `Discard this check?`; anything else loads.
+  Escape never resets.
+- **The card** (`scanLookup.checkCard`): tag + status + flags (`T&T overdue 38d`, `Damaged`),
+  the model linking to the asset, Where / On job / Last check / Last T&T, and for an asset
+  out on a job `A check here is recorded on the asset, not the job.` Kit, bulk, T&T-only,
+  unknown and no-check-items tags show a state with the next step and are logged in Last
+  scans; none blocks the dock.
+- **The form** renders `CheckItemFields` inline: Pass all (with Undo) in the section head, the
+  FAIL reason + photo block, Condition `Good Worn Damaged` (preselected from the stored
+  value, forced and locked to Damaged by any fail), Notes. `Save and scan next` (caret:
+  `Save and keep this asset open`) is disabled with the reason in plain words.
+- **Save awaits** `saveAdHocCheck` before clearing the card (the card and its answers stay
+  while pending and after an error). The save makes ONE `announceListWrite` closure, handed
+  unchanged to the toast and to the Last scans row (10 s); it reverses the save and, when
+  nothing else is loaded, puts the draft back (without its photos, above).
+- **Scan feedback**: the shared `useScanFeedback` (`success` on save, `error` on failure,
+  `exception` on a tag it can't check), toggled from the page ⋯ (`Scan sounds`). Last scans
+  replaces the old `ScanHistoryStrip` here.
 
 ## Check Queue
 

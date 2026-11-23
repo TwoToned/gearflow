@@ -199,6 +199,27 @@ describe("ScanPage — Check mode", () => {
     expect(replace).toHaveBeenLastCalledWith("/scan?mode=check&tag=AURA-01", { scroll: false });
   });
 
+  it("a failed check with a photo still has its Undo; the draft comes back without the photo", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    h.save.mockResolvedValueOnce({ success: true, recordIds: ["r1", "r2"], auditId: "aud2", condition: "DAMAGED" });
+    h.undo.mockResolvedValue({ ok: true, photosDeleted: 1 });
+    render(<ScanPage />);
+    const yoke = () => screen.getByText("Yoke").closest("[data-check-item]") as HTMLElement;
+    await userEvent.click(within(yoke()).getByRole("button", { name: "Fail" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.type(within(yoke()).getByPlaceholderText("Describe the failure..."), "Cracked");
+    await userEvent.click(within(yoke()).getByRole("button", { name: "Add photo" }));
+    await userEvent.click(saveButton());
+    expect(h.save).toHaveBeenCalledWith(expect.objectContaining({ condition: "DAMAGED" }));
+    const rows = await screen.findByRole("list", { name: "Recent scans" });
+    await userEvent.click(within(rows).getByRole("button", { name: "Undo" }));
+    expect(h.undo).toHaveBeenCalledWith("aud2");
+    expect(h.toasts.map((t) => t.title)).toContain("Undone · photos need re-adding");
+    // Restored: the reason is back, the photo is not.
+    expect(within(yoke()).getByPlaceholderText("Describe the failure...")).toHaveProperty("value", "Cracked");
+    expect(screen.getByText("Yoke needs a photo")).toBeTruthy();
+  });
+
   it("a failed save keeps the card and its answers", async () => {
     setUrl("/scan?mode=check&tag=AURA-01");
     h.save.mockRejectedValueOnce(new Error("Network down"));

@@ -479,7 +479,7 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     await save(t, { condition: "DAMAGED" }, [mkCheck({ recordId: "r1" })]);
     expect((await asset(t, "as1"))?.condition).toBe("DAMAGED");
 
-    expect(await undo(t)).toEqual({ ok: true });
+    expect(await undo(t)).toEqual({ ok: true, photosDeleted: 0 });
     const a = await asset(t, "as1");
     expect(a?.condition).toBeUndefined();
     expect(a?.updatedAt).toBe(NOW);
@@ -557,7 +557,7 @@ describe("undoAdHocCheckNative (exact undo)", () => {
       await expect(undo(t)).rejects.toThrow(/within 10 minutes/);
       expect((await asset(t, "as1"))?.condition).toBe("FAIR");
       clock.mockReturnValue(NOW + 9 * 60 * 1000);
-      expect(await undo(t)).toEqual({ ok: true });
+      expect(await undo(t)).toEqual({ ok: true, photosDeleted: 0 });
     } finally {
       clock.mockRestore();
     }
@@ -594,13 +594,70 @@ describe("undoAdHocCheckNative (exact undo)", () => {
     expect((await maint(t)).map((m) => m.id)).toContain("mnt1");
   });
 
-  test("a check with photos attached can't be undone (no orphaned or destroyed files)", async () => {
+  /** One uploaded photo as `/api/uploads` stores it: original + thumbnail blobs, their
+   *  `storedFiles` rows, and the `fileUploads` row naming both. */
+  async function upload(t: T, org = ORG) {
+    return t.run(async (ctx) => {
+      const sid = await ctx.storage.store(new Blob(["jpg"]));
+      const thumb = await ctx.storage.store(new Blob(["th"]));
+      await ctx.db.insert("storedFiles", { storageId: sid, organizationId: org });
+      await ctx.db.insert("storedFiles", { storageId: thumb, organizationId: org });
+      await ctx.db.insert("fileUploads", {
+        id: "fu-" + sid, organizationId: org, fileName: "p.jpg", fileSize: 3, mimeType: "image/jpeg",
+        storageKey: sid, url: `/api/files/${sid}`, thumbnailUrl: `/api/files/${thumb}`, uploadedById: USER,
+      });
+      return { sid, thumb, url: `/api/files/${sid}` };
+    });
+  }
+  const stored = (t: T, sid: string) => t.run(async (ctx) => ({
+    row: await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", sid)).unique(),
+    blob: (await ctx.storage.get(sid as never)) !== null,
+  }));
+  const failWithPhoto = (recordId: string, url: string) =>
+    [{ ...mkCheck({ recordId, result: "FAIL" }), notes: "Cracked", photos: [url] } as ReturnType<typeof mkCheck>];
+
+  test("a failed check with a photo: the Undo deletes the photo's files with the records that held them", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
-    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [{ ...mkCheck({ recordId: "r1", result: "FAIL" }), notes: "Cracked", photos: ["https://x/files/p1.jpg"] } as ReturnType<typeof mkCheck>]);
-    await expect(undo(t)).rejects.toThrow(/photos attached/);
-    expect((await records(t)).map((r) => r.id)).toEqual(["r1"]);
-    expect((await maint(t)).map((m) => m.id)).toContain("inc1");
-    expect((await asset(t, "as1"))?.condition).toBe("DAMAGED");
+    const p = await upload(t);
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, failWithPhoto("r1", p.url));
+    expect(await undo(t)).toEqual({ ok: true, photosDeleted: 1 });
+    expect(await records(t)).toHaveLength(0);
+    expect((await maint(t)).map((m) => m.id)).not.toContain("inc1"); // the incident (which copied the photo) is gone too
+    for (const sid of [p.sid, p.thumb]) {
+      const s = await stored(t, sid);
+      expect(s.row).toBeNull();
+      expect(s.blob).toBe(false);
+    }
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "fu-" + p.sid)).first())).toBeNull();
+    expect((await asset(t, "as1"))?.condition).toBe("GOOD");
+  });
+
+  test("a photo another record on the asset references is kept; a foreign org's file is never deleted", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+    const shared = await upload(t);
+    const foreign = await upload(t, OTHER);
+    // An earlier check on the asset already holds `shared`.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("checkRecords", { id: "r0", organizationId: ORG, context: "AD_HOC", assetId: "as1", checkItemId: "ci1", checkItemLabelSnapshot: "V", checkItemTypeSnapshot: "PASS_FAIL", result: "FAIL", photos: [shared.url], performedById: USER, performedAt: NOW });
+    });
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, [
+      { ...failWithPhoto("r1", shared.url)[0], photos: [shared.url, foreign.url] } as ReturnType<typeof mkCheck>,
+    ]);
+    expect(await undo(t)).toEqual({ ok: true, photosDeleted: 0 });
+    expect(await stored(t, shared.sid)).toMatchObject({ blob: true });
+    expect((await stored(t, shared.sid)).row).not.toBeNull();
+    expect(await stored(t, foreign.sid)).toMatchObject({ blob: true });
+    expect((await stored(t, foreign.sid)).row).not.toBeNull();
+    expect((await records(t)).map((r) => r.id)).toEqual(["r0"]);
+  });
+
+  test("a refused Undo deletes no photo (the guards run first)", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1", "AVAILABLE", { condition: "GOOD" });
+    const p = await upload(t);
+    await save(t, { incidentPlan: [incidentEntry()], maintenancePlan: [pmEntry()] }, failWithPhoto("r1", p.url));
+    await t.run(async (ctx) => { const m = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "inc1")).unique(); await ctx.db.patch(m!._id, { status: "IN_PROGRESS", updatedAt: NOW + 15 }); });
+    await expect(undo(t)).rejects.toThrow(/worked on since/);
+    expect((await stored(t, p.sid)).row).not.toBeNull();
   });
 
   test("a legacy (pre-Phase-16) check row has no snapshot and can't be undone", async () => {

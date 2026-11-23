@@ -633,6 +633,8 @@ Archivo is loaded via `next/font/google` with weights 400–900. Always referenc
 
 **6a (D1/D65) supersedes the five-module bar below:** Scan is a raised 50px red circle (a `<button>` that opens the camera from the tap); a role without warehouse loses Scan and Warehouse (absent, not greyed). Crew and Assets moved to the **More sheet** (88%, 48px rows, drill to `Open X` + sub-pages, groups Plan / Crew and gear / People / Account, user head with Organisation ›, Theme, Sign out), which is lit on Crew, Assets and Settings routes. The hamburger drawer is gone on phone. A page may register a scan handler with `useScanTarget`; with none, Scan does the outside-a-job lookup (`Open asset ›`, not found, error/offline, no permission).
 
+**More sheet counts (UX Phase 11, §6d.6).** A row may carry a trailing count, right-aligned before its `›`: a **total** in muted mono (`Assets 605`, `Clients 26`, `200+` when the read was capped — shown even at 0, it describes the list) or an **exception** as a dot-word (`Finance 1 overdue` and `Overbookings 5 overbooked` in error; `Returns 2 overdue`, `Test & tag 4 overdue`, `Maintenance 20 open · 5 overdue` in warning) that is ABSENT at zero — nothing to chase, no word. A count never shows for a row the role can't open (the row is absent), and is read only while the sheet is open. The sidebar and rail carry no counts.
+
 **Decision D10A (work-layer phase 0.5, #1242): Today replaces Dashboard.**
 Today (`/today`) became the landing page after login and the app's personal
 home — the day's agenda plus the person's work, with Triage for inbound

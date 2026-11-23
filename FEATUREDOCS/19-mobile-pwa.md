@@ -93,8 +93,22 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
   sheet** (`more-sheet.tsx`), built from `NAV`; More is lit on any non-tab module.
   The hamburger drawer is gone on phone (`AppSidebar` renders nothing there).
 - IA changes are one edit in `src/lib/nav.ts` (see FEATUREDOCS/29).
-- Counts on More rows (Finance overdue, Overbookings...) are a follow-up: no cheap
-  query exists in the shell, so rows render without counts.
+- **Counts on More rows** (UX Phase 11, S4, §6d.6): a NAV row (or sub) names a
+  `count` source (`NavCountSource`, `src/lib/nav-counts.ts`); `moreSheetGroups`
+  passes it through and the row reads it with `useNavCount`
+  (`src/hooks/use-nav-counts.ts`):
+  - `navCounts.get` (`convex/navCounts.ts`) for assets (the O(1) counters), Test &
+    tag overdue, Maintenance open · overdue, Returns overdue (the shared overdue
+    rule), Clients, Suppliers, Locations and crew. Each source is org-guarded on its
+    own resource AND role-checked (`callerMayRead`): a role that can't read it gets
+    `null`. Reads are org-index-first, capped at 200, with `truncated` (`200+`). No
+    new index.
+  - Finance (`1 overdue`) and Overbookings (`5 overbooked`) reuse
+    `financeOrg.counts` / `overbookingBoard.counts`.
+  - Rows mount only while the sheet is open and only for the rows the role kept, so
+    a count is subscribed exactly while it can be seen. `formatNavCount` words them:
+    totals muted (shown at 0), exceptions as a dot-word and absent at 0.
+  - Crew's rows carry no source yet: Phase 15 owns them and attaches `crew`.
 
 ## Card lists, not data tables (§15)
 

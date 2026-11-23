@@ -701,7 +701,10 @@ page = one row there (and `NOT_IN_NAV` for a deliberately unlisted route: the dr
 test `nav.test.ts` fails on any static `(app)` route that is neither). Gating is
 applied ONCE in `useNavItems()`; a gated item is absent, never greyed — don't re-check
 a permission in a surface. The bottom bar is Home · Jobs · Scan · Warehouse · More
-(`BOTTOM_NAV_KEYS`); everything else reaches a phone through More. The org switcher
+(`BOTTOM_NAV_KEYS`); everything else reaches a phone through More. A More row's
+trailing count is a `count` source ON its NAV row (`src/lib/nav-counts.ts`), read by
+`useNavCount` only while the sheet is open — never a count computed in the sheet, and
+every `navCounts.get` source is role-checked on the server (`callerMayRead`). The org switcher
 is the sidebar head (`useOrgSwitch` — ONE `setActive` closure, the Undo toast reuses
 it); the user menu is personal. Top-bar titles come from `buildTrail`: a detail page
 names its record via `<PageMeta title>`/`useBreadcrumbs`, never a raw id.

@@ -35814,7 +35814,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a248087362c6fa2f",
-    "returnsSha": "12dfb0f819bdd6eb",
+    "returnsSha": "5b219410cc26ff1a",
     "stability": "tracks-app",
     "summary": "Undo a custom case delete by its batch audit id: re-create the case in place and put its planned lines back. Once per delete.",
     "danger": "low",
@@ -58499,13 +58499,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "undoOfAuditId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "versionId",
         "optional": false,
         "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "03969f8abdee9add",
+    "argsSha": "c20acc31b778800a",
     "returnsSha": "e497654c7ffad67a",
     "stability": "tracks-app",
     "summary": "Flip the project's live pointer to another version.",
@@ -58572,6 +58577,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": "Rename a version's internal label.",
     "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "versions.undoCreateNative",
+    "module": "versions",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "versionId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d12f25f1b177dd2a",
+    "returnsSha": "76e9166418f484d2",
+    "stability": "tracks-app",
+    "summary": "Undo saving a new version: delete that copy only while it is still exactly what the save made (not live, not edited, not quoted).",
+    "danger": "high",
     "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
@@ -64704,10 +64771,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1253,
-  agentReachable: 623,
+  total: 1254,
+  agentReachable: 624,
   queries: 449,
-  mutations: 804,
+  mutations: 805,
   agentReachableQueries: 314,
-  agentReachableMutations: 309,
+  agentReachableMutations: 310,
 } as const;

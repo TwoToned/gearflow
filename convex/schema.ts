@@ -1863,8 +1863,10 @@ export default defineSchema({
     parentContainerId: v.optional(v.string()),
     sortOrder: v.optional(v.number()),
     // UX Phase 8 (§7b, D21) — "Seal case": when it was sealed (absent = open).
-    // A PLAN lock only: a sealed case rejects planning lines into it and
-    // planning lines out of it (`setPlannedContainerNative`). Written only by
+    // A PLAN lock only: a sealed case rejects planning lines into it and out of
+    // it (`setPlannedContainerNative`), renaming / re-nesting / deleting it, and
+    // nesting a case into it, taking one out or creating one inside it
+    // (`lib/containerSeal.ts`, `CASE_SEALED`). Written only by
     // `projectContainerPlanWrites.sealNative`/`unsealNative`; the printed
     // label is what a seal vouches for. Copied with the plan (`copyPlanGraph`).
     sealedAt: v.optional(v.number()),

@@ -45401,6 +45401,9 @@ export const OPENAPI_DOCUMENT = {
                       "projectId": {
                         "type": "string"
                       },
+                      "undoOfAuditId": {
+                        "type": "string"
+                      },
                       "versionId": {
                         "type": "string"
                       }
@@ -45490,6 +45493,91 @@ export const OPENAPI_DOCUMENT = {
                       }
                     },
                     "required": [
+                      "projectId",
+                      "versionId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/versions.undoCreateNative": {
+      "post": {
+        "operationId": "versions.undoCreateNative",
+        "summary": "versions.undoCreateNative (mutation)",
+        "description": "Requires scope: project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "createAuditId": {
+                        "type": "string"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "versionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "createAuditId",
                       "projectId",
                       "versionId"
                     ],

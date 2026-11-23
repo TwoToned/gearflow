@@ -200,7 +200,7 @@ describe("delete case returns planned lines to Unplanned, and is exactly undoabl
     const before = await containerById(t, "c1");
     await plan(t, ["li1", "li2"], "c1", "p1");
     await remove(t, "c1", "x1");
-    expect(await undoDelete(t, "x1", "r1")).toEqual({ id: "c1", restored: 2, skipped: 0 });
+    expect(await undoDelete(t, "x1", "r1")).toEqual({ id: "c1", restored: 2, skipped: 0, recreated: true, parentSealed: false });
     const back = await containerById(t, "c1");
     expect(back).toMatchObject({ label: "Case 1", sortOrder: before?.sortOrder, versionId: V1 });
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
@@ -218,6 +218,51 @@ describe("delete case returns planned lines to Unplanned, and is exactly undoabl
     await remove(t, "c2", "x2");
     await expect(undoDelete(t, "x2", "r1", OTHER)).rejects.toThrow(/not found/i);
     await expect(undoDelete(t, "p1", "r2")).rejects.toThrow(/not found/i);
+  });
+
+  test("an EMPTY case's Undo still reports recreated (restored 0): the case is back", async () => {
+    const t = makeT();
+    await seed(t);
+    await remove(t, "c2", "x2");
+    expect(await undoDelete(t, "x2", "r2")).toEqual({ id: "c2", restored: 0, skipped: 0, recreated: true, parentSealed: false });
+    expect(await containerById(t, "c2")).not.toBeNull();
+  });
+
+  test("a case deleted from under a parent that is sealed NOW comes back at the top level and says so", async () => {
+    const t = makeT();
+    await seed(t);
+    await update(t, "c1", { parentContainerId: "c2" }, "n1");
+    await remove(t, "c1", "x1");
+    await seal(t, "c2", "s1");
+    const r = await undoDelete(t, "x1", "r1");
+    expect(r).toMatchObject({ recreated: true, parentSealed: true });
+    expect((await containerById(t, "c1"))?.parentContainerId).toBeUndefined();
+  });
+
+  test("Undo refuses when the version the case was on is gone", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectVersions", { id: "v-gone", organizationId: ORG, projectId: "p1", number: 2, contentState: "ready", createdAt: NOW, createdById: USER });
+      const c = await ctx.db.query("projectContainers").withIndex("by_cuid", (q) => q.eq("id", "c1")).unique();
+      await ctx.db.patch(c!._id, { versionId: "v-gone" });
+    });
+    await remove(t, "c1", "x1");
+    await t.run(async (ctx) => {
+      const v = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", "v-gone")).unique();
+      await ctx.db.delete(v!._id);
+    });
+    await expect(undoDelete(t, "x1", "r1")).rejects.toThrow(/no longer exists/i);
+    expect(await containerById(t, "c1")).toBeNull();
+  });
+
+  test("a case inside a SEALED parent cannot be deleted (parent-side seal)", async () => {
+    const t = makeT();
+    await seed(t);
+    await update(t, "c1", { parentContainerId: "c2" }, "n1");
+    await seal(t, "c2", "s1");
+    await expect(remove(t, "c1", "x1")).rejects.toThrow(/sealed/i);
+    expect(await containerById(t, "c1")).not.toBeNull();
   });
 
   test("a legacy case with no versionId still returns its lines to Unplanned (live version fallback)", async () => {
@@ -428,6 +473,33 @@ describe("restore: no replay (ABA), packed-skip, cancelled units (review fixes 2
     });
     expect(await restore(t, "b1", "r1")).toEqual({ restored: 1, skipped: 1 });
     expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+  });
+
+  test("B1 (c1) then B2 (c1→c2) then B3 (c2→c1): the stale B1 undo is refused, not replayed (newer PLAN_LINE row)", async () => {
+    const t = makeT();
+    await seed(t);
+    await plan(t, ["li1"], "c1", "b1");
+    await plan(t, ["li1"], "c2", "b2");
+    await plan(t, ["li1"], "c1", "b3"); // the line looks EXACTLY as b1 left it
+    expect(await restore(t, "b1", "r1")).toEqual({ restored: 0, skipped: 1 });
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c1");
+    // The newest batch still undoes (back to c2).
+    expect(await restore(t, "b3", "r3")).toEqual({ restored: 1, skipped: 0 });
+    expect((await lineById(t, "li1"))?.plannedContainerId).toBe("c2");
+  });
+
+  test("a plan write carries up to 500 lines, its Undo restores all 500, and 501 is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    const ids = Array.from({ length: 500 }, (_, i) => `m${i}`);
+    await t.run(async (ctx) => {
+      for (const id of ids) {
+        await ctx.db.insert("projectLineItems", { id, organizationId: ORG, projectId: "p1", versionId: V1, lineageId: id, type: "EQUIPMENT", quantity: 1, sortOrder: 9, createdAt: NOW, updatedAt: NOW });
+      }
+    });
+    expect((await plan(t, ids, "c1", "big")).updated).toBe(500);
+    expect(await restore(t, "big", "rbig")).toEqual({ restored: 500, skipped: 0 });
+    await expect(plan(t, [...ids, "li1"], "c1", "toobig")).rejects.toThrow();
   });
 
   test("a cancelled unit in a case does not count as packed", async () => {

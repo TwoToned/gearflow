@@ -150,6 +150,29 @@ type RestoreArgs = {
 /** Why a line was NOT restored: `sealed` names the case whose seal blocked it. */
 type RestoreOutcome = { restored: true } | { restored: false; sealedCase?: string };
 
+/** How many of a line's newest audit rows are scanned for its latest plan change. */
+const PLAN_HISTORY_LOOKBACK = 50;
+
+/**
+ * True when the line's newest PLAN_LINE audit row belongs to a DIFFERENT batch than the one being
+ * undone (a later plan, unplan, case delete or Undo touched it). Comparing the current case alone
+ * is fooled by A→B→A: the line can look exactly as this batch left it while a newer plan has
+ * since moved it away and back. Fails closed: no row of this batch in the window counts as newer.
+ */
+async function hasNewerPlanChange(ctx: MutationCtx, lineItemId: string, orgId: string, batchAuditId: string): Promise<boolean> {
+  const rows = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "projectLineItem").eq("entityId", lineItemId))
+    .order("desc")
+    .take(PLAN_HISTORY_LOOKBACK);
+  for (const row of rows) {
+    const meta = row.metadata as { kind?: string; batchId?: string } | undefined;
+    if (meta?.kind !== PLAN_LINE_KIND) continue;
+    return meta.batchId !== batchAuditId;
+  }
+  return true;
+}
+
 /** Restore ONE line if (and only if) it is still as the forward write left it,
  *  on the batch's job, NOT packed since (packed wins, as on the forward write),
  *  and the case it returns to exists, is open and on that job. Writes its audit
@@ -160,6 +183,7 @@ async function restoreOneLine(ctx: MutationCtx, entry: PlanBatch["lines"][number
   if (!line || line.organizationId !== orgId || line.projectId !== batch.projectId) return { restored: false };
   if ((line.plannedContainerId ?? null) !== batch.expectedContainerId) return { restored: false }; // edited since: leave it
   if (await lineHasPackedUnit(ctx, line.id, orgId)) return { restored: false };
+  if (await hasNewerPlanChange(ctx, line.id, orgId, batchAuditId)) return { restored: false };
   const back = await caseOrNull(ctx, entry.from, orgId, cache);
   if (entry.from && (!back || back.projectId !== line.projectId)) return { restored: false };
   if (back && isContainerSealed(back)) return { restored: false, sealedCase: back.label };
@@ -267,7 +291,9 @@ export const restorePlannedContainersNative = mutation({
  * if a case with that id exists again.
  */
 export const undoDeleteContainerNative = mutation({
-  returns: v.object({ id: v.string(), restored: v.number(), skipped: v.number() }),
+  // `recreated` is always true on success (the case is back even when no line had to be restored);
+  // `parentSealed` says it was put back at the top level because its old parent is sealed now.
+  returns: v.object({ id: v.string(), restored: v.number(), skipped: v.number(), recreated: v.boolean(), parentSealed: v.boolean() }),
   args: undoArgs,
   handler: async (ctx, { orgId, batchAuditId, now, actor: suppliedActor, auditId }) => {
     await assertWritesEnabled(ctx, "warehouse");
@@ -290,9 +316,16 @@ export const undoDeleteContainerNative = mutation({
       throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     }
 
+    // A version deleted since takes its cases with it: there is nothing to put the case back on.
+    const ver = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();
+    if (!ver || ver.organizationId !== orgId || ver.projectId !== project.id) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "The version that case was on no longer exists, so it can't be restored." });
+    }
+
     const cache: CaseLookup = new Map();
     const parent = await caseOrNull(ctx, snapshot.parentContainerId, orgId, cache);
-    const parentOk = parent != null && parent.projectId === project.id && !isContainerSealed(parent);
+    const parentSealed = parent != null && isContainerSealed(parent);
+    const parentOk = parent != null && parent.projectId === project.id && !parentSealed;
     await assertBulkSizeOk(ctx, batch.lines.length);
     await insertContainerWithLine(ctx, {
       id: caseId,
@@ -313,7 +346,7 @@ export const undoDeleteContainerNative = mutation({
       summary: `Restored container "${snapshot.label}"`,
     });
     const r = await runRestore(ctx, { batch, orgId, now, actor, auditId, batchAuditId, cache, markAlways: true });
-    return { id: caseId, ...r };
+    return { id: caseId, ...r, recreated: true, parentSealed };
   },
 });
 

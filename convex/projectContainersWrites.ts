@@ -14,6 +14,7 @@ import * as enums from "./lib/validators";
 import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
 import { assertContainerNotSealed } from "./lib/containerSeal";
 import { isPackedUnit } from "./lib/packedUnit";
+import { MAX_PLAN_LINES } from "./lib/packingPlan";
 import type { Doc } from "./_generated/dataModel";
 
 /**
@@ -524,6 +525,8 @@ export const deleteNative = mutation({
 
     const container = await requireContainerInOrg(ctx, id, orgId);
     assertContainerNotSealed(container, "delete it"); // Q3
+    // Deleting a case inside a sealed one would change what the seal vouches for.
+    await assertParentSealsAllowReparent(ctx, container, null, orgId);
 
     const memberUnit = (await ctx.db.query("projectLineItemUnits").withIndex("by_containerId", (q) => q.eq("containerId", id)).collect())
       .find((u) => u.organizationId === orgId && u.status !== "CANCELLED");
@@ -674,9 +677,8 @@ function planChangeSummary(count: number, target: { label: string } | null, from
   return `Cleared the planned container on ${lines}`;
 }
 
-/** Cap on lines per plan call: each line is checked for a packed unit, so the
- *  read volume is bounded by this, not by the caller. */
-export const MAX_PLAN_LINES = 200;
+/* Lines per plan call: `MAX_PLAN_LINES` (lib/packingPlan.ts, shared with the client). Each line is
+ * checked for a packed unit, so the read volume is bounded by it, not by the caller. */
 
 export type PlanSkipReason = "PACKED" | "OTHER_JOB";
 

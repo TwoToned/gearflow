@@ -37,6 +37,7 @@ import {
 } from "./overbookingBoard";
 import { EXCLUDED_ASSIGNMENT_STATUSES } from "./crewConflicts";
 import { isPackedUnit, type PackableUnit } from "./packedUnit";
+import { isPlannableLine } from "./packingPlan";
 
 /**
  * The models THIS project actually books as real (non-optional, non-cancelled,
@@ -224,10 +225,7 @@ export interface ReadinessPackingSection {
 }
 
 function isPlannableEquipmentLine(li: PackingLineInput, projectId: string): boolean {
-  if (li.projectId !== projectId) return false;
-  if (li.type !== "EQUIPMENT") return false;
-  if (li.isKitChild || li.isContainerLineItem) return false;
-  return (li.status ?? "") !== "CANCELLED";
+  return li.projectId === projectId && isPlannableLine(li);
 }
 
 export function computeProjectPackingReadiness(

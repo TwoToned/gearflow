@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor } from "./lib/auth";
 import { listProjectVersions } from "./lib/projectVersionState";
 import { isPackedUnit } from "./lib/packedUnit";
+import { isPlannableLine } from "./lib/packingPlan";
 import { loadTotalsBundle, computeTotals } from "./lib/recalc";
 import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { classifyCompareRows } from "./lib/versionCompare";
@@ -21,12 +22,13 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 /**
- * Read budgets. Convex caps a query at 16,384 documents read, so the caps below
- * are on the TOTAL examined across the whole query (not per line or per
- * version), and every cap that bites sets `truncated` (or leaves a figure
- * `null`) rather than guessing. Each version's own totals bundle is read with
- * `loadTotalsBundle` (lines, groups, services, ...), so the versions-with-facts
- * count and the line budget are kept well under the ceiling together.
+ * Read budgets. Convex caps a query at 16,384 documents read. The UNIT reads (the
+ * costly ones) and the lines examined are budgeted on the TOTAL across the whole
+ * query, and every cap that bites sets `truncated` (or leaves a figure `null`)
+ * rather than guessing. What is NOT budgeted is each loaded version's totals
+ * bundle itself (`loadTotalsBundle`: lines, groups, services, ...): it is bounded
+ * only by how many we load (`versionRowFacts`: at most 3 versions, loaded one at
+ * a time while the line budget lasts; `makeLivePreview`: exactly the two compared).
  */
 const MAX_UNITS_EXAMINED = 2000;
 const MAX_LINES_EXAMINED = 500;
@@ -51,9 +53,6 @@ class ReadBudget {
 }
 
 /** The lines a packing plan is about: top-level equipment, not containers. */
-function isPlannableLine(l: Doc<"projectLineItems">): boolean {
-  return l.type === "EQUIPMENT" && !l.isKitChild && !l.isContainerLineItem && l.status !== "CANCELLED";
-}
 
 async function loadVersionInProject(ctx: QueryCtx, orgId: string, projectId: string, versionId: string) {
   const version = await ctx.db.query("projectVersions").withIndex("by_cuid", (q) => q.eq("id", versionId)).first();

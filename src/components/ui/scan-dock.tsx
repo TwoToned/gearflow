@@ -79,7 +79,7 @@ export function ScanDock({
   target,
   placeholder = "Scan or type a tag",
   cameraTitle = "Scan with camera",
-  cameraContinuous = true,
+  cameraContinuous,
   disabled,
   className,
   onValueChange,
@@ -142,14 +142,16 @@ export function ScanDock({
             }
           }}
         />
-        <ScanButton onScan={onScan} scannerTitle={cameraTitle} continuous={cameraContinuous} disabled={disabled} />
+        <ScanButton onScan={onScan} scannerTitle={cameraTitle} continuous={cameraContinuous !== false} disabled={disabled} />
       </div>
-      {modes.length > 0 ? <ModeWords modes={modes} mode={mode} onModeChange={onModeChange} /> : null}
+      <ModeWords modes={modes} mode={mode} onModeChange={onModeChange} />
     </div>
   );
 }
 
+/** The mode row under the input; nothing at all when `modes` is empty. */
 function ModeWords({ modes, mode, onModeChange }: { modes: ScanModeOption[]; mode: string; onModeChange: (mode: string) => void }) {
+  if (modes.length === 0) return null;
   return (
     <div role="radiogroup" aria-label="Scan mode" className="flex items-center gap-4 text-caption">
       {modes.map((m) => (

@@ -132,11 +132,12 @@ function ItemInput({
   onUpdate: (updates: Partial<CheckState>) => void;
 }) {
   const ci = item.checkItem;
-  if (ci.type === "PASS_FAIL") return <PassFailInput result={state?.result} onUpdate={onUpdate} />;
+  const s = state ?? EMPTY_STATE;
+  if (ci.type === "PASS_FAIL") return <PassFailInput result={s.result} onUpdate={onUpdate} />;
   if (ci.type === "NOTES") {
     return (
       <Textarea
-        value={state?.notes || ""}
+        value={s.notes}
         onChange={(e) => onUpdate({ notes: e.target.value, result: e.target.value ? "NOTES_ONLY" : null })}
         placeholder="Enter notes..."
         rows={2}
@@ -147,23 +148,19 @@ function ItemInput({
   if (ci.type === "MEASUREMENT") {
     return (
       <MeasurementInput
-        value={state?.value || ""}
+        value={s.value}
         unit={ci.measurementUnit}
         min={ci.measurementMin}
         max={ci.measurementMax}
-        result={state?.result}
+        result={s.result}
         onChange={(value) => onUpdate({ value, result: measurementAutoResult(value, ci.measurementMin, ci.measurementMax) })}
       />
     );
   }
-  return (
-    <DropdownInput
-      options={ci.dropdownOptions || []}
-      value={state?.value || ""}
-      onChange={(value, isFail) => onUpdate({ value, result: isFail ? "FAIL" : "PASS" })}
-    />
-  );
+  return <DropdownInput options={ci.dropdownOptions ?? []} value={s.value} onChange={(value, isFail) => onUpdate({ value, result: isFail ? "FAIL" : "PASS" })} />;
 }
+
+const EMPTY_STATE: CheckState = { result: null, value: "", notes: "", photos: [] };
 
 /** FAIL: the inline "what happened?" reason + photo, required before the save (#898). */
 function FailBlock({

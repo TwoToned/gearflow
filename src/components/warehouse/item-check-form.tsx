@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { CheckItemFields } from "@/components/warehouse/check-item-fields";
+import { useCheckHotkeys, type CheckHotkeyState } from "@/components/warehouse/use-check-hotkeys";
 
 type ReturnCondition = "GOOD" | "DAMAGED" | "MISSING";
 
@@ -132,7 +133,7 @@ export function ItemCheckForm({
   // Refs used by the keyboard handler so it reads the latest props/state without re-binding.
   const handleSubmitRef = useRef<() => void>(() => {});
   const handlePassAllRef = useRef<() => void>(() => {});
-  const stateRef = useRef<KeyState>({ items: [], focusedRowIndex: 0, isSubmitting: false, isLoading: false });
+  const stateRef = useRef<CheckHotkeyState>({ items: [], focusedRowIndex: 0, isSubmitting: false, isLoading: false });
 
   // Clear any pending pass-all undo timer on unmount or when the form closes,
   // so a stale timeout doesn't fire setState after the component is gone.
@@ -407,91 +408,3 @@ function ReturnConditionPicker({
   );
 }
 
-// ─── Keyboard shortcuts ─────────────────────────────────────────────────
-// P / F         — pass or fail the focused PASS_FAIL row
-// A             — pass all remaining PASS_FAIL rows (same as the button)
-// ArrowUp/Down  — move the focused row cursor, skipping non-PASS_FAIL rows
-// Enter         — submit if all complete
-// Guards: ignore when any text input/textarea/select/contenteditable has focus,
-//         and when the form is submitting or loading.
-
-interface KeyState {
-  items: CheckItemData[];
-  focusedRowIndex: number;
-  isSubmitting: boolean;
-  isLoading: boolean;
-}
-
-function isTypingTarget(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
-}
-
-function passFailIndices(items: CheckItemData[]): number[] {
-  return items.map((mci, i) => (mci.checkItem.type === "PASS_FAIL" ? i : -1)).filter((i) => i >= 0);
-}
-
-function nextCursor(indices: number[], focused: number, down: boolean): number {
-  const pos = indices.indexOf(focused);
-  if (down) return indices[pos < 0 ? 0 : Math.min(pos + 1, indices.length - 1)];
-  return indices[pos < 0 ? indices.length - 1 : Math.max(pos - 1, 0)];
-}
-
-function useCheckHotkeys({
-  open,
-  stateRef,
-  setCheckStates,
-  setFocusedRowIndex,
-  handlePassAllRef,
-  handleSubmitRef,
-}: {
-  open: boolean;
-  stateRef: React.RefObject<KeyState>;
-  setCheckStates: React.Dispatch<React.SetStateAction<CheckStates>>;
-  setFocusedRowIndex: (i: number) => void;
-  handlePassAllRef: React.RefObject<() => void>;
-  handleSubmitRef: React.RefObject<() => void>;
-}) {
-  useEffect(() => {
-    if (!open) return;
-
-    function onPassFailKey(e: KeyboardEvent, s: KeyState, indices: number[]) {
-      const focusedItem = s.items[s.focusedRowIndex];
-      if (!focusedItem || focusedItem.checkItem.type !== "PASS_FAIL") return;
-      const result = e.key.toLowerCase() === "p" ? "PASS" : "FAIL";
-      e.preventDefault();
-      const id = focusedItem.checkItem.id;
-      setCheckStates((prev) => ({ ...prev, [id]: { ...prev[id], result } }));
-      // Auto-advance to next PASS_FAIL row
-      const pos = indices.indexOf(s.focusedRowIndex);
-      if (pos >= 0 && pos + 1 < indices.length) setFocusedRowIndex(indices[pos + 1]);
-    }
-
-    function onKey(e: KeyboardEvent) {
-      const s = stateRef.current;
-      if (s.isSubmitting || s.isLoading) return;
-      // Modifier keys → let the browser handle (e.g. Cmd+R); typing → leave it alone
-      if (e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
-      const key = e.key.toLowerCase();
-      const indices = passFailIndices(s.items);
-      if (key === "p" || key === "f") return onPassFailKey(e, s, indices);
-      if (key === "enter") {
-        e.preventDefault();
-        handleSubmitRef.current();
-        return;
-      }
-      if (indices.length === 0) return;
-      if (key === "a") {
-        e.preventDefault();
-        handlePassAllRef.current();
-      } else if (key === "arrowdown" || key === "arrowup") {
-        e.preventDefault();
-        setFocusedRowIndex(nextCursor(indices, s.focusedRowIndex, key === "arrowdown"));
-      }
-    }
-
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, stateRef, setCheckStates, setFocusedRowIndex, handlePassAllRef, handleSubmitRef]);
-}

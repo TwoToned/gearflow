@@ -6,12 +6,10 @@ import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { assertNoBlockingComments, getProjectBlockingSummary } from "@/lib/blocking-comments-read";
 import { evaluateBlockingGate } from "@/lib/blocking-comments-gate";
 import { getModelMap, getModelById, type ConvexModel } from "@/lib/models-read";
-import { getAssetByAssetTag } from "@/lib/assets-read";
 import {
   getCheckHistoryRows,
   getModelFailureAnalyticsRows,
 } from "@/lib/check-record-read";
-import { getModelCheckItemCountMap } from "@/lib/line-item-tree-read";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 
@@ -614,37 +612,6 @@ export async function unpackItem(projectId: string, lineItemId: string) {
   });
 
   return serialize(grafted);
-}
-
-// ─── Asset Lookup for Ad-Hoc Checks ─────────────────────────────────────────
-
-export async function lookupAssetForAdHocCheck(assetTag: string) {
-  const { organizationId } = await getOrgContext();
-
-  const asset = await getAssetByAssetTag(organizationId, assetTag);
-
-  if (!asset) {
-    return serialize({ found: false as const, asset: null });
-  }
-
-  // model name + check-item count live in Convex — resolve from the model map
-  // + the model-check-item count map, not a Prisma join/_count.
-  const [model, checkCounts] = await Promise.all([
-    getModelById(asset.modelId),
-    getModelCheckItemCountMap(organizationId),
-  ]);
-
-  return serialize({
-    found: true as const,
-    asset: {
-      id: asset.id,
-      assetTag: asset.assetTag,
-      serialNumber: asset.serialNumber,
-      modelId: asset.modelId,
-      modelName: model?.name ?? "",
-      checkItemCount: checkCounts.get(asset.modelId) ?? 0,
-    },
-  });
 }
 
 // ─── Check History & Analytics ──────────────────────────────────────────────

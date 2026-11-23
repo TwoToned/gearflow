@@ -13,8 +13,9 @@
  *  4. **Overall result** — derived here from the verdicts, never taken from the client
  *     (the live bug F9: `createNative` used to store whatever `result` it was sent).
  *
- * `evaluateReading` lives here and `src/lib/test-tag/calculate-result.ts` re-exports
- * it, so the browser's preview and the server's check are one function (R-3.1).
+ * `evaluateReading` and `TEST_FIELDS` live here and the Scan page's T&T draft
+ * (`src/lib/tt-draft.ts`) imports them, so the browser's preview and the server's check
+ * are one function (R-3.1).
  * ConvexError only.
  */
 import { ConvexError } from "convex/values";

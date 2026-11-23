@@ -9,7 +9,7 @@ import {
   evaluateReading,
   parseProfileTests,
 } from "./testTagReadings";
-import { evaluateReading as browserEvaluate } from "../../src/lib/test-tag/calculate-result";
+import { readingVerdict } from "../../src/lib/tt-draft";
 
 const tests = parseProfileTests([
   { key: "earthContinuity", label: "Earth", threshold: 1, operator: "lt", enabled: true },
@@ -18,8 +18,10 @@ const tests = parseProfileTests([
 ]);
 
 describe("evaluateReading", () => {
-  test("is the SAME function the browser previews with", () => {
-    expect(browserEvaluate).toBe(evaluateReading);
+  test("the browser's preview (the Scan page's T&T draft) gives the server's verdict", () => {
+    for (const [value, threshold, op] of [[0.5, 1, "lt"], [1, 1, "lt"], [5, 5, "lte"], [2, 2, "gt"]] as const) {
+      expect(readingVerdict({ value: String(value), na: false }, { threshold, operator: op })).toBe(evaluateReading(value, threshold, op));
+    }
   });
   test("no reading or no threshold is N/A", () => {
     expect(evaluateReading(null, 1, "lt")).toBe("NOT_APPLICABLE");

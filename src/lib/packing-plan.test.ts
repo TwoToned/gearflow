@@ -14,6 +14,7 @@ import {
   type PlannableLine,
 } from "./packing-tab";
 import { buildPackingBulkActions, buildPackingLineActions } from "./row-actions/packing-line";
+import { isPlannableLine } from "../../convex/lib/packingPlan";
 import type { LineItemData } from "@/components/projects/equipment-rows";
 
 function line(overrides: Partial<LineItemData> & { id: string }): LineItemData {
@@ -42,6 +43,16 @@ describe("planGlyph (the glyph rule)", () => {
       plannedElsewhere: "Planned → VID-04",
     });
     expect(planGlyph(line({ id: "a", units: packedIn("lx"), plannedContainerId: "gone" }), labels).plannedElsewhere).toBe("Planned → another case");
+  });
+});
+
+describe("ONE plannable-line predicate (shared by the tab, readiness and the versions facts)", () => {
+  test("top-level, non-cancelled equipment only", () => {
+    expect(isPlannableLine({ type: "EQUIPMENT", status: "CONFIRMED" })).toBe(true);
+    expect(isPlannableLine({ type: "EQUIPMENT", isKitChild: true })).toBe(false);
+    expect(isPlannableLine({ type: "EQUIPMENT", isContainerLineItem: true })).toBe(false);
+    expect(isPlannableLine({ type: "EQUIPMENT", status: "CANCELLED" })).toBe(false);
+    expect(isPlannableLine({ type: "SERVICE" })).toBe(false);
   });
 });
 

@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useCanDo } from "@/lib/use-permissions";
 import { cn } from "@/lib/utils";
 import { api } from "../../../../convex/_generated/api";
 import { MoneyBridgeBar } from "@/components/projects/compare/compare-bridge";
@@ -87,23 +88,27 @@ function VersionPicker({
   liveVersion,
   onChange,
   label,
+  otherSide,
 }: {
   value: { kind: "version"; number: number | null };
   versions: ProjectVersionSummary[];
   liveVersion: ProjectVersionSummary | null;
   onChange: (next: { kind: "version"; number: number | null }) => void;
   label: string;
+  /** The OTHER picker's side: a version cannot be compared with itself, so it is not offered here. */
+  otherSide: CompareModeState["a"];
 }) {
   const selectValue = value.number == null ? "live" : String(value.number);
+  const taken = otherSide.kind === "version" ? (otherSide.number == null ? "live" : String(otherSide.number)) : undefined;
   return (
     <Select value={selectValue} onValueChange={(v) => onChange({ kind: "version", number: v === "live" ? null : Number(v) })}>
       <SelectTrigger aria-label={label} className="h-8 w-auto gap-1 border-line-2 bg-paper-2 px-2 text-caption">
         <SelectValue>{sideDisplayLabel(value, versions, liveVersion)}</SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {liveVersion && <SelectItem value="live">v{liveVersion.number} · Live</SelectItem>}
+        {liveVersion && taken !== "live" && <SelectItem value="live">v{liveVersion.number} · Live</SelectItem>}
         {versions
-          .filter((v) => !v.isLive)
+          .filter((v) => !v.isLive && String(v.number) !== taken)
           .map((v) => (
             <SelectItem key={v.id} value={String(v.number)}>
               v{v.number}
@@ -119,13 +124,13 @@ function SidePickers({ data, compare, versions, liveVersion, onChangeCompare }: 
   return (
     <div className="flex flex-wrap items-center gap-2 text-table-cell">
       {compare.a.kind === "version" ? (
-        <VersionPicker label="Compare from" value={compare.a} versions={versions} liveVersion={liveVersion} onChange={(next) => onChangeCompare({ a: next, b: compare.b })} />
+        <VersionPicker label="Compare from" otherSide={compare.b} value={compare.a} versions={versions} liveVersion={liveVersion} onChange={(next) => onChangeCompare({ a: next, b: compare.b })} />
       ) : (
         <span className="font-semibold">{data.a.label}</span>
       )}
       <span aria-hidden className="text-muted">{"→"}</span>
       {compare.b.kind === "version" ? (
-        <VersionPicker label="Compare to" value={compare.b} versions={versions} liveVersion={liveVersion} onChange={(next) => onChangeCompare({ a: compare.a, b: next })} />
+        <VersionPicker label="Compare to" otherSide={compare.a} value={compare.b} versions={versions} liveVersion={liveVersion} onChange={(next) => onChangeCompare({ a: compare.a, b: next })} />
       ) : (
         <span className="font-semibold">{data.b.label}</span>
       )}
@@ -153,16 +158,26 @@ function ChangeStepper({ activeIndex, total, stepTo }: { activeIndex: number; to
   );
 }
 
-function ViewToggle({ viewMode, setViewMode }: { viewMode: "all" | "changes"; setViewMode: (m: "all" | "changes") => void }) {
+function ViewToggle({ viewMode, setViewMode, data }: { viewMode: "all" | "changes"; setViewMode: (m: "all" | "changes") => void; data: CompareData }) {
+  // 44 px tap targets on a phone (`min-h-11`), compact on desktop.
   const pill = (mode: "all" | "changes", text: string) => (
-    <button type="button" onClick={() => setViewMode(mode)} className={cn("rounded-full px-3 py-1 text-caption font-medium", viewMode === mode ? "bg-elev text-ink" : "text-muted")}>
+    <button
+      type="button"
+      onClick={() => setViewMode(mode)}
+      className={cn("min-h-11 rounded-full px-3 py-1 text-caption font-medium md:min-h-0", viewMode === mode ? "bg-elev text-ink" : "text-muted")}
+    >
       {text}
     </button>
   );
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-line-2 bg-paper-2 p-0.5">
-      {pill("all", "All rows")}
-      {pill("changes", "Only changes")}
+    <div className="flex items-center justify-between gap-2">
+      <div className="inline-flex items-center gap-1 rounded-full border border-line-2 bg-paper-2 p-0.5">
+        {pill("all", "All rows")}
+        {pill("changes", "Only changes")}
+      </div>
+      <span className="text-caption text-muted">
+        cells show {shortLabel(data.a.label)} {"→"} {shortLabel(data.b.label)}
+      </span>
     </div>
   );
 }
@@ -202,7 +217,12 @@ function CompareSheetBody({ open, onOpenChange, projectId, orgId, compare, versi
   const groups = useMemo(() => buildCompareGroups(allRows, viewMode), [allRows, viewMode]);
   const { activeIndex, stepTo, registerRow, jumpToSegment } = useCompareStepper(changedRows);
 
-  const makeLiveNumber = compare.b.kind === "version" ? compare.b.number : null; // only a real, non-live version can be made live
+  // Only a real, non-live, captured version can be made live, and only by someone who may publish
+  // (the same gate the Versions tab's `Make vN live…` uses).
+  const canPublish = useCanDo("invoice", "publish");
+  const bNumber = compare.b.kind === "version" ? compare.b.number : null;
+  const bTarget = bNumber == null ? undefined : versions.find((v) => v.number === bNumber);
+  const makeLiveNumber = canPublish && bTarget && !bTarget.isLive && bTarget.contentState === "ready" ? bTarget.number : null;
   const compareData = data as CompareData | undefined;
 
   return (
@@ -215,7 +235,7 @@ function CompareSheetBody({ open, onOpenChange, projectId, orgId, compare, versi
               {changedRows.length > 0 && <ChangeStepper activeIndex={activeIndex} total={changedRows.length} stepTo={stepTo} />}
             </div>
             <MoneyBridgeBar data={compareData} allRows={allRows} jumpToSegment={jumpToSegment} />
-            {compareData.rows !== null && <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />}
+            {compareData.rows !== null && <ViewToggle viewMode={viewMode} setViewMode={setViewMode} data={compareData} />}
             <CompareBody data={compareData} groups={groups} viewMode={viewMode} registerRow={registerRow} activeKey={changedRows[activeIndex]?.key} />
           </>
         ) : (

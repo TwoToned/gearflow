@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatusWord } from "@/components/ui/status-word";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useStableNow } from "@/hooks/use-stable-now";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCanDo } from "@/lib/use-permissions";
 import { buildVersionRowActions } from "@/lib/row-actions/version-row";
 import { formatCurrency } from "@/lib/formatters";
@@ -38,9 +40,12 @@ import { toast } from "sonner";
 export function VersionsTab({ projectId, orgId }: { projectId: string; orgId: string | undefined }) {
   const isMobile = useIsMobile();
   const ctx = useProjectVersion();
-  const { versions, liveVersion, viewingNumber, setViewingNumber, openCompare, openMakeLive } = ctx;
+  const { versions, isLoadingVersions, liveVersion, viewingNumber, setViewingNumber, openCompare, openMakeLive } = ctx;
   const canPublish = useCanDo("invoice", "publish");
-  const factsRead = useAuthedQuery(api.versionsPreview.versionRowFacts, orgId ? { organizationId: orgId, projectId } : "skip");
+  const canRename = useCanDo("project", "update");
+  // `now` is the query's arg (its subscription key): a mount-time snapshot, never a fresh Date.now().
+  const now = useStableNow();
+  const factsRead = useAuthedQuery(api.versionsPreview.versionRowFacts, orgId ? { organizationId: orgId, projectId, now } : "skip");
   const factsById = useMemo(() => new Map<string, VersionRowFacts>((factsRead?.rows ?? []).map((r) => [r.versionId, r])), [factsRead]);
 
   const [renameTarget, setRenameTarget] = useState<ProjectVersionSummary | null>(null);
@@ -55,6 +60,22 @@ export function VersionsTab({ projectId, orgId }: { projectId: string; orgId: st
   const ordered = useMemo(() => [...versions].sort((a, b) => b.number - a.number), [versions]);
   const newestDraft = ordered.find((v) => !v.isLive);
 
+  // Never the empty state while the list is still loading.
+  if (isLoadingVersions) {
+    return (
+      <div role="status" aria-label="Loading versions" className="divide-y divide-line">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex min-h-16 items-center gap-3 py-2 md:min-h-[56px]">
+            <Skeleton className="hidden h-4 w-24 md:block" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-3 w-64" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (ordered.length === 0) {
     return <EmptyState title="No versions yet" description="A version is saved when the job is created. Save another to try a different plan." />;
   }
@@ -69,7 +90,7 @@ export function VersionsTab({ projectId, orgId }: { projectId: string; orgId: st
     const other = compareWith(v);
     return buildVersionRowActions(
       v,
-      { canPublish, onScreen: v.isLive ? viewingNumber == null : v.number === viewingNumber, compareWith: other?.number ?? null },
+      { canPublish, canRename, onScreen: v.isLive ? viewingNumber == null : v.number === viewingNumber, compareWith: other?.number ?? null },
       {
         open: () => setViewingNumber(v.isLive ? null : v.number),
         makeLive: () => openMakeLive(v),

@@ -49,20 +49,25 @@ describe("buildVersionRowActions", () => {
   const h = () => ({ open: vi.fn(), makeLive: vi.fn(), compare: vi.fn(), rename: vi.fn(), saveCopy: vi.fn(), remove: vi.fn() });
   const labels = (s: { items: { label: string }[] }) => s.items.map((i) => i.label);
   test("a draft: every verb, Delete red and last with a confirm", () => {
-    const spec = buildVersionRowActions({ number: 2, isLive: false, contentState: "ready" }, { canPublish: true, onScreen: false, compareWith: 3 }, h());
+    const spec = buildVersionRowActions({ number: 2, isLive: false, contentState: "ready" }, { canPublish: true, canRename: true, onScreen: false, compareWith: 3 }, h());
     expect(labels(spec)).toEqual(["Open this version", "Make v2 live…", "Compare with v3…", "Rename…", "Save a copy as new version…", "Delete…"]);
     expect(spec.items.at(-1)).toMatchObject({ danger: true, group: "danger", confirm: { confirmLabel: "Delete version" } });
   });
   test("the live row never offers Make live or Delete; the on-screen row never offers Open", () => {
-    const spec = buildVersionRowActions({ number: 3, isLive: true, contentState: "ready" }, { canPublish: true, onScreen: true, compareWith: 2 }, h());
+    const spec = buildVersionRowActions({ number: 3, isLive: true, contentState: "ready" }, { canPublish: true, canRename: true, onScreen: true, compareWith: 2 }, h());
     expect(labels(spec)).toEqual(["Compare with v2…", "Rename…", "Save a copy as new version…"]);
   });
   test("without publish: only Open, Compare and Rename; with one version: no Compare", () => {
-    const spec = buildVersionRowActions({ number: 2, isLive: false, contentState: "ready" }, { canPublish: false, onScreen: false, compareWith: null }, h());
+    const spec = buildVersionRowActions({ number: 2, isLive: false, contentState: "ready" }, { canPublish: false, canRename: true, onScreen: false, compareWith: null }, h());
     expect(labels(spec)).toEqual(["Open this version", "Rename…"]);
   });
+  test("Rename is gated on project:update (canRename), independent of publish", () => {
+    const spec = buildVersionRowActions({ number: 2, isLive: false, contentState: "ready" }, { canPublish: true, canRename: false, onScreen: false, compareWith: null }, h());
+    expect(labels(spec)).not.toContain("Rename…");
+    expect(labels(spec)).toContain("Make v2 live…");
+  });
   test("a version with no captured content can be viewed and renamed, not made live or copied", () => {
-    const spec = buildVersionRowActions({ number: 1, isLive: false, contentState: "missing" }, { canPublish: true, onScreen: false, compareWith: 3 }, h());
+    const spec = buildVersionRowActions({ number: 1, isLive: false, contentState: "missing" }, { canPublish: true, canRename: true, onScreen: false, compareWith: 3 }, h());
     expect(labels(spec)).toEqual(["Open this version", "Compare with v3…", "Rename…", "Delete…"]);
   });
 });

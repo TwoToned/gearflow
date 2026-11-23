@@ -68,7 +68,9 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
 - `setPlannedContainerNative` now (a) skips lines with a packed unit (packed wins, server-side, not
   only in the UI) and lines on another job or version (closes the same-job gap), (b) ignores a re-plan
   into the same case, and (c) returns `{ updated, changes: [{ lineItemId, from }], skipped }`.
-  Capped at 200 lines per call.
+  Capped at `MAX_PLAN_LINES` (500, `convex/lib/packingPlan.ts`, matching `assertBulkSizeOk`) per call; the
+  client refuses above it with "Plan up to 500 lines at a time". `isPlannableLine` (same module) is the ONE
+  plannable-line predicate (tab, readiness, versions facts).
 - The forward plan write writes ONE audit row PER changed line (kind `PLAN_LINE`: previous case, new
   case, batch id) plus one batch header (kind `PLAN_BATCH`: the changed lines and where they went),
   ids `<auditId>` / `<auditId>:<lineItemId>`.
@@ -99,7 +101,7 @@ missing operation behind defect 1), `unpackNative` (empty to Loose),
 Versions is a job tab (D19): `versions/versions-tab.tsx` (dated list in the Discussion rendering, row ⋯
 from `src/lib/row-actions/version-row.ts`, phone: 64 px rows + a red sticky `Save as new version`),
 `versions/version-dialogs.tsx` (Rename, Save as new version), `versions/use-save-version.ts` (one write,
-one Undo = delete exactly the created version id, shared with the header ⋯). Compare is a read-only sheet
+one GUARDED Undo `versions.undoCreateNative`, shared with the header ⋯; the server keeps an edited, quoted or live copy). Compare is a read-only sheet
 (`compare/compare-sheet.tsx`, D20) and Make live one dialog (`versions/make-live-dialog.tsx`: Warehouse /
 Availability / Invoices rows from `makeLivePreview`, fail-open; Undo only with no conflicts, checked on the
 server against the expected live pointer). `versions/version-overlays.tsx` hosts both under the version

@@ -7,6 +7,7 @@ import { canDragLine, plannedCaseOf, type CaseLike, type PlannableLine } from "@
 import { packingWriteMessage } from "@/lib/packing-write-error";
 import { announceUndo } from "@/lib/packing-undo";
 import { UNPLANNED_LABEL } from "@/lib/vocabulary";
+import { MAX_PLAN_LINES } from "../../convex/lib/packingPlan";
 
 export interface PlanTarget {
   id: string;
@@ -57,6 +58,11 @@ export function usePackingPlan(lines: readonly PlannableLine[], containers: read
       const sealedUpFront = unpacked.length - eligible.length;
       if (eligible.length === 0) {
         toast.info(leftAloneNote({ packed: packedUpFront, otherJob: 0, sealed: sealedUpFront }) ?? "Nothing to plan");
+        return null;
+      }
+      if (eligible.length > MAX_PLAN_LINES) {
+        // The server caps one call; say so up front instead of surfacing a raw array-length error.
+        toast.error(`Plan up to ${MAX_PLAN_LINES} lines at a time`, { description: `${eligible.length} are selected. Do them in batches.` });
         return null;
       }
       let result: Awaited<ReturnType<typeof writes.setPlannedContainer>>;

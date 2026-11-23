@@ -981,10 +981,12 @@ Versions is a job tab (`?tab=versions`; `V` and ⋯ › Version › Manage versi
 - **Compare is a read-only SHEET** (`compare/compare-sheet.tsx`, a 92% bottom sheet on a phone), not a page
   mode: it renders `versionsRead.compareVersions` (no second diff) with both side pickers, the money bridge
   jump and the `n`/`p` stepper. **Make live is ONE dialog** (`versions/make-live-dialog.tsx`: counts-only
-  preview that fails OPEN, Undo only when `conflicts.length === 0`, server-checked via `expectLiveVersionId`).
+  preview that fails OPEN, Undo only when `conflicts.length === 0`, server-checked via `expectLiveVersionId` AND `undoOfAuditId`: it refuses if ANY newer make-live exists on the
+  project, so A→B→A can't be fooled; the reverse flip's own conflicts are surfaced, never discarded).
   `VersionOverlays` hosts both once under `ProjectVersionProvider`; every entry point calls the context's
   `openCompare` / `openMakeLive`. Never mount a second copy.
-- **Save as new version** is `useSaveVersion` (one write, Undo = delete exactly that version id), shared by
+- **Save as new version** is `useSaveVersion` (one write; its Undo is the GUARDED `versions.undoCreateNative`, which deletes the copy only while it is
+  unedited, unquoted and not live, else `VERSION_CHANGED` and the copy is kept), shared by
   the tab primary, the row ⋯ and the header ⋯'s `New version from vN`. The tab-row primaries
   (`JOB_TAB_PRIMARY`: `+ Add case`, `Save as new version`) are outline on desktop; the phone gets a red
   sticky bar from the tab body.

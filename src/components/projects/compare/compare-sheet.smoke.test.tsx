@@ -18,6 +18,8 @@ beforeAll(() => {
 
 const mobile = vi.hoisted(() => ({ value: false }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mobile.value }));
+const canPublish = vi.hoisted(() => ({ value: true }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => canPublish.value }));
 const data = vi.hoisted(() => ({ value: undefined as unknown, args: undefined as unknown }));
 vi.mock("@/hooks/use-authed-query", () => ({
   useAuthedQuery: (_ref: unknown, args: unknown) => {
@@ -68,6 +70,7 @@ const props = () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mobile.value = false;
+  canPublish.value = true;
   data.value = DATA;
 });
 
@@ -90,8 +93,43 @@ describe("CompareSheet", () => {
     await user.click(await screen.findByRole("option", { name: "v1" }));
     expect(p.onChangeCompare).toHaveBeenLastCalledWith({ a: p.compare.a, b: { kind: "version", number: 1 } });
     await user.click(screen.getByRole("combobox", { name: "Compare from" }));
-    await user.click(await screen.findByRole("option", { name: "v2 · LED wall" }));
-    expect(p.onChangeCompare).toHaveBeenLastCalledWith({ a: { kind: "version", number: 2 }, b: p.compare.b });
+    await user.click(await screen.findByRole("option", { name: "v1" }));
+    expect(p.onChangeCompare).toHaveBeenLastCalledWith({ a: { kind: "version", number: 1 }, b: p.compare.b });
+  });
+
+  it("a version cannot be compared with itself: the other side's version is not offered", async () => {
+    const user = userEvent.setup();
+    render(<CompareSheet {...props()} />); // live (v3) -> v2
+    await user.click(screen.getByRole("combobox", { name: "Compare from" }));
+    expect(screen.queryByRole("option", { name: "v2 · LED wall" })).toBeNull(); // b is v2
+    expect(await screen.findByRole("option", { name: "v1" })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("combobox", { name: "Compare to" }));
+    expect(screen.queryByRole("option", { name: /v3 · Live/ })).toBeNull(); // a is live
+    expect(await screen.findByRole("option", { name: "v1" })).toBeTruthy();
+  });
+
+  it("restores the 'cells show vA → vB' caption", () => {
+    render(<CompareSheet {...props()} />);
+    expect(screen.getByText(/cells show v3 → v2/)).toBeTruthy();
+  });
+
+  it("the All rows / Only changes pills are 44px targets on a phone", () => {
+    mobile.value = true;
+    render(<CompareSheet {...props()} />);
+    expect(screen.getByRole("button", { name: "All rows" }).className).toContain("min-h-11");
+    expect(screen.getByRole("button", { name: "Only changes" }).className).toContain("min-h-11");
+  });
+
+  it("Make vN live needs invoice:publish and a captured, non-live version", () => {
+    canPublish.value = false;
+    const { unmount } = render(<CompareSheet {...props()} />);
+    expect(screen.queryByRole("button", { name: /Make .* live/ })).toBeNull();
+    unmount();
+    canPublish.value = true;
+    const noContent = [V(1), V(2, { contentState: "missing" }), V(3, { isLive: true })];
+    render(<CompareSheet {...props()} versions={noContent} />);
+    expect(screen.queryByRole("button", { name: /Make .* live/ })).toBeNull();
   });
 
   it("the change stepper and n / p walk the CHANGED rows only and focus them; the bridge jump focuses its first row", async () => {

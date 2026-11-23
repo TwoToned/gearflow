@@ -85,16 +85,32 @@ describe("MakeLiveDialog smoke", () => {
 
   it("a clean make-live toasts with ONE Undo that is server-checked against the expected live pointer", async () => {
     previewQuery.mockResolvedValue(null);
-    mockMakeLive.mockResolvedValueOnce({ liveVersionId: "v3", previousLiveVersionId: "v4", conflicts: [], unplannedLineItemIds: [] });
+    mockMakeLive.mockResolvedValueOnce({ auditId: "ml1", liveVersionId: "v3", previousLiveVersionId: "v4", conflicts: [], unplannedLineItemIds: [] });
     render(
       <MakeLiveDialog open onOpenChange={vi.fn()} targetVersion={TARGET} liveVersion={LIVE} projectId="p1" onMadeLive={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: /^make v3 live$/i }));
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("v3 is live", expect.objectContaining({ action: expect.anything() })));
     const undo = (toastMock.success.mock.calls.at(-1)?.[1] as { action: { onClick: () => void } }).action.onClick;
-    mockMakeLive.mockResolvedValueOnce({ liveVersionId: "v4", previousLiveVersionId: "v3", conflicts: [], unplannedLineItemIds: [] });
+    mockMakeLive.mockResolvedValueOnce({ auditId: "ml2", liveVersionId: "v4", previousLiveVersionId: "v3", conflicts: [], unplannedLineItemIds: [] });
     undo();
-    await waitFor(() => expect(mockMakeLive).toHaveBeenLastCalledWith("v4", { expectLiveVersionId: "v3" }));
+    // Guarded twice on the server: the live pointer AND "no make-live newer than the forward one" (its audit id).
+    await waitFor(() => expect(mockMakeLive).toHaveBeenLastCalledWith("v4", { expectLiveVersionId: "v3", undoOfAuditId: "ml1" }));
+  });
+
+  it("the Undo's own conflicts are surfaced, never discarded", async () => {
+    previewQuery.mockResolvedValue(null);
+    mockMakeLive.mockResolvedValueOnce({ auditId: "ml1", liveVersionId: "v3", previousLiveVersionId: "v4", conflicts: [], unplannedLineItemIds: [] });
+    render(
+      <MakeLiveDialog open onOpenChange={vi.fn()} targetVersion={TARGET} liveVersion={LIVE} projectId="p1" onMadeLive={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^make v3 live$/i }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("v3 is live", expect.anything()));
+    const undo = (toastMock.success.mock.calls.at(-1)?.[1] as { action: { onClick: () => void } }).action.onClick;
+    mockMakeLive.mockResolvedValueOnce({ auditId: "ml2", liveVersion: "x", liveVersionId: "v4", previousLiveVersionId: "v3", conflicts: ["2 packed units of MA3 are not on v4"], unplannedLineItemIds: ["li1"] });
+    undo();
+    await waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("1 item needs a look", expect.objectContaining({ description: "2 packed units of MA3 are not on v4" })));
+    await waitFor(() => expect(toastMock.success).toHaveBeenLastCalledWith("v4 is live again · 1 to check"));
   });
 
   it("with conflicts there is NO Undo (the flip is no longer an exact inverse)", async () => {

@@ -26,7 +26,13 @@ export interface DeletableCase extends CaseRef {
 export function usePackingCaseWrites(projectId: string) {
   const writes = useProjectContainerWrites();
 
-  async function run<T>(fn: () => Promise<T>, message: (r: T) => string, undo?: (r: T) => Promise<unknown>): Promise<T | null> {
+  async function run<T>(
+    fn: () => Promise<T>,
+    message: (r: T) => string,
+    undoAction?: (r: T) => Promise<unknown>,
+    /** False when the write changed nothing, so there is nothing to undo (no Undo is offered). */
+    changedSomething: (r: T) => boolean = () => true,
+  ): Promise<T | null> {
     let result: T;
     try {
       result = await fn();
@@ -34,6 +40,7 @@ export function usePackingCaseWrites(projectId: string) {
       toast.error(packingWriteMessage(e));
       return null;
     }
+    const undo = changedSomething(result) ? undoAction : undefined;
     toast.success(message(result), undo && {
       action: {
         label: "Undo",
@@ -67,7 +74,8 @@ export function usePackingCaseWrites(projectId: string) {
       const r = await run(
         () => writes.seal(c.id),
         (res) => (res.changed ? `${c.label} sealed` : `${c.label} was already sealed`),
-        (res) => (res.changed ? writes.unseal(c.id) : Promise.resolve()),
+        () => writes.unseal(c.id),
+        (res) => res.changed,
       );
       if (r?.changed) openLabel(projectId, "container-label", c.id);
     },
@@ -76,7 +84,8 @@ export function usePackingCaseWrites(projectId: string) {
       run(
         () => writes.unseal(c.id),
         (res) => (res.changed ? `${c.label} unsealed` : `${c.label} was already open`),
-        (res) => (res.changed ? writes.seal(c.id) : Promise.resolve()),
+        () => writes.seal(c.id),
+        (res) => res.changed,
       ),
 
     printLabel: (c: CaseRef) => openLabel(projectId, "container-label", c.id),

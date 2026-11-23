@@ -20,17 +20,13 @@
  */
 import type { CategoryData, GroupData, SubHireGroupData, LineItemData } from "@/components/projects/equipment-rows";
 import { isPackedUnit } from "../../convex/lib/packedUnit";
+import { isPlannableLine } from "../../convex/lib/packingPlan";
 
 export interface PlannableLine {
   item: LineItemData;
   categoryName: string;
 }
 
-function isPlannableLine(item: LineItemData): boolean {
-  if (item.type !== "EQUIPMENT") return false;
-  if (item.isKitChild || item.isContainerLineItem) return false;
-  return (item.status ?? "") !== "CANCELLED";
-}
 
 function collectFromGroup(g: GroupData, categoryName: string, into: PlannableLine[]): void {
   for (const item of g.lineItems ?? []) {

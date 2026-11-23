@@ -41,8 +41,6 @@ export function useProjectContainerWrites() {
 
   return {
     create: async (args: {
-      /** Re-create under a specific id: only the Undo of a case delete (so lines planned into it can be restored). */
-      id?: string;
       projectId: string;
       kind: ContainerKind;
       label: string;
@@ -59,7 +57,7 @@ export function useProjectContainerWrites() {
         now: Date.now(),
         actor: actor(),
         ...args,
-        id: args.id ?? createId(),
+        id: createId(),
       });
     },
 
@@ -109,7 +107,8 @@ export function useProjectContainerWrites() {
     },
 
     /** The exact Undo of `remove` (a CUSTOM case): ONE mutation re-creates the case in
-     *  place and restores its planned lines from the delete's own audit rows. */
+     *  place and restores its planned lines from the delete's own audit rows. Answers
+     *  `{ recreated: true, parentSealed }` plus the restore counts. */
     undoDeleteContainer: async (batchAuditId: string) => {
       return undoDeleteM({ orgId: requireOrg(), batchAuditId, now: Date.now(), actor: actor(), auditId: createId() });
     },

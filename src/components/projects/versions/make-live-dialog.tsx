@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useConvex } from "convex/react";
 import { AlertTriangle, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -120,7 +121,14 @@ export function MakeLiveDialog({ open, onOpenChange, targetVersion, liveVersion,
         title: `v${targetVersion.number} is live`,
         undoneTitle: liveVersion ? `v${liveVersion.number} is live again` : "Undone",
         performUndo: async () => {
-          await makeLive(r.previousLiveVersionId, { expectLiveVersionId: r.liveVersionId });
+          // Server-guarded twice: the pointer must still be where this call left it, AND no
+          // later make-live may exist on the project (`undoOfAuditId`).
+          const back = await makeLive(r.previousLiveVersionId, { expectLiveVersionId: r.liveVersionId, undoOfAuditId: r.auditId });
+          const n = Math.max(back.conflicts.length, back.unplannedLineItemIds?.length ?? 0);
+          if (n === 0) return;
+          // The reverse flip can have its own conflicts (carried reality): never discard them.
+          toast.info(`${n} ${n === 1 ? "item needs" : "items need"} a look`, { description: back.conflicts.join(" · ") || undefined, duration: 15_000 });
+          return `${liveVersion ? `v${liveVersion.number}` : "The previous version"} is live again · ${n} to check`;
         },
       });
       onOpenChange(false);

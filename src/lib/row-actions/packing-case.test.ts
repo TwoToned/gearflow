@@ -82,6 +82,15 @@ describe("buildPackingCaseActions", () => {
     expect(labels(buildPackingCaseActions(row({ parent: { id: "p", label: "LX-01" } }), { moveTargets: [], onTakeOut: h.onTakeOut }))).toEqual(["Take out of LX-01"]);
   });
 
+  it("a child of a sealed parent offers no Move into and no Delete (absent, not disabled), but keeps Rename", () => {
+    const h = handlers();
+    const spec = buildPackingCaseActions(
+      row({ parent: { id: "p", label: "LX-01", sealed: true } }),
+      { moveTargets: [{ id: "x", label: "X" }], onMoveInto: h.onMoveInto, onTakeOut: h.onTakeOut, onRename: h.onRename, onDelete: h.onDelete },
+    );
+    expect(labels(spec)).toEqual(["Rename…"]);
+  });
+
   it("the delete confirm says a case holding another case will be refused, before the packed-lines sentence", () => {
     const spec = buildPackingCaseActions(row({ hasNestedCase: true, packedCount: 2 }), { moveTargets: [], onDelete: vi.fn() });
     expect(spec.items[0].confirm?.body).toMatch(/another case packed inside it.*refused/);

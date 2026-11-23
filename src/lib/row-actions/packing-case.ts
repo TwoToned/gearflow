@@ -61,7 +61,8 @@ function openCaseEntries(row: PackingCaseRow, ctx: PackingCaseCtx): Entry[] {
   if (row.sealed) return [];
   return [
     ctx.onRename && { key: "rename", label: "Rename…", group: "edit", icon: Pencil, onSelect: ctx.onRename },
-    moveEntry(ctx),
+    // Moving a case out of a sealed parent is refused (server: CASE_SEALED), so no move verb either.
+    !row.parent?.sealed && moveEntry(ctx),
     // A sealed PARENT refuses having a case taken out of it (server: CASE_SEALED), so no verb is offered.
     row.parent && !row.parent.sealed && ctx.onTakeOut && {
       key: "take-out",
@@ -88,7 +89,8 @@ function sealEntry(row: PackingCaseRow, ctx: PackingCaseCtx): Entry {
 /** Delete is red and last. The confirm names the downstream effect; a packed
  *  case is refused by the server (`NOT_EMPTY`), and the confirm says so up front. */
 function deleteEntry(row: PackingCaseRow, ctx: PackingCaseCtx): Entry {
-  if (row.sealed || !ctx.onDelete) return false;
+  // Deleting a case inside a sealed one is refused too (it would change what the seal vouches for).
+  if (row.sealed || row.parent?.sealed || !ctx.onDelete) return false;
   const lines = row.plannedOnlyCount;
   const body = row.hasNestedCase
     ? `${row.label} has another case packed inside it. The delete will be refused until that case is moved out.`

@@ -16,15 +16,39 @@ const lines = (n: number) => `${n} ${n === 1 ? "line" : "lines"}`;
 interface RestoreResult {
   restored: number;
   skipped: number;
+  /** A case delete's Undo: the case itself is back, whether or not any line had to be restored. */
+  recreated?: boolean;
+  /** The case came back at the top level because its old parent is sealed now. */
+  parentSealed?: boolean;
 }
 
 function isRestoreResult(r: unknown): r is RestoreResult {
   return !!r && typeof r === "object" && typeof (r as RestoreResult).restored === "number" && typeof (r as RestoreResult).skipped === "number";
 }
 
+/** A seal / unseal Undo that changed nothing (`changed: false`): it was already in that state. */
+function isNoopToggle(r: unknown): boolean {
+  return !!r && typeof r === "object" && (r as { changed?: unknown }).changed === false;
+}
+
+function announceRecreated(r: RestoreResult): void {
+  const back = r.restored > 0 ? ` · ${lines(r.restored)} back` : "";
+  const left = r.skipped > 0 ? ` · ${lines(r.skipped)} changed since, left as is` : "";
+  const where = r.parentSealed ? " at the top level (its old case is sealed now)" : "";
+  toast.success(`Case restored${where}${back}${left}`);
+}
+
 function announceResult(r: unknown): void {
+  if (isNoopToggle(r)) {
+    toast.info("Nothing was restored", { description: "It was already in that state." });
+    return;
+  }
   if (!isRestoreResult(r)) {
     toast.success("Undone");
+    return;
+  }
+  if (r.recreated) {
+    announceRecreated(r);
     return;
   }
   if (r.restored === 0) {

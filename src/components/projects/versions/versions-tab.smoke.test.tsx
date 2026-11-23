@@ -18,12 +18,15 @@ beforeAll(() => {
 const mobile = vi.hoisted(() => ({ value: false }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mobile.value }));
 const canPublish = vi.hoisted(() => ({ value: true }));
-vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => canPublish.value }));
+const canUpdate = vi.hoisted(() => ({ value: true }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: (resource: string) => (resource === "invoice" ? canPublish.value : canUpdate.value) }));
+vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => 1_700_000_000_000 }));
 const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }));
 vi.mock("sonner", () => ({ toast: toastMock }));
 
 const writes = vi.hoisted(() => ({
-  createVersion: vi.fn(async () => ({ id: "v5", number: 5 })),
+  createVersion: vi.fn(async () => ({ id: "v5", number: 5, auditId: "aud5" })),
+  undoCreateVersion: vi.fn(async () => ({ id: "v5", number: 5 })),
   deleteVersion: vi.fn(async () => ({ id: "v1", number: 1 })),
   setLabel: vi.fn(async () => ({ id: "v2", number: 2, label: "x" })),
   makeLive: vi.fn(),
@@ -51,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mobile.value = false;
   canPublish.value = true;
+  canUpdate.value = true;
   const live = V(3, { isLive: true, label: "Hilton revision" });
   ctx.value = {
     projectId: "p1",
@@ -148,7 +152,8 @@ describe("Versions tab", () => {
     await waitFor(() => expect(writes.setLabel).toHaveBeenCalledWith("v2", "Final"));
   });
 
-  it("Save a copy as new version… opens the dialog; saving toasts with ONE Undo that deletes exactly that version", async () => {
+  it("Save a copy as new version… opens the dialog; saving toasts with ONE guarded Undo (and the Undo returns the view to live)", async () => {
+    ctx.value = { ...ctx.value, viewingNumber: 5 }; // the copy is on screen when Undo runs
     const user = setup();
     render(<VersionsTab projectId="p1" orgId="o1" />);
     await openRowMenu(user, 2);
@@ -162,7 +167,40 @@ describe("Versions tab", () => {
     expect(ctx.setViewingNumber).toHaveBeenCalledWith(5);
     const undo = (toastMock.success.mock.calls.at(-1)?.[1] as { action: { onClick: () => void } }).action.onClick;
     undo();
-    await waitFor(() => expect(writes.deleteVersion).toHaveBeenCalledWith("v5"));
+    // GUARDED: addressed by the create's own audit id; the server refuses if the copy changed or is live.
+    await waitFor(() => expect(writes.undoCreateVersion).toHaveBeenCalledWith("v5", "aud5"));
+    expect(writes.deleteVersion).not.toHaveBeenCalled();
+    // The version on screen was the copy: back to live, not a dead ?v=5.
+    await waitFor(() => expect(ctx.setViewingNumber).toHaveBeenLastCalledWith(null));
+  });
+
+  it("an Undo the server refuses (the copy was edited) keeps the version and shows why", async () => {
+    writes.undoCreateVersion.mockRejectedValueOnce(Object.assign(new Error("[CONVEX] ConvexError"), { data: { code: "VERSION_CHANGED", message: "v5 has changed since it was saved, so it was kept." } }));
+    const user = setup();
+    render(<VersionsTabPrimary projectId="p1" orgId="o1" />);
+    await user.click(screen.getByRole("button", { name: "Save as new version" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Save as new version" })).getByRole("button", { name: "Save as new version" }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Saved v5", expect.objectContaining({ action: expect.anything() })));
+    ctx.setViewingNumber.mockClear();
+    (toastMock.success.mock.calls.at(-1)?.[1] as { action: { onClick: () => void } }).action.onClick();
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+    expect(ctx.setViewingNumber).not.toHaveBeenCalledWith(null); // nothing was removed
+  });
+
+  it("shows a loading state, never the empty state, while versions load", () => {
+    ctx.value = { ...ctx.value, versions: [], isLoadingVersions: true };
+    render(<VersionsTab projectId="p1" orgId="o1" />);
+    expect(screen.getByRole("status", { name: "Loading versions" })).toBeTruthy();
+    expect(screen.queryByText("No versions yet")).toBeNull();
+  });
+
+  it("Rename is gated on project:update, separately from publish", async () => {
+    canUpdate.value = false;
+    const user = setup();
+    render(<VersionsTab projectId="p1" orgId="o1" />);
+    const items = await openRowMenu(user, 2);
+    expect(items.map((i) => i.textContent)).not.toContain("Rename…");
+    expect(items.map((i) => i.textContent)).toContain("Make v2 live…");
   });
 
   it("Delete… asks first, then deletes; it is never offered without invoice:publish", async () => {
@@ -177,7 +215,7 @@ describe("Versions tab", () => {
     canPublish.value = false;
     render(<VersionsTab projectId="p1" orgId="o1" />);
     const items = await openRowMenu(user, 1);
-    expect(items.map((i) => i.textContent)).toEqual(["Open this version", "Compare with v3…", "Rename…"]); // no write verbs, no Delete
+    expect(items.map((i) => i.textContent)).toEqual(["Open this version", "Compare with v3…", "Rename…"]); // rename is project:update; no write verbs, no Delete
   });
 
   it("a truncated read says facts are shown for the newest versions only", () => {

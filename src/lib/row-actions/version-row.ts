@@ -8,7 +8,7 @@ import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
  * last, never on the live row). One pure builder; an action that does not
  * apply is ABSENT, never disabled (principle 2). The caller resolves the
  * permissions (`canPublish` = the panel's own gate for Make live / copy /
- * delete; Rename stays open to anyone who can see the tab).
+ * delete; `canRename` gates Rename, `project:update`).
  */
 export interface VersionRowTarget {
   number: number;
@@ -18,6 +18,8 @@ export interface VersionRowTarget {
 
 export interface VersionRowContext {
   canPublish: boolean;
+  /** `project:update`, the permission `versions.setLabelNative` enforces. */
+  canRename: boolean;
   /** This row is the one on screen (`?v=`, or live when none). */
   onScreen: boolean;
   /** The other side of a Compare: live for a draft row, the viewed or newest draft for the live row. `null` when there is only one version. */
@@ -45,7 +47,7 @@ export function buildVersionRowActions(v: VersionRowTarget, ctx: VersionRowConte
   if (ctx.compareWith != null) {
     items.push({ key: "compare", label: `Compare with v${ctx.compareWith}…`, group: "organise", icon: ArrowRightLeft, onSelect: h.compare });
   }
-  items.push({ key: "rename", label: "Rename…", group: "organise", icon: Pencil, onSelect: h.rename });
+  if (ctx.canRename) items.push({ key: "rename", label: "Rename…", group: "organise", icon: Pencil, onSelect: h.rename });
   if (ctx.canPublish && ready) {
     items.push({ key: "save-copy", label: "Save a copy as new version…", group: "organise", icon: Copy, onSelect: h.saveCopy });
   }

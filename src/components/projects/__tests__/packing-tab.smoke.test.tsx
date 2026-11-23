@@ -282,6 +282,76 @@ describe("Case ⋯, seal, delete", () => {
     expect(writes.restorePlannedContainers).not.toHaveBeenCalled();
   });
 
+  it("a delete Undo that restored no lines still says the case is back (recreated), never 'Nothing was restored'", async () => {
+    writes.undoDeleteContainer.mockResolvedValueOnce({ id: "vid", restored: 0, skipped: 0, recreated: true, parentSealed: false } as never);
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "VID-04 actions");
+    await user.click(screen.getByRole("menuitem", { name: /Delete case/ }));
+    await user.click(await screen.findByRole("button", { name: "Delete case" }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Deleted VID-04", expect.anything()));
+    const undo = lastUndo();
+    toastMock.success.mockClear();
+    undo();
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Case restored"));
+    expect(toastMock.info).not.toHaveBeenCalledWith("Nothing was restored", expect.anything());
+  });
+
+  it("a delete Undo whose old parent is sealed now says it came back at the top level", async () => {
+    writes.undoDeleteContainer.mockResolvedValueOnce({ id: "vid", restored: 2, skipped: 0, recreated: true, parentSealed: true } as never);
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "VID-04 actions");
+    await user.click(screen.getByRole("menuitem", { name: /Delete case/ }));
+    await user.click(await screen.findByRole("button", { name: "Delete case" }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Deleted VID-04", expect.anything()));
+    lastUndo()();
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Case restored at the top level (its old case is sealed now) · 2 lines back"));
+  });
+
+  it("Seal / Unseal that changed nothing offer NO Undo; an Undo that finds nothing to change says so", async () => {
+    writes.seal.mockResolvedValueOnce({ ok: true, changed: false });
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await openMenu(user, "VID-04 actions");
+    await user.click(screen.getByRole("menuitem", { name: /^Seal/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("VID-04 was already sealed", undefined));
+    // A real seal whose Undo (unseal) finds it already open: "Nothing was restored", not "Undone".
+    toastMock.success.mockClear();
+    await openMenu(user, "VID-04 actions");
+    await user.click(screen.getByRole("menuitem", { name: /^Seal/ }));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("VID-04 sealed", expect.anything()));
+    writes.unseal.mockResolvedValueOnce({ ok: true, changed: false });
+    lastUndo()();
+    await waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("Nothing was restored", expect.anything()));
+  });
+
+  it("a child of a SEALED parent offers no Move into, no Take out of and no Delete (the server refuses all three)", async () => {
+    containers.value = containers.value.map((c) => (c.id === "lx" ? { ...c, sealedAt: 1 } : c));
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    const names = (await openMenu(user, "BATT-01 actions")).map((i) => i.textContent);
+    expect(names.some((n) => /Move into/.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /Take out of/.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /Delete case/.test(n ?? ""))).toBe(false);
+    expect(names.some((n) => /Rename/.test(n ?? ""))).toBe(true);
+  });
+
+  it("refuses up front, naming the limit, when more than 500 lines are planned in one go", async () => {
+    equipment.categories = [{
+      id: "c1", name: "Lighting", sortOrder: 0, groups: [],
+      lineItems: Array.from({ length: 501 }, (_, i) => line({ id: `bulk${i}`, description: `Bulk ${i}` })),
+    }];
+    const user = setup();
+    render(<PackingTab projectId="p1" orgId="o1" />);
+    await user.click(screen.getByRole("checkbox", { name: "Select all Unplanned" }));
+    const bulk = screen.getByRole("toolbar", { name: "Bulk actions" });
+    await user.click(within(bulk).getByRole("button", { name: /Plan 501 into/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "VID-04" }));
+    await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("Plan up to 500 lines at a time", expect.anything()));
+    expect(writes.setPlannedContainer).not.toHaveBeenCalled();
+  }, 30_000);
+
   it("a case holding another case says the delete will be refused until it is moved out", async () => {
     const user = setup();
     render(<PackingTab projectId="p1" orgId="o1" />);

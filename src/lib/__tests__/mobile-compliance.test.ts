@@ -339,8 +339,16 @@ describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
     expect(offer).toContain("grid-cols-1 gap-3 md:grid-cols-2"); // max 2 columns, 1 on a phone
   });
 
+  it("planner ticks: ≥ 24px on the desktop grid, 44px on the phone cards; no interactive nested in a role=button", () => {
+    const grid = crew("planner/planner-grid.tsx");
+    expect(grid).toContain("min-h-6 min-w-6"); // 24px target (the Checkbox base is 44px; never smaller than 24)
+    expect(grid).not.toContain('role="button"');
+    // The phone card keeps the Checkbox's own 44px target and only enlarges the box.
+    expect(crew("planner/phone-day-list.tsx")).toMatch(/className="\[&>span\]:size-\[22px\]"/);
+  });
+
   it("planner on a phone: the sticky primary sits in the shared dock, replaced by the bulk bar while ticked", () => {
-    expect(crew("planner/crew-planner.tsx")).toMatch(/isMobile && p\.primary && sel\.count === 0 && <StickyPrimary/);
+    expect(crew("planner/crew-planner.tsx")).toMatch(/isMobile && p\.primary && liveCount === 0 && <StickyPrimary/);
     expect(crew("planner/crew-planner.tsx")).toContain("<PinnedAboveBottomNav>");
   });
 

@@ -92,7 +92,17 @@ function OpenRow({ o, members, ticked, p }: { o: OpenCall; members: PlannerMembe
         </Link>
       </td>
       <td className="min-w-0 py-2 align-middle">
-        <div className="truncate text-table-cell font-semibold text-ink">{o.title}</div>
+        {/* The row's keyboard-reachable primary (the row click is a mouse convenience). */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            p.onOpen(o);
+          }}
+          className="block max-w-full truncate text-left text-table-cell font-semibold text-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+        >
+          {o.title}
+        </button>
         <div className="truncate text-caption text-muted">
           {o.projectName}
           {o.crewRoleName ? ` · ${o.crewRoleName}` : ""}

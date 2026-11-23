@@ -58,7 +58,6 @@ function DayHead({ day, today }: { day: string; today: string }) {
   );
 }
 
-const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
 function CallBlock({ call, member, day, now, filters, userId, h }: { call: PlannerCall; member: PlannerMember; day: string; now: number; filters: PlannerFilters; userId?: string; h: GridHandlers }) {
   const word = callStatusWord(call, now);
@@ -66,36 +65,34 @@ function CallBlock({ call, member, day, now, filters, userId, h }: { call: Plann
   const ticked = h.selected.has(call.id);
   const label = `${job} ${callRoleName(call, member)}`.trim();
   const menu = h.menuFor(call, member);
+  // A plain container: the block's primary is ONE stretched <button> (opens the
+  // call sheet) under the text; the tick, the job link and the ⋯ are sibling
+  // controls above it — never interactive content nested inside a button.
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={`${memberName(member)} · ${label}, ${day}`}
       data-call={call.id}
-      onClick={() => h.onOpenCall(call, member)}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && h.onOpenCall(call, member)}
       className={cn(
-        "group/blk relative mb-1 flex min-w-0 cursor-pointer flex-col gap-px rounded-[7px] bg-paper-2 px-1.5 py-1 hover:bg-card",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+        "group/blk relative mb-1 flex min-w-0 flex-col gap-px rounded-[7px] bg-paper-2 px-1.5 py-1 hover:bg-card",
         ticked && "bg-select",
         isDimmed(call, filters, userId) && "opacity-40",
       )}
     >
-      <div className="flex min-w-0 items-center gap-1.5 text-caption">
-        <span onClick={stop} className="inline-flex">
-          <Checkbox
-            aria-label={`Select ${label}, ${day}`}
-            // The desktop grid's compact tick (the phone day list keeps the 22px one).
-            className="min-h-6 min-w-6 [&>span]:size-3.5 [&>span]:rounded-[4px]"
-            checked={ticked}
-            onClick={(e) => {
-              e.stopPropagation();
-              h.onToggle(call.id, e.shiftKey);
-            }}
-          />
-        </span>
+      <button
+        type="button"
+        aria-label={`${memberName(member)} · ${label}, ${day}`}
+        onClick={() => h.onOpenCall(call, member)}
+        className="absolute inset-0 rounded-[7px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+      />
+      <div className="pointer-events-none relative flex min-w-0 items-center gap-1.5 text-caption">
+        <Checkbox
+          aria-label={`Select ${label}, ${day}`}
+          // The desktop grid's compact tick: a 24px target (the phone day list keeps 44px).
+          className="pointer-events-auto min-h-6 min-w-6 [&>span]:size-3.5 [&>span]:rounded-[4px]"
+          checked={ticked}
+          onClick={(e) => h.onToggle(call.id, e.shiftKey)}
+        />
         {call.project ? (
-          <Link href={logisticsHref(call.project.id)} onClick={stop} title={call.project.name} className="flex-none font-mono font-semibold text-ink hover:underline">
+          <Link href={logisticsHref(call.project.id)} title={call.project.name} className="pointer-events-auto flex-none font-mono font-semibold text-ink hover:underline">
             {job}
           </Link>
         ) : (
@@ -103,13 +100,13 @@ function CallBlock({ call, member, day, now, filters, userId, h }: { call: Plann
         )}
         <span className="min-w-0 truncate text-muted">{callRoleName(call, member)}</span>
       </div>
-      {callTimes(call) && <div className="pl-5 font-mono text-[11px] text-muted">{callTimes(call)}</div>}
-      <div className="pl-5">
+      {callTimes(call) && <div className="pointer-events-none relative pl-5 font-mono text-[11px] text-muted">{callTimes(call)}</div>}
+      <div className="pointer-events-none relative pl-5">
         <StatusWord status={{ label: word.label, intent: word.intent }} className="text-caption" />
         {word.age && <span className={cn("ml-1 font-mono text-caption", word.stale ? "text-warn" : "text-faint")}>{word.age}</span>}
       </div>
       {menu.items.length > 0 && (
-        <span onClick={stop} className="absolute right-0 top-0 opacity-0 focus-within:opacity-100 group-hover/blk:opacity-100 pointer-coarse:opacity-100">
+        <span className="absolute right-0 top-0 opacity-0 focus-within:opacity-100 group-hover/blk:opacity-100 pointer-coarse:opacity-100">
           <ActionMenu spec={menu} label={`${label} actions`} />
         </span>
       )}

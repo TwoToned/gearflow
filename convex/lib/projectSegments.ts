@@ -2,6 +2,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { hardOverbookedProjectIds } from "../overbookingBoard";
 import { overdueReturnsFromRows } from "./overdueReturns";
+import { BOOKED_STATUSES } from "./jobStatusGroups";
 
 /**
  * Jobs list segments (UX unification §9b.3). ONE definition of which statuses a
@@ -12,7 +13,7 @@ import { overdueReturnsFromRows } from "./overdueReturns";
  * `all` is every status except CANCELLED; `needs` is DERIVED on read, never a
  * stored flag (D13).
  */
-const BOOKED = ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING"] as const;
+const BOOKED = BOOKED_STATUSES;
 const OUT = ["CHECKED_OUT", "ON_SITE"] as const;
 
 export const JOB_SEGMENT_STATUSES = {

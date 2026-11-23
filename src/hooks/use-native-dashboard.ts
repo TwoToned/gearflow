@@ -99,6 +99,22 @@ export function useNativeUpcoming(orgId: string | undefined) {
   return useAuthedQuery(api.dashboardLists.upcoming, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
 }
 
+/** How many live jobs On the floor now shows; the header counts the org-wide total. */
+export const FLOOR_ROWS = 4;
+
+/**
+ * On the floor now: the ORG's live jobs (the Jobs `out` segment, soonest due back
+ * first), through the existing Jobs list query — the same set the widget's
+ * `View all ›` (the org-wide floor) works from. `total` is counted before the page
+ * is cut, never after a slice.
+ */
+export function useNativeFloorJobs(orgId: string | undefined) {
+  return useAuthedQuery(
+    api.projects.listPage,
+    orgId ? { orgId, segment: "out", sortBy: "rentalEndDate", sortOrder: "asc", page: 1, pageSize: FLOOR_ROWS } : "skip",
+  );
+}
+
 export function useNativeHome(orgId: string | undefined) {
   const enabled = !!orgId;
   return useAuthedQuery(api.dashboardLists.home, enabled ? { orgId: orgId! } : "skip");

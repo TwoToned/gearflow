@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorBackText, sortSoonestBack, taskDueText } from "@/lib/home-rows";
+import { floorBackText, taskDueText } from "@/lib/home-rows";
 
 const NOW = new Date(2026, 10, 9, 9, 30).getTime();
 const at = (d: number, h = 12) => new Date(2026, 10, d, h).getTime();
@@ -21,13 +21,5 @@ describe("floorBackText", () => {
     expect(floorBackText(at(9, 18), NOW)).toEqual({ text: "back today", late: false });
     expect(floorBackText(at(11), NOW)).toEqual({ text: "back in 2d", late: false });
     expect(floorBackText(undefined, NOW)).toBeNull();
-  });
-});
-
-describe("sortSoonestBack", () => {
-  it("orders by end date, undated last, without mutating", () => {
-    const jobs = [{ id: "c" }, { id: "b", rentalEndDate: at(12) }, { id: "a", rentalEndDate: new Date(at(8)).toISOString() }];
-    expect(sortSoonestBack(jobs).map((j) => j.id)).toEqual(["a", "b", "c"]);
-    expect(jobs[0].id).toBe("c");
   });
 });

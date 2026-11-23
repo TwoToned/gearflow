@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildNeedsAttentionLines, type NeedsAttentionInput } from "@/lib/needs-attention";
+import { canOpenLink } from "@/lib/dashboard-links";
+import { rolePermissions } from "@/lib/permissions";
 
 const money = (n: number) => `$${n.toLocaleString("en-AU")}`;
 
@@ -12,6 +14,7 @@ const FULL: NeedsAttentionInput = {
   crewOffers: 3,
   finance: { overdueCount: 2, overdueOutstanding: 16975, overdueTruncated: false, expiringCount: 1, quotesOutCount: 6 },
   overdueTileOnBoard: false,
+  canOpen: () => true,
   formatMoney: money,
 };
 
@@ -70,7 +73,16 @@ describe("buildNeedsAttentionLines", () => {
   });
 
   it("all clear is an empty list", () => {
-    expect(buildNeedsAttentionLines({ overdueTileOnBoard: false, formatMoney: money })).toEqual([]);
+    expect(buildNeedsAttentionLines({ overdueTileOnBoard: false, canOpen: () => true, formatMoney: money })).toEqual([]);
+  });
+
+  it("a line whose TARGET the role can't open is absent, even with its count read (sub-hires open Suppliers)", () => {
+    const subHireOnly = { ...rolePermissions.member, supplier: [] };
+    const k = keys({ ...FULL, canOpen: (link) => canOpenLink(link, subHireOnly) });
+    expect(k).not.toContain("subHireOverdue");
+    expect(k).toContain("blockers");
+    // With the real member role every line's target opens.
+    expect(keys({ ...FULL, canOpen: (link) => canOpenLink(link, rolePermissions.member) })).toContain("subHireOverdue");
   });
 
   it("an overdue invoice with nothing owed has no detail", () => {

@@ -1,4 +1,5 @@
 import type { Resource } from "@/lib/permissions";
+import { HOME_UPCOMING_STATUSES } from "../../convex/lib/jobStatusGroups";
 
 /**
  * Where every Home number goes (UX Phase 11, §6c.2, D85/D86). ONE table: a stat
@@ -37,7 +38,8 @@ export const DASHBOARD_LINKS = {
   // ── View all › ──
   myTasks: { href: "/my-tasks", tip: "My tasks", resource: "project" },
   floor: { href: "/warehouse", tip: "Warehouse · the floor", resource: "warehouse" },
-  upcoming: { href: `${JOBS}?seg=booked`, tip: "Jobs · Booked", resource: "project" },
+  // Upcoming lists quoted AND booked jobs: the list it opens must hold every row it showed.
+  upcoming: { href: `${JOBS}?status=${HOME_UPCOMING_STATUSES.join(",")}`, tip: "Jobs · Quoted and Booked", resource: "project" },
   activity: { href: "/activity", tip: "Activity", resource: "reports" },
 } as const satisfies Record<string, DashboardLink>;
 

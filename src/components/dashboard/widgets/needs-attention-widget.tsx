@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusWord } from "@/components/ui/status-word";
 import { WidgetCount, useBoardHas } from "@/components/dashboard/widget-chrome";
 import { buildNeedsAttentionLines, type NeedsAttentionLine, type NeedsAttentionTone } from "@/lib/needs-attention";
+import { canOpenLink } from "@/lib/dashboard-links";
 import type { ColorIntent } from "@/lib/status-colors";
 import type { Resource } from "@/lib/permissions";
 import { cn, focusRing } from "@/lib/utils";
@@ -37,13 +38,15 @@ function useNeedsAttentionSources(orgId: string | undefined) {
   const { permissions, isLoading: roleLoading } = useCurrentRole();
   const projectOrg = gated(orgId, permissions, "project");
   const stats = useNativeDashboardStats(projectOrg);
-  const subHireOverdue = useNativeSubHireStats(gated(orgId, permissions, "subHire"))?.overdueReturns;
+  // Counted under subHire, opened on Suppliers: the read runs only when both are open.
+  const subHireOverdue = useNativeSubHireStats(gated(orgId, permissions, "subHire", "supplier"))?.overdueReturns;
   const overbookings = useNativeOverbookingCounts(projectOrg);
   const finance = useNativeOrgFinanceCounts(gated(orgId, permissions, "invoice"));
   const blockers = useNativeBlocking(projectOrg) as { projectId: string }[] | undefined;
   const crewOffers = useNativePendingCrewOffers(gated(orgId, permissions, "project", "crew"));
   const canMaintenance = gated(orgId, permissions, "maintenance") !== undefined;
   return {
+    permissions,
     loading: roleLoading || stats.isLoading,
     stats: stats.data,
     maintenance: canMaintenance ? stats.data : undefined,
@@ -76,7 +79,7 @@ function LineRow({ line }: { line: NeedsAttentionLine }) {
 
 /** Home's Needs attention (§6c.2): dot-word lines with a mono count, each deep-linked. */
 export function NeedsAttentionWidget({ orgId }: { orgId: string | undefined }) {
-  const { loading, ...sources } = useNeedsAttentionSources(orgId);
+  const { loading, permissions, ...sources } = useNeedsAttentionSources(orgId);
   const { formatCurrency } = useFormatters();
   const overdueTileOnBoard = useBoardHas("statOverdueReturns");
 
@@ -91,6 +94,7 @@ export function NeedsAttentionWidget({ orgId }: { orgId: string | undefined }) {
   const lines = buildNeedsAttentionLines({
     ...sources,
     overdueTileOnBoard,
+    canOpen: (link) => canOpenLink(link, permissions),
     formatMoney: (n) => formatCurrency(n, { cents: false }),
   });
   if (lines.length === 0) {

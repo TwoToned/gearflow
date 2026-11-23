@@ -10,6 +10,7 @@ import { WidgetCount } from "@/components/dashboard/widget-chrome";
 import { jobStatusLabel } from "@/lib/list-views/jobs";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
+import { HOME_UPCOMING_LIMIT } from "../../../../convex/lib/jobStatusGroups";
 
 interface UpcomingJob {
   id: string;
@@ -66,7 +67,8 @@ export function UpcomingProjectsWidget({ orgId }: { orgId: string | undefined })
   }
   return (
     <>
-      <WidgetCount>{upcoming.length}</WidgetCount>
+      {/* The read stops at HOME_UPCOMING_LIMIT: having all of them means there may be more. */}
+      <WidgetCount>{upcoming.length >= HOME_UPCOMING_LIMIT ? `${HOME_UPCOMING_LIMIT}+` : upcoming.length}</WidgetCount>
       <div className="grid gap-x-8 sm:grid-cols-2 [&>a:first-child]:border-t-0 sm:[&>a:nth-child(2)]:border-t-0">
         {upcoming.slice(0, 4).map((p) => (
           <UpcomingRow key={p.id} job={p} />

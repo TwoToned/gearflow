@@ -32,9 +32,14 @@ describe("DASHBOARD_LINKS", () => {
       const seg = params.get("seg");
       if (seg) expect(state.seg, link.href).toBe(seg);
       for (const key of [...params.keys()].filter((k) => k !== "seg")) {
-        expect(state.filters[key], `${link.href} keeps ${key}`).toEqual([params.get(key)]);
+        expect(state.filters[key], `${link.href} keeps ${key}`).toEqual(params.get(key)!.split(","));
       }
     }
+  });
+
+  it("Upcoming's View all opens exactly the statuses the widget lists (quoted + booked), all known to the Jobs list", () => {
+    const args = jobsQueryArgs(parseListState(split(DASHBOARD_LINKS.upcoming.href).params, JOBS_SPEC), 0);
+    expect(args.statusIn).toEqual(["QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING"]);
   });
 
   it("the Overdue returns tile opens the overdue filter on segment All (D85, Q1)", () => {

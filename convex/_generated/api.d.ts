@@ -136,6 +136,7 @@ import type * as lib_fulfillment from "../lib/fulfillment.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_invoiceDates from "../lib/invoiceDates.js";
 import type * as lib_invoiceOverdue from "../lib/invoiceOverdue.js";
+import type * as lib_jobStatusGroups from "../lib/jobStatusGroups.js";
 import type * as lib_kits from "../lib/kits.js";
 import type * as lib_lineItemUnits from "../lib/lineItemUnits.js";
 import type * as lib_lineTotal from "../lib/lineTotal.js";
@@ -460,6 +461,7 @@ declare const fullApi: ApiFromModules<{
   "lib/inventory": typeof lib_inventory;
   "lib/invoiceDates": typeof lib_invoiceDates;
   "lib/invoiceOverdue": typeof lib_invoiceOverdue;
+  "lib/jobStatusGroups": typeof lib_jobStatusGroups;
   "lib/kits": typeof lib_kits;
   "lib/lineItemUnits": typeof lib_lineItemUnits;
   "lib/lineTotal": typeof lib_lineTotal;

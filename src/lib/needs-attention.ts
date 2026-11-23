@@ -40,6 +40,13 @@ export interface NeedsAttentionInput {
   };
   /** The Overdue returns stat tile is on the board: its line is suppressed (the same fact never twice). */
   overdueTileOnBoard: boolean;
+  /**
+   * Can the viewer open this line's TARGET (`canOpenLink`)? Checked on top of
+   * the read's own gate: a line exists only when the role can both read its
+   * count and open the list it links to (sub-hires count under `subHire` but
+   * open Suppliers).
+   */
+  canOpen: (link: DashboardLink) => boolean;
   formatMoney: (n: number) => string;
 }
 
@@ -108,6 +115,6 @@ function peopleAndQuoteLines(i: NeedsAttentionInput): (NeedsAttentionLine | null
 /** The lines in their fixed order: jobs, money, gear, people and quotes. */
 export function buildNeedsAttentionLines(i: NeedsAttentionInput): NeedsAttentionLine[] {
   return [...jobLines(i), invoiceLine(i), ...gearLines(i), ...peopleAndQuoteLines(i)].filter(
-    (l): l is NeedsAttentionLine => l !== null,
+    (l): l is NeedsAttentionLine => l !== null && i.canOpen(l.link),
   );
 }

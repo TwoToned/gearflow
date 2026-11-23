@@ -18,6 +18,7 @@ const m = vi.hoisted(() => ({
   save: vi.fn(async () => undefined),
   updateTask: vi.fn(async () => undefined),
   financeArg: [] as (string | undefined)[],
+  upcoming: [] as unknown[],
 }));
 
 const ALL = ["read", "create", "update"];
@@ -61,7 +62,12 @@ const TASK = {
 vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeDashboardStats: (orgId?: string) => ({ data: orgId ? STATS : undefined, isLoading: false }),
   useNativeSubHireStats: (orgId?: string) => (orgId ? { activeSubHires: 0, monthlySubHireCost: 0, overdueReturns: 1 } : undefined),
-  useNativeUpcoming: () => [],
+  useNativeUpcoming: () => m.upcoming,
+  // Org-wide: 6 live jobs, the first page of 4 (the header counts all 6, never the slice).
+  useNativeFloorJobs: (orgId?: string) =>
+    orgId
+      ? { items: [{ id: "p9", name: "Canva kickoff", projectNumber: "2336", status: "CHECKED_OUT", rentalEndDate: Date.now() + 86_400_000 * 3, client: null }], total: 6, page: 1, pageSize: 4, totalPages: 2 }
+      : undefined,
   useNativeHome: () => ({
     userName: "Jayden Cole",
     myProjects: [{ id: "p9", name: "Canva kickoff", projectNumber: "2336", status: "CHECKED_OUT", rentalEndDate: Date.now() + 86_400_000 * 3 }],
@@ -139,6 +145,23 @@ describe("Home (smoke)", () => {
     const row = screen.getByText("Canva kickoff").closest("a")!;
     expect(within(row).getByText("Out")).toBeDefined();
     expect(within(row).getByText("back in 3d")).toBeDefined();
+  });
+
+  it("On the floor now counts the ORG's live jobs (the total, not the page it shows)", () => {
+    render(<DashboardPage />);
+    const card = screen.getByRole("heading", { name: "On the floor now" }).parentElement!;
+    expect(card.textContent).toContain("6 live");
+  });
+
+  it("Upcoming: View all opens a list holding quoted AND booked jobs; a full read prints n+", () => {
+    const job = (i: number) => ({ id: `u${i}`, name: `Job ${i}`, projectNumber: `${2400 + i}`, status: i === 0 ? "QUOTED" : "CONFIRMED", rentalStartDate: Date.now() + 86_400_000 });
+    m.upcoming = Array.from({ length: 8 }, (_, i) => job(i));
+    render(<DashboardPage />);
+    const header = screen.getByRole("heading", { name: "Upcoming" }).parentElement!;
+    expect(header.textContent).toContain("8+");
+    const viewAll = within(header).getByRole("link", { name: "View all ›" });
+    expect(viewAll.getAttribute("href")).toBe("/projects?status=QUOTED,AWAITING_PAYMENT,CONFIRMED,PREPPING");
+    m.upcoming = [];
   });
 
   it("opens the page ⋯: Warehouse, Add gear and Customise… (desktop)", async () => {

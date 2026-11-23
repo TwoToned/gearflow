@@ -30,7 +30,7 @@ export interface PlannerCall {
   crewRole: { name: string; color?: string | null } | null;
 }
 
-export interface PlannerAvailability {
+interface PlannerAvailability {
   id: string;
   type: string;
   startDate: string;
@@ -69,7 +69,7 @@ export interface OpenCall {
 
 export const keyOfMs = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 export const keyOfIso = (iso: string): string => iso.slice(0, 10);
-export const msOfKey = (key: string): number => Date.parse(`${key}T00:00:00.000Z`);
+const msOfKey =(key: string): number => Date.parse(`${key}T00:00:00.000Z`);
 export const addDays = (key: string, n: number): string => keyOfMs(msOfKey(key) + n * DAY_MS);
 
 /** 0 = Mon … 6 = Sun (the planner is Mon–Sun, D46). */
@@ -105,11 +105,11 @@ export function weekRange(week: string): { startMs: number; endMs: number } {
 
 const status = (c: { status?: string | null }): string => c.status ?? "PENDING";
 /** A call that still holds the person's day (DECLINED is the person's no; CANCELLED is never sent). */
-export const isActiveCall = (c: PlannerCall): boolean => status(c) !== "DECLINED" && status(c) !== "CANCELLED";
+const isActiveCall =(c: PlannerCall): boolean => status(c) !== "DECLINED" && status(c) !== "CANCELLED";
 const UNCONFIRMED = new Set(["PENDING", "OFFERED", "ACCEPTED"]);
-export const isUnconfirmed = (c: PlannerCall): boolean => UNCONFIRMED.has(status(c));
+const isUnconfirmed =(c: PlannerCall): boolean => UNCONFIRMED.has(status(c));
 /** Mine = the Jobs list's `My jobs` rule: calls on jobs I am the project manager of. */
-export const isMine = (c: PlannerCall, userId: string | undefined): boolean => !!userId && c.project?.projectManagerId === userId;
+const isMine =(c: PlannerCall, userId: string | undefined): boolean => !!userId && c.project?.projectManagerId === userId;
 
 function callCovers(c: PlannerCall, day: string): boolean {
   if (!c.startDate) return false;
@@ -124,7 +124,7 @@ export function callsOn(m: PlannerMember, day: string): PlannerCall[] {
 }
 
 /** Every distinct call with a day in the week (the grid can only place dated calls). */
-export function weekCalls(members: PlannerMember[], week: string): PlannerCall[] {
+function weekCalls(members: PlannerMember[], week: string): PlannerCall[] {
   const days = weekDays(week);
   const seen = new Map<string, PlannerCall>();
   for (const m of members) for (const c of m.assignments) if (days.some((d) => callCovers(c, d))) seen.set(c.id, c);
@@ -227,8 +227,7 @@ export const hoursText = (h: number): string => `${Math.round(h * 10) / 10}h`;
 
 // ─── Strip, filters, dimming ─────────────────────────────────────────────────
 
-export const PLANNER_SEGMENTS = ["all", "needs", "unconfirmed", "mine"] as const;
-export type PlannerSegment = (typeof PLANNER_SEGMENTS)[number];
+type PlannerSegment = "all" | "needs" | "unconfirmed" | "mine";
 
 export const AVAIL_KEYS = ["free", "booked", "unavailable", "pencilled", "preferred"] as const;
 export type AvailKey = (typeof AVAIL_KEYS)[number];

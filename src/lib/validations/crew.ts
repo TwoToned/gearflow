@@ -168,6 +168,26 @@ export const timesheetExportFiltersSchema = z.object({
 
 export type TimesheetExportFilters = z.input<typeof timesheetExportFiltersSchema>;
 
+const clockTime = z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM")]);
+
+/**
+ * The planner's Offer a call sheet (UX Phase 15, §9h.3): who, which day, which
+ * open service, the role and times, and whether the offer goes out now. The
+ * call itself is then written through `crewAssignmentSchema` (the same write
+ * Logistics uses), so these are the sheet's own bounds only.
+ */
+export const plannerOfferSchema = z.object({
+  memberId: z.string().min(1, "Choose a person"),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  serviceId: z.string().min(1, "Pick a job service — there is none open this day"),
+  crewRoleId: z.string().max(100),
+  startTime: clockTime,
+  endTime: clockTime,
+  sendNow: z.boolean(),
+});
+
+export type PlannerOfferValues = z.input<typeof plannerOfferSchema>;
+
 /** Most crew emails one click may fan out ("Send N offers", "Cancel n"). */
 const MAX_CREW_MAIL_BATCH = 100;
 

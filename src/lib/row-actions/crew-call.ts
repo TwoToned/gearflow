@@ -30,7 +30,7 @@ export interface CrewCallCtx {
 }
 
 /** The offer confirm: it emails now and cannot be unsent. */
-export function offerConfirm(n: number, resend = false): ActionItem["confirm"] {
+function offerConfirm(n: number, resend = false): ActionItem["confirm"] {
   const what = resend ? "the offer again" : `${n} ${plural(n, "offer", "offers")}`;
   return {
     title: resend ? "Resend the offer?" : `Send ${what}?`,
@@ -40,7 +40,7 @@ export function offerConfirm(n: number, resend = false): ActionItem["confirm"] {
 }
 
 /** The cancel confirm (§9h.3): the slot reopens, offered people are told, timesheets stay. */
-export function cancelConfirm(statuses: readonly (string | null | undefined)[]): NonNullable<ActionItem["confirm"]> {
+function cancelConfirm(statuses: readonly (string | null | undefined)[]): NonNullable<ActionItem["confirm"]> {
   const n = statuses.length;
   const told = statuses.filter((s) => TOLD_ON_CANCEL.has(s ?? "PENDING")).length;
   const tell = told ? ` ${told} ${plural(told, "person has", "people have")} been offered or confirmed and will be emailed.` : "";
@@ -51,15 +51,19 @@ export function cancelConfirm(statuses: readonly (string | null | undefined)[]):
   };
 }
 
+/** Offer (PENDING) or Resend offer (OFFERED), each confirmed: it emails at once. */
+function offerItem(status: string, onOffer: (() => void) | undefined): Entry {
+  if (!onOffer || !canCrewCall(status, "offer")) return null;
+  const resend = status === "OFFERED";
+  return { key: "offer", label: resend ? "Resend offer" : "Offer", group: "edit", icon: Send, onSelect: onOffer, confirm: offerConfirm(1, resend) };
+}
+
 /** A call block's ⋯. */
 export function buildCrewCallActions(row: CrewCallRow, ctx: CrewCallCtx): ActionMenuSpec {
   const status = row.status ?? "PENDING";
-  const resend = status === "OFFERED";
   return {
     items: compact([
-      !!ctx.onOffer && canCrewCall(status, "offer") && {
-        key: "offer", label: resend ? "Resend offer" : "Offer", group: "edit", icon: Send, onSelect: ctx.onOffer, confirm: offerConfirm(1, resend),
-      },
+      offerItem(status, ctx.onOffer),
       !!ctx.onConfirm && canCrewCall(status, "confirm") && { key: "confirm", label: "Confirm", group: "edit", icon: CalendarCheck, onSelect: ctx.onConfirm },
       ctx.onOpenJob && { key: "job", label: "Open job", group: "organise", icon: ExternalLink, onSelect: ctx.onOpenJob },
       ctx.onOpenPerson && { key: "person", label: "Open crew member", group: "organise", icon: UserRound, onSelect: ctx.onOpenPerson },

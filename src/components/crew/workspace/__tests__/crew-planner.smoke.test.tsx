@@ -1,0 +1,295 @@
+// @vitest-environment jsdom
+//
+// Crew › Planner (UX Phase 15 slice 3, §9h.3). Rendered for real and every
+// overlay OPENED: the block ⋯ (and its Cancel confirm), the call sheet, the
+// Offer a call sheet (from an empty cell, from the primary and from a Needs
+// crew row) with its in-place send confirm, the Needs crew row ⋯, the filter
+// words, the bulk bar's Offer n / Cancel n confirms and Confirm n's Undo
+// (the forward result passed through unchanged).
+import React from "react";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
+import { render, screen, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { FunctionReference } from "convex/server";
+
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+  // Radix Switch measures its thumb.
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+
+const NOW = Date.UTC(2026, 10, 17, 1); // Tue 17 Nov 2026
+vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => NOW }));
+const nav = vi.hoisted(() => ({ search: "", push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: nav.push, replace: nav.replace }),
+  usePathname: () => "/crew/planner",
+  useSearchParams: () => new URLSearchParams(nav.search),
+}));
+vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+vi.mock("@/lib/auth-client", () => ({
+  useActiveOrganization: () => ({ data: { id: "org1" } }),
+  useSession: () => ({ data: { user: { id: "me", name: "Alice" } } }),
+}));
+const perms = vi.hoisted(() => ({ all: true }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => perms.all, useIsManagerPlus: () => true }));
+vi.mock("convex/react", () => ({ useConvex: () => ({ query: vi.fn() }) }));
+vi.mock("@/hooks/use-crew-role-writes", () => ({ useCrewRoleWrites: () => ({}) }));
+
+const asg = vi.hoisted(() => ({
+  create: vi.fn(async () => ({ id: "newCall" })),
+  remove: vi.fn(async () => ({ id: "newCall" })),
+  confirmMany: vi.fn(async (ids: string[]) => ({ confirmed: ids, skipped: [], stamp: 555 })),
+  unconfirmMany: vi.fn(async () => ({ count: 1 })),
+  cancelMany: vi.fn(async (ids: string[]) => ({ cancelled: ids, toTell: ids, skipped: [] })),
+}));
+vi.mock("@/hooks/use-crew-assignment-writes", () => ({ useCrewAssignmentWrites: () => asg }));
+const mail = vi.hoisted(() => ({
+  sendCrewOffers: vi.fn(async (i: { assignmentIds: string[] }) => ({ sent: i.assignmentIds.length, errors: [], total: i.assignmentIds.length })),
+  sendCancellationEmails: vi.fn(async (i: { assignmentIds: string[] }) => ({ sent: i.assignmentIds.length, errors: [], total: i.assignmentIds.length })),
+}));
+vi.mock("@/server/crew-communication", () => mail);
+const announced = vi.hoisted(() => [] as { title: string; performUndo?: () => Promise<unknown> }[]);
+vi.mock("@/lib/list-write-toast", async (orig) => ({
+  ...(await orig<object>()),
+  announceListWrite: (a: { title: string; performUndo?: () => Promise<unknown> }) => {
+    announced.push(a);
+    return undefined;
+  },
+}));
+vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
+
+const day = (d: string) => `${d}T00:00:00.000Z`;
+const job = { id: "p1", name: "Hilton gala", projectNumber: "#2341", status: "CONFIRMED", projectManagerId: "me" };
+const call = (id: string, d: string, status: string, over: Record<string, unknown> = {}) => ({
+  id, status, startDate: day(d), endDate: day(d), startTime: "08:00", endTime: "18:00", serviceId: `s-${id}`, crewRoleId: "r1",
+  offeredAt: status === "OFFERED" ? "2026-11-13T00:00:00.000Z" : null, project: job, crewRole: { name: "Rigger" }, ...over,
+});
+const members = [
+  { id: "c1", firstName: "Oli", lastName: "Martin", department: null, crewRole: { id: "r1", name: "Rigger" }, skillIds: ["k1"],
+    assignments: [call("a1", "2026-11-17", "PENDING"), call("a2", "2026-11-18", "ACCEPTED"), call("a3", "2026-11-19", "OFFERED")],
+    availability: [] },
+  { id: "c2", firstName: "Dev", lastName: "Patel", department: null, crewRole: { id: "r1", name: "Rigger" }, skillIds: [],
+    assignments: [],
+    availability: [{ id: "v1", type: "UNAVAILABLE", startDate: day("2026-11-16"), endDate: day("2026-11-16"), reason: "Leave" },
+      { id: "v2", type: "TENTATIVE", startDate: day("2026-11-20"), endDate: day("2026-11-20"), reason: "#2340 Launch" }] },
+];
+const open = [{
+  serviceId: "svc1", projectId: "p1", projectName: "Hilton gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(day("2026-11-18")),
+  endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
+}];
+const queried = vi.hoisted(() => ({ planner: undefined as unknown }));
+vi.mock("@/hooks/use-authed-query", async () => {
+  const { getFunctionName } = await import("convex/server");
+  return {
+    useAuthedQuery: (q: FunctionReference<"query">, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(q);
+      if (name === "crewAvailability:plannerData") { queried.planner = args; return members; }
+      if (name === "crewPlanner:openCalls") return { calls: open, truncated: false };
+      if (name === "crewTimeEntries:approvedHoursByMember") return { c1: 9 };
+      if (name === "crewRoles:listForSettings") return [{ id: "r1", name: "Rigger", isActive: true, defaultRate: 420, rateType: "DAILY", sortOrder: 0 }];
+      if (name === "crewSkills:list") return [{ id: "k1", name: "Dante" }];
+      return undefined;
+    },
+  };
+});
+
+import { CrewPlanner } from "../planner/crew-planner";
+
+beforeEach(() => {
+  nav.search = "";
+  nav.push.mockClear();
+  perms.all = true;
+  announced.length = 0;
+  Object.values(asg).forEach((f) => f.mockClear());
+  Object.values(mail).forEach((f) => f.mockClear());
+});
+
+describe("CrewPlanner (smoke)", () => {
+  it("one week Mon–Sun with blocks, availability words, the Hours column, strip counts and the footer", () => {
+    render(<CrewPlanner />);
+    const grid = screen.getByRole("table", { name: /one week/ });
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Person", "Mon16", "Tue17", "Wed18", "Thu19", "Fri20", "Sat21", "Sun22", "Hours",
+    ]);
+    expect(screen.getByTestId("planner-week").textContent).toBe("16 Nov – 22 Nov");
+    expect(within(grid).getAllByText("#2341").length).toBe(3);
+    expect(within(grid).getByText("Unavailable")).toBeTruthy();
+    expect(within(grid).getByText("Pencilled")).toBeTruthy();
+    expect(within(grid).getByText("4d")).toBeTruthy(); // Offered age, amber from 3 days
+    expect(within(grid).getByText("20h")).toBeTruthy(); // planned: accepted + offered, pending excluded
+    expect(within(grid).getByText("/ 9h")).toBeTruthy(); // logged
+    expect(screen.getByRole("tab", { name: /Needs crew/ }).textContent).toContain("2");
+    expect(screen.getByRole("tab", { name: /Unconfirmed/ }).textContent).toContain("3");
+    expect(screen.getByTestId("planner-footer").textContent).toBe("2 people · 0 of 3 confirmed · 1 accepted · 1 offered · 1 pending");
+    // the query args come from the URL week (stable), never Date.now()
+    expect(queried.planner).toEqual({ orgId: "org1", startMs: Date.parse(day("2026-11-16")), endMs: Date.parse(day("2026-11-23")) - 1 });
+  });
+
+  it("the #1246 find-cover deep link (?week=<ms>&role&avail=AVAILABLE) lands filtered, reading Free", () => {
+    nav.search = `week=${Date.parse(day("2026-11-18"))}&role=r1&avail=AVAILABLE`;
+    render(<CrewPlanner />);
+    expect(screen.getByTestId("planner-week").textContent).toBe("16 Nov – 22 Nov");
+    expect(screen.getByRole("button", { name: "Role: Rigger" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Availability: Free" })).toBeTruthy();
+    // Free = no call this week and no Unavailable day: Oli is booked, Dev is off on Monday.
+    expect(screen.queryByText("Oli Martin")).toBeNull();
+    expect(screen.queryByText("Dev Patel")).toBeNull();
+    expect(screen.getByText("No crew match that")).toBeTruthy();
+  });
+
+  it("‹ › step the week in the URL, keeping params it does not own", async () => {
+    nav.search = "ref=email";
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Next week" }));
+    expect(nav.push).toHaveBeenCalledWith("/crew/planner?ref=email&week=2026-11-23", { scroll: false });
+  });
+
+  it("a filter word opens and writes the URL", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Skill" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Dante" }));
+    expect(nav.push).toHaveBeenCalledWith("/crew/planner?skill=k1", { scroll: false });
+  });
+
+  it("clicking an empty cell opens Offer a call for that person and day; sending asks once more, then offers", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Offer Dev Patel a call on 2026-11-18" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Offer a call")).toBeTruthy();
+    expect(within(sheet).getByText("Dev Patel · Wed, 18 Nov")).toBeTruthy();
+    expect(within(sheet).getByRole("combobox", { name: "Job service" }).textContent).toMatch(/#2341 Bump in · Rigger · needs 2/);
+    expect(within(sheet).getByText(/Cost rate \$420/)).toBeTruthy();
+    expect(within(sheet).getByTestId("offer-day-state").textContent).toContain("Free");
+    await user.click(within(sheet).getByRole("button", { name: "Offer call" }));
+    expect(within(sheet).getByRole("alert").textContent).toMatch(/can't be unsent/);
+    await user.click(within(sheet).getByRole("button", { name: "Send offer" }));
+    await waitFor(() => expect(asg.create).toHaveBeenCalledTimes(1));
+    expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ crewMemberId: "c2", serviceId: "svc1", status: "PENDING", phase: "BUMP_IN", startDate: "2026-11-18", startTime: "08:00" }));
+    expect(mail.sendCrewOffers).toHaveBeenCalledWith({ assignmentIds: ["newCall"] });
+    expect(announced).toHaveLength(0); // sent mail: a toast with no Undo
+  });
+
+  it("Save as pending (send off) offers its Undo: delete the created call", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Offer call" }));
+    const sheet = await screen.findByRole("dialog");
+    await user.click(within(sheet).getByRole("combobox", { name: "Person" }));
+    await user.click(await screen.findByRole("option", { name: /Dev Patel/ }));
+    await user.click(within(sheet).getByRole("switch", { name: "Send the offer now" }));
+    await user.click(within(sheet).getByRole("button", { name: "Save as pending" }));
+    await waitFor(() => expect(announced).toHaveLength(1));
+    expect(mail.sendCrewOffers).not.toHaveBeenCalled();
+    await announced[0].performUndo!();
+    expect(asg.remove).toHaveBeenCalledWith("newCall");
+  });
+
+  it("a block opens the call sheet; its ⋯ opens with the status's verbs, and Cancel call… confirms first", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Oli Martin · #2341 Rigger, 2026-11-18" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Oli Martin")).toBeTruthy();
+    expect(within(sheet).getByRole("button", { name: "Confirm" })).toBeTruthy();
+    expect(within(sheet).getByRole("link", { name: /Logistics tab/ }).getAttribute("href")).toBe("/projects/p1?tab=logistics");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getAllByRole("button", { name: "#2341 Rigger actions" })[0]);
+    expect(await screen.findByRole("menuitem", { name: /^Offer/ })).toBeTruthy();
+    await user.click(screen.getByRole("menuitem", { name: /Cancel call/ }));
+    const confirm = await screen.findByRole("dialog");
+    expect(within(confirm).getByText("Cancel 1 call?")).toBeTruthy();
+    await user.click(within(confirm).getByRole("button", { name: "Cancel 1 call" }));
+    await waitFor(() => expect(asg.cancelMany).toHaveBeenCalledWith(["a1"]));
+  });
+
+  it("bulk: tick calls → Offer n / Confirm n / Cancel n with their own counts; Confirm's Undo is unconfirmMany(result)", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    const bar = screen.getByRole("toolbar", { name: "Bulk actions" });
+    expect(within(bar).getByText("3 calls selected")).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Offer 1" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "Cancel 3" })).toBeTruthy();
+    await user.click(within(bar).getByRole("button", { name: "Confirm 1" }));
+    await waitFor(() => expect(asg.confirmMany).toHaveBeenCalledWith(["a2"]));
+    await announced[0].performUndo!();
+    expect(asg.unconfirmMany).toHaveBeenCalledWith({ confirmed: ["a2"], skipped: [], stamp: 555 });
+  });
+
+  it("bulk Offer n and Cancel n confirm first; Cancel mails exactly toTell", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Offer 1" }));
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Send 1 offer?")).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Send 1 offer" }));
+    await waitFor(() => expect(mail.sendCrewOffers).toHaveBeenCalledWith({ assignmentIds: ["a1"] }));
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Cancel 3" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/2 people have been offered or confirmed/)).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel 3 calls" }));
+    await waitFor(() => expect(mail.sendCancellationEmails).toHaveBeenCalledWith({ assignmentIds: ["a1", "a2", "a3"] }));
+  });
+
+  it("shift-click ticks a range", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select #2341 Rigger, 2026-11-17" }));
+    await user.keyboard("{Shift>}");
+    await user.click(screen.getByRole("checkbox", { name: "Select #2341 Rigger, 2026-11-19" }));
+    await user.keyboard("{/Shift}");
+    expect(screen.getByText("3 calls selected")).toBeTruthy();
+  });
+
+  it("Needs crew: open calls by day with suggestions; the row ⋯ opens; a row opens Offer a call with the first suggestion; Offer to suggested n", async () => {
+    nav.search = "seg=needs";
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    const list = screen.getByRole("table", { name: "Calls that need crew" });
+    expect(within(list).getByText("Wed, 18 Nov")).toBeTruthy();
+    expect(within(list).getByText("needs 2")).toBeTruthy();
+    await user.click(within(list).getByRole("button", { name: "#2341 Bump in actions" }));
+    expect(await screen.findByRole("menuitem", { name: /Offer to…/ })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /Offer to suggested/ })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(within(list).getByText("Bump in"));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Dev Patel · Wed, 18 Nov")).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(within(list).getByRole("checkbox", { name: "Select #2341 Bump in" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Offer to suggested 1" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Send 1 offer" }));
+    await waitFor(() => expect(mail.sendCrewOffers).toHaveBeenCalledWith({ assignmentIds: ["newCall"] }));
+    expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ crewMemberId: "c2", serviceId: "svc1" }));
+  });
+
+  it("without crew:create / update: no primary, cells are not buttons, blocks have no verbs", () => {
+    perms.all = false;
+    render(<CrewPlanner />);
+    expect(screen.queryByRole("button", { name: "Offer call" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Offer Dev Patel a call/ })).toBeNull();
+  });
+
+  it("page ⋯ holds Crew list and Crew roles & rates… (the roles sheet is URL state)", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Crew options" }));
+    await user.click(await screen.findByRole("menuitem", { name: /Crew roles & rates/ }));
+    expect(nav.replace).toHaveBeenCalledWith("/crew/planner?sheet=roles", { scroll: false });
+  });
+});

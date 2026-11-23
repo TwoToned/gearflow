@@ -19,7 +19,15 @@ beforeAll(() => {
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org1" } }) }));
 const perms = vi.hoisted(() => ({ manager: true }));
-vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true, useIsManagerPlus: () => perms.manager }));
+// The client's role always reads manager+: whether rates show must come from the SERVER (`crewRoles.ratesVisible`).
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true, useIsManagerPlus: () => true }));
+vi.mock("@/hooks/use-authed-query", async () => {
+  const { getFunctionName } = await import("convex/server");
+  return {
+    useAuthedQuery: (q: import("convex/server").FunctionReference<"query">, args: unknown) =>
+      args === "skip" ? undefined : getFunctionName(q) === "crewRoles:ratesVisible" ? perms.manager : undefined,
+  };
+});
 const usage = vi.hoisted(() => vi.fn(async () => ({ crewMembers: 3, crewAssignments: 7, projectServices: 1 })));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: usage }) }));
 

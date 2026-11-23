@@ -16301,6 +16301,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewRoles.ratesVisible",
+    "module": "crewRoles",
+    "fn": "ratesVisible",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Whether the caller may see crew pay (role cost/charge rates): manager+ and not a noFinancials key.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewRoles.remove",
     "module": "crewRoles",
     "fn": "remove",
@@ -65202,10 +65234,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1262,
-  agentReachable: 632,
-  queries: 450,
+  total: 1263,
+  agentReachable: 633,
+  queries: 451,
   mutations: 812,
-  agentReachableQueries: 315,
+  agentReachableQueries: 316,
   agentReachableMutations: 317,
 } as const;

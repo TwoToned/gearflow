@@ -14,7 +14,8 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { factText } from "@/lib/primitives/facts";
 import { buildCrewRoleActions } from "@/lib/row-actions/crew-role";
 import { crewRateTypeLabels } from "@/lib/status-labels";
-import { useCanDo, useIsManagerPlus } from "@/lib/use-permissions";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useCanDo } from "@/lib/use-permissions";
 import { compareRoleOrder } from "../../../../../convex/lib/crewRoleOrder";
 import { RoleEditor } from "./role-editor";
 import { useRoleSheetWrites } from "./use-role-writes";
@@ -178,7 +179,8 @@ export function CrewRolesSheet({ open, onOpenChange }: { open: boolean; onOpenCh
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const roles = useSortedRoles(open ? orgId : undefined);
-  const showRates = useIsManagerPlus();
+  // The SERVER's answer (`crewRoles.ratesVisible` = canSeeCrewPay), never the client's role.
+  const showRates = useAuthedQuery(api.crewRoles.ratesVisible, open && orgId ? { orgId } : "skip") === true;
   const canCreate = useCanDo("crew", "create");
   const canUpdate = useCanDo("crew", "update");
   const w = useRoleSheetWrites({ ratesShown: showRates });

@@ -164,6 +164,16 @@ describe("crew roles: rates follow the one pay rule (S4, S5)", () => {
     expect((await roles(tm))[0]).toMatchObject({ defaultRate: 600 });
   });
 
+  test("ratesVisible is canSeeCrewPay: manager yes; member no; a noFinancials key (as owner) no", async () => {
+    const rv = (t: T, who = asUser) => t.withIdentity(who).query(api.crewRoles.ratesVisible, { orgId: ORG });
+    const tm = makeT(); await seed(tm, "manager");
+    expect(await rv(tm)).toBe(true);
+    const tb = makeT(); await seed(tb, "member");
+    expect(await rv(tb)).toBe(false);
+    const ta = makeT(); await seed(ta, "owner", { noFinancials: true });
+    expect(await rv(ta, asAgent)).toBe(false);
+  });
+
   test("S4: an edit by a caller who can't see pay keeps the stored rates; a manager's edit can clear them", async () => {
     const ta = makeT(); await seed(ta, "owner", { noFinancials: true });
     await ta.run(async (ctx) => {

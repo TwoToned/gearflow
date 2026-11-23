@@ -21,7 +21,23 @@ export const agentOps: AgentOpsAnnotations = {
   listForSettings: { summary: "Crew roles for the settings admin table, rate fields redacted below manager+.", danger: "low", mcpTier: 2 },
   usage: { summary: "Usage counts (crew/assignments/services) for a crew role, for the archive-with-usage-guard pre-check.", danger: "low", mcpTier: 3 },
   getById: { summary: "Get a single crew role by id.", danger: "low", mcpTier: 2 },
+  ratesVisible: { summary: "Whether the caller may see crew pay (role cost/charge rates): manager+ and not a noFinancials key.", danger: "low", mcpTier: 3 },
 };
+
+/**
+ * Does THIS caller see crew pay? The server's own answer (`canSeeCrewPay`), so
+ * the roles sheet shows or hides the rate columns — and sends rates on an edit
+ * — from what the server will actually return, never from the client's role
+ * (`listForSettings` strips the rates as absent keys, which a manager's role
+ * with no rates set looks identical to).
+ */
+export const ratesVisible = query({
+  args: { orgId: v.string() },
+  handler: async (ctx, { orgId }): Promise<boolean> => {
+    await requireOrgReadFor(ctx, orgId, "crew");
+    return await canSeeCrewPay(ctx, orgId);
+  },
+});
 
 export const list = query({
   args: { orgId: v.string() },

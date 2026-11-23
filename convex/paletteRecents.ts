@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead } from "./lib/auth";
 import { readableSearchTypes } from "./lib/searchResultResource";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { MAX_RECENT_ID_LENGTH, MAX_RECENT_REFS, type RecentRef, type RecentType } from "./lib/paletteRecentRefs";
 
 /**
  * The ⌘K palette's Recent group (UX Phase 11, §6d.3, decision Q7). The browser
@@ -23,13 +24,6 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * reads the same in Recent as it did in the results it was opened from.
  */
 
-export const RECENT_TYPES = ["project", "asset", "kit", "model", "client", "crew", "supplier", "location"] as const;
-export type RecentType = (typeof RECENT_TYPES)[number];
-
-/** The palette shows five; the handler refuses more (a hand-built call can't widen the read). */
-export const MAX_RECENT_REFS = 5;
-const MAX_ID_LENGTH = 64;
-
 export type RecentRow = {
   type: RecentType;
   id: string;
@@ -39,7 +33,6 @@ export type RecentRow = {
   status?: string;
 };
 
-type Ref = { type: RecentType; id: string };
 
 /** One org-checked `by_cuid` point read: the row only if it belongs to `orgId`. */
 async function inOrg<D extends { organizationId?: string | null }>(
@@ -107,11 +100,11 @@ const LOADERS: Record<RecentType, Loader> = {
   },
 };
 
-function assertRefs(refs: Ref[]): void {
+function assertRefs(refs: RecentRef[]): void {
   if (refs.length > MAX_RECENT_REFS) {
     throw new ConvexError(`At most ${MAX_RECENT_REFS} recent rows can be resolved at once.`);
   }
-  if (refs.some((r) => r.id.length === 0 || r.id.length > MAX_ID_LENGTH)) {
+  if (refs.some((r) => r.id.length === 0 || r.id.length > MAX_RECENT_ID_LENGTH)) {
     throw new ConvexError("A recent row id is empty or too long.");
   }
 }

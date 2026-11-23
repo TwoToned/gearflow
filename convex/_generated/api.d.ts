@@ -150,6 +150,7 @@ import type * as lib_overbookingBoard from "../lib/overbookingBoard.js";
 import type * as lib_overbookingConfirmImpact from "../lib/overbookingConfirmImpact.js";
 import type * as lib_overdueReturns from "../lib/overdueReturns.js";
 import type * as lib_pagination from "../lib/pagination.js";
+import type * as lib_paletteRecentRefs from "../lib/paletteRecentRefs.js";
 import type * as lib_permissionsCore from "../lib/permissionsCore.js";
 import type * as lib_personalDismissal from "../lib/personalDismissal.js";
 import type * as lib_personalEmailDomains from "../lib/personalEmailDomains.js";
@@ -475,6 +476,7 @@ declare const fullApi: ApiFromModules<{
   "lib/overbookingConfirmImpact": typeof lib_overbookingConfirmImpact;
   "lib/overdueReturns": typeof lib_overdueReturns;
   "lib/pagination": typeof lib_pagination;
+  "lib/paletteRecentRefs": typeof lib_paletteRecentRefs;
   "lib/permissionsCore": typeof lib_permissionsCore;
   "lib/personalDismissal": typeof lib_personalDismissal;
   "lib/personalEmailDomains": typeof lib_personalEmailDomains;

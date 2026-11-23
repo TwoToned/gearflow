@@ -14,6 +14,9 @@ import { parsePaletteDate } from "@/lib/palette/date-query";
 import { matchSlashCommands } from "@/lib/slash-commands";
 import { rolePermissions } from "@/lib/permissions";
 import type { SearchResult } from "@/lib/search-types";
+import { parseListState } from "@/lib/list-url-state";
+import { JOBS_SPEC } from "@/lib/list-views/jobs";
+import { ASSETS_SPEC } from "@/lib/list-views/assets";
 
 const res = (type: SearchResult["type"], id: string, title: string, extra: Partial<SearchResult> = {}): SearchResult => ({
   id, type, title, subtitle: null, href: `/${type}/${id}`, relevance: 1, ...extra,
@@ -49,13 +52,44 @@ describe("searchSections (§6d.3: grouped, best group first, four rows each)", (
     expect(more.href).toBe("/assets/registry?q=aura");
   });
 
-  it("a group without a list expands in place instead, and only when it hides rows", () => {
+  it("a group without a list expands in place instead, counting exactly the rows it will show", () => {
     const many = Array.from({ length: 6 }, (_, i) => res("client", `c${i}`, `Client ${i}`));
-    const s = searchSections(many, [{ type: "client", total: 6, truncated: true }], "cli", new Set());
+    // The server matched 40, but only 6 came back: expanding shows 6, so it says 6.
+    const s = searchSections(many, [{ type: "client", total: 40, truncated: true }], "cli", new Set());
     const more = s[0].rows[4];
-    expect(more.title).toBe("Show all 6+ in Clients ›");
+    expect(more.title).toBe("Show all 6 in Clients ›");
     expect(more.action).toEqual({ kind: "expand", family: "clients" });
     expect(searchSections(many, [], "cli", new Set(["clients"]))[0].rows).toHaveLength(6);
+  });
+
+  it("each list link counts ONE type, the one its list holds: assets, bulk stock, jobs incl. cancelled; kits expand", () => {
+    const mixed = [
+      ...Array.from({ length: 5 }, (_, i) => res("asset", `a${i}`, `AURA-0${i}`)),
+      ...Array.from({ length: 5 }, (_, i) => res("bulk-asset", `b${i}`, `XLR-${i}`)),
+      ...Array.from({ length: 5 }, (_, i) => res("kit", `k${i}`, `KIT-${i} — Rig`)),
+      ...Array.from({ length: 5 }, (_, i) => res("project", `p${i}`, `23${i}0 — Gig`)),
+    ];
+    const groups = [
+      { type: "asset" as const, total: 9, truncated: false },
+      { type: "bulk-asset" as const, total: 6, truncated: false },
+      { type: "kit" as const, total: 12, truncated: false },
+      { type: "project" as const, total: 8, truncated: false },
+    ];
+    const by = Object.fromEntries(searchSections(mixed, groups, "x y", new Set()).map((s) => [s.label, s.rows.at(-1)!]));
+    expect(by["Assets"]).toMatchObject({ title: "Show all 9 in Assets ›", href: "/assets/registry?q=x%20y" });
+    expect(by["Bulk stock"]).toMatchObject({ title: "Show all 6 in Bulk stock ›", href: "/assets/registry?kind=bulk&q=x%20y" });
+    expect(by["Jobs"]).toMatchObject({ title: "Show all 8 in Jobs ›", href: "/projects?show=cancelled&q=x%20y" });
+    expect(by["Kits"]).toMatchObject({ title: "Show all 5 in Kits ›", action: { kind: "expand", family: "kits" } });
+  });
+
+  it("every list link survives its list's own URL parser (nothing dropped as junk)", () => {
+    const one = (type: SearchResult["type"]) => Array.from({ length: 5 }, (_, i) => res(type, `${type}${i}`, `${type} ${i}`));
+    const s = searchSections([...one("asset"), ...one("bulk-asset"), ...one("project")], [], "q", new Set());
+    const hrefs = s.map((x) => x.rows.at(-1)!.href!);
+    const parse = (href: string, spec: typeof JOBS_SPEC) => parseListState(new URLSearchParams(href.split("?")[1]), spec);
+    expect(parse(hrefs[0], ASSETS_SPEC)).toMatchObject({ q: "q" });
+    expect(parse(hrefs[1], ASSETS_SPEC).filters.kind).toEqual(["bulk"]);
+    expect(parse(hrefs[2], JOBS_SPEC).filters.show).toEqual(["cancelled"]);
   });
 
   it("a job row is mono number + name, with its status for the dot-word, and records into Recent", () => {

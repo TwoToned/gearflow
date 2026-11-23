@@ -63,10 +63,18 @@ interface Family {
   listHref?: string;
 }
 
-/** §6d.3's groups first (Jobs, Assets, Models, Clients, Crew, Suppliers, Locations), then the rest. */
+/**
+ * §6d.3's groups first (Jobs, Assets, Models, Clients, Crew, Suppliers, Locations), then the rest.
+ * A `listHref` must open a list holding exactly the rows its count counts, so each
+ * is ONE result type: serialised assets open the registry, bulk the registry's
+ * bulk view, and Jobs include cancelled ones (search matches every status).
+ * Kits have no list that reads `?q=`, so their `Show all` expands in place.
+ */
 const PALETTE_FAMILIES: readonly Family[] = [
-  { key: "jobs", label: "Jobs", types: ["project"], listHref: "/projects" },
-  { key: "assets", label: "Assets", types: ["asset", "bulk-asset", "kit"], listHref: "/assets/registry" },
+  { key: "jobs", label: "Jobs", types: ["project"], listHref: "/projects?show=cancelled" },
+  { key: "assets", label: "Assets", types: ["asset"], listHref: "/assets/registry" },
+  { key: "bulk", label: "Bulk stock", types: ["bulk-asset"], listHref: "/assets/registry?kind=bulk" },
+  { key: "kits", label: "Kits", types: ["kit"] },
   { key: "models", label: "Models", types: ["model"] },
   { key: "clients", label: "Clients", types: ["client"] },
   { key: "crew", label: "Crew", types: ["crew"] },
@@ -133,23 +141,36 @@ function familyTotal(f: Family, groups: readonly SearchGroupTotal[], parents: nu
   return { total: mine.reduce((n, g) => n + g.total, 0), truncated: mine.some((g) => g.truncated) };
 }
 
-function showAllRow(f: Family, total: number, truncated: boolean, query: string): PaletteRow {
+/** The list URL with the query added (`?q=` or `&q=`). */
+function withQuery(href: string, query: string): string {
+  return `${href}${href.includes("?") ? "&" : "?"}q=${encodeURIComponent(query.trim())}`;
+}
+
+function showAllRow(f: Family, n: string, query: string): PaletteRow {
   return {
     id: `show-all-${f.key}`,
-    title: `Show all ${total}${truncated ? "+" : ""} in ${f.label} ›`,
+    title: `Show all ${n} in ${f.label} ›`,
     subtitle: null,
     icon: "ChevronRight",
-    href: f.listHref ? `${f.listHref}?q=${encodeURIComponent(query.trim())}` : undefined,
+    href: f.listHref ? withQuery(f.listHref, query) : undefined,
     action: f.listHref ? undefined : { kind: "expand", family: f.key },
   };
 }
 
+/**
+ * Four rows, then `Show all n in X ›` when there is more to see. `n` counts
+ * exactly what the target shows: the server's match total for a list link,
+ * the rows the palette holds for an in-place expand.
+ */
 function familySection(f: Family, rows: PaletteRow[], groups: readonly SearchGroupTotal[], query: string, expanded: boolean): PaletteSection {
   const shown = expanded ? rows : rows.slice(0, ROWS_PER_GROUP);
+  if (!f.listHref) {
+    const more = rows.length > shown.length;
+    return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, String(rows.length), query)] : shown };
+  }
   const { total, truncated } = familyTotal(f, groups, rows.length);
-  // `Show all` only when it shows something more: a list to open, or hidden rows to expand.
-  const more = total > shown.length && (f.listHref !== undefined || rows.length > shown.length);
-  return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, total, truncated, query)] : shown };
+  const more = total > shown.length;
+  return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, `${total}${truncated ? "+" : ""}`, query)] : shown };
 }
 
 /**

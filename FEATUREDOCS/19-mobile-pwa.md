@@ -101,10 +101,16 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
     tag overdue, Maintenance open · overdue, Returns overdue (the shared overdue
     rule), Clients, Suppliers, Locations and crew. Each source is org-guarded on its
     own resource AND role-checked (`callerMayRead`): a role that can't read it gets
-    `null`. Reads are org-index-first, capped at 200, with `truncated` (`200+`). No
-    new index.
+    `null`. Reads are org-index-first, filtered, then capped at 200, with `truncated`
+    (`200+`). No new index. Maintenance's open and overdue are the ONE definitions in
+    `convex/lib/maintenanceOpen.ts` (open = scheduled + the holding statuses
+    AWAITING_PARTS, IN_PROGRESS, QA; overdue = scheduled / in progress past its date),
+    the same the Maintenance page's Open / Overdue tiles and Home's maintenance-due
+    count read. Returns reads one line per job (presence only). The validator is
+    built from `NAV_COUNT_SOURCES`.
   - Finance (`1 overdue`) and Overbookings (`5 overbooked`) reuse
-    `financeOrg.counts` / `overbookingBoard.counts`.
+    `financeOrg.counts` (which also checks the role's `invoice:read`, since it returns
+    a dollar total) and `overbookingBoard.counts` (already role-checked).
   - Rows mount only while the sheet is open and only for the rows the role kept, so
     a count is subscribed exactly while it can be seen. `formatNavCount` words them:
     totals muted (shown at 0), exceptions as a dot-word and absent at 0.

@@ -54,9 +54,11 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   - a 13 px/600 title;
   - a muted mono count;
   - a quiet `View all ›` from the registry's `viewAll`. The grid drops it when
-    `canOpenLink` fails for the viewer's role. `canOpenLink` is the shell's own rule
-    (`canSee` in `nav.ts`): ANY action on the resource opens it (`reports` grants
-    `view`, not `read`). On a phone it has the shared `.tap-area` (44 px hit area).
+    `canOpenLink` fails for the viewer's role. It is the ONE client "can open" rule,
+    `reachesResource` (`src/lib/permission-reach.ts`), shared with `nav.ts` `canSee`,
+    Needs attention's read gate and the palette: ANY action on the resource opens it
+    (`reports` grants `view`, not `read`). On a phone it has the shared `.tap-area`
+    (44 px hit area).
 
   Widgets write their count, and one header action (the setup panel's Dismiss), into the
   card header through `WidgetCount` / `WidgetAction` (`widget-chrome.tsx`, portals). A stat
@@ -77,8 +79,10 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
 - **Needs attention** is a set of dot-word lines with a mono count, derived by the pure
   `src/lib/needs-attention.ts`.
   - **Gating.** Each read is skipped when the role can't open the list it links to
-    (`useAuthedQuery` doesn't catch errors, so hiding the line alone would not be
-    enough). The line is then absent:
+    (`reachesResource`, any action; `useAuthedQuery` doesn't catch errors, so hiding the
+    line alone would not be enough). The line is then absent. Maintenance due counts
+    OPEN work past its date by the one definition in `convex/lib/maintenanceOpen.ts`
+    (scheduled + awaiting parts + in progress + QA):
 
     | Source | Read needed |
     |---|---|
@@ -125,8 +129,8 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
 - **Upcoming.** Dot-word status, the lock glyph and a mono date range. Quoted and booked
   jobs (`HOME_UPCOMING_STATUSES`, `convex/lib/jobStatusGroups.ts`, shared with
   `dashboardLists.upcoming`). `View all ›` → the Jobs list filtered to exactly those
-  statuses, so it holds every row the widget showed. The header prints `8+` once the read
-  returned its limit.
+  statuses, so it holds every row the widget showed. The read takes one past
+  `HOME_UPCOMING_LIMIT`, so the header prints `8+` only when there are more than 8.
 - **Recent activity.** Sentences with who · when; no icon discs. `View all ›` →
   `/activity` (gated on `reports`).
 

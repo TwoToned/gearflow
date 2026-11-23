@@ -38,8 +38,12 @@ RBAC resource in ONE table, `convex/lib/searchResultResource.ts`
 check once per resource through `callerMayRead` (`convex/lib/auth.ts`, the
 non-throwing form of `requireOrgPermission(…, "read")`, Q3) and `filterReadable`
 drops every type the role can't read on the SERVER — a dropped parent takes its
-children with it. Before this, any token for the org searched all 14 types, member
-row or not; a caller with no member row now gets nothing.
+children with it. The "already shown as a child" dedupe only counts READABLE parents
+(models, kits, clients), so a job under a client the role can't read keeps its own
+top-level row instead of vanishing with its parent. Before this, any token for the
+org searched all 14 types, member row or not; a caller with no member row now gets
+nothing. `convex/globalSearchRoleFilter.test.ts` pins both checks with role fixtures
+that each lack a resource.
 
 **`groups`** (additive): `{ type, total, truncated }[]` — per readable type, the rows
 that matched BEFORE the per-type LIMIT (`truncated` = that type's org scan hit
@@ -75,20 +79,28 @@ decoder). Everything inside lives in `src/components/layout/palette/`:
 - **Recent** (`src/lib/palette/recents.ts`, `usePaletteRecents`): ids only, in
   localStorage under `gf:palette-recents:v1:<orgId>:<userId>`, Zod-parsed on read,
   every storage access in try/catch. Opening a record row (from results, Recent, a
-  date, `@`) moves it to the top; at most five.
-- **Typing** (2+ characters): results grouped Jobs / Assets / Models / Clients / Crew
-  / Suppliers / Locations / …, best group first (where its best row ranked), four
-  rows each, then `Show all n in X ›` (`n` from `groups`, `n+` when truncated). Jobs
-  and Assets open their list on `?q=`; a group with no list expands in place. A
-  group whose matches are all children of another group's row (assets under their
-  model) still gets its `Show all` when it has a list. Rows: mono number, name,
-  muted sub, a job's dot-word status. Children (assets under a model, jobs under a
-  client) sit indented under their parent.
-- **Dates**: `14/11`, `14 nov`, `nov 14`, `14/11/26`, ISO (`src/lib/palette/date-query.ts`,
-  the year from a stable `now`): **Jobs on 14 Nov · n** — the first four through the
-  EXISTING Jobs list query (`projects.listPage` with the day as `dateFrom`/`dateTo`),
-  gated on `project` — then any gear matching words after the date (opening on that
-  date), then `Schedule at 14 Nov ›` (`/availability?date=`). Also after `@`.
+  date, `@`) moves it to the top; at most five. A ref the server no longer resolves
+  (deleted, archived, another org's, no longer readable) is pruned from storage.
+- **Typing** (2+ characters): results grouped Jobs / Assets / Bulk stock / Kits /
+  Models / Clients / Crew / Suppliers / Locations / …, best group first (where its best
+  row ranked), four rows each, then `Show all n in X ›`. **`n` counts exactly what the
+  target shows**, one result type per link: Assets → `/assets/registry?q=` (serialised),
+  Bulk stock → `/assets/registry?kind=bulk&q=`, Jobs → `/projects?show=cancelled&q=`
+  (search matches every status), each with its own `groups` total (`n+` when
+  truncated). A group with no list that reads `?q=` (Kits, Models, Clients, …) expands
+  in place, and its `n` is the rows it will show. A listed group whose matches are all
+  children of another group's row (assets under their model) still gets its `Show
+  all`. Rows: mono number, name, muted sub, a job's dot-word status. Children (assets
+  under a model, jobs under a client) sit indented under their parent.
+- **Dates** (`src/lib/palette/date-query.ts`, the year from a stable `now`): a date
+  WITH a year (`14/11/26`, `14-11-2026`, `14 nov 2026`, ISO) may be followed by search
+  words; a yearless one (`14/11` — a slash only — `14 nov`, `nov 14`) counts only as
+  the WHOLE input. `2.4`, `1.5 m XLR` and `1/4 inch jack` are searches, never dates.
+  A date shows **Jobs on 14 Nov · n** — the first four through the EXISTING Jobs list
+  query (`projects.listPage` with the day as `dateFrom`/`dateTo`), gated on `project`
+  — then any gear matching words after a dated prefix (opening on that date), then
+  `Schedule at 14 Nov ›` (`/availability?date=`), **and the plain search for the whole
+  string still runs, its groups below** (a date never switches search off). Also after `@`.
 - **Nothing matches “…”** with the next step: "Try a job number, an asset tag or a
   client name · @ pages · / actions".
 - **@ mode** (kept): Page navigation via `PAGE_COMMANDS` (`src/lib/page-commands.ts`)

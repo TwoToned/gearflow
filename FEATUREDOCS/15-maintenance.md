@@ -207,6 +207,14 @@ maintenance records.
 `maintenanceDue` stat/chip (`serviceScheduleId` set = excluded) to prevent
 double-counting — see `FEATUREDOCS/17-notifications.md`'s chip note.
 
+**Open / overdue — ONE definition** (`convex/lib/maintenanceOpen.ts`, UX Phase 11):
+the holding statuses (AWAITING_PARTS, IN_PROGRESS, QA — the asset stays in
+MAINTENANCE, read by `maintenanceWrites`), open = SCHEDULED + holding, overdue =
+SCHEDULED / IN_PROGRESS with a passed `scheduledDate` (awaiting parts or in QA is
+held, not late). Home's `maintenanceDue`, the phone More sheet's `Maintenance 20 open ·
+5 overdue` (`navCounts.get`) and this page's Open / Overdue tiles all read it, so the
+numbers agree.
+
 ## Related
 - **[FEATUREDOCS/64 — Incident Reporting](./64-incident-reporting.md)** — the
   in-app successor to the deleted Discord `/fault` command, reusing this model.

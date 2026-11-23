@@ -109,7 +109,7 @@ export function weekRange(week: string): { startMs: number; endMs: number } {
 
 const status = (c: { status?: string | null }): string => c.status ?? "PENDING";
 /** A call that still holds the person's day (DECLINED is the person's no; CANCELLED is never sent). */
-const isActiveCall =(c: PlannerCall): boolean => status(c) !== "DECLINED" && status(c) !== "CANCELLED";
+export const isActiveCall = (c: PlannerCall): boolean => status(c) !== "DECLINED" && status(c) !== "CANCELLED";
 const UNCONFIRMED = new Set(["PENDING", "OFFERED", "ACCEPTED"]);
 const isUnconfirmed =(c: PlannerCall): boolean => UNCONFIRMED.has(status(c));
 /** Mine = the Jobs list's `My jobs` rule: calls on jobs I am the project manager of. */

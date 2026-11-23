@@ -378,6 +378,52 @@ describe("CrewPlanner (smoke)", () => {
     expect(within(bar).getByRole("button", { name: "Cancel 2" })).toBeTruthy();
   });
 
+  it("Offer a call: the Day, Job service and Role Selects open and pick", async () => {
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Offer Dev Patel a call on 2026-11-18" }));
+    const sheet = await screen.findByRole("dialog");
+    await user.click(within(sheet).getByRole("combobox", { name: "Day" }));
+    await user.click(await screen.findByRole("option", { name: /Thu, 19 Nov/ }));
+    expect(within(sheet).getByRole("combobox", { name: "Day" }).textContent).toMatch(/Thu, 19 Nov/);
+    // No open service on Thursday: the sheet says so instead of a Select.
+    expect(within(sheet).getByText(/No call is short of people this day/)).toBeTruthy();
+    await user.click(within(sheet).getByRole("combobox", { name: "Day" }));
+    await user.click(await screen.findByRole("option", { name: /Wed, 18 Nov/ }));
+    await user.click(within(sheet).getByRole("combobox", { name: "Job service" }));
+    expect(await screen.findByRole("option", { name: /#2341 Bump in · Rigger · needs 2/ })).toBeTruthy();
+    await user.keyboard("{Escape}");
+    await user.click(within(sheet).getByRole("combobox", { name: "Role" }));
+    await user.click(await screen.findByRole("option", { name: "Rigger" }));
+    expect(within(sheet).getByRole("combobox", { name: "Role" }).textContent).toBe("Rigger");
+  });
+
+  it("the call sheet follows the live call: a new status shows, and a cancelled call closes it", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<CrewPlanner />);
+    await user.click(screen.getByRole("button", { name: "Oli Martin · #2341 Rigger, 2026-11-18" }));
+    let sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Accepted")).toBeTruthy();
+    // Confirmed in another tab: the subscription returns the new status.
+    queried.members = [{ ...members[0], assignments: members[0].assignments.map((c) => (c.id === "a2" ? { ...c, status: "CONFIRMED" } : c)) }, members[1]];
+    rerender(<CrewPlanner />);
+    sheet = screen.getByRole("dialog");
+    expect(within(sheet).getByText("Confirmed")).toBeTruthy();
+    expect(within(sheet).queryByRole("button", { name: "Confirm" })).toBeNull();
+    // Cancelled: the call leaves the planner data, so the sheet closes.
+    queried.members = [{ ...members[0], assignments: members[0].assignments.filter((c) => c.id !== "a2") }, members[1]];
+    rerender(<CrewPlanner />);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("phone: a person whose only call that day was DECLINED is Free, not Booked", () => {
+    mobile.value = true;
+    queried.members = [members[0], { ...members[1], assignments: [call("d1", "2026-11-17", "DECLINED")] }];
+    render(<CrewPlanner />);
+    expect(screen.getByRole("region", { name: "Booked" }).textContent).not.toContain("Dev Patel");
+    expect(screen.getByRole("region", { name: "Free" }).textContent).toContain("Dev Patel");
+  });
+
   it("a multi-day run is offerable from an empty cell on any day it covers; the call takes that day only, or the whole run", async () => {
     queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")) }];
     const user = userEvent.setup();

@@ -219,7 +219,11 @@ function PlannerBody(p: BodyProps) {
   const calls = useRangeSelection();
   const opens = useRangeSelection();
   const w = usePlannerWrites({ nameOf: callNamer(all), canDelete: p.perms.remove });
-  const [opened, setOpened] = React.useState<OpenedCall | null>(null);
+  // The call sheet holds only ids and reads the call from the LIVE data every
+  // render: after Offer / Confirm it shows the new status, and a call that left
+  // the data (cancelled) closes the sheet.
+  const [openedIds, setOpenedIds] = React.useState<{ callId: string; memberId: string } | null>(null);
+  const opened = liveOpened(openedIds, all);
   const needs = p.url.state.seg === "needs";
   const isMobile = useIsMobile();
   const { callMenu, openMenu, offerTo } = usePlannerMenus(p, all, w);
@@ -230,7 +234,7 @@ function PlannerBody(p: BodyProps) {
     selected: calls.ids,
     onToggle: (id, shift) => calls.toggle(id, order, shift),
     onToggleAll: (on) => calls.setAll(order, on),
-    onOpenCall: (call, member) => setOpened({ call, member }),
+    onOpenCall: (call, member) => setOpenedIds({ callId: call.id, memberId: member.id }),
     onOfferCell: when(p.perms.create, (m: PlannerMember, day: string) => p.onOffer({ memberId: m.id, day })),
     menuFor: callMenu,
   };
@@ -269,9 +273,17 @@ function PlannerBody(p: BodyProps) {
       <BulkBar selection={{ count: liveCount, clear: sel.clear }} actions={bulk} noun={needs ? "open call" : "call"} />
       {/* Phone: the sticky primary, replaced by the bulk bar while anything is ticked (§9h.6). */}
       {isMobile && p.primary && liveCount === 0 && <StickyPrimary primary={p.primary} />}
-      <CallSheet opened={opened} spec={opened ? callMenu(opened.call, opened.member) : { items: [] }} now={p.now} onOpenChange={(o) => !o && setOpened(null)} />
+      <CallSheet opened={opened} spec={opened ? callMenu(opened.call, opened.member) : { items: [] }} now={p.now} onOpenChange={(o) => !o && setOpenedIds(null)} />
     </>
   );
+}
+
+/** The opened call as it stands in the live data now, or null once it has left it. */
+function liveOpened(ids: { callId: string; memberId: string } | null, all: PlannerMember[]): OpenedCall | null {
+  if (!ids) return null;
+  const member = all.find((m) => m.id === ids.memberId);
+  const call = member?.assignments.find((c) => c.id === ids.callId);
+  return member && call ? { call, member } : null;
 }
 
 /** The grid's reading order minus dimmed calls: what select-all and a shift range may tick. */

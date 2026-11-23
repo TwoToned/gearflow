@@ -12,6 +12,7 @@ import {
   callsOn,
   coversDay,
   dayState,
+  isActiveCall,
   displayDate,
   DAY_KIND_INTENT,
   memberName,
@@ -152,7 +153,8 @@ function PersonCard({ m, day, p }: { m: PlannerMember; day: string; p: PhonePlan
 function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
   // A multi-day run is open on every day it covers.
   const opens = p.open.filter((o) => coversDay(o, day));
-  const booked = p.members.flatMap((m) => callsOn(m, day).map((c) => ({ m, c })));
+  // A declined call doesn't hold the person's day: they are Free, not Booked.
+  const booked = p.members.flatMap((m) => callsOn(m, day).filter(isActiveCall).map((c) => ({ m, c })));
   const bookedIds = new Set(booked.map((b) => b.m.id));
   const rest = p.members.filter((m) => !bookedIds.has(m.id));
   const off = rest.filter((m) => dayState(m, day).kind === "unavailable");

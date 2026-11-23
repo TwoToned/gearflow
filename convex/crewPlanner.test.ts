@@ -139,6 +139,18 @@ describe("confirmManyNative / unconfirmManyNative / cancelManyNative", () => {
     // timesheets stay
     expect(await t.run(async (ctx) => ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "te1")).first())).not.toBeNull();
   });
+
+  test("cancel kills the offer's accept/decline token (an old email link can't revive the call)", async () => {
+    const t = makeT(); await seedBase(t); await seedCalls(t);
+    await t.run(async (ctx) => {
+      const off = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "off")).first();
+      await ctx.db.patch(off!._id, { responseToken: "tok" });
+    });
+    await t.withIdentity(asUser).mutation(api.crewAssignmentsWrites.cancelManyNative, { orgId: ORG, ids: ["off"], now: D0, actor, auditId: "cx" });
+    const off = await asg(t, "off");
+    expect(off?.status).toBe("CANCELLED");
+    expect(off?.responseToken).toBeUndefined();
+  });
 });
 
 describe("crewRolesWrites.moveNative", () => {

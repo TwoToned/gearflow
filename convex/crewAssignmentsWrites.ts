@@ -544,7 +544,9 @@ export const cancelManyNative = mutation({
     for (const id of new Set(a.ids)) {
       const doc = await findAssignment(ctx, id);
       if (!doc || doc.organizationId !== a.orgId || !canCrewCall(doc.status, "cancel")) { skipped.push(id); continue; }
-      await replaceAssignment(ctx, doc, { status: "CANCELLED", updatedAt: a.now });
+      // The offer's single-use accept/decline token dies with the call: a
+      // cancelled call must never be accepted from an old email link.
+      await replaceAssignment(ctx, doc, { status: "CANCELLED", updatedAt: a.now }, ["responseToken"]);
       if (TOLD_ON_CANCEL.has(doc.status ?? "PENDING")) toTell.push(id);
       const { name, pn } = await assignmentLabel(ctx, a.orgId, doc);
       await logAssignment(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}:${id}`, now: a.now, action: "STATUS_CHANGE", id, name, projectId: doc.projectId, summary: `Cancelled ${name}'s call on ${pn}`, metadata: { prevStatus: doc.status ?? "PENDING" } });

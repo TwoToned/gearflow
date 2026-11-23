@@ -8,6 +8,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { RECENT_TYPES } from "./lib/paletteRecentRefs";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -78,6 +79,15 @@ describe("paletteRecents.resolve", () => {
     const six = Array.from({ length: 6 }, (_, i) => ({ type: "client" as const, id: `c${i}` }));
     await expect(resolve(t, six)).rejects.toThrow(/At most 5/);
     await expect(resolve(t, [{ type: "client", id: "x".repeat(65) }])).rejects.toThrow(/too long/);
+  });
+
+  test("the validator is RECENT_TYPES: every listed type is accepted, anything else refused", async () => {
+    const t = await makeT();
+    await expect(t.withIdentity(asUser).query(api.paletteRecents.resolve, { orgId: ORG, refs: RECENT_TYPES.map((type) => ({ type, id: "none" })).slice(0, 5) })).resolves.toEqual([]);
+    await expect(t.withIdentity(asUser).query(api.paletteRecents.resolve, { orgId: ORG, refs: RECENT_TYPES.slice(5).map((type) => ({ type, id: "none" })) })).resolves.toEqual([]);
+    await expect(
+      t.withIdentity(asUser).query(api.paletteRecents.resolve, { orgId: ORG, refs: [{ type: "invoice" as "project", id: "x" }] }),
+    ).rejects.toThrow(/Validator/i);
   });
 
   test("a caller whose org doesn't match is rejected", async () => {

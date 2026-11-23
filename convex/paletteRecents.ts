@@ -5,7 +5,8 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgRead } from "./lib/auth";
 import { readableSearchTypes } from "./lib/searchResultResource";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { MAX_RECENT_ID_LENGTH, MAX_RECENT_REFS, type RecentRef, type RecentType } from "./lib/paletteRecentRefs";
+import { MAX_RECENT_ID_LENGTH, MAX_RECENT_REFS, RECENT_TYPES, type RecentRef, type RecentType } from "./lib/paletteRecentRefs";
+import { literals } from "convex-helpers/validators";
 
 /**
  * The ⌘K palette's Recent group (UX Phase 11, §6d.3, decision Q7). The browser
@@ -112,15 +113,7 @@ function assertRefs(refs: RecentRef[]): void {
 export const resolve = query({
   args: {
     orgId: v.string(),
-    refs: v.array(
-      v.object({
-        type: v.union(
-          v.literal("project"), v.literal("asset"), v.literal("kit"), v.literal("model"),
-          v.literal("client"), v.literal("crew"), v.literal("supplier"), v.literal("location"),
-        ),
-        id: v.string(),
-      }),
-    ),
+    refs: v.array(v.object({ type: literals(...RECENT_TYPES), id: v.string() })),
   },
   handler: async (ctx, { orgId, refs }): Promise<RecentRow[]> => {
     await requireOrgRead(ctx, orgId);

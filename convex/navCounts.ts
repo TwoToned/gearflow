@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { literals } from "convex-helpers/validators";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -37,6 +38,8 @@ export const NAV_COUNT_SOURCES = [
   "clients",
   "suppliers",
   "locations",
+  // No NAV row names `crew` yet: UX Phase 15 owns the Crew rows (Q10) and attaches it.
+  // Kept (and tested) so that is a one-line `count: "crew"` on its row.
   "crew",
 ] as const;
 export type NavCountServerSource = (typeof NAV_COUNT_SOURCES)[number];
@@ -118,10 +121,7 @@ async function counted(ctx: QueryCtx, orgId: string, resource: Resource, read: (
 export const get = query({
   args: {
     orgId: v.string(),
-    source: v.union(
-      v.literal("assets"), v.literal("testTagOverdue"), v.literal("maintenance"), v.literal("returnsOverdue"),
-      v.literal("clients"), v.literal("suppliers"), v.literal("locations"), v.literal("crew"),
-    ),
+    source: literals(...NAV_COUNT_SOURCES),
     /** A stable clock for the date-derived sources (a caller snapshot, never a fresh Date.now()). */
     now: v.number(),
   },

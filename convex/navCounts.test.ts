@@ -8,7 +8,7 @@ import { convexTest, type TestConvex } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { NAV_COUNT_CAP, type NavCountServerSource } from "./navCounts";
+import { NAV_COUNT_CAP, NAV_COUNT_SOURCES, type NavCountServerSource } from "./navCounts";
 import { isOpenMaintenance, isOverdueMaintenance } from "./lib/maintenanceOpen";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -99,6 +99,14 @@ describe("navCounts.get — figures", () => {
       for (let i = 0; i <= NAV_COUNT_CAP; i++) await ctx.db.insert("locations", { id: `l${i}`, organizationId: ORG, name: `L${i}` });
     });
     expect(await count(t, "locations")).toEqual({ value: NAV_COUNT_CAP, truncated: true });
+  });
+});
+
+describe("navCounts.get — the validator is NAV_COUNT_SOURCES", () => {
+  test("every listed source is accepted; anything else is refused by the validator", async () => {
+    const t = await makeT();
+    for (const s of NAV_COUNT_SOURCES) await expect(count(t, s)).resolves.toBeDefined();
+    await expect(count(t, "invoicesOverdue" as NavCountServerSource)).rejects.toThrow(/Validator/i);
   });
 });
 

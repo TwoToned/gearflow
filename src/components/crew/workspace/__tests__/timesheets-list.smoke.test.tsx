@@ -250,6 +250,19 @@ describe("TimesheetsList (smoke)", () => {
     expect(writes.remove).not.toHaveBeenCalled();
   });
 
+  it("Log time: Tick all under a search ADDS the shown people to earlier picks; Clear takes only them off", async () => {
+    const user = userEvent.setup();
+    render(<TimesheetsList />);
+    await user.click(screen.getByRole("button", { name: "Log time" }));
+    const sheet = await screen.findByRole("dialog");
+    await user.click(within(sheet).getByRole("checkbox", { name: "Ana Ruiz" }));
+    await user.type(within(sheet).getByLabelText("Search people"), "Ben");
+    await user.click(within(sheet).getByRole("button", { name: "Tick all" }));
+    expect(within(sheet).getByRole("button", { name: "Next · 2 ticked" })).toBeTruthy();
+    await user.click(within(sheet).getByRole("button", { name: "Clear" }));
+    expect(within(sheet).getByRole("button", { name: "Next · 1 ticked" })).toBeTruthy();
+  });
+
   it("page ⋯ holds Crew list, Crew roles & rates…, Columns and Export all…; each opens", async () => {
     const user = userEvent.setup();
     render(<TimesheetsList />);

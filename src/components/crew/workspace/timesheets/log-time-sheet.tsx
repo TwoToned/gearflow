@@ -45,6 +45,10 @@ function PickStep({
   const shown = needle ? people.filter((p) => `${p.name} ${p.detail}`.toLowerCase().includes(needle)) : people;
   const allOn = shown.length > 0 && shown.every((p) => picked.includes(p.id));
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+  // Tick all / Clear act on the people SHOWN: with a search active they add to
+  // (or take from) the earlier picks, never replace them.
+  const shownIds = new Set(shown.map((p) => p.id));
+  const tickAll = () => setPicked(allOn ? picked.filter((id) => !shownIds.has(id)) : [...new Set([...picked, ...shownIds])]);
   return (
     <div className="flex flex-col gap-4 p-1">
       <SheetHeader>
@@ -53,7 +57,7 @@ function PickStep({
       </SheetHeader>
       <div className="flex items-center gap-2">
         <Input aria-label="Search people" placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(allOn ? [] : shown.map((p) => p.id))}>
+        <Button type="button" variant="ghost" size="sm" onClick={tickAll}>
           {allOn ? "Clear" : "Tick all"}
         </Button>
       </div>

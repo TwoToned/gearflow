@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { blankableNumber } from "./blankable";
+
 export const modelSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   manufacturer: z.string().max(200).optional(),
@@ -12,18 +14,20 @@ export const modelSchema = z.object({
   manuals: z.array(z.string()).default([]),
   specifications: z.record(z.string(), z.string()).optional(),
   customFields: z.record(z.string(), z.string()).optional(),
-  defaultRentalPrice: z.coerce.number().min(0).optional(),
-  dailyRate: z.coerce.number().min(0).optional(),
-  weeklyRate: z.coerce.number().min(0).optional(),
-  monthlyRate: z.coerce.number().min(0).optional(),
-  defaultPurchasePrice: z.coerce.number().min(0).optional(),
-  replacementCost: z.coerce.number().min(0).optional(),
+  // Optional money / measures are `blankableNumber`: a blank box stays blank, never a
+  // real $0 (a rate of 0 means "free", not "not set"; #1249, UX Phase 12 §9e.3).
+  defaultRentalPrice: blankableNumber(z.number().min(0)),
+  dailyRate: blankableNumber(z.number().min(0)),
+  weeklyRate: blankableNumber(z.number().min(0)),
+  monthlyRate: blankableNumber(z.number().min(0)),
+  defaultPurchasePrice: blankableNumber(z.number().min(0)),
+  replacementCost: blankableNumber(z.number().min(0)),
   // WS11 (#950) — sales items. `saleStockQuantity` has no `.min()`: a negative
   // pool is valid (oversell is warn-allow, spec decision), not an input error.
-  salePrice: z.coerce.number().min(0).optional(),
+  salePrice: blankableNumber(z.number().min(0)),
   saleStockQuantity: z.coerce.number().int().optional(),
-  weight: z.coerce.number().min(0).optional(),
-  powerDraw: z.coerce.number().int().min(0).optional(),
+  weight: blankableNumber(z.number().min(0)),
+  powerDraw: blankableNumber(z.number().int().min(0)),
   requiresTestAndTag: z.boolean().default(false),
   testAndTagIntervalDays: z.union([z.literal(""), z.coerce.number().int().min(1)]).optional().transform(v => v === "" || v === 0 ? undefined : v),
   defaultTestProfileId: z.string().optional(),

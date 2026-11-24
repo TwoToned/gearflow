@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { blankableNumber } from "./blankable";
+
 export const assetSchema = z.object({
   modelId: z.string().min(1, "Model is required"),
   assetTag: z.string().min(1, "Asset tag is required").max(50),
@@ -8,7 +10,7 @@ export const assetSchema = z.object({
   status: z.enum(["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED", "SOLD"]).default("AVAILABLE"),
   condition: z.enum(["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"]).default("NEW"),
   purchaseDate: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),
-  purchasePrice: z.union([z.literal(""), z.coerce.number().min(0)]).optional().transform(v => v === "" ? undefined : v),
+  purchasePrice: blankableNumber(z.number().min(0)),
   purchaseSupplier: z.string().max(200).optional(),
   supplierId: z.string().optional(),
   purchaseOrderNumber: z.string().max(100).optional(),
@@ -29,7 +31,7 @@ export const bulkAssetSchema = z.object({
   modelId: z.string().min(1, "Model is required"),
   assetTag: z.string().min(1, "Asset tag is required").max(50),
   totalQuantity: z.coerce.number().int().min(0, "Quantity must be 0 or more").default(0),
-  purchasePricePerUnit: z.coerce.number().min(0).optional(),
+  purchasePricePerUnit: blankableNumber(z.number().min(0)),
   locationId: z.string().optional(),
   status: z.enum(["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK", "RETIRED"]).default("ACTIVE"),
   notes: z.string().max(2000).optional(),

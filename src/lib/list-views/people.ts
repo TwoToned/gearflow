@@ -44,6 +44,14 @@ function baseArgs(state: ListUrlState, now: number) {
 
 // ─── Crew ────────────────────────────────────────────────────────────────
 
+const CREW_STATUS_OPTIONS = [
+  { value: "UNCONFIRMED", label: "Unconfirmed" },
+  { value: "ON_JOB", label: "On a job" },
+  { value: "AVAILABLE", label: "Available" },
+  { value: "ON_LEAVE", label: "On leave" },
+  { value: "INACTIVE", label: "Inactive" },
+];
+
 const CREW_SEGMENTS = [
   { key: "all", label: "All" },
   { key: "available", label: "Available this week" },
@@ -54,7 +62,7 @@ const CREW_SEGMENTS = [
 
 export const CREW_SPEC: ListUrlSpec = {
   segments: CREW_SEGMENTS.map((s) => s.key),
-  filters: ["type", "dept", "role"],
+  filters: ["type", "dept", "role", "status"],
   sorts: ["name", "status", "next", "week", "rate", "type", "phone", "email", "department"],
   defaultSort: "status:asc",
 };
@@ -67,6 +75,8 @@ export function crewFilters(roles: { id: string; name: string }[], departments: 
     { key: "type", label: "Type", options: Object.entries(crewMemberTypeLabels).map(([value, label]) => ({ value, label })) },
     { key: "dept", label: "Department", options: departments.map((d) => ({ value: d, label: d })) },
     { key: "role", label: "Role", options: roles.map((r) => ({ value: r.id, label: r.name })) },
+    // A status word is its own door: On leave and Inactive stay reachable beside the strip.
+    { key: "status", label: "Status", options: CREW_STATUS_OPTIONS },
   ];
 }
 
@@ -93,6 +103,7 @@ export function crewQueryArgs(state: ListUrlState, now: number) {
     typeIn: known(f.type, Object.keys(crewMemberTypeLabels)),
     departmentIn: f.dept,
     roleIn: f.role,
+    statusIn: known(f.status, CREW_STATUS_OPTIONS.map((o) => o.value)),
   };
 }
 
@@ -111,7 +122,7 @@ export interface CrewSource {
   defaultDayRate?: number | null;
   crewRole?: { id: string; name: string } | null;
   listStatus: "UNCONFIRMED" | "ON_JOB" | "AVAILABLE" | "ON_LEAVE" | "INACTIVE";
-  next: { startDay: number; status: string; callId: string; project: { id: string; projectNumber: string; name: string } | null } | null;
+  next: { startDay: number | null; status: string; callId: string; project: { id: string; projectNumber: string; name: string } | null } | null;
   daysThisWeek: number;
   clashDay: number | null;
   user?: { name?: string | null; image?: string | null } | null;
@@ -139,7 +150,7 @@ function defined(facts: Record<string, Fact | undefined>): Record<string, Fact> 
   return Object.fromEntries(Object.entries(facts).filter((e): e is [string, Fact] => e[1] != null));
 }
 
-const crewNextLabel = (m: CrewSource): string | undefined => (m.next ? joinDot([m.next.project?.projectNumber, dayLabel(m.next.startDay)]) : undefined);
+const crewNextLabel = (m: CrewSource): string | undefined => (m.next ? joinDot([m.next.project?.projectNumber, m.next.startDay == null ? "no dates" : dayLabel(m.next.startDay)]) : undefined);
 const crewWeekLabel = (days: number): string | undefined => (days > 0 ? `${days} d` : undefined);
 const crewTypeLabel = (t: string | null | undefined): string | undefined => (t ? (crewMemberTypeLabels[t] ?? t) : undefined);
 const crewFlags = (m: CrewSource): RowFlag[] => (m.clashDay != null ? [{ label: `clash ${dayLabel(m.clashDay)}`, tone: "error" }] : []);

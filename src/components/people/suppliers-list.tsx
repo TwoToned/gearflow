@@ -88,7 +88,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
     loading: page === undefined,
     itemHeader: SUPPLIER_ITEM_HEADER,
     itemSortKey: SUPPLIER_ITEM_SORT_KEY,
-    subline: supplierSubline(counts),
+    subline: supplierSubline(counts ? { ...counts, truncated: counts.truncated || page?.truncated ? 1 : 0 } : undefined),
     primary: canCreate ? { label: "New supplier", onSelect: goNew } : undefined,
     bulk: (ids) =>
       supplierBulkActions({

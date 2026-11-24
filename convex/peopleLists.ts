@@ -45,6 +45,7 @@ export const agentOps: AgentOpsAnnotations = {
 };
 
 const ROSTER_CAP = 5000;
+const UNDATED_CAP = 1000;
 const CALL_LOOKBACK_DAYS = 60;
 const CALL_HORIZON_DAYS = 90;
 const MAX_PAGE = 100;
@@ -68,13 +69,16 @@ async function loadCrew(ctx: QueryCtx, orgId: string, nowArg: number | undefined
   const today = dayNumber(now);
   const from = (today - CALL_LOOKBACK_DAYS) * DAY_MS;
   const to = (today + CALL_HORIZON_DAYS) * DAY_MS;
-  const [members, calls] = await Promise.all([
+  const [members, dated, undated] = await Promise.all([
     collectCapped(ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
     collectCapped(
       ctx.db.query("crewAssignments").withIndex("by_organizationId_startDate", (q) => q.eq("organizationId", orgId).gte("startDate", from).lte("startDate", to)),
       ROSTER_CAP,
     ),
+    // Undated calls (no start date) sort BEFORE every number in the same index: `< 0` is exactly them.
+    collectCapped(ctx.db.query("crewAssignments").withIndex("by_organizationId_startDate", (q) => q.eq("organizationId", orgId).lt("startDate", 0)), UNDATED_CAP),
   ]);
+  const calls = { rows: [...dated.rows, ...undated.rows], truncated: dated.truncated || undated.truncated };
   const byMember = groupCallsByMember(calls.rows.map((c) => ({ id: c.id, crewMemberId: c.crewMemberId, projectId: c.projectId, status: c.status, startDate: c.startDate, endDate: c.endDate })));
   const facts = new Map<string, CrewMemberFacts>();
   for (const m of members.rows) facts.set(m.id, crewMemberFacts(m, byMember.get(m.id) ?? [], today));
@@ -108,6 +112,8 @@ export const crewPage = query({
     typeIn: strs,
     departmentIn: strs,
     roleIn: strs,
+    /** Derived list statuses (UNCONFIRMED / ON_JOB / AVAILABLE / ON_LEAVE / INACTIVE). */
+    statusIn: strs,
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -127,7 +133,10 @@ export const crewPage = query({
     const sortBy = CREW_SORTS.has(a.sortBy ?? "") ? (a.sortBy as string) : "status";
     const filtered = members.filter((m) => {
       const f = facts.get(m.id)!;
-      if (!inCrewSegment(f, seg)) return false;
+      // A status word (On leave, Inactive…) is its own door: it overrides the `all` segment's exclusion of Inactive.
+      const wantsStatus = !!a.statusIn?.length;
+      if (!(wantsStatus && seg === "all") && !inCrewSegment(f, seg)) return false;
+      if (wantsStatus && !a.statusIn!.includes(f.status)) return false;
       if (!pickIn(a.typeIn, m.type) || !pickIn(a.departmentIn, m.department) || !pickIn(a.roleIn, m.crewRoleId)) return false;
       return !a.search || matchesSearch([m.firstName, m.lastName, m.email, m.phone, m.department, roleMap.get(m.crewRoleId ?? "")?.name, ...(m.tags ?? [])], a.search);
     });
@@ -146,8 +155,13 @@ export const crewPage = query({
     const items = pageRows.map((m) => {
       const f = facts.get(m.id)!;
       const role = m.crewRoleId ? roleMap.get(m.crewRoleId) : undefined;
+      const shown = redact(m) as Doc<"crewMembers">;
+      // Only the list's own columns: never the whole member row (DOB, address, emergency contact, ABN, feed token).
       return {
-        ...redact(m),
+        id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, type: m.type ?? null,
+        status: m.status ?? null, department: m.department ?? null, tags: m.tags ?? [],
+        // The rate is the one pay field, and only when the redactor left it (absent, never zero, without crew pay).
+        ...(shown.defaultDayRate !== undefined ? { defaultDayRate: shown.defaultDayRate } : {}),
         crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null } : null,
         listStatus: f.status,
         next: f.next ? { startDay: f.next.startDay, status: f.next.status, callId: f.next.callId, project: projects.get(f.next.projectId) ?? null } : null,

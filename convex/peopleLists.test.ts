@@ -183,3 +183,58 @@ describe("supplier list and the cost-line closure", () => {
     expect(shown).toMatch(/committedOrderSpend/);
   });
 });
+
+describe("crew list: review follow-ups", () => {
+  test("an UNDATED pending call makes the person Unconfirmed with an undated Next call (not Available)", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "undated", organizationId: ORG, firstName: "Una", lastName: "Dated" });
+      await ctx.db.insert("crewAssignments", { id: "u1", organizationId: ORG, projectId: "p1", crewMemberId: "undated", status: "PENDING" });
+    });
+    const page = await as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, segment: "unconfirmed" });
+    const row = page.items.find((r) => r.id === "undated");
+    expect(row).toMatchObject({ listStatus: "UNCONFIRMED", next: { startDay: null, callId: "u1" } });
+    const avail = await as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, segment: "available" });
+    expect(avail.items.some((r) => r.id === "undated")).toBe(false);
+  });
+
+  test("a viewer's rate sort is the name-order fallback (a hidden rate is not a sort key)", async () => {
+    const t = makeT();
+    await seed(t, "viewer");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "z", organizationId: ORG, firstName: "Z", lastName: "Alpha", defaultDayRate: 100 });
+      await ctx.db.insert("crewMembers", { id: "y", organizationId: ORG, firstName: "Y", lastName: "Zulu", defaultDayRate: 900 });
+    });
+    const q = (sortBy: string) => as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, sortBy, sortOrder: "asc", segment: "all" });
+    const byRate = (await q("rate")).items.map((r) => r.id);
+    const byName = (await q("name")).items.map((r) => r.id);
+    expect(byRate).toEqual(byName);
+  });
+
+  test("next.project is org-checked: a call pointing at another org's job shows no project", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "pforeign", organizationId: OTHER, projectNumber: "#SECRET", name: "Secret job" });
+      await ctx.db.insert("crewMembers", { id: "leaky", organizationId: ORG, firstName: "Lea", lastName: "Ky" });
+      await ctx.db.insert("crewAssignments", { id: "lk", organizationId: ORG, projectId: "pforeign", crewMemberId: "leaky", status: "CONFIRMED", startDate: day(1), endDate: day(1) });
+    });
+    const page = await as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, segment: "onjob" });
+    expect(page.items.find((r) => r.id === "leaky")?.next?.project).toBeNull();
+    expect(JSON.stringify(page)).not.toMatch(/SECRET|Secret job/);
+  });
+
+  test("On leave and Inactive stay reachable through the Status word, and rows carry only list columns", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewMembers", { id: "away", organizationId: ORG, firstName: "Ava", lastName: "Away", status: "ON_LEAVE", dateOfBirth: 123456, address: "1 Secret St", emergencyContactName: "Mum", abnOrGst: "ABN-777" });
+    });
+    const page = await as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, statusIn: ["ON_LEAVE"] });
+    expect(page.items.map((r) => r.id)).toEqual(["away"]);
+    expect(JSON.stringify(page)).not.toMatch(/123456|Secret St|Mum|ABN-777|icalToken|dateOfBirth/);
+    const inactive = await as(t, asUser).query(api.peopleLists.crewPage, { orgId: ORG, now: NOW, statusIn: ["INACTIVE"] });
+    expect(inactive.items.map((r) => r.id)).toEqual(["gone"]);
+  });
+});

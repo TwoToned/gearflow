@@ -12,6 +12,7 @@ import { canCrewCall } from "../../../convex/lib/crewCallTransitions";
 import { AssignToJobDialog } from "@/components/people/assign-to-job-dialog";
 import { PeopleList, type PeopleListModel } from "@/components/people/people-list";
 import { useCrewListWrites } from "@/components/people/use-people-writes";
+import { useSlashDialog } from "@/components/people/use-slash-dialog";
 import { ExportDialog } from "@/components/crew/workspace/timesheets/export-dialog";
 import { TagPromptDialog } from "@/components/ui/tag-prompt-dialog";
 import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
@@ -123,8 +124,8 @@ function crewRows(items: CrewSource[], h: CrewRowHandlers) {
 }
 
 /** What the page tells ListPage about the query: totals, loading, and the incomplete-counts note. */
-function pageFlow(page: { total: number; payVisible?: boolean } | undefined, counts: Record<string, number> | undefined) {
-  return { total: page?.total ?? 0, loading: page === undefined, subline: counts?.truncated ? "Counts may be incomplete" : undefined };
+function pageFlow(page: { total: number; truncated?: boolean } | undefined, counts: Record<string, number> | undefined) {
+  return { total: page?.total ?? 0, loading: page === undefined, subline: counts?.truncated || page?.truncated ? "Counts may be incomplete" : undefined };
 }
 
 const departmentsOf =(roles: { department?: string | null }[], items: CrewSource[]): string[] =>
@@ -145,6 +146,8 @@ function CrewListInner({ orgId }: { orgId: string | undefined }) {
   const [tagIds, setTagIds] = React.useState<string[] | null>(null);
   const [assignIds, setAssignIds] = React.useState<string[] | null>(null);
   const [exportOpen, setExportOpen] = React.useState(false);
+  const slash = React.useMemo(() => ({ "export-timesheets": () => setExportOpen(true) }), []);
+  useSlashDialog(slash);
   const resend = useServerMutation({
     mutationFn: (callId: string) => sendCrewOffer(callId),
     onSuccess: () => toast.success("Offer sent"),

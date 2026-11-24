@@ -36,7 +36,7 @@ export interface CrewFactCall {
 export interface CrewMemberFacts {
   status: CrewListStatus;
   /** Earliest live call that has not ended: `{ callId, projectId, startDay, status }`. */
-  next: { callId: string; projectId: string; startDay: number; status: string } | null;
+  next: { callId: string; projectId: string; startDay: number | null; status: string } | null;
   /** Days with a CONFIRMED call in `[today, today + 6]`. */
   daysThisWeek: number;
   /** First overlap between two live calls (a day number), for the `clash 14 Nov` flag. */
@@ -79,23 +79,26 @@ function weekDays(confirmed: { s: number; e: number }[], today: number): number 
 
 /** The facts for one member from THEIR calls (already filtered to the member). */
 export function crewMemberFacts(member: CrewFactMember, calls: CrewFactCall[], today: number): CrewMemberFacts {
-  const live = calls
-    .filter((c) => LIVE.has(c.status ?? "PENDING"))
+  const liveCalls = calls.filter((c) => LIVE.has(c.status ?? "PENDING"));
+  // A live call with NO dates (a PENDING call on a job with no rental window) is still real:
+  // it makes the person Unconfirmed and shows as their Next call, undated, after any dated one.
+  const dated = liveCalls
     .map((c) => ({ c, sp: span(c) }))
     .filter((x): x is { c: CrewFactCall; sp: { s: number; e: number } } => x.sp != null && x.sp.e >= today)
     .sort((a, b) => a.sp.s - b.sp.s);
-  const confirmed = live.filter((x) => x.c.status === "CONFIRMED").map((x) => x.sp);
+  const undated = liveCalls.filter((c) => span(c) == null);
+  const confirmed = dated.filter((x) => x.c.status === "CONFIRMED").map((x) => x.sp);
   const stored = storedStatus(member);
-  const unconfirmed = live.some((x) => UNCONFIRMED.has(x.c.status ?? "PENDING"));
+  const unconfirmed = [...dated.map((x) => x.c), ...undated].some((c) => UNCONFIRMED.has(c.status ?? "PENDING"));
   const onJob = confirmed.some((sp) => sp.s <= today + WEEK_DAYS - 1);
   const status: CrewListStatus = stored ?? (unconfirmed ? "UNCONFIRMED" : onJob ? "ON_JOB" : "AVAILABLE");
-  const first = live[0];
-  return {
-    status,
-    next: first ? { callId: first.c.id, projectId: first.c.projectId, startDay: first.sp.s, status: first.c.status ?? "PENDING" } : null,
-    daysThisWeek: weekDays(confirmed, today),
-    clashDay: firstClash(live.map((x) => x.sp)),
-  };
+  const first = dated[0];
+  const next = first
+    ? { callId: first.c.id, projectId: first.c.projectId, startDay: first.sp.s as number | null, status: first.c.status ?? "PENDING" }
+    : undated[0]
+      ? { callId: undated[0].id, projectId: undated[0].projectId, startDay: null as number | null, status: undated[0].status ?? "PENDING" }
+      : null;
+  return { status, next, daysThisWeek: weekDays(confirmed, today), clashDay: firstClash(dated.map((x) => x.sp)) };
 }
 
 /** Does a member with `facts` belong in `segment`? (`all` = everyone not parked as Inactive.) */

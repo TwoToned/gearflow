@@ -753,7 +753,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: "Log time for crew members",
     icon: "Clock",
     pages: ["/crew"],
-    action: { type: "open_dialog", dialog: "log-time" },
+    // The Crew page is the list now (UX Phase 13): logging time lives on Timesheets.
+    action: { type: "navigate", path: "/crew/timesheets" },
     requiredPermission: ["crew", "create"],
   },
   {

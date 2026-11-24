@@ -87,7 +87,7 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
     loading: page === undefined,
     itemHeader: CLIENT_ITEM_HEADER,
     itemSortKey: CLIENT_ITEM_SORT_KEY,
-    subline: clientSubline(counts as Parameters<typeof clientSubline>[0]),
+    subline: clientSubline(counts ? ({ ...counts, truncated: counts.truncated || page?.truncated ? 1 : 0 } as Parameters<typeof clientSubline>[0]) : undefined),
     primary: canCreate ? { label: "New client", onSelect: () => router.push("/clients/new") } : undefined,
     bulk: (ids) =>
       clientBulkActions({

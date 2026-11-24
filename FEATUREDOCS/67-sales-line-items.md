@@ -322,8 +322,12 @@ derived in ONE helper, `convex/lib/saleStockFacts.ts`, and a test pins that they
 `undoSaleStockNative({ auditIds })`: ids only; refuses the whole batch unless every row is a manual
 adjustment by the caller inside the 10-minute server-clock window, not already undone, and the model's pool is
 still exactly what the adjustment left (a sale, restock or other adjustment since blocks it). The
-`Reorder n low` primary only filters the list to `Low stock`; it writes nothing. Setting
-`reorderLevel` lands with the model sheet (Phase 12) and a follow-up for the list's `Set reorder level` verb.
+`Reorder n low` primary only filters the list to `Low stock`; it writes nothing.
+
+`Set reorder level…` (row ⋯ and bulk, `modelWrites.setReorderLevelsNative`): one whole number >= 0 applied to
+each selected model, or blank to CLEAR (an unset level is never 0). It writes one field-edit audit row per
+changed model (a model already at that value writes nothing); its toast Undo is
+`modelWrites.undoModelFieldEditsNative` (shared with bulk `Edit rates`), through `convex/lib/fieldEditUndo.ts`.
 
 ## Not built
 

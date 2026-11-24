@@ -8423,6 +8423,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "checkItemsWrites.undoAssignChecksNative",
+    "module": "checkItemsWrites",
+    "fn": "undoAssignChecksNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "checkItem",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e8f3525d58f1fbc8",
+    "returnsSha": "16e3997af311a541",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent bulk assignment of check items to models by its audit id.",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "checkItemsWrites.updateCheckItemNative",
     "module": "checkItemsWrites",
     "fn": "updateCheckItemNative",
@@ -33240,7 +33287,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d00761cc4091de7",
-    "returnsSha": "ca20c8538a3cc095",
+    "returnsSha": "8870c4cffd6c1b89",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -33466,6 +33513,105 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.setReorderLevelsNative",
+    "module": "modelWrites",
+    "fn": "setReorderLevelsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "entries",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0ddc8e0da7d0eeac",
+    "returnsSha": "0efb74f8883f725d",
+    "stability": "tracks-app",
+    "summary": "Set (or clear) the sale-stock reorder level of one or more models.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoModelFieldEditsNative",
+    "module": "modelWrites",
+    "fn": "undoModelFieldEditsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo recent bulk rate edits or reorder-level changes by their audit ids (refuses if a field changed since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -66611,10 +66757,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1290,
-  agentReachable: 658,
+  total: 1293,
+  agentReachable: 661,
   queries: 465,
-  mutations: 825,
+  mutations: 828,
   agentReachableQueries: 329,
-  agentReachableMutations: 329,
+  agentReachableMutations: 332,
 } as const;

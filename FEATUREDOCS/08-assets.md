@@ -127,7 +127,11 @@ T&T · Archived` (counts from `modelsList.segmentCounts`; Due reuses the Assets 
 Columns: Owned, Available (units available now: active serialised units + bulk `availableQuantity`), Day rate;
 opt-in from ⋯ › Columns: Value (replacement cost, redacted for a `noFinancials` key), Type, Tags. Page ⋯:
 Export CSV, Import CSV, Import rates…. Bulk: `Edit rates n` and `Assign checks n` (the two moved dialogs in
-`model-bulk-dialogs.tsx`; no Undo yet, it waits for the shared field-edit Undo primitive). Archive stays on
+`model-bulk-dialogs.tsx`), each with ONE toast Undo. Edit rates writes one field-edit audit row per model
+(`convex/lib/fieldEditUndo.ts`) and `modelWrites.undoModelFieldEditsNative` restores them atomically (refused
+as a whole by another person, past 10 minutes, already undone, or when any model's rate changed since).
+Assign checks' batch audit row lists the assignment rows it created and `checkItemsWrites.undoAssignChecksNative`
+removes exactly those still as it left them (a check item itself is never deleted). Archive stays on
 the model page: a model archive deletes the model's assets, so it has no exact reverse. `models.reorderLevel`
 (optional, never read as 0) feeds the Sales stock list ([67](./67-sales-line-items.md)).
 

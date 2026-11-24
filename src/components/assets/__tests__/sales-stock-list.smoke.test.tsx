@@ -33,6 +33,8 @@ vi.mock("@/components/ui/url-saved-views", () => ({ UrlSavedViewsMenu: () => <bu
 const writes = vi.hoisted(() => ({
   adjustSaleStockMany: vi.fn(async (ids: string[]) => ({ auditIds: ids.map((i) => `aud-${i}`), count: ids.length })),
   undoSaleStock: vi.fn(async () => ({ restored: 1 })),
+  setReorderLevels: vi.fn(async (entries: { id: string }[]) => ({ auditIds: entries.map((e) => `ro-${e.id}`), count: entries.length })),
+  undoModelFieldEdits: vi.fn(async () => ({ restored: 1 })),
 }));
 vi.mock("@/hooks/use-model-writes", () => ({ useModelWrites: () => writes }));
 
@@ -110,6 +112,35 @@ describe("SalesStockList (smoke)", () => {
     toasts.last?.opts?.action?.onClick();
     await vi.waitFor(() => expect(writes.undoSaleStock).toHaveBeenCalledTimes(1));
     expect(writes.undoSaleStock).toHaveBeenCalledWith(["aud-m1"]);
+  });
+
+  it("Set reorder level: a number sets it, blank clears it (never 0), and Undo is the exact server Undo, once", async () => {
+    const user = userEvent.setup();
+    render(<SalesStockList />);
+    await user.click(screen.getByRole("button", { name: "Batteries actions" }));
+    await user.click(await screen.findByText("Set reorder level…"));
+    await user.type(await screen.findByLabelText("Reorder at"), "25");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(writes.setReorderLevels).toHaveBeenCalledWith([{ id: "m2", level: 25 }]);
+    await vi.waitFor(() => expect(toasts.last?.title).toBe("Reorder level 25 on 1 model"));
+    toasts.last?.opts?.action?.onClick();
+    toasts.last?.opts?.action?.onClick();
+    await vi.waitFor(() => expect(writes.undoModelFieldEdits).toHaveBeenCalledTimes(1));
+    expect(writes.undoModelFieldEdits).toHaveBeenCalledWith(["ro-m2"]);
+
+    await user.click(screen.getByRole("button", { name: "Batteries actions" }));
+    await user.click(await screen.findByText("Set reorder level…"));
+    await user.click(await screen.findByRole("button", { name: "Save" }));
+    expect(writes.setReorderLevels).toHaveBeenLastCalledWith([{ id: "m2", level: null }]);
+  });
+
+  it("a fractional or negative reorder level cannot be saved", async () => {
+    const user = userEvent.setup();
+    render(<SalesStockList />);
+    await user.click(screen.getByRole("button", { name: "Batteries actions" }));
+    await user.click(await screen.findByText("Set reorder level…"));
+    await user.type(await screen.findByLabelText("Reorder at"), "1.5");
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("the bulk bar opens with Adjust stock n and Export n; a zero or blank quantity cannot save", async () => {

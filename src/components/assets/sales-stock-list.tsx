@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { api } from "../../../convex/_generated/api";
 import { SalesStockAdjustDialog, type AdjustRequest, type AdjustTarget } from "@/components/assets/sales-stock-adjust-dialog";
+import { ReorderLevelDialog, type ReorderTarget } from "@/components/assets/reorder-level-dialog";
 import { ListPage } from "@/components/ui/list-page";
 import type { ListPrimary } from "@/components/ui/list-page-parts";
 import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
@@ -31,6 +32,7 @@ import {
 import { buildSaleStockActions, buildSaleStockBulkActions } from "@/lib/row-actions/sales-stock";
 import { showError } from "@/lib/show-error";
 import { useCanDo } from "@/lib/use-permissions";
+import { toast } from "sonner";
 
 function downloadCsv(csv: string, filename: string) {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -89,6 +91,32 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
     }
   };
 
+  const [reorderTargets, setReorderTargets] = React.useState<ReorderTarget[] | null>(null);
+  const reorderFor = (ids: string[]): ReorderTarget[] =>
+    ids.flatMap((id) => {
+      const s = seen.current.get(id);
+      return s ? [{ id, name: s.name, reorderLevel: s.reorderLevel }] : [];
+    });
+
+  /** ONE guarded Undo closure per write; the server refuses if a level changed since. */
+  const setReorder = async (targets: ReorderTarget[], level: number | null) => {
+    try {
+      const r = await writes.setReorderLevels(targets.map((t) => ({ id: t.id, level })));
+      if (r.count === 0) {
+        toast.success("Nothing changed");
+        return;
+      }
+      announceListWrite({
+        title: level == null ? `Cleared the reorder level on ${plural(r.count, "model")}` : `Reorder level ${level} on ${plural(r.count, "model")}`,
+        undoneTitle: "Reorder level restored",
+        performUndo: async () => void (await writes.undoModelFieldEdits(r.auditIds)),
+      });
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not set the reorder level" });
+      throw e;
+    }
+  };
+
   const exportRows = (ids: string[]) => {
     const rows = ids.flatMap((id) => {
       const s = seen.current.get(id);
@@ -103,6 +131,7 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
       buildSaleStockActions({
         onOpenModel: () => router.push(`/assets/models/${s.id}`),
         onAdjust: canUpdate ? () => setTargets(targetsFor([s.id])) : undefined,
+        onSetReorder: canUpdate ? () => setReorderTargets(reorderFor([s.id])) : undefined,
       }),
     ),
   );
@@ -132,6 +161,7 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
         bulk={(ids) =>
           buildSaleStockBulkActions({
             onAdjust: canUpdate ? () => setTargets(targetsFor(ids)) : undefined,
+            onSetReorder: canUpdate ? () => setReorderTargets(reorderFor(ids)) : undefined,
             onExport: () => exportRows(ids),
           })
         }
@@ -139,6 +169,7 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
         toolbarExtra={<UrlSavedViewsMenu tableId="sales-stock" spec={SALES_STOCK_SPEC} state={state} setState={setState} />}
       />
       <SalesStockAdjustDialog targets={targets} onClose={() => setTargets(null)} onSubmit={adjust} />
+      <ReorderLevelDialog targets={reorderTargets} onClose={() => setReorderTargets(null)} onSave={setReorder} />
     </>
   );
 }

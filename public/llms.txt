@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (658 agent-reachable)
+## Operations (661 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -102,6 +102,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `checkItemsWrites.removeCheckItemFromModelNative` (mutation, scope: checkItem:update)
 - `checkItemsWrites.reorderKitCheckItemsNative` (mutation, scope: checkItem:update)
 - `checkItemsWrites.reorderModelCheckItemsNative` (mutation, scope: checkItem:update)
+- `checkItemsWrites.undoAssignChecksNative` (mutation, scope: checkItem:update)
 - `checkItemsWrites.updateCheckItemNative` (mutation, scope: checkItem:update)
 - `checkRecords.getById` (query, scope: checkItem:read)
 - `checkRecords.list` (query, scope: checkItem:read)
@@ -353,6 +354,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelWrites.archiveNative` (mutation, scope: model:delete)
 - `modelWrites.bulkUpdateRatesNative` (mutation, scope: model:update)
 - `modelWrites.createNative` (mutation, scope: model:create)
+- `modelWrites.setReorderLevelsNative` (mutation, scope: model:update)
+- `modelWrites.undoModelFieldEditsNative` (mutation, scope: model:update)
 - `modelWrites.undoSaleStockNative` (mutation, scope: model:update)
 - `modelWrites.updateNative` (mutation, scope: model:update)
 - `search.models` (query, scope: model:read)

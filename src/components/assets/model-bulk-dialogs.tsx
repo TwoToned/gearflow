@@ -18,6 +18,7 @@ import { useCheckItems } from "@/hooks/use-check-items";
 import { useModelWrites } from "@/hooks/use-model-writes";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { announceListWrite, plural } from "@/lib/list-write-toast";
 import { cn, focusRing } from "@/lib/utils";
 
 /**
@@ -70,11 +71,18 @@ export function BulkAssignChecksDialog({ open, onOpenChange, selectedModelIds, o
   const mutation = useServerMutation({
     mutationFn: () => writes.bulkAddCheckItemsToModels(Array.from(selectedModelIds), Array.from(selectedCheckIds)),
     onSuccess: (result) => {
-      const msg =
-        result.count === 0
-          ? "All selected checks were already assigned"
-          : `Assigned checks to ${selectedModelIds.size} model${selectedModelIds.size !== 1 ? "s" : ""} (${result.count} new)`;
-      toast.success(msg);
+      if (result.count === 0) toast.success("All selected checks were already assigned");
+      else {
+        // ONE guarded Undo closure; the server removes exactly the assignments this call created.
+        announceListWrite({
+          title: `Assigned checks to ${plural(selectedModelIds.size, "model")} (${result.count} new)`,
+          undoneTitle: "Assignments removed",
+          performUndo: async () => {
+            const u = await writes.undoAssignChecks(result.auditId);
+            return u.left > 0 ? `Removed ${u.removed} · ${u.left} had changed since and stay` : undefined;
+          },
+        });
+      }
       setSelectedCheckIds(new Set());
       onSuccess();
     },
@@ -216,7 +224,12 @@ export function BulkRateUpdateDialog({ open, onOpenChange, selectedModelIds, onS
   const mutation = useServerMutation({
     mutationFn: () => modelWrites.bulkUpdateRates(Array.from(selectedModelIds), rateType, operation, Number(value)),
     onSuccess: (result) => {
-      toast.success(`Updated ${RATE_TYPE_LABELS[rateType]} on ${result.count} model${result.count !== 1 ? "s" : ""}`);
+      // ONE guarded Undo closure; the server refuses if any of these rates changed since.
+      announceListWrite({
+        title: `Updated ${RATE_TYPE_LABELS[rateType]} on ${plural(result.count, "model")}`,
+        undoneTitle: "Rates restored",
+        performUndo: result.auditIds.length > 0 ? async () => void (await modelWrites.undoModelFieldEdits(result.auditIds)) : undefined,
+      });
       setValue("");
       onSuccess();
     },

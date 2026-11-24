@@ -5,6 +5,7 @@ import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import type { Doc } from "./_generated/dataModel";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
@@ -309,7 +310,7 @@ export const archiveNative = mutation({
 });
 
 export const bulkUpdateRatesNative = mutation({
-  returns: v.object({ count: v.number() }),
+  returns: v.object({ count: v.number(), auditIds: v.array(v.string()) }),
   args: {
     orgId: v.string(),
     modelIds: v.array(v.string()),
@@ -334,6 +335,7 @@ export const bulkUpdateRatesNative = mutation({
 
     const selected = new Set(a.modelIds);
     let count = 0;
+    const auditIds: string[] = [];
     for (const id of selected) {
       const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== a.orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
@@ -348,6 +350,13 @@ export const bulkUpdateRatesNative = mutation({
       const patch: Record<string, number> = { [a.rateType]: newRate, updatedAt: a.now };
       if (a.rateType === "dailyRate") patch.defaultRentalPrice = newRate;
       await ctx.db.patch(doc._id, patch);
+      // One field-edit audit row per model: the bulk Undo (`undoModelFieldEditsNative`) takes these ids.
+      const diff = diffFields(doc, { ...doc, ...patch }, RATE_FIELDS);
+      if (diff) {
+        const auditId = `${a.auditId}:${doc.id}`;
+        await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "model", entityId: doc.id, entityName: doc.name, auditId, actor, summary: `Set ${a.rateType} on ${doc.name} (${diff.before[a.rateType] ?? "unset"} -> ${newRate})`, diff, now: a.now });
+        auditIds.push(auditId);
+      }
       count++;
     }
 
@@ -355,7 +364,84 @@ export const bulkUpdateRatesNative = mutation({
       orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.modelIds[0], name: `${count} models`,
       summary: `Bulk updated ${a.rateType} on ${count} model(s): ${a.operation} ${a.value}`,
     });
-    return { count };
+    return { count, auditIds };
+  },
+});
+
+/** Fields a bulk rate edit can change, i.e. what its per-model Undo restores. */
+const RATE_FIELDS = ["dailyRate", "weeklyRate", "monthlyRate", "salePrice", "defaultRentalPrice"] as const;
+
+/** The only fields `undoModelFieldEditsNative` will restore: anything else in a snapshot refuses the Undo. */
+const MODEL_UNDO_FIELDS = [...RATE_FIELDS, "reorderLevel"] as const;
+
+/**
+ * The exact Undo of `bulkUpdateRatesNative` and `setReorderLevelsNative`: ids only (one field-edit audit
+ * row per model, from the forward write). Atomic: one refusal (another person, past 10 minutes, already
+ * undone, or a field changed since) rolls the whole batch back. Uses `convex/lib/fieldEditUndo.ts`.
+ */
+export const undoModelFieldEditsNative = mutation({
+  returns: v.object({ restored: v.number() }),
+  args: { orgId: v.string(), auditIds: v.array(v.string()), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    await assertBulkSizeOk(ctx, a.auditIds.length);
+    if (a.auditIds.length === 0) throw new ConvexError("Nothing to undo");
+    for (const auditId of new Set(a.auditIds)) {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+      if (!row || row.organizationId !== a.orgId || row.entityType !== "model") throw new ConvexError("This change can't be undone");
+      await undoFieldEdit(ctx, {
+        orgId: a.orgId, entityType: "model", entityId: row.entityId, entityName: row.entityName, auditId, actor, now: a.now,
+        load: async () => {
+          const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", row.entityId)).first();
+          return m && m.organizationId === a.orgId ? m : null;
+        },
+        apply: async (doc, plan) => {
+          const unsupported = [...Object.keys(plan.set), ...plan.clear].filter((f) => !(MODEL_UNDO_FIELDS as readonly string[]).includes(f));
+          if (unsupported.length > 0) throw new ConvexError("This change can't be undone");
+          const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+          for (const f of plan.clear) patch[f] = undefined;
+          await ctx.db.patch(doc._id, patch);
+        },
+      });
+    }
+    return { restored: new Set(a.auditIds).size };
+  },
+});
+
+const reorderEntry = v.object({ id: v.string(), level: v.union(v.number(), v.null()) });
+
+/**
+ * `Set reorder level` (Sales stock list, row and bulk): a whole number >= 0 per model, or null to clear
+ * (an unset level is never read as 0). One field-edit audit row per changed model; Undo is
+ * `undoModelFieldEditsNative`. Unchanged models write nothing and return no audit id.
+ */
+export const setReorderLevelsNative = mutation({
+  returns: v.object({ auditIds: v.array(v.string()), count: v.number() }),
+  args: { orgId: v.string(), entries: v.array(reorderEntry), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    await assertBulkSizeOk(ctx, a.entries.length);
+    if (a.entries.length === 0) throw new ConvexError("Nothing to set");
+    if (new Set(a.entries.map((e) => e.id)).size !== a.entries.length) throw new ConvexError("Each model can appear once");
+    const auditIds: string[] = [];
+    for (const e of a.entries) {
+      assertNumRange(e.level ?? undefined, "reorderLevel", { min: 0, integer: true });
+      const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", e.id)).first();
+      if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+      const diff = diffFields(doc, { ...doc, reorderLevel: e.level }, ["reorderLevel"]);
+      if (!diff) continue;
+      await ctx.db.patch(doc._id, { reorderLevel: e.level ?? undefined, updatedAt: a.now });
+      const auditId = `${a.auditId}:${doc.id}`;
+      await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "model", entityId: doc.id, entityName: doc.name, auditId, actor, summary: `Set reorder level on ${doc.name} (${diff.before.reorderLevel ?? "unset"} -> ${e.level ?? "unset"})`, diff, now: a.now });
+      auditIds.push(auditId);
+    }
+    return { auditIds, count: auditIds.length };
   },
 });
 
@@ -549,6 +635,8 @@ export const undoSaleStockNative = mutation({
 });
 
 export const agentOps: AgentOpsAnnotations = {
+  undoModelFieldEditsNative: { danger: "high", summary: "Exactly undo recent bulk rate edits or reorder-level changes by their audit ids (refuses if a field changed since)." },
+  setReorderLevelsNative: { danger: "low", summary: "Set (or clear) the sale-stock reorder level of one or more models.", mcpTier: 2 },
   adjustSaleStockManyNative: { danger: "low", summary: "Adjust the new-stock sale pool of several models by a delta each (restock or correction).", mcpTier: 2 },
   undoSaleStockNative: { danger: "high", summary: "Exactly undo a recent manual sale-stock adjustment by its audit ids (refuses if the stock moved since)." },
   // Delete/archive tier (§9) — also cascade-DELETES every asset + bulkAsset of

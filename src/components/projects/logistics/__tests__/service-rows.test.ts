@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { LogisticsService } from "@/lib/logistics-model";
-import { crewText, logisticsColumns, logisticsTotalLines, serviceRow, whereLine } from "../service-rows";
+import { crewText, logisticsColumns, logisticsCostView, logisticsTotalLines, serviceRow, whereLine } from "../service-rows";
 
 const svc = (o: Partial<LogisticsService> = {}): LogisticsService => ({
   id: "s1", type: "DELIVERY", title: "Delivery", date: "2026-11-11T00:00:00.000Z", endDate: null, startTime: "06:00",
@@ -42,7 +42,7 @@ describe("serviceRow", () => {
     expect(child?.facts.status).toBeDefined();
   });
 
-  test("below the crew-pay line the service cost (crew pay rolled in) is absent: no cost or margin cell, no footer Cost/Margin", () => {
+  test("below the crew-pay line the service cost (crew pay rolled in) is absent: no cost or margin cell; no footer Cost/Margin without the job-level total", () => {
     const { costTotal: _c, ...noCost } = svc({ lineTotal: 900, costTotal: 400 });
     void _c;
     const r = serviceRow(noCost as LogisticsService, { showCost: true });
@@ -50,6 +50,20 @@ describe("serviceRow", () => {
     expect(r.facts).not.toHaveProperty("margin");
     expect(logisticsTotalLines({ serviceCount: 1, onDocumentsTotal: 900 }, true).map((l) => l.label)).toEqual(["On quote"]);
     expect(logisticsTotalLines({ serviceCount: 1, onDocumentsTotal: 900, internalTotal: 400 }, true).map((l) => l.label)).toEqual(["On quote", "Cost", "Margin"]);
+  });
+
+  test("logisticsCostView follows what the server sent: a member with job cost gets Show cost and the footer, never the row cells", () => {
+    const { costTotal: _c, ...noCost } = svc({ lineTotal: 900, costTotal: 400 });
+    void _c;
+    const memberRows = [noCost as LogisticsService];
+    // A member with invoice:read: the summary carries the job-level cost, the rows don't carry their own.
+    expect(logisticsCostView({ internalTotal: 400 }, memberRows, true)).toEqual({ canSeeCost: true, footer: true, rows: false });
+    expect(logisticsCostView({ internalTotal: 400 }, memberRows, false)).toEqual({ canSeeCost: true, footer: false, rows: false });
+    // No job cost and no pay (a noFinancials key, a role without invoice:read): nothing to toggle.
+    expect(logisticsCostView({}, memberRows, true)).toEqual({ canSeeCost: false, footer: false, rows: false });
+    expect(logisticsCostView(undefined, memberRows, true)).toEqual({ canSeeCost: false, footer: false, rows: false });
+    // A manager: both.
+    expect(logisticsCostView({ internalTotal: 400 }, [svc({ costTotal: 400 })], true)).toEqual({ canSeeCost: true, footer: true, rows: true });
   });
 
   test("cost and margin facts exist only when asked for", () => {

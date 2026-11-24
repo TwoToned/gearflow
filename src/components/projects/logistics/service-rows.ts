@@ -93,6 +93,24 @@ function crewChild(a: LogisticsAssignment): LineRowData {
   return { id: a.id, kind: "crew", title: personName(a), facts };
 }
 
+/**
+ * What the tab's cost view may show — decided by what the SERVER sent, never by
+ * the client's role. The footer's Cost / Margin is JOB cost (the summary's
+ * `internalTotal`, present for a caller with job cost: invoice:read, not a
+ * noFinancials key — owner ruling 2026-11-24). A row's own cost and margin is
+ * individual pay (each service's `costTotal`, present only above the pay line).
+ * `Show cost` is offered when either exists; each part shows only what came.
+ */
+export function logisticsCostView(
+  summary: { internalTotal?: number } | undefined,
+  services: readonly Pick<LogisticsService, "costTotal">[],
+  toggledOn: boolean,
+): { canSeeCost: boolean; footer: boolean; rows: boolean } {
+  const jobCost = summary?.internalTotal !== undefined;
+  const rowCost = services.some((s) => s.costTotal !== undefined);
+  return { canSeeCost: jobCost || rowCost, footer: toggledOn && jobCost, rows: toggledOn && rowCost };
+}
+
 /** The Logistics footer: On quote, then (with Show cost) Cost and Margin. */
 export function logisticsTotalLines(
   summary: { serviceCount: number; onDocumentsTotal: number; internalTotal?: number } | undefined,
@@ -102,8 +120,8 @@ export function logisticsTotalLines(
   // Nothing priced is blank (`—`), never `$0` ("$0 is a PRICE", CLAUDE.md).
   const blankIfZero = (n: number): number | null => (n > 0 ? n : null);
   const lines: TotalLine[] = [{ label: "On quote", amount: blankIfZero(summary.onDocumentsTotal) }];
-  // The cost total (crew pay rolled in) is ABSENT below the pay line: then no Cost
-  // and no Margin line — never a $0, or a margin that back-solves the crew cost.
+  // The cost total is JOB cost, ABSENT for a caller without it: then no Cost and
+  // no Margin line — never a $0, or a margin that back-solves the cost.
   if (showCost && summary.internalTotal !== undefined) {
     const margin = summary.onDocumentsTotal - summary.internalTotal;
     lines.push({ label: "Cost", amount: blankIfZero(summary.internalTotal) });

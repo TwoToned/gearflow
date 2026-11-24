@@ -21,7 +21,7 @@ import { useCrewRoles } from "@/hooks/use-crew";
 import { useLocations } from "@/hooks/use-locations";
 import { mergeStops } from "@/lib/logistics-transport";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
-import { useCanDo, useIsManagerPlus } from "@/lib/use-permissions";
+import { useCanDo } from "@/lib/use-permissions";
 import { AddServiceBar } from "./add-service-bar";
 import { LogisticsFacts } from "./facts";
 import { LaneBar } from "./lane-bar";
@@ -32,7 +32,7 @@ import { useLogisticsState } from "./logistics-state";
 import { crewRow } from "./people-view";
 import { PrintRunsheet } from "./print-runsheet";
 import { scheduleFromProject, siteFromProject } from "./schedule-from-project";
-import { logisticsColumns, logisticsTotalLines, serviceRow } from "./service-rows";
+import { logisticsColumns, logisticsCostView, logisticsTotalLines, serviceRow } from "./service-rows";
 import { useLogisticsData } from "./use-logistics-data";
 import { useLogisticsWrites } from "./use-logistics-writes";
 import { useQuickAdd } from "./use-quick-add";
@@ -72,9 +72,10 @@ function useBodyModel(projectId: string, data: Data) {
     crew: useCanDo("crew", "update"),
     deleteCrew: useCanDo("crew", "delete"),
   };
-  const isManagerPlus = useIsManagerPlus();
   const w = useLogisticsWrites(projectId);
   const ui = useLogisticsState();
+  // What the server sent decides the cost view (job cost for the footer, pay for the rows).
+  const cost = logisticsCostView(data.summary, data.services, ui.showCost);
 
   const schedule = scheduleFromProject(data.project);
   const site = siteFromProject(data.project);
@@ -113,12 +114,13 @@ function useBodyModel(projectId: string, data: Data) {
   );
   const pageMenu = buildPageMenu({
     projectId, services: data.services, crew: data.crew, conflicts: data.conflicts, hasWindow: !!(loadInDay || loadOutDay),
-    showCost: ui.showCost, can, canSeeCost: isManagerPlus, w, ui,
+    showCost: ui.showCost, can, canSeeCost: cost.canSeeCost, w, ui,
   });
   usePrintOnArrival(true);
   return {
     crewShown, can, w, ui, schedule, site, loadInDay, loadOutDay, where, groups, selection, actions, quick, pageMenu,
-    showCost: ui.showCost && isManagerPlus,
+    showCost: cost.rows,
+    showFooterCost: cost.footer,
   };
 }
 
@@ -136,7 +138,7 @@ function ListFooter({ m, data }: { m: ReturnType<typeof useBodyModel>; data: Dat
     <>
       {!isMobile && <CanDo resource="project" action="update">{add}</CanDo>}
       {!isMobile && m.selection.count > 0 && <BulkBar noun={noun} selection={m.selection} actions={buildBulk(m.actions)} />}
-      <FooterTotals lines={logisticsTotalLines(data.summary, m.showCost)} />
+      <FooterTotals lines={logisticsTotalLines(data.summary, m.showFooterCost)} />
     </>
   );
 }

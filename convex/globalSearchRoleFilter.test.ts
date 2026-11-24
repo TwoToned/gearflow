@@ -20,14 +20,20 @@ const USER = "user_1";
 const NOW = 1_700_000_000_000;
 const NO_CLIENTS = "test-no-clients";
 const NO_JOBS_OR_LOCATIONS = "test-no-jobs-or-locations";
+const NO_MODELS = "test-no-models";
+const NO_KITS = "test-no-kits";
 
 beforeAll(() => {
   rolePermissions[NO_CLIENTS] = { ...rolePermissions.member, client: [] };
   rolePermissions[NO_JOBS_OR_LOCATIONS] = { ...rolePermissions.member, project: [], location: [] };
+  rolePermissions[NO_MODELS] = { ...rolePermissions.member, model: [] };
+  rolePermissions[NO_KITS] = { ...rolePermissions.member, kit: [] };
 });
 afterAll(() => {
   delete rolePermissions[NO_CLIENTS];
   delete rolePermissions[NO_JOBS_OR_LOCATIONS];
+  delete rolePermissions[NO_MODELS];
+  delete rolePermissions[NO_KITS];
 });
 
 async function makeT(role: string): Promise<T> {
@@ -70,5 +76,30 @@ describe("globalSearch.search — role filter in place", () => {
   test("a readable job under an unreadable client is not lost: it stands on its own", async () => {
     const t = await makeT(NO_CLIENTS);
     expect(rows(await search(t))).toEqual(["asset:a1:child", "location:l1", "project:p1"]);
+  });
+});
+
+describe("globalSearch.search — the child dedupe counts only READABLE model and kit parents", () => {
+  const searchFor = (t: T, query: string) => t.withIdentity({ subject: USER, orgId: ORG }).query(api.globalSearch.search, { orgId: ORG, query });
+
+  async function withKit(role: string): Promise<T> {
+    const t = await makeT(role);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m2", organizationId: ORG, name: "Truss", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m2", assetTag: "RIG-02", status: "AVAILABLE", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "RIG-K1", name: "Rig kit", isActive: true, createdAt: NOW, updatedAt: NOW } as never);
+      await ctx.db.insert("kitSerializedItems", { id: "ki1", organizationId: ORG, kitId: "k1", assetId: "a2", sortOrder: 0, addedById: USER });
+    });
+    return t;
+  }
+
+  test("model: a member sees the asset under its model; without `model` the asset stands on its own", async () => {
+    expect(rows(await searchFor(await makeT("member"), "aura"))).toEqual(["asset:a1:child", "model:m1"]);
+    expect(rows(await searchFor(await makeT(NO_MODELS), "aura"))).toEqual(["asset:a1"]);
+  });
+
+  test("kit: a member sees the asset under its kit; without `kit` the asset stands on its own", async () => {
+    expect(rows(await searchFor(await withKit("member"), "rig"))).toEqual(["asset:a2:child", "kit:k1"]);
+    expect(rows(await searchFor(await withKit(NO_KITS), "rig"))).toEqual(["asset:a2"]);
   });
 });

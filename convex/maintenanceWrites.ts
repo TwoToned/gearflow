@@ -167,15 +167,18 @@ async function releaseAssets(
   assetIds: string[],
   stillHeldIds: Set<string>,
   now: number,
-): Promise<void> {
+): Promise<string[]> {
+  const released: string[] = [];
   for (const id of assetIds) {
     if (stillHeldIds.has(id)) continue;
     const a = await fetchOrgAsset(ctx, orgId, id);
     if (!a) continue;
     if ((a.status ?? "AVAILABLE") === "IN_MAINTENANCE") {
+      released.push(id);
       await ctx.db.patch(a._id, { status: "AVAILABLE", updatedAt: now });
     }
   }
+  return released;
 }
 
 type AssetDisposition = "RETURN_TO_SERVICE" | "KEEP_OUT_OF_SERVICE" | "RETIRE";
@@ -401,11 +404,12 @@ export const createNative = mutation({
     // Asset state-machine transitions. On COMPLETED-PASS the still-held check
     // excludes THIS record (its own fresh links must not self-hold).
     let held: MaintenanceCreateDetails["held"] = [];
+    let released: string[] = [];
     if (isHoldingStatus(status)) {
       held = await holdAssets(ctx, a.orgId, assetIds, a.now);
     } else if (status === "COMPLETED" && a.result !== "FAIL") {
       const stillHeld = await computeStillHeldIds(ctx, a.orgId, assetIds, a.recordId);
-      await releaseAssets(ctx, a.orgId, assetIds, stillHeld, a.now);
+      released = await releaseAssets(ctx, a.orgId, assetIds, stillHeld, a.now);
     }
 
     await writeActivityLog(ctx, {
@@ -422,7 +426,7 @@ export const createNative = mutation({
       // clock, the status created, the link rows inserted and the assets put on hold.
       details: {
         kind: "maintenanceCreate", assetCount: assetIds.length, serverSavedAt: Date.now(), status,
-        linkIds: (await existingLinks(ctx, a.recordId)).map((l) => l.id), held,
+        linkIds: (await existingLinks(ctx, a.recordId)).map((l) => l.id), held, released,
       } satisfies MaintenanceCreateDetails,
       createdAt: a.now,
     });

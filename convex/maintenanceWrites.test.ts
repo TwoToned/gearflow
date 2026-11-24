@@ -571,6 +571,22 @@ describe("maintenanceWrites.undoCreateNative (exact undo)", () => {
     expect(await rec(t, "rec1")).not.toBeNull();
   });
 
+  test("refuses a create that RELEASED an asset (COMPLETED/PASS probe), and changes nothing", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "IN_MAINTENANCE");
+    await create(t, { status: "COMPLETED", result: "PASS" });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    await expect(undo(t)).rejects.toThrow(/released its assets back to service: it can't be undone/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+  });
+
+  test("a COMPLETED create that released nothing (asset already available) is still undoable", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t, { status: "COMPLETED", result: "PASS" });
+    expect(await undo(t)).toEqual({ ok: true });
+    expect(await rec(t, "rec1")).toBeNull();
+  });
+
   test("a held asset another job now also holds stays IN_MAINTENANCE", async () => {
     const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
     await create(t, { status: "IN_PROGRESS" });

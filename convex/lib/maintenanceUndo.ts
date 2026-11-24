@@ -27,6 +27,11 @@ export interface MaintenanceCreateDetails {
   linkIds: string[];
   /** Assets this create moved AVAILABLE → IN_MAINTENANCE, with the `updatedAt` each had. */
   held: { assetId: string; updatedAtBefore: number | null }[];
+  /**
+   * Assets this create RELEASED IN_MAINTENANCE → AVAILABLE (a COMPLETED, non-FAIL create).
+   * Putting another job's hold back is not this create's to undo, so any refuses the Undo.
+   */
+  released?: string[];
 }
 
 function isCreateDetails(d: unknown): d is MaintenanceCreateDetails {
@@ -50,6 +55,9 @@ export async function loadUndoableMaintenanceCreate(
     throw new ConvexError("This maintenance job was already undone");
   }
   if (forward.userId !== a.actorUserId) throw new ConvexError("Only the person who created this job can undo it");
+  if ((forward.details.released ?? []).length > 0) {
+    throw new ConvexError("This job was created as completed and released its assets back to service: it can't be undone, edit it instead");
+  }
   assertWithinUndoWindow(forward.details.serverSavedAt, a.serverNow, "change");
   return { forward, details: forward.details };
 }

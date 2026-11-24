@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format, parseISO, isValid } from "date-fns";
+import { format } from "date-fns";
+import { PROJECT_TYPE_OPTIONS } from "@/lib/project-type-labels";
+import { fromDateStr, normalizeDate, resolveWindowMs, shiftWindowWithRental, toDateStr } from "@/lib/project-form-dates";
 import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { cn, focusRing, disabledState } from "@/lib/utils";
@@ -34,7 +36,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { useDateMoveGate } from "@/hooks/use-date-move-gate";
 import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
-import { getProjectWindowDates } from "@/lib/project-window";
 import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
@@ -47,13 +48,7 @@ import { CoachingTip } from "@/components/onboarding/coaching-tip";
 import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { activeMilestoneKey } from "@/lib/activation-milestones";
 
-const TYPE_OPTIONS = [
-  { value: "DRY_HIRE", label: "Dry hire" }, { value: "WET_HIRE", label: "Wet hire" },
-  { value: "INSTALLATION", label: "Installation" }, { value: "TOUR", label: "Tour" },
-  { value: "CORPORATE", label: "Corporate" }, { value: "THEATRE", label: "Theatre" },
-  { value: "FESTIVAL", label: "Festival" }, { value: "CONFERENCE", label: "Conference" },
-  { value: "OTHER", label: "Other" },
-] as const;
+const TYPE_OPTIONS = PROJECT_TYPE_OPTIONS;
 
 /**
  * The project detail shape the wizard needs in edit mode. Loosely typed (all
@@ -640,41 +635,6 @@ export function ProjectWizard({
 
 // ─── Schedule step ─────────────────────────────────────────────
 
-const toDateStr = (d?: Date) => (d ? format(d, "yyyy-MM-dd") : "");
-function fromDateStr(s?: unknown): Date | undefined {
-  if (!s) return undefined;
-  const d = typeof s === "string" ? parseISO(s) : new Date(String(s));
-  return isValid(d) ? d : undefined;
-}
-
-/**
- * Normalise a project's stored date (ISO string, Date, or null) to the form's
- * "yyyy-MM-dd" string shape. `undefined` when absent so empty fields stay empty.
- */
-function normalizeDate(value?: unknown): string | undefined {
-  const d = fromDateStr(value);
-  return d ? toDateStr(d) : undefined;
-}
-
-/** Resolve a project-shaped record's window (`projectStartDate ?? rentalStartDate`,
- *  same as `getProjectWindow`) into epoch-ms — #1227's date-move gate needs the
- *  BEFORE window (raw stored values) and the AFTER window (form strings) in the
- *  same {start,end} shape to compare them. */
-function resolveWindowMs(values: {
-  projectStartDate?: unknown;
-  projectEndDate?: unknown;
-  rentalStartDate?: unknown;
-  rentalEndDate?: unknown;
-}): { start: number | null; end: number | null } {
-  const { start, end } = getProjectWindowDates({
-    projectStartDate: fromDateStr(values.projectStartDate) ?? null,
-    projectEndDate: fromDateStr(values.projectEndDate) ?? null,
-    rentalStartDate: fromDateStr(values.rentalStartDate) ?? null,
-    rentalEndDate: fromDateStr(values.rentalEndDate) ?? null,
-  });
-  return { start: start ? start.getTime() : null, end: end ? end.getTime() : null };
-}
-
 /**
  * Two windows (WS2 #941, locked decision): RENTAL (chargeable — what's invoiced)
  * and PROJECT (gear committed — when equipment leaves/returns the warehouse;
@@ -697,8 +657,18 @@ function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
   };
 
   const setRange = (r: DateRange) => {
+    // D25: a set project window moves with the rental dates, by the same offset.
+    const shifted = shiftWindowWithRental(
+      { rentalStartDate: normalizeDate(v.rentalStartDate), rentalEndDate: normalizeDate(v.rentalEndDate) },
+      {
+        rentalStartDate: toDateStr(r.start), rentalEndDate: toDateStr(r.end),
+        projectStartDate: normalizeDate(v.projectStartDate), projectEndDate: normalizeDate(v.projectEndDate),
+      },
+    );
     form.setValue("rentalStartDate", toDateStr(r.start), { shouldDirty: true });
     form.setValue("rentalEndDate", toDateStr(r.end), { shouldDirty: true });
+    if (shifted.projectStartDate !== normalizeDate(v.projectStartDate)) form.setValue("projectStartDate", shifted.projectStartDate ?? "", { shouldDirty: true });
+    if (shifted.projectEndDate !== normalizeDate(v.projectEndDate)) form.setValue("projectEndDate", shifted.projectEndDate ?? "", { shouldDirty: true });
   };
   const setProjectRange = (r: DateRange) => {
     form.setValue("projectStartDate", toDateStr(r.start), { shouldDirty: true });

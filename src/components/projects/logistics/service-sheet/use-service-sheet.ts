@@ -93,6 +93,11 @@ function useCrewMath(
   return { previewCost, costTotal, crewChargeTotal: rows.length > 0 ? chargeTotal : 0 };
 }
 
+/** The server's own answer for crew pay (`crewRoles.ratesVisible`, the one rule). */
+function useRatesVisible(orgId: string | undefined): boolean {
+  return useAuthedQuery(api.crewRoles.ratesVisible, orgId ? { orgId } : "skip") === true;
+}
+
 /**
  * The crew gap as the form stands (its dates and Needed, the live calls' own
  * days; a newly picked row covers the whole run) — the ONE per-day rule
@@ -129,9 +134,7 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   const override = rawOverride != null && (rawOverride as unknown) !== "" ? Number(rawOverride) : undefined;
   const math = useCrewMath(rows, members.byId, role, members, override);
   const crewGapNow = formCrewGap(form, rows, service);
-  // The server's own answer for crew pay (`crewRoles.ratesVisible`, the one rule):
-  // below the pay line the sheet says nothing about role rates it can't see.
-  const payVisible = useAuthedQuery(api.crewRoles.ratesVisible, orgId ? { orgId } : "skip") === true;
+  const payVisible = useRatesVisible(orgId);
 
   const save = useServerMutation({
     // Crew is whatever is live NOW (Pick crew writes immediately), plus the rate edits made here.

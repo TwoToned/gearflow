@@ -323,7 +323,31 @@ describe("CrewPlanner (smoke)", () => {
       await waitFor(() => expect(sentIds(mail.sendCrewOffers).length).toBe(before + 50));
       const retried = mail.sendCrewOffers.mock.calls.at(-1)![0].assignmentIds;
       expect(new Set(retried)).toEqual(new Set(ids.filter((id) => !sentIds(mail.sendCrewOffers).slice(0, 100).includes(id))));
+      // A successful Retry reports the WHOLE send, not just the 50 it sent.
+      await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalledWith("150 offers sent"));
       mail.sendCrewOffers.mockImplementation(strict);
+    });
+
+    it("Cancel: a Retry that fails again keeps its `Cancelled n · …` prefix and the running count", async () => {
+      queried.members = [{ ...members[1], assignments: many }];
+      mail.sendCancellationEmails.mockImplementation(async (i: { assignmentIds: string[] }) => {
+        if (i.assignmentIds.includes("b120")) throw new Error("Mail is down");
+        return strict(i);
+      });
+      const err = vi.mocked(toast.error);
+      err.mockClear();
+      const user = userEvent.setup();
+      render(<CrewPlanner />);
+      await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+      await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Cancel 150" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel 150 calls" }));
+      await waitFor(() => expect(err).toHaveBeenCalledTimes(1));
+      const first = err.mock.calls[0] as unknown as [string, { action: { onClick: () => void } }];
+      expect(first[0]).toMatch(/^Cancelled 150 calls · cancellation emails: 100 sent, 50 not sent/);
+      first[1].action.onClick();
+      await waitFor(() => expect(err).toHaveBeenCalledTimes(2));
+      expect((err.mock.calls[1] as unknown as [string])[0]).toMatch(/^Cancelled 150 calls · cancellation emails: 100 sent, 50 not sent/);
+      mail.sendCancellationEmails.mockImplementation(strict);
     });
   });
 

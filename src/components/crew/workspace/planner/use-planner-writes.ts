@@ -42,11 +42,21 @@ export async function mailInBatches(send: MailSend, ids: readonly string[]): Pro
  * `40 sent, 110 not sent` — with Retry for exactly the unsent rest (S5 nit),
  * never a blanket failure that hides the 40 already out.
  */
-async function mailWithRetry(send: MailSend, ids: readonly string[], report: (r: MailResult) => void, prefix = ""): Promise<void> {
+async function mailWithRetry(
+  send: MailSend,
+  ids: readonly string[],
+  report: (r: MailResult) => void,
+  prefix = "",
+  before: MailResult = { sent: 0, errors: [], total: 0 },
+): Promise<void> {
   const r = await mailInBatches(send, ids);
-  if (r.unsent.length === 0) return report(r);
-  toast.error(`${prefix}${r.sent} sent, ${r.unsent.length} not sent · ${r.errors[r.errors.length - 1]}`, {
-    action: { label: "Retry", onClick: () => void mailWithRetry(send, r.unsent, report) },
+  // A Retry carries what earlier attempts already sent: the toast reports the WHOLE send.
+  const sofar: MailResult = { sent: before.sent + r.sent, total: before.total + r.total, errors: [...before.errors, ...r.errors] };
+  if (r.unsent.length === 0) return report(sofar);
+  const lastError = r.errors[r.errors.length - 1];
+  const priorTotal = { ...sofar, errors: before.errors.concat(r.errors.slice(0, -1)) };
+  toast.error(`${prefix}${sofar.sent} sent, ${r.unsent.length} not sent · ${lastError}`, {
+    action: { label: "Retry", onClick: () => void mailWithRetry(send, r.unsent, report, prefix, priorTotal) },
   });
 }
 

@@ -277,23 +277,25 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
       id: "cost",
       header: "Cost",
       mobile: "meta",
-      cell: (sh) => <span className="t-data">{formatCurrency(sh.totalCost)}</span>,
+      // Cost, charge and margin are ABSENT without the job-cost line (never zeroed): render nothing.
+      cell: (sh) => (sh.totalCost == null ? null : <span className="t-data">{formatCurrency(sh.totalCost)}</span>),
     },
     {
       id: "charge",
       header: "Charge",
       mobile: "meta",
-      cell: (sh) => <span className="t-data">{formatCurrency(sh.totalCharge)}</span>,
+      cell: (sh) => (sh.totalCharge == null ? null : <span className="t-data">{formatCurrency(sh.totalCharge)}</span>),
     },
     {
       id: "margin",
       header: "Margin",
       mobile: "meta",
-      cell: (sh) => (
-        <span className={cn("t-data", sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
-          {sh.margin > 0 ? "+" : ""}{formatCurrency(sh.margin)}
-        </span>
-      ),
+      cell: (sh) =>
+        sh.margin == null ? null : (
+          <span className={cn("t-data", sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
+            {sh.margin > 0 ? "+" : ""}{formatCurrency(sh.margin)}
+          </span>
+        ),
     },
     {
       id: "linkedOrder",
@@ -589,10 +591,10 @@ function SupplierDetailContent({ params }: { params: Promise<{ id: string }> }) 
                                   </Link>
                                 ) : "—"}
                               </TableCell>
-                              <TableCell className="hidden text-right sm:table-cell t-data">{formatCurrency(sh.totalCost)}</TableCell>
-                              <TableCell className="hidden text-right sm:table-cell t-data">{formatCurrency(sh.totalCharge)}</TableCell>
-                              <TableCell className={cn("text-right t-data", sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
-                                {sh.margin > 0 ? "+" : ""}{formatCurrency(sh.margin)}
+                              <TableCell className="hidden text-right sm:table-cell t-data">{sh.totalCost == null ? null : formatCurrency(sh.totalCost)}</TableCell>
+                              <TableCell className="hidden text-right sm:table-cell t-data">{sh.totalCharge == null ? null : formatCurrency(sh.totalCharge)}</TableCell>
+                              <TableCell className={cn("text-right t-data", sh.margin == null ? "" : sh.margin > 0 ? "text-success" : sh.margin < 0 ? "text-destructive" : "")}>
+                                {sh.margin == null ? null : `${sh.margin > 0 ? "+" : ""}${formatCurrency(sh.margin)}`}
                               </TableCell>
                               <TableCell className="hidden md:table-cell">
                                 {sh.linkedOrder ? (

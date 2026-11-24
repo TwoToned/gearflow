@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
+import { assertTags } from "./lib/fieldGuards";
 
 /**
  * Native SUPPLIER write mutations (Phase 3 browser-direct — replaces createSupplier/
@@ -112,6 +113,39 @@ export const updateNative = mutation({
   },
 });
 
+/**
+ * patchNative (UX Phase 13): change ONLY `tags` and/or `isActive` (the People list's
+ * `Add tag…`, `Archive` and `Reactivate`). `updateNative` replaces every field (a form
+ * save), so a list verb must never go through it with a partial row. supplier:update.
+ */
+export const patchNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    patch: v.object({ tags: v.optional(v.array(v.string())), isActive: v.optional(v.boolean()) }),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "supplier");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "supplier", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Supplier not found");
+    const tags = assertTags(a.patch.tags);
+    const next: { tags?: string[]; isActive?: boolean } = {};
+    if (tags) next.tags = tags.map((t) => t.toLowerCase());
+    if (a.patch.isActive != null) next.isActive = a.patch.isActive;
+    await ctx.db.patch(doc._id, { ...next, updatedAt: a.now });
+    const verb = a.patch.isActive === false ? "Archived" : a.patch.isActive === true ? "Reactivated" : "Updated tags on";
+    await logSupplier(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: a.patch.isActive === false ? "DELETE" : "UPDATE", id: a.id, name: doc.name, summary: `${verb} supplier ${doc.name}` });
+    return { id: a.id };
+  },
+});
+
 export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -144,6 +178,7 @@ export const removeNative = mutation({
 
 export const agentOps: AgentOpsAnnotations = {
   createNative: { danger: "medium" },
+  patchNative: { danger: "medium" },
   removeNative: { danger: "high" },
   updateNative: { danger: "medium" },
 };

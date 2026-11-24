@@ -3,7 +3,7 @@
  * nothing here is stored (a second copy of a total the jobs and invoices already
  * determine would contradict them the moment a payment is voided, R-3.1).
  *
- * - **Open jobs**: not templates, not RETURNED / COMPLETED / INVOICED / CANCELLED.
+ * - **Open jobs**: not templates, not COMPLETED / INVOICED / CANCELLED.
  * - **Quoted**: the stored `total` of jobs still ENQUIRY / QUOTING / QUOTED (read, never recomputed).
  * - **Outstanding**: ISSUED, not-PAID invoices, `total - amountPaid`; overdue by `dueDate`.
  * Money fields are returned only when `showMoney` (the invoice-read line, the one
@@ -15,7 +15,8 @@ export const CLIENT_SEGMENT_KEYS = ["all", "active", "quoting", "overdue", "arch
 export type ClientSegmentKey = (typeof CLIENT_SEGMENT_KEYS)[number];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const CLOSED = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
+// The convention the old clients dashboard and detail page already used: a returned job is still live work.
+const CLOSED = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
 const QUOTING = new Set<string>(JOB_SEGMENT_STATUSES.quoting);
 
 export interface ClientFactProject {

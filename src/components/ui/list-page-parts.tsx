@@ -100,18 +100,39 @@ export function ListHead({
   primary,
   pageMenu,
   headWords,
+  subline,
+  titleMenu,
 }: {
   title: string;
   primary?: ListPrimary;
   pageMenu?: ActionMenuSpec;
   /** Additive (UX Phase 15, Q-I2): page-level view words, each its own route. */
   headWords?: HeadWords;
+  /** Additive (UX Phase 13, §9f): the one muted fact about the whole set under the title. */
+  subline?: React.ReactNode;
+  /** Additive (UX Phase 13, C9): on a phone the title opens this (the People ▾ switcher); desktop keeps a plain title. */
+  titleMenu?: ActionMenuSpec;
 }) {
   const isMobile = useIsMobile();
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-h-11 items-center gap-2">
-        <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>
+        {titleMenu && titleMenu.items.length > 0 && isMobile ? (
+          <h1 className="flex-1 text-page-title font-semibold text-ink">
+            <ActionMenu
+              spec={titleMenu}
+              label={`Switch from ${title}`}
+              trigger={
+                <button type="button" className="inline-flex min-h-11 items-center gap-1 text-left">
+                  {title}
+                  <ChevronDown className="size-4 text-muted" aria-hidden="true" />
+                </button>
+              }
+            />
+          </h1>
+        ) : (
+          <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>
+        )}
         {headWords && !isMobile && <HeadWordLinks headWords={headWords} />}
         {pageMenu && pageMenu.items.length > 0 && <ActionMenu spec={pageMenu} label={`${title} options`} />}
         {primary && !isMobile && (
@@ -120,6 +141,7 @@ export function ListHead({
           </Button>
         )}
       </div>
+      {subline && <p className="text-caption text-muted">{subline}</p>}
       {headWords && isMobile && <HeadWordLinks headWords={headWords} />}
     </div>
   );

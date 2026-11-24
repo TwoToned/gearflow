@@ -143,7 +143,7 @@ export const crewPage = query({
         compareValues(crewSortValue(x, facts.get(x.id)!, sortBy, pay), crewSortValue(y, facts.get(y.id)!, sortBy, pay), dir(a.sortOrder)) ||
         compareValues(crewSortValue(x, facts.get(x.id)!, "name", pay), crewSortValue(y, facts.get(y.id)!, "name", pay), 1),
     );
-    const { items: pageRows, total } = paginateItems(sorted, page, pageSize);
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
     const projectIds = [...new Set(pageRows.map((m) => facts.get(m.id)!.next?.projectId).filter((id): id is string => !!id))];
     const projects = new Map<string, { id: string; projectNumber: string; name: string }>();
     for (const id of projectIds) {
@@ -162,7 +162,7 @@ export const crewPage = query({
         clashDay: f.clashDay,
       };
     });
-    return { items, total, page, pageSize, truncated, today, payVisible: pay };
+    return { items, total, totalPages, page, pageSize, truncated, today, payVisible: pay };
   },
 });
 
@@ -247,17 +247,17 @@ export const clientPage = query({
     const sorted = [...filtered].sort(
       (x, y) => compareValues(clientSortValue(x, facts.get(x.id)!, sortBy, showMoney), clientSortValue(y, facts.get(y.id)!, sortBy, showMoney), d) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1),
     );
-    const { items: pageRows, total } = paginateItems(sorted, page, pageSize);
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
     const items = pageRows.map((c) => {
       const { hasOverdue, ...f } = facts.get(c.id)!;
       void hasOverdue;
       return {
         id: c.id, name: c.name, type: c.type ?? null, contactName: c.contactName ?? null, contactEmail: c.contactEmail ?? null,
-        tags: c.tags ?? [], isActive: (c.isActive ?? true) === true, xeroContactName: c.xeroContactName ?? null, xeroLinked: !!c.xeroContactId,
+        tags: c.tags ?? [], isActive: (c.isActive ?? true) === true, xeroContactId: c.xeroContactId ?? null, xeroLinked: !!c.xeroContactId,
         ...f,
       };
     });
-    return { items, total, page, pageSize, truncated, today, moneyVisible: showMoney };
+    return { items, total, totalPages, page, pageSize, truncated, today, moneyVisible: showMoney };
   },
 });
 
@@ -344,12 +344,12 @@ export const supplierPage = query({
       (s) => inSupplierSegment((s.isActive ?? true) === true, facts.get(s.id)!.openOrders, seg) && (!a.search || matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search)),
     );
     const sorted = [...filtered].sort((x, y) => compareValues(val(x), val(y), dir(a.sortOrder)) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1));
-    const { items: pageRows, total } = paginateItems(sorted, page, pageSize);
+    const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
     const items = pageRows.map((s) => ({
       id: s.id, name: s.name, contactName: s.contactName ?? null, email: s.email ?? null, phone: s.phone ?? null,
       accountNumber: s.accountNumber ?? null, tags: s.tags ?? [], isActive: (s.isActive ?? true) === true, ...facts.get(s.id)!,
     }));
-    return { items, total, page, pageSize, truncated, moneyVisible: showMoney };
+    return { items, total, totalPages, page, pageSize, truncated, moneyVisible: showMoney };
   },
 });
 

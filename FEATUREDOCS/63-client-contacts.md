@@ -144,6 +144,10 @@ include every matched client's contacts' names/emails, fetched via a
 `SCAN_CAP` read-budget note at the top of that file). The result subtitle
 prefers the resolved primary contact.
 
+## Clients list (UX Phase 13, spec §9f)
+
+`/clients` is `src/components/people/clients-list.tsx` on the one `PeopleList` renderer (the old `ClientTable` and the four `ClientsDashboard` tiles are gone). Reads: `peopleLists.clientPage` / `clientSegmentCounts`; facts are pure in `convex/lib/clientListFacts.ts`: **open jobs** (not COMPLETED / INVOICED / CANCELLED, templates excluded; a returned job is still live work), **quoted** (stored `total` of ENQUIRY..QUOTED jobs, never recomputed), **outstanding** (ISSUED, not-PAID invoices, `total - amountPaid`) and `18d overdue` from the oldest `dueDate`. Strip: `All · Active jobs · Quoting · Overdue invoices · Archived`; the tiles' numbers are the strip counts, a head sub line and the Type filter. **Money** (`Quoted`, `Outstanding`, `Lifetime`, overdue days, the `Overdue invoices` segment) is returned only to a caller who passes `canSeeJobCost` (`invoice:read`, not a `noFinancials` key): absent, never zero, never a sort key. Bulk: `Add tag…`, `Export` (through `src/lib/csv.ts`), `Archive n` (clients with open jobs stay and are named; Undo reactivates only those still archived). `Merge n…` and the record page arrive in slice 2. `New job for client…` waits for the Phase 9 wizard's client preset.
+
 ## Client detail page & table
 
 - **Hero**: shows the resolved primary contact (name/email/phone) plus a

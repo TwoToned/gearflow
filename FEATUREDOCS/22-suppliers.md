@@ -3,7 +3,8 @@
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-25 (review quarterly — POLICY.md R-5.5)_
 
 ## Suppliers
-- **List page data source (2026-07, perf fix):** `SupplierTable`
+- **List (UX Phase 13, spec §9f):** `src/components/people/suppliers-list.tsx` on the one `PeopleList` renderer; `SupplierTable` and the four `StatTile`s are gone. Reads `peopleLists.supplierPage` / `supplierSegmentCounts` (strip `All · Open orders · Archived`; open orders = DRAFT/ORDERED/PARTIAL). `Spend YTD` (committed order totals ordered this calendar year) is cost: returned only when `canSeeJobCost`, otherwise absent. **That rule now also covers `suppliers.detail.spend` and the cost / charge / margin of `suppliers.subhiresPage`** (before, any `supplier:read` caller got them; a sentinel test in `convex/peopleLists.test.ts` pins it). `On hire now`, `Due back` and `Overdue returns` arrive with the order return date (slice 2). Bulk `Archive n` / `Add tag…` use the new `suppliersWrites.patchNative` (tags / isActive only, so a list verb never replaces a whole supplier); Undo restores only rows still in the state the write set.
+- **List page data source (2026-07, perf fix; superseded by the above):** `SupplierTable`
   (`src/components/suppliers/supplier-table.tsx`) is server-side paginated —
   `suppliers.listPage` (filter/sort done in Convex) via `useAuthedQuery`, replacing a
   whole-org `useSuppliers` live subscription that filtered/sorted client-side. See

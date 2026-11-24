@@ -123,6 +123,25 @@ describe("recordFieldEdit + undoFieldEdit (in a transaction)", () => {
     expect(await name()).toBe("Someone else");
   });
 
+  test("refuses a load that returns another org's doc, writing nothing", async () => {
+    const { t, edit, name } = await setup();
+    await edit("New");
+    let applied = false;
+    await expect(
+      t.run(async (ctx) =>
+        undoFieldEdit(ctx, {
+          orgId: ORG, entityType: "location", entityId: "l1", entityName: "Loc", auditId: "a1", actor: ME, now: NOW,
+          load: async () => ({ _id: "x", organizationId: OTHER_ORG, name: "New" }) as never,
+          apply: async () => { applied = true; },
+        }),
+      ),
+    ).rejects.toThrow(/no longer exists/);
+    expect(applied).toBe(false);
+    expect(await name()).toBe("New");
+    const marker = await t.run((ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId("a1"))).first());
+    expect(marker).toBeNull();
+  });
+
   test("refuses another author, an expired window, a foreign org and an unknown id", async () => {
     const { edit, undo } = await setup();
     await edit("New");

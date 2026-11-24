@@ -17,6 +17,10 @@
  *  - Nothing the client sends decides what is restored. There is no
  *    caller-supplied "restore to" value.
  *
+ * ABA is deliberate: if someone changes a field and then changes it BACK to what the
+ * forward edit left, the compare-and-set passes. The state being restored from equals
+ * the state the forward edit produced, so the Undo is still exact.
+ *
  * An absent field is stored as `null` in the snapshot (Convex documents cannot hold
  * `undefined`) and an absent doc field equals `null`; restoring `null` CLEARS the
  * field. A file field is never deleted by an Undo: it only changes which file a
@@ -213,6 +217,11 @@ export async function undoFieldEdit<Doc extends Record<string, unknown>>(
   const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(a.auditId))).first();
   const doc = await a.load();
   if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "That record no longer exists." });
+  // Defence in depth: `by_cuid` is global, so never rely on a caller's `load` having org-checked.
+  const docOrg = (doc as { organizationId?: unknown }).organizationId;
+  if (docOrg != null && docOrg !== a.orgId) {
+    throw new ConvexError({ code: "NOT_FOUND", message: "That record no longer exists." });
+  }
 
   const plan = planFieldEditUndo({
     snapshot,

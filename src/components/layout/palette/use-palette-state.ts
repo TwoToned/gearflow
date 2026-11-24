@@ -20,7 +20,7 @@ import {
   type PaletteSection,
 } from "@/lib/palette/model";
 import type { Resource } from "@/lib/permissions";
-import { reachesResource } from "@/lib/permission-reach";
+import { canReadResource, reachesResource } from "@/lib/permission-reach";
 import { useAtMode, atScore } from "./use-at-mode";
 import { useSlashMode } from "./use-slash-mode";
 import { useDateMode } from "./use-date-mode";
@@ -120,7 +120,7 @@ function useModes(i: InputState, ctx: { orgId: string | undefined; permissions: 
     enabled: !i.drilling && !slash.active,
     now: ctx.now,
     orgId: ctx.orgId,
-    canReadJobs: reaches(ctx.permissions, "project"),
+    canReadJobs: canReadResource(ctx.permissions, "project"),
     search: ctx.search,
   });
   // Plain search runs for any plain input, a date included: `14/11` lists that day's

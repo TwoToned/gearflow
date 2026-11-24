@@ -16,7 +16,7 @@ import { StatusWord } from "@/components/ui/status-word";
 import { WidgetCount, useBoardHas } from "@/components/dashboard/widget-chrome";
 import { buildNeedsAttentionLines, type NeedsAttentionLine, type NeedsAttentionTone } from "@/lib/needs-attention";
 import { canOpenLink } from "@/lib/dashboard-links";
-import { reachesResource } from "@/lib/permission-reach";
+import { canReadResource } from "@/lib/permission-reach";
 import type { ColorIntent } from "@/lib/status-colors";
 import type { Resource } from "@/lib/permissions";
 import { cn, focusRing } from "@/lib/utils";
@@ -25,15 +25,19 @@ const TONE_INTENT: Record<NeedsAttentionTone, ColorIntent> = { error: "error", w
 
 type Permissions = ReturnType<typeof useCurrentRole>["permissions"];
 
-/** The org id for a query only when the role can open what it feeds; otherwise the query is skipped. */
+/**
+ * The org id for a query only when the role may READ every resource it feeds
+ * (`canReadResource`: the `read` action, not any action); otherwise the query is
+ * skipped. Opening the line's target is a separate check (`canOpenLink`).
+ */
 function gated(orgId: string | undefined, permissions: Permissions, ...resources: Resource[]): string | undefined {
-  return resources.every((r) => reachesResource(permissions, r)) ? orgId : undefined;
+  return resources.every((r) => canReadResource(permissions, r)) ? orgId : undefined;
 }
 
 /**
- * Each line's read, skipped (and the line absent) when the role can't open the
- * list it links to (UX Phase 11, §6c.2). `useAuthedQuery` does not catch errors,
- * so hiding a line is not enough: the query must not run.
+ * Each line's read, skipped (and the line absent) when the role can't read what
+ * it counts (UX Phase 11, §6c.2). `useAuthedQuery` does not catch errors, so
+ * hiding a line is not enough: the query must not run.
  */
 function useNeedsAttentionSources(orgId: string | undefined) {
   const { permissions, isLoading: roleLoading } = useCurrentRole();
@@ -53,7 +57,8 @@ function useNeedsAttentionSources(orgId: string | undefined) {
     maintenance: canMaintenance ? stats.data : undefined,
     subHireOverdue,
     overbookings,
-    finance,
+    // null = the server says this role can't read invoices: no line, never a crash.
+    finance: finance ?? undefined,
     blockers,
     crewOffers,
   };

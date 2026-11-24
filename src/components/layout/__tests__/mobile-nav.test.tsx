@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
+import { rolePermissions } from "@/lib/permissions";
 
 /**
  * The phone bottom bar (D1/D65): Home · Jobs · Scan · Warehouse · More.
@@ -227,6 +228,7 @@ describe("More sheet", () => {
   });
 
   it("S4: opened, each row carries its count (§6d.6), truncated reads as n+, nothing is read while closed", async () => {
+    perms = rolePermissions.admin as unknown as Record<string, string[]>;
     countReads.length = 0;
     reusedReads.length = 0;
     renderNav();
@@ -254,6 +256,22 @@ describe("More sheet", () => {
     expect(within(dialog).queryByText("Returns")).toBeNull();
     expect(countReads).not.toContain("returnsOverdue");
     expect(countReads).toContain("assets");
+  });
+
+  it("a count is a data read: a row shown for another action (invoice/asset 'create') reads and prints nothing", async () => {
+    perms = { project: ["read"], invoice: ["create"], asset: ["create"], client: ["read"] };
+    countReads.length = 0;
+    reusedReads.length = 0;
+    const dialog = await open();
+    // The rows stay (nav visibility is any action, absent-not-greyed)…
+    const row = (label: string) => within(dialog).getByText(label).closest("[role='menuitem'], button, a, div")!.parentElement!.textContent;
+    expect(row("Finance")).not.toContain("overdue");
+    expect(row("Assets")).not.toContain("605");
+    // …but their reads never run.
+    expect(reusedReads).not.toContain("finance");
+    expect(countReads).not.toContain("assets");
+    expect(countReads).toContain("clients");
+    expect(row("Overbookings")).toContain("5 overbooked");
   });
 });
 

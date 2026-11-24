@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
-import { requireOrgPermission, requireOrgReadFor } from "./lib/auth";
+import { callerMayRead, requireOrgReadFor } from "./lib/auth";
 import { effectiveQuoteStatus, projectLiveRevision } from "./lib/quoteState";
 import { QUOTE_EXPIRING_SOON_DAYS, daysUntilValidUntil } from "./lib/quoteDates";
 import type { Doc } from "./_generated/dataModel";
@@ -428,8 +428,10 @@ export const counts = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "invoice");
-    // It returns a dollar total (D88): the ROLE must read invoices, not just the org match.
-    await requireOrgPermission(ctx, orgId, "invoice", "read");
+    // It returns a dollar total (D88): the ROLE must read invoices, not just the org
+    // match. A role that can't gets null (the navCounts pattern), never a throw, so a
+    // client whose cached role disagrees with the server can't crash Home.
+    if (!(await callerMayRead(ctx, orgId, "invoice"))) return null;
     const b = await computeFinanceBundle(ctx, orgId, now);
     const overdueOutstanding = Math.round(b.overdue.reduce((sum, r) => sum + r.outstanding, 0) * 100) / 100;
     return {

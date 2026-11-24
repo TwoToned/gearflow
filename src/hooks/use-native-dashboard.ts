@@ -222,15 +222,17 @@ export interface NativeOrgFinanceCounts {
 /**
  * financeOrg.counts: the org-level Finance section's dashboard-chip counts
  * (#992, Phase F) — same bounded reads `financeOrg.bundle` uses, small return
- * shape, mirroring `useNativeOverbookingCounts` above.
+ * shape, mirroring `useNativeOverbookingCounts` above. `null` when the
+ * caller's role can't read invoices (the server answers null rather than
+ * throwing, so a mismatched role never crashes Home).
  */
-export function useNativeOrgFinanceCounts(orgId: string | undefined): NativeOrgFinanceCounts | undefined {
+export function useNativeOrgFinanceCounts(orgId: string | undefined): NativeOrgFinanceCounts | null | undefined {
   const enabled = !!orgId;
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
   return useAuthedQuery(
     api.financeOrg.counts,
     enabled ? { orgId: orgId!, now: nowBucket } : "skip",
-  ) as NativeOrgFinanceCounts | undefined;
+  ) as NativeOrgFinanceCounts | null | undefined;
 }
 
 export interface NativeSubHireStats {

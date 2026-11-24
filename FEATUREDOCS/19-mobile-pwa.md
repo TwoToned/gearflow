@@ -110,9 +110,14 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
     built from `NAV_COUNT_SOURCES`.
   - Finance (`1 overdue`) and Overbookings (`5 overbooked`) reuse
     `financeOrg.counts` (which also checks the role's `invoice:read`, since it returns
-    a dollar total) and `overbookingBoard.counts` (already role-checked).
+    a dollar total, and answers `null` rather than throwing without it) and
+    `overbookingBoard.counts` (already role-checked).
   - Rows mount only while the sheet is open and only for the rows the role kept, so
-    a count is subscribed exactly while it can be seen. `formatNavCount` words them:
+    a count is subscribed exactly while it can be seen. A row is visible for ANY
+    action on its resource (nav visibility), but its count is a data read: it runs
+    only with that resource's `read` (`canReadResource`, `NAV_COUNT_RESOURCE` in
+    `src/lib/nav-counts.ts`), so a role holding only `invoice:create` sees Finance
+    with no count and never fires the finance read. `formatNavCount` words them:
     totals muted (shown at 0), exceptions as a dot-word and absent at 0.
   - Crew's rows carry no source yet: Phase 15 owns them and attaches `crew`.
 

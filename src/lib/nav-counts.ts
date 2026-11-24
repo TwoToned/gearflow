@@ -8,6 +8,24 @@ import type { NavCount, NavCountServerSource } from "../../convex/navCounts";
 
 export type NavCountSource = NavCountServerSource | "invoicesOverdue" | "overbookings";
 
+/**
+ * The resource each count READS — the client skips the read unless the role
+ * holds `read` on it (`canReadResource`), even where the row itself is visible
+ * for another action. The same resources the server role-checks.
+ */
+export const NAV_COUNT_RESOURCE = {
+  assets: "asset",
+  testTagOverdue: "testTag",
+  maintenance: "maintenance",
+  returnsOverdue: "warehouse",
+  clients: "client",
+  suppliers: "supplier",
+  locations: "location",
+  crew: "crew",
+  invoicesOverdue: "invoice",
+  overbookings: "project",
+} as const satisfies Record<NavCountSource, string>;
+
 export type NavCountTone = "muted" | "warning" | "error";
 
 export interface NavCountText {

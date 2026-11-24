@@ -20269,7 +20269,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "module": "financeOrg",
     "fn": "counts",
     "kind": "query",
-    "guard": "orgPermission",
+    "guard": "orgReadFor",
     "resource": "invoice",
     "action": "read",
     "scopePairs": [

@@ -296,13 +296,18 @@ describe("financeOrg.bundle", () => {
     });
   });
 
-  test("counts returns a dollar total, so it needs the ROLE's invoice read, not just the org match", async () => {
+  test("counts returns a dollar total, so it needs the ROLE's invoice read: without it, null (never a throw)", async () => {
     const t = makeT();
     await seedCoreFixture(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m_ghost", organizationId: ORG, userId: "ghost", role: "no-such-role" });
+    });
     // A token for the org with no member row: requireOrgReadFor alone would let it through.
-    await expect(
-      t.withIdentity({ subject: "stranger", orgId: ORG }).query(api.financeOrg.counts, { orgId: ORG, now: NOW }),
-    ).rejects.toThrow(/not a member|insufficient/i);
+    expect(await t.withIdentity({ subject: "stranger", orgId: ORG }).query(api.financeOrg.counts, { orgId: ORG, now: NOW })).toBeNull();
+    // A member whose role grants no invoice read.
+    expect(await t.withIdentity({ subject: "ghost", orgId: ORG }).query(api.financeOrg.counts, { orgId: ORG, now: NOW })).toBeNull();
+    // The org guard still throws on a mismatched org.
+    await expect(t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: OTHER_ORG, now: NOW })).rejects.toThrow();
   });
 });
 
@@ -338,7 +343,7 @@ describe("financeOrg.counts — overdue invoices (D88)", () => {
   test("counts overdue invoices and sums what is still owed, derived from payments", async () => {
     const t = makeT();
     await seedOverdue(t);
-    const c = await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW });
+    const c = (await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW }))!;
     expect(c.overdueCount).toBe(2);
     expect(c.overdueOutstanding).toBe(1600);
     expect(c.overdueTruncated).toBe(false);
@@ -353,7 +358,7 @@ describe("financeOrg.counts — overdue invoices (D88)", () => {
         await ctx.db.insert("invoices", { ...inv(`i${i}`, { dueDate: NOW - 5 * DAY }), projectId: "P_x" });
       }
     });
-    const c = await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW });
+    const c = (await t.withIdentity(asUser).query(api.financeOrg.counts, { orgId: ORG, now: NOW }))!;
     expect(c.overdueTruncated).toBe(true);
     expect(c.overdueCount).toBe(SECTION_CAP);
   });

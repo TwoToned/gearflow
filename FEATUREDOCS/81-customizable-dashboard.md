@@ -55,10 +55,12 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   - a muted mono count;
   - a quiet `View all ›` from the registry's `viewAll`. The grid drops it when
     `canOpenLink` fails for the viewer's role. It is the ONE client "can open" rule,
-    `reachesResource` (`src/lib/permission-reach.ts`), shared with `nav.ts` `canSee`,
-    Needs attention's read gate and the palette: ANY action on the resource opens it
-    (`reports` grants `view`, not `read`). On a phone it has the shared `.tap-area`
-    (44 px hit area).
+    `reachesResource` (`src/lib/permission-reach.ts`), shared with `nav.ts` `canSee`
+    and the palette's Actions: ANY action on the resource opens it (`reports` grants
+    `view`, not `read`). A DATA read is a different question with its own rule,
+    `canReadResource` (the `read` action itself), asked by every client gate in front
+    of a read: Needs attention's reads, the More sheet's counts and the palette's
+    day-jobs read. On a phone it has the shared `.tap-area` (44 px hit area).
 
   Widgets write their count, and one header action (the setup panel's Dismiss), into the
   card header through `WidgetCount` / `WidgetAction` (`widget-chrome.tsx`, portals). A stat
@@ -78,9 +80,11 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
   lines still out (`overdueReturns`) are its sub-line, `67 items to chase`.
 - **Needs attention** is a set of dot-word lines with a mono count, derived by the pure
   `src/lib/needs-attention.ts`.
-  - **Gating.** Each read is skipped when the role can't open the list it links to
-    (`reachesResource`, any action; `useAuthedQuery` doesn't catch errors, so hiding the
-    line alone would not be enough). The line is then absent. Maintenance due counts
+  - **Gating.** Each read is skipped when the role can't READ what it counts
+    (`canReadResource`, the `read` action — a role holding only `invoice:create` never
+    runs the finance read; `useAuthedQuery` doesn't catch errors, so hiding the line
+    alone would not be enough). The line is then absent. `financeOrg.counts` itself
+    answers `null` (not a throw) to a caller without invoice read. Maintenance due counts
     OPEN work past its date by the one definition in `convex/lib/maintenanceOpen.ts`
     (scheduled + awaiting parts + in progress + QA):
 

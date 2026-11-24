@@ -3,7 +3,9 @@
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useNativeOrgFinanceCounts, useNativeOverbookingCounts } from "@/hooks/use-native-dashboard";
 import { useStableNow } from "@/hooks/use-stable-now";
-import { formatNavCount, type NavCountSource, type NavCountText } from "@/lib/nav-counts";
+import { formatNavCount, NAV_COUNT_RESOURCE, type NavCountSource, type NavCountText } from "@/lib/nav-counts";
+import { canReadResource } from "@/lib/permission-reach";
+import { useCurrentRole } from "@/lib/use-permissions";
 import { api } from "../../convex/_generated/api";
 import type { NavCount } from "../../convex/navCounts";
 
@@ -16,12 +18,16 @@ import type { NavCount } from "../../convex/navCounts";
  */
 export function useNavCount(source: NavCountSource | undefined, orgId: string | undefined): NavCountText | null {
   const now = useStableNow();
-  const own = (s: NavCountSource) => (source === s ? orgId : undefined);
+  const { permissions } = useCurrentRole();
+  // The ROW shows for any action on its resource (nav visibility); its COUNT is a
+  // data read, so it runs only with that resource's `read` (canReadResource).
+  const readable = source !== undefined && canReadResource(permissions, NAV_COUNT_RESOURCE[source]);
+  const own = (s: NavCountSource) => (readable && source === s ? orgId : undefined);
   const finance = useNativeOrgFinanceCounts(own("invoicesOverdue"));
   const overbookings = useNativeOverbookingCounts(own("overbookings"));
-  const server = source && source !== "invoicesOverdue" && source !== "overbookings" && orgId ? source : null;
+  const server = readable && source !== "invoicesOverdue" && source !== "overbookings" && orgId ? source : null;
   const counted = useAuthedQuery(api.navCounts.get, server && orgId ? { orgId, source: server, now } : "skip");
-  if (!source) return null;
+  if (!source || !readable) return null;
   return formatNavCount(source, pick(source, { finance, overbookings, counted }));
 }
 
@@ -33,7 +39,7 @@ function pick(
     counted: NavCount | null | undefined;
   },
 ): NavCount | null | undefined {
-  if (source === "invoicesOverdue") return r.finance ? { value: r.finance.overdueCount ?? 0, truncated: !!r.finance.overdueTruncated } : undefined;
+  if (source === "invoicesOverdue") return r.finance ? { value: r.finance.overdueCount ?? 0, truncated: !!r.finance.overdueTruncated } : r.finance;
   if (source === "overbookings") return r.overbookings ? { value: r.overbookings.hardCount, truncated: false } : undefined;
   return r.counted;
 }

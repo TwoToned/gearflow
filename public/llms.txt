@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (649 agent-reachable)
+## Operations (658 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -23,6 +23,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `lineItemWrites.addLineItemSmartNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.addNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.unsellLineItemNative` (mutation, scope: project:manage_line_items,asset:update)
+- `locationsWrites.moveContentsNative` (mutation, scope: location:update,asset:update,bulkAsset:update,kit:update)
+- `locationsWrites.undoMoveContentsNative` (mutation, scope: location:update,asset:update,bulkAsset:update,kit:update)
 - `navCounts.get` (query, scope: asset:read,testTag:read,maintenance:read,warehouse:read,client:read,supplier:read,location:read,crew:read)
 - `projectTasks.assignees` (query, scope: work:read,project:read)
 - `projectTasks.getById` (query, scope: work:read,project:read)
@@ -257,6 +259,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `kits.listByIds` (query, scope: kit:read)
 - `kits.listPage` (query, scope: kit:read)
 - `kitSerializedItems.getByAssetId` (query, scope: kit:read)
+- `kitsList.bookingGate` (query, scope: kit:read)
+- `kitsList.legacyIncompleteReport` (query, scope: kit:read)
+- `kitsList.listPage` (query, scope: kit:read)
+- `kitsList.segmentCounts` (query, scope: kit:read)
 - `kitWrites.addBulkItemNative` (mutation, scope: kit:update)
 - `kitWrites.addSerializedItemsNative` (mutation, scope: kit:update)
 - `kitWrites.archiveNative` (mutation, scope: kit:delete)
@@ -277,8 +283,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `locations.getById` (query, scope: location:read)
 - `locations.list` (query, scope: location:read)
 - `locations.listSimple` (query, scope: location:read)
+- `locationsList.listPage` (query, scope: location:read)
+- `locationsList.segmentCounts` (query, scope: location:read)
 - `locationsWrites.createNative` (mutation, scope: location:create)
 - `locationsWrites.removeNative` (mutation, scope: location:delete)
+- `locationsWrites.setLabelsPrintedNative` (mutation, scope: location:update)
 - `locationsWrites.updateNative` (mutation, scope: location:update)
 - `locationsWrites.updateNotesNative` (mutation, scope: location:update)
 

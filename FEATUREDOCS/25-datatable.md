@@ -42,9 +42,9 @@ headers (`sort`/`onSort`, `aria-sort`) and a `leading` slot. `useTablePreference
 | Equipment Models | (ListPage, see above: `src/components/assets/models-list.tsx`) | Category, Type, Tags |
 | Sales stock | (ListPage: `src/components/assets/sales-stock-list.tsx`) | Category |
 | Projects | (ListPage, see above: `src/components/projects/jobs-list.tsx`) | Status, Type, Client, PM, Dates |
-| Kits | `src/app/(app)/kits/page.tsx` | Status, Condition, Location, Category |
+| Kits | (ListPage: `src/components/kits/kits-list.tsx`) | Category, Location, Tags |
 | Clients | `src/components/clients/client-table.tsx` | Type |
-| Locations | `src/components/locations/location-table.tsx` | Type |
+| Locations | (ListPage: `src/components/locations/locations-list.tsx`) | Type, Tags |
 | Suppliers | `src/components/suppliers/supplier-table.tsx` | Status (isActive) |
 | Maintenance | `src/app/(app)/maintenance/page.tsx` | Status, Type, Result |
 | T&T Registry | `src/components/test-tag/test-tag-table.tsx` | Equipment Class, Appliance Type, Status |

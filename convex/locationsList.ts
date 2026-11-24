@@ -58,6 +58,25 @@ function sortKey(l: Doc<"locations">, sortBy: string, c: SortCtx): unknown {
   return (SORT_KEYS[sortBy] ?? ((x: Doc<"locations">) => (x as unknown as Record<string, unknown>)[sortBy]))(l, c);
 }
 
+/** One page row: the location plus its derived figures (fill, label state) and a dash-able last movement. */
+function shapeLocationRow(l: Doc<"locations">, c: { stored: number; nameById: Map<string, string>; binCount: number }) {
+  return {
+    id: l.id,
+    name: l.name,
+    type: l.type ?? "OFFSITE",
+    address: l.address ?? null,
+    tags: l.tags ?? [],
+    parentName: (l.parentId && c.nameById.get(l.parentId)) || null,
+    stored: c.stored,
+    binCount: c.binCount,
+    capacity: l.capacity ?? null,
+    fill: locationFill(c.stored, l.capacity),
+    lastMovement: l.lastMovementAt ?? null,
+    labelState: binLabelState(l.labelPrintedAt),
+    labelPrintedAt: l.labelPrintedAt ?? null,
+  };
+}
+
 const sortDir = v.optional(v.union(v.literal("asc"), v.literal("desc")));
 
 /** One page of the Locations list. */
@@ -91,24 +110,7 @@ export const listPage = query({
     const sorted = [...filtered].sort((x, y) => compareValues(sortKey(x, sortBy, { stored }), sortKey(y, sortBy, { stored }), dir) || x.name.localeCompare(y.name));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
 
-    const items = paged.items.map((l) => {
-      const own = stored.get(l.id) ?? 0;
-      return {
-        id: l.id,
-        name: l.name,
-        type: l.type ?? "OFFSITE",
-        address: l.address ?? null,
-        tags: l.tags ?? [],
-        parentName: l.parentId ? (nameById.get(l.parentId) ?? null) : null,
-        stored: own,
-        binCount: childCount.get(l.id) ?? 0,
-        capacity: l.capacity ?? null,
-        fill: locationFill(own, l.capacity),
-        lastMovement: l.lastMovementAt ?? null,
-        labelState: binLabelState(l.labelPrintedAt),
-        labelPrintedAt: l.labelPrintedAt ?? null,
-      };
-    });
+    const items = paged.items.map((l) => shapeLocationRow(l, { stored: stored.get(l.id) ?? 0, nameById, binCount: childCount.get(l.id) ?? 0 }));
     return { ...paged, items, truncated: locs.truncated || storedTruncated };
   },
 });

@@ -24927,6 +24927,194 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "kitsList.bookingGate",
+    "module": "kitsList",
+    "fn": "bookingGate",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c8570d0f01945e1f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A kit's derived booking state: whether it can be added to a job, and what is missing.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitsList.legacyIncompleteReport",
+    "module": "kitsList",
+    "fn": "legacyIncompleteReport",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Kits that store the old INCOMPLETE status but have no missing member (they now read Available).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitsList.listPage",
+    "module": "kitsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "locationIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9d48bad50f73878d",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Kits list with derived state (Incomplete / Reserved / Available), item count and filters.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitsList.segmentCounts",
+    "module": "kitsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Kits list (all, complete, missing items, on a job).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "kitWrites.addBulkItemNative",
     "module": "kitWrites",
     "fn": "addBulkItemNative",
@@ -27541,6 +27729,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "locationsList.listPage",
+    "module": "locationsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "cdb195d9c34f1b54",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Locations list with stored count, capacity and fill, bin-label state and last movement.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsList.segmentCounts",
+    "module": "locationsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Locations list (all, warehouses, vehicles, sites, empty).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "locationsWrites.createNative",
     "module": "locationsWrites",
     "fn": "createNative",
@@ -27570,6 +27862,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "auditId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "capacity",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "id",
@@ -27628,11 +27925,80 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "04288aa0b7330463",
+    "argsSha": "eed50cd13f03a918",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.moveContentsNative",
+    "module": "locationsWrites",
+    "fn": "moveContentsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      },
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      },
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fromIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "toId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ae7ff7138a4aa810",
+    "returnsSha": "95cb69adccb99b12",
+    "stability": "tracks-app",
+    "summary": "Move everything stored at the given locations to another location (units out on a job are skipped).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -27690,6 +28056,107 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "locationsWrites.setLabelsPrintedNative",
+    "module": "locationsWrites",
+    "fn": "setLabelsPrintedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e590475a113cdaf5",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": "Record that the given locations' bin labels were printed.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.undoMoveContentsNative",
+    "module": "locationsWrites",
+    "fn": "undoMoveContentsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      },
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      },
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e8f3525d58f1fbc8",
+    "returnsSha": "1d3043aa7896bae1",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent Move contents by its audit id (puts back only rows the move left untouched).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "locationsWrites.updateNative",
     "module": "locationsWrites",
     "fn": "updateNative",
@@ -27719,6 +28186,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "auditId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "capacity",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "id",
@@ -27777,7 +28249,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "04288aa0b7330463",
+    "argsSha": "eed50cd13f03a918",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -66139,10 +66611,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1281,
-  agentReachable: 649,
-  queries: 459,
-  mutations: 822,
-  agentReachableQueries: 323,
-  agentReachableMutations: 326,
+  total: 1290,
+  agentReachable: 658,
+  queries: 465,
+  mutations: 825,
+  agentReachableQueries: 329,
+  agentReachableMutations: 329,
 } as const;

@@ -2,12 +2,34 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
-## Kits List Page (`src/app/(app)/kits/page.tsx`)
-Server-side paginated: `kits.listPage` (filter/sort/category+location joins done in
-Convex, one query per page) via `useAuthedQuery`, not a whole-org live subscription
-(perf fix, 2026-07 — see `docs/designs/perf-convex-efficiency-2026-06.md` Finding #1).
-Member-item counts + primary photo are a separate, cross-domain, non-reactive merge
-(`useKitCounts`) applied after the paginated fetch.
+## Kits List Page (`src/components/kits/kits-list.tsx`, UX Phase 14)
+A `ListPage` (config in `src/lib/list-views/kits.ts`) over `kitsList.listPage`: server-side search,
+filter words (Category, Location, Tags), derived strip `All · Complete · Missing items · On a job`
+(counts from `kitsList.segmentCounts`), one page per query via `useAuthedQuery`. Columns: Items, Complete,
+On job, Location; opt-in from ⋯ › Columns: Value (purchase price, redacted for a `noFinancials` key),
+Condition, Tags. Row ⋯: Open, Edit, Force return (only for a kit that is out; confirm, no Undo). Bulk:
+`Print list n` (a CSV of the selected kits) and `Force return n` (only when a selected kit is out; each
+kit that is not out is skipped and the toast says so). Duplicate and Archive arrive with the kit record
+(14b-2): a kit archive releases members and has no exact reverse yet.
+
+## Kit state is DERIVED (D75, `convex/lib/kitState.ts`)
+Incomplete / Reserved / Available are derived from the kit's contents, never read from the stored
+`status`. The stored physical statuses (`CHECKED_OUT`, `IN_MAINTENANCE`, `RETIRED`) are still written
+by the warehouse and maintenance flows and still win. Precedence: Retired > Out > In maintenance >
+Incomplete > Reserved > Available, so a missing item beats a reservation.
+- **Missing**: a serialised member whose asset is gone, `LOST` or retired; a bulk member whose bulk asset
+  is gone or holds less in total than the kit needs. A member in maintenance is "in repair", not missing.
+- **Reserved**: a parent kit line on the LIVE version of a confirmed-or-later job that has not ended.
+  A reservation never blocks adding the kit to a job (the dated double-booking check owns clashes).
+- **The stored `INCOMPLETE` is never read for state and no longer written.** A MISSING return of a kit
+  writes `AVAILABLE`; its serialised members go `LOST`, which is what Incomplete derives from. (A kit
+  with only bulk members returned MISSING has no such signal and reads Available.) A legacy kit that
+  stores `INCOMPLETE` with nothing missing reads Available; `kitsList.legacyIncompleteReport` lists
+  those, read-only, with no backfill. A stored `INCOMPLETE` kit can still have items added, archived or
+  deleted (the AVAILABLE-only guards accept it).
+- **The three booking gates use the one helper** (`loadKitBookingGate`): `lineItemWrites.addKitNative`,
+  `groupTemplatesWrites.applyNative`, and `src/server/line-items.ts` `checkKitAvailability` (through the
+  `kitsList.bookingGate` query). A kit blocks booking exactly when it is In maintenance or Incomplete.
 
 ## Data Model
 - `Kit` has own `assetTag`, `status`, `condition`

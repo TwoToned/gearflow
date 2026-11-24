@@ -97,9 +97,7 @@ export const listPage = query({
     const live = kits.rows.filter((k) => k.isActive !== false && k.isPrep !== true && matchesKitFilters(k, a));
     // A derived segment or a state sort needs every candidate's state; otherwise only the page's.
     const needsAll = seg !== "all" || sortBy === "state";
-    const examined = needsAll ? live.slice(0, KIT_DERIVE_CAP) : [];
-    const allStates = needsAll ? await loadKitStates(ctx, a.orgId, examined, now) : null;
-    const candidates = needsAll ? examined.filter((k) => kitInSegment(allStates!.get(k.id)!, seg)) : live;
+    const { candidates, allStates } = await selectCandidates(ctx, a.orgId, live, needsAll ? seg : null, now);
 
     const sortCtx: KitSortCtx = {
       categoryById: new Map(categories.rows.map((c) => [c.id, c])),
@@ -112,21 +110,49 @@ export const listPage = query({
     const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
     const members = await memberCounts(ctx, a.orgId, paged.items);
 
-    const items = paged.items.map((k) => {
-      const state = pageStates.get(k.id)!;
-      const cat = k.categoryId ? sortCtx.categoryById.get(k.categoryId) : undefined;
-      const loc = k.locationId ? sortCtx.locationById.get(k.locationId) : undefined;
-      return {
+    const items = [];
+    for (const k of paged.items) {
+      items.push({
         ...(redact ? redactFields(k, KIT_COST_FIELDS) : k),
-        category: cat ? { id: cat.id, name: cat.name } : null,
-        location: loc ? { id: loc.id, name: loc.name } : null,
-        itemCount: members.get(k.id) ?? 0,
-        state: { key: state.key, missing: state.missing, booking: state.booking },
-      };
-    });
+        ...kitRowFacts(k, sortCtx, pageStates.get(k.id)!, members.get(k.id) ?? 0),
+        media: await primaryKitPhoto(ctx, a.orgId, k.id),
+      });
+    }
     return { ...paged, items, truncated: kits.truncated || (needsAll && live.length > KIT_DERIVE_CAP) };
   },
 });
+
+/**
+ * The kits the list can show. With a derived word (`seg` not null) every candidate's state is needed
+ * (capped at KIT_DERIVE_CAP kits), so the segment filters on it and the states are kept for the page.
+ */
+async function selectCandidates(ctx: QueryCtx, orgId: string, live: Doc<"kits">[], seg: KitSegmentKey | null, now: number) {
+  if (seg === null) return { candidates: live, allStates: null };
+  const examined = live.slice(0, KIT_DERIVE_CAP);
+  const allStates = await loadKitStates(ctx, orgId, examined, now);
+  return { candidates: examined.filter((k) => kitInSegment(allStates.get(k.id)!, seg)), allStates };
+}
+
+/** The derived parts of one page row: category, location, item count and state. */
+function kitRowFacts(k: Doc<"kits">, c: KitSortCtx, state: KitState, itemCount: number) {
+  const cat = k.categoryId ? c.categoryById.get(k.categoryId) : undefined;
+  const loc = k.locationId ? c.locationById.get(k.locationId) : undefined;
+  return {
+    category: cat ? { id: cat.id, name: cat.name } : null,
+    location: loc ? { id: loc.id, name: loc.name } : null,
+    itemCount,
+    state: { key: state.key, missing: state.missing, booking: state.booking },
+  };
+}
+
+/** The kit's primary PHOTO, file resolved org-scoped. */
+async function primaryKitPhoto(ctx: QueryCtx, orgId: string, kitId: string) {
+  const rows = await ctx.db.query("kitMedia").withIndex("by_kitId", (q) => q.eq("kitId", kitId)).take(20);
+  const m = rows.find((r) => r.organizationId === orgId && r.type === "PHOTO" && r.isPrimary);
+  if (!m) return null;
+  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
+  return file && file.organizationId === orgId ? { url: file.url ?? null, thumbnailUrl: file.thumbnailUrl ?? null } : null;
+}
 
 /** Items per kit: serialised members plus bulk quantity (the "Items" column). */
 async function memberCounts(ctx: QueryCtx, orgId: string, kits: readonly Doc<"kits">[]): Promise<Map<string, number>> {

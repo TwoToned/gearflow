@@ -817,6 +817,20 @@ reverse writes for the exact ids it touched (`markUnreadManyNative`, `undismissM
 3. **A custom unit keeps the model's accessories.** Its share is per-parent rows on the existing accessory child lines keyed `parentUnitAssetId = customUnitScope(unitId)` (`custom:<unitId>`). Any new accessory cascade that scopes by `parentUnitAssetId` must treat that as a valid parent key, and anything that sums accessory demand per parent must add `offInventoryQuantity × per-parent` (`expandAccessoriesForAsset` does).
 4. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
 
+### Kit state is DERIVED, and a location's last movement has ONE writer
+- **Never branch on a kit's stored `status === "INCOMPLETE"`** (UX Phase 14, D75, FEATUREDOCS/09). A kit's
+  Incomplete / Reserved / Available come from `convex/lib/kitState.ts` (`deriveKitState`, `loadKitStates`,
+  `loadKitBookingGate`), from its contents: a missing member (LOST / retired / absent asset, a bulk member short
+  of the kit's quantity) is Incomplete; a live booking on a confirmed-or-later job is Reserved. The physical
+  statuses (`CHECKED_OUT`, `IN_MAINTENANCE`, `RETIRED`) stay stored and win. Every "can this kit go on a job"
+  gate uses `loadKitBookingGate` (Convex) or `kitsList.bookingGate` (server actions); never re-test the stored
+  value. A MISSING kit return no longer writes `INCOMPLETE`.
+- **`locations.lastMovementAt` is written only by `convex/lib/locationMovement.ts`** (`stampLocationMovement`,
+  `LocationMovements` for batches), on both ends of any write that sets, changes or clears an asset, bulk asset
+  or kit `locationId`. A new write path that touches `locationId` MUST call it:
+  `convex/locationMovementGuard.test.ts` discovers location writes and fails otherwise (add the new file to its
+  `EXPECTED_DISCOVERED` map only after it stamps). An absent value prints `—`, never a guess.
+
 ### Custom accessories — free text, but still a real accessory child
 A not-in-inventory accessory (`modelCustomAccessories` per model, `accessoryPlan.custom` per line,
 FEATUREDOCS/48) is an ordinary ACCESSORY child line keyed by `customAccessoryKey` (no asset/bulkAsset).

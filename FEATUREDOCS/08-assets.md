@@ -90,6 +90,36 @@ reimplementing it. `asset-form.tsx` is intentionally **not** refactored onto it
 crew-member form (see [31-crew-management](./31-crew-management.md)), the
 **model form** (`model-form.tsx`), and future forms.
 
+### Locations list (UX Phase 14, `/locations`)
+A `ListPage` (`src/components/locations/locations-list.tsx`, config `src/lib/list-views/locations.ts`) over
+`locationsList.listPage`. Strip `All · Warehouses · Vehicles · Sites · Empty` (Sites = Venue + Offsite;
+Empty = nothing in the place or any bin under it). Columns: Assets (assets + bulk lines + kits stored
+here), Capacity (`412 / 600 · 69%`, `not set` without one, never 0%), Last movement (a date, `—` when none
+was ever recorded); opt-in Address, Tags. Bins are child locations. Row ⋯: Open, Edit, Move contents…,
+Print bin label, Delete… (the existing guarded delete: refused while the place has bins or contents; there
+is no archived state; no Undo). Bulk: `Move contents n` and `Print bin labels n`.
+- **Move contents** (`locationsWrites.moveContentsNative`): everything stored at the selected locations
+  moves to the chosen one. Units out on a job, kit members, accessories, kits that are out and partly-out
+  bulk lines stay and are counted by reason in the toast. At most 500 rows per call. Its Undo
+  (`undoMoveContentsNative`, ids only) is by the same person, within 10 minutes on the server clock, once;
+  it puts back only rows still exactly where the move left them and says how many had moved on.
+- **Bin labels** are print-only: a sheet of the location's name and a QR code of its page address.
+  Printing stamps `locations.labelPrintedAt` on exactly the locations printed; no Undo (reprint instead).
+- **`locations.lastMovementAt`** (optional, no backfill) is stamped ONLY by `convex/lib/locationMovement.ts`,
+  on BOTH the location a stock row left and the one it entered, from every write that sets, changes or
+  clears the `locationId` of an asset, bulk asset or kit. `convex/locationMovementGuard.test.ts` discovers
+  every such write in `convex/**` and fails if one does not reach the helper, so a new write path cannot
+  skip it. Deletes and a job's own `locationId` (a venue) are not movements. Sites covered: asset create /
+  createMany / update / bulk update (`assetWrites`), the service-only mirrors (`assets`, `bulkAssets`,
+  `kits` create / createIfMissing / update / patch / bulkUpdate), bulk-asset create / update
+  (`bulkAssetsWrites`), kit create / update (`kitWrites`), kit membership (`kits.assignAssetToKit`),
+  accessory attach (`assetAccessoriesWrites`), warehouse check-out / check-in / de-prep / force return
+  (`warehouseOps`: `setAssetsStatus`, `patchKitStatusAt`, `releaseKitToLocation`, the two check-out
+  patches), `lib/fulfillment.setAssetStatus`, `projectWrites` (kits freed on cancel), and Move contents.
+- `capacity` is a whole number >= 1 (`locationsWrites` create / update; update treats an absent value as
+  "leave alone" and `null` as "clear", so a form that does not know the field never wipes it). It is set
+  from the location sheet in 14b-1.
+
 ### Models list (UX Phase 14, `/assets/models`)
 A `ListPage` (`src/components/assets/models-list.tsx`, config in `src/lib/list-views/models.ts`) over
 `modelsList.listPage`: server-side search/filter/sort/paging, strip `All · With stock · No stock · Due for

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import { describe, expect, test } from "vitest";
 import schema from "../schema";
 import { LocationMovements, movedLocationIds, stampLocationMovement } from "./locationMovement";
@@ -19,14 +19,14 @@ describe("movedLocationIds", () => {
   });
 });
 
-async function seed(t: ReturnType<typeof convexTest>) {
+async function seed(t: TestConvex<typeof schema>) {
   await t.run(async (ctx) => {
     await ctx.db.insert("locations", { id: "a", organizationId: "o1", name: "A" });
     await ctx.db.insert("locations", { id: "b", organizationId: "o1", name: "B" });
     await ctx.db.insert("locations", { id: "x", organizationId: "o2", name: "Foreign" });
   });
 }
-const stamp = (t: ReturnType<typeof convexTest>, id: string) =>
+const stamp = (t: TestConvex<typeof schema>, id: string) =>
   t.run(async (ctx) => (await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", id)).first())?.lastMovementAt ?? null);
 
 describe("stamping", () => {

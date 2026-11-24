@@ -34,14 +34,18 @@ export interface MovePlan {
 export const MAX_MOVE_ROWS = 500;
 
 /** Pure: why a row cannot move now, or null when it can. */
-export function whyNotMovable(table: MovedTable, doc: { status?: string | null; kitId?: string | null; parentAssetId?: string | null; totalQuantity?: number | null; availableQuantity?: number | null }): SkipReason | null {
-  if (table === "assets") {
-    if (doc.kitId) return "in a kit";
-    if (doc.parentAssetId) return "an accessory";
-    return doc.status === "CHECKED_OUT" || doc.status === "RESERVED" ? "out on a job" : null;
-  }
-  if (table === "kits") return doc.status === "CHECKED_OUT" ? "out on a job" : null;
-  return (doc.availableQuantity ?? doc.totalQuantity ?? 0) < (doc.totalQuantity ?? 0) ? "partly out" : null;
+type Movable = { status?: string | null; kitId?: string | null; parentAssetId?: string | null; totalQuantity?: number | null; availableQuantity?: number | null };
+
+const outStatus = (s: string | null | undefined, ...out: string[]) => (out.includes(s ?? "") ? "out on a job" : null);
+
+const WHY_NOT: Record<MovedTable, (d: Movable) => SkipReason | null> = {
+  assets: (d) => (d.kitId ? "in a kit" : d.parentAssetId ? "an accessory" : outStatus(d.status, "CHECKED_OUT", "RESERVED")),
+  kits: (d) => outStatus(d.status, "CHECKED_OUT"),
+  bulkAssets: (d) => ((d.availableQuantity ?? d.totalQuantity ?? 0) < (d.totalQuantity ?? 0) ? "partly out" : null),
+};
+
+export function whyNotMovable(table: MovedTable, doc: Movable): SkipReason | null {
+  return WHY_NOT[table](doc);
 }
 
 /** What is stored at the given locations (GLOBAL `by_locationId` indexes, org re-checked on every row). */

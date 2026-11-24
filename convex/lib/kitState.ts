@@ -75,17 +75,19 @@ export interface KitState {
 
 /** Pure: the members this kit is missing. */
 export function missingMembers(serialized: KitSerializedMember[], bulk: KitBulkMember[]): KitMissingItem[] {
-  const out: KitMissingItem[] = [];
-  for (const m of serialized) {
-    if (!m.asset) out.push({ kind: "asset", id: m.assetId, label: m.assetId, why: "missing" });
-    else if (m.asset.status === "LOST") out.push({ kind: "asset", id: m.assetId, label: m.asset.assetTag, why: "lost" });
-    else if (m.asset.isActive === false) out.push({ kind: "asset", id: m.assetId, label: m.asset.assetTag, why: "retired" });
-  }
-  for (const m of bulk) {
-    if (!m.bulkAsset || m.bulkAsset.isActive === false) out.push({ kind: "bulk", id: m.bulkAssetId, label: m.bulkAsset?.assetTag ?? m.bulkAssetId, why: "missing" });
-    else if ((m.bulkAsset.totalQuantity ?? 0) < m.required) out.push({ kind: "bulk", id: m.bulkAssetId, label: m.bulkAsset.assetTag, why: "short" });
-  }
-  return out;
+  return [...serialized.map(serialMissing), ...bulk.map(bulkMissing)].filter((m): m is KitMissingItem => m != null);
+}
+
+function serialMissing(m: KitSerializedMember): KitMissingItem | null {
+  const a = m.asset;
+  const why = !a ? "missing" : a.status === "LOST" ? "lost" : a.isActive === false ? "retired" : null;
+  return why ? { kind: "asset", id: m.assetId, label: a?.assetTag ?? m.assetId, why } : null;
+}
+
+function bulkMissing(m: KitBulkMember): KitMissingItem | null {
+  const b = m.bulkAsset;
+  const why = !b || b.isActive === false ? "missing" : (b.totalQuantity ?? 0) < m.required ? "short" : null;
+  return why ? { kind: "bulk", id: m.bulkAssetId, label: b?.assetTag ?? m.bulkAssetId, why } : null;
 }
 
 /** Pure: the kit's state from its stored status, its members and any booking. */
@@ -153,21 +155,33 @@ export async function loadKitBookings(ctx: QueryCtx, orgId: string, kitIds: read
   const projects = new Map<string, Doc<"projects"> | null>();
   for (const kitId of kitIds) {
     const { rows } = await collectCapped(ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), BOOKING_LINES_CAP);
-    for (const li of rows) {
-      if (li.organizationId !== orgId || li.isKitChild || li.status === "CANCELLED" || li.status === "RETURNED") continue;
-      if (!projects.has(li.projectId)) {
-        const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", li.projectId)).first();
-        projects.set(li.projectId, p && p.organizationId === orgId ? p : null);
-      }
-      const p = projects.get(li.projectId);
-      if (!p || p.isTemplate || !isConfirmedOrLater(p.status) || li.versionId == null || li.versionId !== p.liveVersionId) continue;
-      const { start, end } = getProjectWindow(p);
-      if (end != null && end < now) continue;
+    for (const li of rows.filter((r) => r.organizationId === orgId && isLiveParentKitLine(r))) {
+      const b = bookingOf(li, await orgProject(ctx, orgId, li.projectId, projects), now);
       const prior = out.get(kitId);
-      if (!prior || (start ?? Infinity) < (prior.start ?? Infinity)) out.set(kitId, { projectId: p.id, projectNumber: p.projectNumber, projectName: p.name, start });
+      if (b && (!prior || (b.start ?? Infinity) < (prior.start ?? Infinity))) out.set(kitId, b);
     }
   }
   return out;
+}
+
+/** A kit's own (non-child) line that is not cancelled or already returned. */
+const isLiveParentKitLine = (li: Doc<"projectLineItems">): boolean => !li.isKitChild && li.status !== "CANCELLED" && li.status !== "RETURNED";
+
+/** The job, only when it is in this org (`by_cuid` is global), memoised per call. */
+async function orgProject(ctx: QueryCtx, orgId: string, projectId: string, cache: Map<string, Doc<"projects"> | null>): Promise<Doc<"projects"> | null> {
+  if (!cache.has(projectId)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    cache.set(projectId, p && p.organizationId === orgId ? p : null);
+  }
+  return cache.get(projectId) ?? null;
+}
+
+/** Pure: the booking a parent kit line makes on its job, or null when it does not reserve (template, not confirmed, not the live version, ended). */
+function bookingOf(li: Doc<"projectLineItems">, p: Doc<"projects"> | null | undefined, now: number): KitBooking | null {
+  if (!p || p.isTemplate || !isConfirmedOrLater(p.status)) return null;
+  if (li.versionId == null || li.versionId !== p.liveVersionId) return null;
+  const { start, end } = getProjectWindow(p);
+  return end != null && end < now ? null : { projectId: p.id, projectNumber: p.projectNumber, projectName: p.name, start };
 }
 
 /** States for a set of kits, in one pass. */

@@ -20,8 +20,9 @@ interface FinancialSummaryProps {
   /** WS11 (#950) — resolved COGS for non-cancelled, non-optional SALE lines. */
   saleCostTotal?: number | null;
   serviceChargeTotal?: number | null;
-  /** ABSENT (undefined) below the crew-pay line, with `labourCostTotal` and `margin`:
-   *  they include crew cost. Then no margin and no costs render — never a $0. */
+  /** ABSENT (undefined), with `labourCostTotal` and `margin`, for a caller without
+   *  job cost (invoice:read, not a noFinancials key — owner ruling 2026-11-24).
+   *  Then no margin and no costs render — never a $0. */
   serviceCostTotal?: number | null;
   labourCostTotal?: number | null;
   subHireCostTotal?: number | null;
@@ -140,10 +141,10 @@ export function FinancialSummary({
   const serviceCostVal = serviceCostTotal != null ? Number(serviceCostTotal) : 0;
   const labourCostVal = labourCostTotal != null ? Number(labourCostTotal) : 0;
   const subHireCostVal = subHireCostTotal != null ? Number(subHireCostTotal) : 0;
-  // The server leaves the crew-cost totals and the margin OUT for a caller below
-  // the crew-pay line (UX Phase 15 ruling): then neither the margin nor the
-  // costs render — a $0 there would be a false number, and a partial one would
-  // let the crew cost be back-solved.
+  // The server leaves the job-cost totals and the margin OUT for a caller
+  // without job cost (`canSeeJobCost`, owner ruling 2026-11-24): then neither
+  // the margin nor the costs render — a $0 there would be a false number, and a
+  // partial one would let the missing totals be back-solved.
   // Absent and null are the SAME here: a reconstructed project row maps an
   // absent field to null (`mapProject`), so testing only `!== undefined` would
   // print a redacted margin as "$0.00".
@@ -219,7 +220,7 @@ export function FinancialSummary({
         />
       </div>
 
-      {/* Business costs — absent below the crew-pay line: the totals include crew cost. */}
+      {/* Business costs — absent for a caller without job cost. */}
       {costsShown && (
         <>
           <div className="h-px bg-border" />

@@ -240,7 +240,7 @@ function DiffTotalsSummary({ diff }: { diff: Diff }) {
   );
 }
 
-/** Absent below the crew-pay line (the margin back-solves crew cost): so is the cell. */
+/** The margin is job cost: absent for a caller without it (`canSeeJobCost`), and so is the cell. */
 function MarginCell({ before, after }: { before: number | null | undefined; after: number | null | undefined }) {
   if (before == null && after == null) return null;
   return (

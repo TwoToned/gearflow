@@ -28,6 +28,18 @@ const BASE_PROPS = {
   invoicedTotal: null,
 };
 
+const RECONSTRUCTED_DOC = { id: "p1", organizationId: "o1", projectNumber: "1", name: "Gig", status: "CONFIRMED", total: 1100, subtotal: 1000, taxAmount: 100, taxRate: 10, equipmentRevenue: 1000, subHireCostTotal: 0 };
+
+function renderMapped(p: ReturnType<typeof mapProject>) {
+  return render(
+    <FinancialSummary
+      equipmentRevenue={p.equipmentRevenue} serviceCostTotal={p.serviceCostTotal} labourCostTotal={p.labourCostTotal}
+      subHireCostTotal={p.subHireCostTotal} subtotal={p.subtotal} discountPercent={p.discountPercent} discountAmount={p.discountAmount}
+      taxRate={p.taxRate} taxAmount={p.taxAmount} total={p.total} margin={p.margin} depositPaid={p.depositPaid} invoicedTotal={p.invoicedTotal}
+    />,
+  );
+}
+
 describe("FinancialSummary smoke", () => {
   it("renders no sale rows when saleRevenue/saleCostTotal are absent", () => {
     render(<FinancialSummary {...BASE_PROPS} />);
@@ -35,7 +47,7 @@ describe("FinancialSummary smoke", () => {
     expect(screen.queryByText("Sale cost of goods")).toBeNull();
   });
 
-  it("below the crew-pay line (crew-cost totals and margin ABSENT): no margin and no costs render, revenue does", () => {
+  it("without job cost (job-cost totals and margin ABSENT): no margin and no costs render, revenue does", () => {
     const { serviceCostTotal: _s, labourCostTotal: _l, margin: _m, ...redacted } = BASE_PROPS;
     void _s; void _l; void _m;
     const { container } = render(<FinancialSummary {...redacted} subHireCostTotal={200} />);
@@ -48,22 +60,24 @@ describe("FinancialSummary smoke", () => {
   });
 
   it("the RECONSTRUCTED shape (mapProject turns an absent field into null) prints no margin, never $0.00", () => {
-    // A project doc as a below-the-pay-line read returns it: the crew-cost totals and margin left out.
-    const doc = { id: "p1", organizationId: "o1", projectNumber: "1", name: "Gig", status: "CONFIRMED", total: 1100, subtotal: 1000, taxAmount: 100, taxRate: 10, equipmentRevenue: 1000, subHireCostTotal: 0 };
-    const p = mapProject(doc as unknown as Parameters<typeof mapProject>[0]);
+    // A project doc as a read without job cost returns it: the job-cost totals and margin left out.
+    const p = mapProject(RECONSTRUCTED_DOC as unknown as Parameters<typeof mapProject>[0]);
     expect(p.margin).toBeNull(); // the trap: absent became null
-    const { container } = render(
-      <FinancialSummary
-        equipmentRevenue={p.equipmentRevenue} serviceCostTotal={p.serviceCostTotal} labourCostTotal={p.labourCostTotal}
-        subHireCostTotal={p.subHireCostTotal} subtotal={p.subtotal} discountPercent={p.discountPercent} discountAmount={p.discountAmount}
-        taxRate={p.taxRate} taxAmount={p.taxAmount} total={p.total} margin={p.margin} depositPaid={p.depositPaid} invoicedTotal={p.invoicedTotal}
-      />,
-    );
+    const { container } = renderMapped(p);
     expect(container.textContent).not.toMatch(/Margin/);
     expect(container.textContent).not.toMatch(/Costs|No costs recorded/);
   });
 
-  it("with crew pay visible the margin and costs render", () => {
+  it("the RECONSTRUCTED shape a member with invoice:read gets (job cost present) prints the margin and the costs", () => {
+    // The owner ruling 2026-11-24: projectDetail.bundle sends a member the job-level totals.
+    const p = mapProject({ ...RECONSTRUCTED_DOC, serviceCostTotal: 650, labourCostTotal: 300, margin: 4050 } as unknown as Parameters<typeof mapProject>[0]);
+    const { container } = renderMapped(p);
+    expect(container.textContent).toMatch(/Margin: \$4,050\.00/);
+    expect(screen.getByText("Labour")).toBeTruthy();
+    expect(screen.getByText("Services")).toBeTruthy();
+  });
+
+  it("with job cost visible the margin and costs render", () => {
     render(<FinancialSummary {...BASE_PROPS} labourCostTotal={300} />);
     expect(screen.getByText(/Margin:/)).toBeTruthy();
     expect(screen.getByText("Labour")).toBeTruthy();

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { jobCostRedactor } from "./lib/crewPayVisibility";
 
 /**
  * BROWSER-facing project-detail composite for the native read-layer cutover
@@ -61,7 +62,10 @@ export const bundle = query({
       d && d.organizationId === orgId ? d : null;
 
     return {
-      project,
+      // Job-level cost and margin follow the job-cost rule (owner ruling
+      // 2026-11-24): absent for a caller without invoice:read and for a
+      // noFinancials key. This is the job page, MCP get_project and Mira.
+      project: (await jobCostRedactor(ctx, orgId))(project),
       projectManagers: managers,
       // Users are global (not org-scoped); the mirror is service-written.
       managerUsers: managerUsers.filter((d): d is NonNullable<typeof d> => d !== null),

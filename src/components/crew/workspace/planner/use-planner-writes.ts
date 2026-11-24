@@ -9,23 +9,45 @@ import { showError } from "@/lib/show-error";
 import { MAX_CREW_MAIL_BATCH } from "@/lib/validations/crew";
 import { sendCancellationEmails, sendCrewOffers } from "@/server/crew-communication";
 
+type MailSend = (input: { assignmentIds: string[] }) => Promise<MailResult>;
+
 /**
  * Send crew mail in batches of at most `MAX_CREW_MAIL_BATCH` (the action's own
  * cap): a 150-call Cancel or a large Offer to suggested must email everyone,
- * not fail the whole send on the validator. One merged result.
+ * not fail the whole send on the validator. Ids are deduped FIRST, so nobody
+ * is mailed twice. A batch that throws stops the send: its ids and every later
+ * one come back as `unsent` (with the error), and the batches already sent
+ * stay counted — the caller offers Retry for exactly the rest.
  */
-export async function mailInBatches(
-  send: (input: { assignmentIds: string[] }) => Promise<MailResult>,
-  ids: readonly string[],
-): Promise<MailResult> {
-  const out: MailResult = { sent: 0, errors: [], total: 0 };
-  for (let i = 0; i < ids.length; i += MAX_CREW_MAIL_BATCH) {
-    const r = await send({ assignmentIds: ids.slice(i, i + MAX_CREW_MAIL_BATCH) });
-    out.sent += r.sent;
-    out.total += r.total;
-    out.errors.push(...r.errors);
+export async function mailInBatches(send: MailSend, ids: readonly string[]): Promise<MailResult & { unsent: string[] }> {
+  const unique = [...new Set(ids)];
+  const out = { sent: 0, errors: [] as string[], total: 0, unsent: [] as string[] };
+  for (let i = 0; i < unique.length; i += MAX_CREW_MAIL_BATCH) {
+    try {
+      const r = await send({ assignmentIds: unique.slice(i, i + MAX_CREW_MAIL_BATCH) });
+      out.sent += r.sent;
+      out.total += r.total;
+      out.errors.push(...r.errors);
+    } catch (e) {
+      out.unsent = unique.slice(i);
+      out.errors.push(e instanceof Error ? e.message : String(e));
+      break;
+    }
   }
   return out;
+}
+
+/**
+ * Mail `ids`, then `report` what went. When a batch failed part-way, say so —
+ * `40 sent, 110 not sent` — with Retry for exactly the unsent rest (S5 nit),
+ * never a blanket failure that hides the 40 already out.
+ */
+async function mailWithRetry(send: MailSend, ids: readonly string[], report: (r: MailResult) => void, prefix = ""): Promise<void> {
+  const r = await mailInBatches(send, ids);
+  if (r.unsent.length === 0) return report(r);
+  toast.error(`${prefix}${r.sent} sent, ${r.unsent.length} not sent · ${r.errors[r.errors.length - 1]}`, {
+    action: { label: "Retry", onClick: () => void mailWithRetry(send, r.unsent, report) },
+  });
 }
 
 /**
@@ -139,11 +161,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
   }
 
   async function offer(ids: string[]) {
-    try {
-      toastMail(await mailInBatches(sendCrewOffers, ids), offers);
-    } catch (e) {
-      showError(e, { fallbackTitle: "Could not send the offers" });
-    }
+    await mailWithRetry(sendCrewOffers, ids, (r) => toastMail(r, offers));
   }
 
   async function confirm(ids: string[]) {
@@ -186,13 +204,10 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
       toast.error(["No offers sent", ...failed, ...short].join(" · "));
       return;
     }
-    try {
-      const r = await mailInBatches(sendCrewOffers, ids);
+    await mailWithRetry(sendCrewOffers, ids, (r) => {
       const title = mailTitle({ ...r, errors: [...r.errors, ...failed] }, offers);
       toast.success(short.length ? `${title} · ${short[0]}` : title);
-    } catch (e) {
-      showError(e, { fallbackTitle: "The calls were added as pending, but the offers did not send" });
-    }
+    });
   }
 
   async function cancel(ids: string[]) {
@@ -204,16 +219,15 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
       return;
     }
     const skipped = result.skipped.map((id) => ({ name: ctx.nameOf(id), why: "already declined, completed or cancelled" }));
-    let told = "";
-    if (result.toTell.length > 0) {
-      try {
-        const r = await mailInBatches(sendCancellationEmails, result.toTell);
-        told = ` · ${r.sent} told by email${r.errors.length ? ` (${r.errors[0]})` : ""}`;
-      } catch (e) {
-        showError(e, { fallbackTitle: "The calls were cancelled, but the emails did not send" });
-      }
-    }
-    toast.success(listWriteTitle(`Cancelled ${calls(result.cancelled.length)} · the slots are open again${told}`, skipped));
+    const done = (told: string) => toast.success(listWriteTitle(`Cancelled ${calls(result.cancelled.length)} · the slots are open again${told}`, skipped));
+    if (result.toTell.length === 0) return void done("");
+    // The calls ARE cancelled; a failed mail batch says how many weren't told, with Retry.
+    await mailWithRetry(
+      sendCancellationEmails,
+      result.toTell,
+      (r) => done(` · ${r.sent} told by email${r.errors.length ? ` (${r.errors[0]})` : ""}`),
+      `Cancelled ${calls(result.cancelled.length)} · cancellation emails: `,
+    );
   }
 
   return { offerCall, offer, confirm, offerSuggested, cancel };

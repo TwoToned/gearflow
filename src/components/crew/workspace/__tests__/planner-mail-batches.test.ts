@@ -18,7 +18,26 @@ describe("crew mail goes out in batches the action accepts", () => {
     const r = await mailInBatches(send, ids);
     expect(send.mock.calls.map(([i]) => i.assignmentIds.length)).toEqual([MAX_CREW_MAIL_BATCH, 50]);
     expect(send.mock.calls.flatMap(([i]) => i.assignmentIds)).toEqual(ids);
-    expect(r).toEqual({ sent: 148, total: 150, errors: ["a0 has no email", "a100 has no email"] });
+    expect(r).toEqual({ sent: 148, total: 150, errors: ["a0 has no email", "a100 has no email"], unsent: [] });
+  });
+
+  it("dedupes ids before chunking: a repeated id is mailed once", async () => {
+    const ids = [...Array.from({ length: 100 }, (_, i) => `a${i}`), "a0", "a1"];
+    const send = vi.fn(async (input: { assignmentIds: string[] }) => ({ sent: input.assignmentIds.length, errors: [], total: input.assignmentIds.length }));
+    const r = await mailInBatches(send, ids);
+    expect(send).toHaveBeenCalledTimes(1); // 100 unique ids fit one batch
+    expect(r.sent).toBe(100);
+  });
+
+  it("a later batch failing keeps the earlier batch counted and returns exactly the rest as unsent", async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `a${i}`);
+    const send = vi.fn(async (input: { assignmentIds: string[] }) => {
+      if (input.assignmentIds[0] === "a100") throw new Error("Resend is down");
+      return { sent: input.assignmentIds.length, errors: [], total: input.assignmentIds.length };
+    });
+    const r = await mailInBatches(send, ids);
+    expect(r).toMatchObject({ sent: 100, errors: ["Resend is down"] });
+    expect(r.unsent).toEqual(ids.slice(100));
   });
 
   it("one unbatched call of 150 is exactly what the action refuses", () => {
@@ -27,7 +46,7 @@ describe("crew mail goes out in batches the action accepts", () => {
 
   it("nothing to send, no call", async () => {
     const send = vi.fn();
-    expect(await mailInBatches(send, [])).toEqual({ sent: 0, errors: [], total: 0 });
+    expect(await mailInBatches(send, [])).toEqual({ sent: 0, errors: [], total: 0, unsent: [] });
     expect(send).not.toHaveBeenCalled();
   });
 });

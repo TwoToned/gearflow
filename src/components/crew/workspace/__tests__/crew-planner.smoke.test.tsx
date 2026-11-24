@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { FunctionReference } from "convex/server";
+import { toast } from "sonner";
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -296,6 +297,33 @@ describe("CrewPlanner (smoke)", () => {
       await waitFor(() => expect(sentIds(mail.sendCancellationEmails)).toHaveLength(150));
       expect(mail.sendCancellationEmails.mock.calls.every(([i]) => i.assignmentIds.length <= 100)).toBe(true);
       expect([...sentIds(mail.sendCancellationEmails)].sort()).toEqual([...ids].sort());
+    });
+
+    it("a later batch failing says `100 sent, 50 not sent`, and Retry sends exactly the 50", async () => {
+      queried.members = [{ ...members[1], assignments: many }];
+      let down = true;
+      mail.sendCrewOffers.mockImplementation(async (i: { assignmentIds: string[] }) => {
+        if (down && i.assignmentIds.includes("b120")) throw new Error("Mail is down");
+        return strict(i);
+      });
+      const err = vi.mocked(toast.error);
+      err.mockClear();
+      const user = userEvent.setup();
+      render(<CrewPlanner />);
+      await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+      await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Offer 150" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Send 150 offers" }));
+      await waitFor(() => expect(err).toHaveBeenCalled());
+      const [title, opts] = err.mock.calls[0] as unknown as [string, { action: { label: string; onClick: () => void } }];
+      expect(title).toMatch(/^100 sent, 50 not sent · Mail is down/);
+      expect(opts.action.label).toBe("Retry");
+      const before = sentIds(mail.sendCrewOffers).length;
+      down = false;
+      opts.action.onClick();
+      await waitFor(() => expect(sentIds(mail.sendCrewOffers).length).toBe(before + 50));
+      const retried = mail.sendCrewOffers.mock.calls.at(-1)![0].assignmentIds;
+      expect(new Set(retried)).toEqual(new Set(ids.filter((id) => !sentIds(mail.sendCrewOffers).slice(0, 100).includes(id))));
+      mail.sendCrewOffers.mockImplementation(strict);
     });
   });
 

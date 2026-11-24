@@ -45,13 +45,20 @@ interface ProjectLike {
 
 /** Pure: does this line hold stock aside (counted in `reserved`)? */
 export function isReservedSaleLine(line: LineLike, project: ProjectLike | undefined): boolean {
-  if (!project || project.isTemplate) return false;
+  return !!project && projectHoldsStock(project, line) && lineHoldsStock(line);
+}
+
+/** The job is live and the line belongs to its LIVE version (lines are versioned). */
+function projectHoldsStock(project: ProjectLike, line: LineLike): boolean {
+  if (project.isTemplate || DEAD_PROJECT_STATUSES.has(project.status ?? "")) return false;
+  return line.versionId != null && line.versionId === project.liveVersionId;
+}
+
+/** A new-stock sale line that has not gone out (or been cancelled). */
+function lineHoldsStock(line: LineLike): boolean {
   if (line.type !== "SALE") return false;
   if ((line.saleMode ?? "NEW_STOCK") !== "NEW_STOCK") return false;
-  if (DEAD_PROJECT_STATUSES.has(project.status ?? "")) return false;
-  if (LEFT_LINE_STATUSES.has(line.status ?? "")) return false;
-  // Lines are versioned: only the live version's lines are real.
-  return line.versionId != null && line.versionId === project.liveVersionId;
+  return !LEFT_LINE_STATUSES.has(line.status ?? "");
 }
 
 export type SaleStockState = "OK" | "LOW" | "OUT";
@@ -100,17 +107,23 @@ export async function loadReservedByModel(
       ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)),
       RESERVED_LINE_CAP,
     );
-    if (t) truncated = true;
+    truncated ||= t;
     let sum = 0;
     for (const line of rows) {
       if (line.organizationId !== orgId || line.type !== "SALE") continue;
-      if (!projectCache.has(line.projectId)) {
-        const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", line.projectId)).first();
-        projectCache.set(line.projectId, p && p.organizationId === orgId ? p : undefined);
-      }
-      if (isReservedSaleLine(line, projectCache.get(line.projectId))) sum += line.quantity ?? 0;
+      const project = await orgProject(ctx, orgId, line.projectId, projectCache);
+      if (isReservedSaleLine(line, project)) sum += line.quantity ?? 0;
     }
     if (sum > 0) reserved.set(modelId, sum);
   }
   return { reserved, truncated };
+}
+
+/** The job, only when it is in this org (the `by_cuid` index is global), memoised per call. */
+async function orgProject(ctx: QueryCtx, orgId: string, projectId: string, cache: Map<string, ProjectLike | undefined>) {
+  if (!cache.has(projectId)) {
+    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    cache.set(projectId, p && p.organizationId === orgId ? p : undefined);
+  }
+  return cache.get(projectId);
 }

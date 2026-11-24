@@ -408,7 +408,7 @@ const saleAdjustment = v.object({ id: v.string(), delta: v.number() });
 /**
  * Bulk / row `Adjust stock` (UX Phase 14, 14a-1). One manual adjustment per model through the same
  * `adjustModelSaleStock` primitive as `adjustSaleStockNative`, returning each write's audit id so the
- * list's ONE Undo (`undoSaleStockNative`) takes ids only. Atomic: any bad row rolls the batch back.
+ * list's ONE Undo (`undoSaleStockNative`) takes ids only. Atomic: one bad row rolls the batch back.
  */
 export const adjustSaleStockManyNative = mutation({
   returns: v.object({ results: v.array(v.object({ id: v.string(), auditId: v.string(), from: v.number(), to: v.number() })) }),
@@ -447,6 +447,63 @@ export const adjustSaleStockManyNative = mutation({
 /** How many recent audit rows are scanned for an earlier UNDO of the same adjustment. */
 const UNDO_SCAN_ROWS = 50;
 
+interface UndoableSaleChange {
+  model: Doc<"models">;
+  from: number;
+  to: number;
+  auditId: string;
+}
+
+interface SaleStockAudit {
+  from: number;
+  to: number;
+  serverSavedAt: number;
+}
+
+/** The forward row's `details.saleStock`, only for a MANUAL adjustment (no `projectId`) with all three numbers. */
+function manualSaleStockAudit(details: unknown): SaleStockAudit | null {
+  const s = (details as { saleStock?: Partial<SaleStockAudit> & { projectId?: string } } | undefined)?.saleStock;
+  if (!s || s.projectId) return null;
+  return typeof s.from === "number" && typeof s.to === "number" && typeof s.serverSavedAt === "number"
+    ? { from: s.from, to: s.to, serverSavedAt: s.serverSavedAt }
+    : null;
+}
+
+/** Refuses a second Undo: an UNDO row for this forward row already exists in the model's recent history. */
+async function assertNotAlreadyUndone(ctx: MutationCtx, orgId: string, modelId: string, auditId: string): Promise<void> {
+  const history = await ctx.db
+    .query("activityLogs")
+    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "model").eq("entityId", modelId))
+    .order("desc")
+    .take(UNDO_SCAN_ROWS);
+  if (history.some((h) => h.action === "UNDO" && (h.details as { undoOf?: string } | undefined)?.undoOf === auditId)) {
+    throw new ConvexError("This stock change was already undone");
+  }
+}
+
+/** The model (org-checked), whose pool is still exactly what the forward adjustment left. */
+async function requireUntouchedPool(ctx: MutationCtx, orgId: string, modelId: string, expectedPool: number): Promise<Doc<"models">> {
+  const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", modelId)).first();
+  if (!model || model.organizationId !== orgId) throw new ConvexError("Model not found");
+  if ((model.saleStockQuantity ?? 0) !== expectedPool) throw new ConvexError(`${model.name}'s stock has changed since: it can't be undone`);
+  return model;
+}
+
+/** One forward audit row proven undoable by `actorUserId`: org, author, window, first undo, pool untouched. */
+async function loadUndoableSaleChange(
+  ctx: MutationCtx,
+  a: { orgId: string; auditId: string; actorUserId: string; serverNow: number },
+): Promise<UndoableSaleChange> {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  const sale = row && row.organizationId === a.orgId && row.entityType === "model" ? manualSaleStockAudit(row.details) : null;
+  if (!row || !sale) throw new ConvexError("This stock change can't be undone");
+  if (row.userId !== a.actorUserId) throw new ConvexError("Only the person who made this change can undo it");
+  assertWithinUndoWindow(sale.serverSavedAt, a.serverNow, "change");
+  await assertNotAlreadyUndone(ctx, a.orgId, row.entityId, a.auditId);
+  const model = await requireUntouchedPool(ctx, a.orgId, row.entityId, sale.to);
+  return { model, from: sale.from, to: sale.to, auditId: a.auditId };
+}
+
 /**
  * The exact Undo of `adjustSaleStockManyNative` (ids only). Reads each forward audit row
  * (`details.saleStock {from, to, serverSavedAt}`) and refuses the WHOLE batch, changing nothing,
@@ -466,27 +523,9 @@ export const undoSaleStockNative = mutation({
     if (a.auditIds.length === 0) throw new ConvexError("Nothing to undo");
     const serverNow = Date.now();
 
-    const plan: { model: Doc<"models">; from: number; to: number; auditId: string }[] = [];
+    const plan: UndoableSaleChange[] = [];
     for (const auditId of new Set(a.auditIds)) {
-      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
-      const sale = (row?.details as { saleStock?: { from?: number; to?: number; serverSavedAt?: number; projectId?: string } } | undefined)?.saleStock;
-      if (!row || row.organizationId !== a.orgId || row.entityType !== "model" || !sale || typeof sale.from !== "number" || typeof sale.to !== "number" || typeof sale.serverSavedAt !== "number" || sale.projectId) {
-        throw new ConvexError("This stock change can't be undone");
-      }
-      if (row.userId !== actor.userId) throw new ConvexError("Only the person who made this change can undo it");
-      assertWithinUndoWindow(sale.serverSavedAt, serverNow, "change");
-      const history = await ctx.db
-        .query("activityLogs")
-        .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", a.orgId).eq("entityType", "model").eq("entityId", row.entityId))
-        .order("desc")
-        .take(UNDO_SCAN_ROWS);
-      if (history.some((h) => h.action === "UNDO" && (h.details as { undoOf?: string } | undefined)?.undoOf === auditId)) {
-        throw new ConvexError("This stock change was already undone");
-      }
-      const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", row.entityId)).first();
-      if (!model || model.organizationId !== a.orgId) throw new ConvexError("Model not found");
-      if ((model.saleStockQuantity ?? 0) !== sale.to) throw new ConvexError(`${model.name}'s stock has changed since: it can't be undone`);
-      plan.push({ model, from: sale.from, to: sale.to, auditId });
+      plan.push(await loadUndoableSaleChange(ctx, { orgId: a.orgId, auditId, actorUserId: actor.userId, serverNow }));
     }
 
     for (const p of plan) {

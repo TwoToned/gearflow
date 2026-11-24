@@ -20,8 +20,8 @@ import {
 /**
  * UX Phase 14 (14a-1) list reads for Models and Sales stock. Same shape as
  * `assets.listPage` / `projects.segmentCounts`: filter, derived segment, sort and paginate
- * on the server; every read is `by_organizationId` + `collectCapped` (no unbounded
- * `.collect()`), with a `truncated` flag when a cap bites.
+ * on the server; every read is `by_organizationId` + `collectCapped` (never an unbounded
+ * full-table read), with a `truncated` flag when a cap bites.
  */
 
 /** Cost data (what the org paid / would pay): redacted for a `noFinancials` key, like `models.list`. */
@@ -75,7 +75,7 @@ async function modelsDueForTestTag(ctx: QueryCtx, orgId: string, now: number): P
 }
 
 /** Pure: does the model belong in the strip segment? */
-export function modelInSegment(m: Pick<Doc<"models">, "id" | "isActive">, seg: ModelSegmentKey, owned: number, dueIds: Set<string>): boolean {
+function modelInSegment(m: Pick<Doc<"models">, "id" | "isActive">, seg: ModelSegmentKey, owned: number, dueIds: Set<string>): boolean {
   const archived = m.isActive === false;
   if (seg === "archived") return archived;
   if (archived) return false;
@@ -92,6 +92,58 @@ async function primaryPhoto(ctx: QueryCtx, orgId: string, modelId: string) {
   if (!m) return null;
   const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).unique();
   return file && file.organizationId === orgId ? { url: file.url ?? null, thumbnailUrl: file.thumbnailUrl ?? null } : null;
+}
+
+interface ModelFilterArgs {
+  search?: string;
+  categoryIdIn?: string[];
+  assetTypeIn?: string[];
+  tagsHasSome?: string[];
+}
+
+/** No list chosen = no filter; otherwise `value` must be in it. */
+const inList = (list: string[] | undefined, value: string | undefined): boolean => !list?.length || (value != null && list.includes(value));
+
+/** The filter words and search (the segment is tested separately). */
+function matchesModelFilters(m: Doc<"models">, f: ModelFilterArgs): boolean {
+  const tagOk = !f.tagsHasSome?.length || (m.tags ?? []).some((t) => f.tagsHasSome!.includes(t));
+  const searchOk = !f.search || matchesSearch([m.name, m.manufacturer, m.modelNumber, m.sku], f.search);
+  return inList(f.categoryIdIn, m.categoryId) && inList(f.assetTypeIn, m.assetType ?? "SERIALIZED") && tagOk && searchOk;
+}
+
+interface SortCtx {
+  categoryById: Map<string, Doc<"categories">>;
+  stock: Map<string, ModelStock>;
+}
+
+/** The value each derived column orders by; any other key is a plain model field. */
+const DERIVED_SORT_KEYS: Record<string, (m: Doc<"models">, c: SortCtx) => unknown> = {
+  category: (m, c) => c.categoryById.get(m.categoryId ?? "")?.name,
+  owned: (m, c) => c.stock.get(m.id)?.owned ?? 0,
+  available: (m, c) => c.stock.get(m.id)?.available ?? 0,
+  assetType: (m) => m.assetType ?? "SERIALIZED",
+};
+
+function modelSortKey(m: Doc<"models">, sortBy: string, c: SortCtx): unknown {
+  return (DERIVED_SORT_KEYS[sortBy] ?? ((x: Doc<"models">) => (x as unknown as Record<string, unknown>)[sortBy]))(m, c);
+}
+
+/** The category with its parent's name (for `Lighting → Moving heads`), or null. */
+function categoryOf(m: Doc<"models">, byId: Map<string, Doc<"categories">>) {
+  const cat = m.categoryId ? byId.get(m.categoryId) : undefined;
+  if (!cat) return null;
+  return { id: cat.id, name: cat.name, parentName: (cat.parentId && byId.get(cat.parentId)?.name) || null };
+}
+
+/** One page row: the model (cost fields redacted for a noFinancials key) plus category, counts and photo. */
+async function shapeModelRow(ctx: QueryCtx, orgId: string, m: Doc<"models">, c: SortCtx & { redact: boolean }) {
+  return {
+    ...(c.redact ? redactFields(m, MODEL_COST_FIELDS) : m),
+    category: categoryOf(m, c.categoryById),
+    owned: c.stock.get(m.id)?.owned ?? 0,
+    available: c.stock.get(m.id)?.available ?? 0,
+    media: await primaryPhoto(ctx, orgId, m.id),
+  };
 }
 
 const sortDir = v.optional(v.union(v.literal("asc"), v.literal("desc")));
@@ -127,37 +179,14 @@ export const listPage = query({
     const categoryById = new Map(categories.rows.map((c) => [c.id, c]));
     const ownedOf = (m: Doc<"models">) => stock.get(m.id)?.owned ?? 0;
 
-    const filtered = models.rows.filter((m) => {
-      if (!modelInSegment(m, seg, ownedOf(m), due.ids)) return false;
-      if (a.categoryIdIn?.length && !(m.categoryId && a.categoryIdIn.includes(m.categoryId))) return false;
-      if (a.assetTypeIn?.length && !a.assetTypeIn.includes(m.assetType ?? "SERIALIZED")) return false;
-      if (a.tagsHasSome?.length && !(m.tags ?? []).some((t) => a.tagsHasSome!.includes(t))) return false;
-      return !a.search || matchesSearch([m.name, m.manufacturer, m.modelNumber, m.sku], a.search);
-    });
-    const keyOf = (m: Doc<"models">): unknown => {
-      if (sortBy === "category") return categoryById.get(m.categoryId ?? "")?.name;
-      if (sortBy === "owned") return ownedOf(m);
-      if (sortBy === "available") return stock.get(m.id)?.available ?? 0;
-      if (sortBy === "assetType") return m.assetType ?? "SERIALIZED";
-      return (m as unknown as Record<string, unknown>)[sortBy];
-    };
-    const sorted = [...filtered].sort((x, y) => compareValues(keyOf(x), keyOf(y), dir) || x.name.localeCompare(y.name));
+    const filtered = models.rows.filter((m) => modelInSegment(m, seg, ownedOf(m), due.ids) && matchesModelFilters(m, a));
+    const sortCtx: SortCtx = { categoryById, stock };
+    const sorted = [...filtered].sort((x, y) => compareValues(modelSortKey(x, sortBy, sortCtx), modelSortKey(y, sortBy, sortCtx), dir) || x.name.localeCompare(y.name));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
 
     const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
     const items = [];
-    for (const m of paged.items) {
-      const cat = m.categoryId ? categoryById.get(m.categoryId) : undefined;
-      const parent = cat?.parentId ? categoryById.get(cat.parentId) : undefined;
-      const base = redact ? redactFields(m, MODEL_COST_FIELDS) : m;
-      items.push({
-        ...base,
-        category: cat ? { id: cat.id, name: cat.name, parentName: parent?.name ?? null } : null,
-        owned: ownedOf(m),
-        available: stock.get(m.id)?.available ?? 0,
-        media: await primaryPhoto(ctx, a.orgId, m.id),
-      });
-    }
+    for (const m of paged.items) items.push(await shapeModelRow(ctx, a.orgId, m, { redact, ...sortCtx }));
     return { ...paged, items, truncated: models.truncated || stockTruncated || due.truncated };
   },
 });

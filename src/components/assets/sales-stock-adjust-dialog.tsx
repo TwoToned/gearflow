@@ -22,10 +22,20 @@ export interface AdjustRequest {
 }
 
 /** The whole-number quantity the field holds, or null when it is blank, not a number, or zero. */
-export function parseAdjustDelta(raw: string): number | null {
+function parseAdjustDelta(raw: string): number | null {
   if (raw.trim() === "") return null;
   const n = Math.trunc(Number(raw));
   return Number.isFinite(n) && n !== 0 ? n : null;
+}
+
+function dialogTitle(targets: AdjustTarget[] | null): string {
+  if (!targets) return "Adjust sale stock";
+  return targets.length > 1 ? `Adjust sale stock — ${targets.length} models` : `Adjust sale stock — ${targets[0]?.name ?? ""}`;
+}
+
+function dialogHint(targets: AdjustTarget[] | null): string {
+  if (!targets) return "";
+  return targets.length > 1 ? "The same quantity is applied to each model." : `Available now: ${targets[0]?.available ?? 0}.`;
 }
 
 /**
@@ -45,7 +55,6 @@ export function SalesStockAdjustDialog({
   const [reason, setReason] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const parsed = parseAdjustDelta(delta);
-  const many = (targets?.length ?? 0) > 1;
 
   const reset = () => {
     setDelta("");
@@ -75,12 +84,10 @@ export function SalesStockAdjustDialog({
     >
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{many ? `Adjust sale stock — ${targets!.length} models` : `Adjust sale stock — ${targets?.[0]?.name ?? ""}`}</DialogTitle>
+          <DialogTitle>{dialogTitle(targets)}</DialogTitle>
           <DialogDescription>
-            {many
-              ? "The same quantity is applied to each model."
-              : `Available now: ${targets?.[0]?.available ?? 0}.`}{" "}
-            Enter a positive number for stock received, or a negative number to correct it down (a stocktake or damage write-off).
+            {dialogHint(targets)} Enter a positive number for stock received, or a negative number to correct it down (a stocktake or
+            damage write-off).
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

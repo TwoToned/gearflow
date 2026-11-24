@@ -210,9 +210,9 @@ export const CURATED_TOOL_DEFS: readonly CuratedToolDef[] = [
     title: "Get project financials",
     operation: "projectCosts.operationalCosts",
     summary:
-      "Cost/margin breakdown for one project. A key created with the `no_financials` flag set " +
-      "(/settings/api-keys) force-redacts this regardless of the acting user's role — otherwise " +
-      "visibility follows their role like everywhere else.",
+      "Cost/margin breakdown for one project. Visibility follows the acting user's role AND the " +
+      "key's `invoice` scope: without `invoice:read` it returns all zeros. A key created with the " +
+      "`no_financials` flag set (/settings/api-keys) also returns all zeros, regardless of role.",
   },
   {
     name: "get_project_document",

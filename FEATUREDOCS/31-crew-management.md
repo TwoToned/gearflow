@@ -826,6 +826,11 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   list's Day rate column is absent unless `crewRoles.ratesVisible` says the
   caller sees pay, and `crewWrites.updateNative` ignores rate set/clear from a
   caller who can't (the stored rates stand, as with role edits, S4).
+- **Below the pay line the Logistics service sheet has no role rate** (by
+  ruling): `crewRoles.list` returns no `defaultRate`/`chargeRate` to such a
+  caller, so the sheet's role charge-rate hint and its crew cost preview come
+  up empty. Pricing itself is unaffected — it is computed server-side from the
+  stored rates.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

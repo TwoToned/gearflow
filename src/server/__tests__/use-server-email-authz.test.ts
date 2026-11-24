@@ -33,11 +33,51 @@ const KNOWN_UNGATED = new Set([
   "test-tag-reminders.ts:sendTestTagReminderDigests",
 ]);
 
-function exportedActions(file: string): { name: string; body: string }[] {
+/**
+ * Every TOP-LEVEL function in a `"use server"` file, each with its own body
+ * (from its declaration to the next top-level declaration), so a local helper
+ * after an export is never read as part of it. Declarations recognised:
+ * `[export] [async] function name(` and `[export] const name = [async] (`.
+ */
+function topLevelFunctions(text: string): { name: string; exported: boolean; body: string }[] {
+  const decl = /^(export\s+)?(?:(?:async\s+)?function\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s*)?\()/gm;
+  const starts = [...text.matchAll(decl)].map((m) => ({ index: m.index!, name: (m[2] ?? m[3])!, exported: !!m[1] }));
+  return starts.map((s, i) => ({ ...s, body: text.slice(s.index, starts[i + 1]?.index ?? text.length) }));
+}
+
+/**
+ * A module-local CALL GRAPH: a function sends if its own body does, or it calls
+ * a local function that sends; it is gated if its own body gates, or it calls a
+ * local function that gates. Limit (noted): a send or a gate reached through an
+ * IMPORTED helper is seen only when that helper's name is in `SENDS` / `GATES`.
+ */
+function exportedActions(file: string): { name: string; body: string; sends: boolean; gated: boolean }[] {
   const text = readFileSync(join(SERVER, file), "utf8");
   if (!/^\s*["']use server["']/.test(text)) return [];
-  const parts = text.split(/^export async function /m).slice(1);
-  return parts.map((p) => ({ name: p.match(/^(\w+)/)![1], body: p }));
+  const fns = topLevelFunctions(text);
+  const names = new Set(fns.map((f) => f.name));
+  const calls = new Map(fns.map((f) => [f.name, [...names].filter((n) => n !== f.name && new RegExp(`\\b${n}\\s*\\(`).test(f.body))]));
+  const reach = (start: string, own: (name: string) => boolean): boolean => {
+    const seen = new Set<string>();
+    const stack = [start];
+    while (stack.length) {
+      const n = stack.pop()!;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      if (own(n)) return true;
+      stack.push(...(calls.get(n) ?? []));
+    }
+    return false;
+  };
+  const bodyOf = new Map(fns.map((f) => [f.name, f.body]));
+  return fns
+    .filter((f) => f.exported)
+    .map((f) => ({
+      name: f.name,
+      body: f.body,
+      sends: reach(f.name, (n) => SENDS.test(bodyOf.get(n)!)),
+      gated: reach(f.name, (n) => GATES.test(bodyOf.get(n)!)),
+    }));
 }
 
 const files = readdirSync(SERVER).filter((f) => f.endsWith(".ts"));
@@ -46,10 +86,21 @@ describe("\"use server\" actions that send email or push are gated", () => {
   it("every exported sender calls a gate, or is a known non-crew follow-up", () => {
     const ungated = files.flatMap((f) =>
       exportedActions(f)
-        .filter((a) => SENDS.test(a.body) && !GATES.test(a.body) && !KNOWN_UNGATED.has(`${f}:${a.name}`))
+        .filter((a) => a.sends && !a.gated && !KNOWN_UNGATED.has(`${f}:${a.name}`))
         .map((a) => `${f}:${a.name}`),
     );
     expect(ungated).toEqual([]);
+  });
+
+  it("the scan sees a send reached through a LOCAL helper (call graph), and scopes each body to its own function", () => {
+    // Sanity on the real tree: a known gated crew sender is read as sending AND gated.
+    const offers = exportedActions("crew-communication.ts").find((a) => a.name === "sendCrewOffers")!;
+    expect(offers.sends).toBe(true);
+    expect(offers.gated).toBe(true);
+    // A known cron sender that sends through a local helper is still read as sending.
+    const digest = exportedActions("notification-email-sender.ts").find((a) => a.name === "sendNotificationEmails")!;
+    expect(digest.sends).toBe(true);
+    expect(digest.gated).toBe(false);
   });
 
   it("the crew senders with no authz are not server actions any more", () => {

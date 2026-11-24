@@ -220,7 +220,7 @@ export function useCheckRecordWrites() {
      * from that save's own audit row and refuses if anything changed since. The Scan
      * page wraps this in ONE closure shared by the toast and the Last scans row.
      */
-    undoAdHocCheck: async (forwardAuditId: string): Promise<{ ok: boolean; photosDeleted: number }> => {
+    undoAdHocCheck: async (forwardAuditId: string): Promise<{ ok: boolean; photosDeleted: number; photosKept: number }> => {
       return undoAdHocCheckM({
         orgId: requireOrg(),
         forwardAuditId,

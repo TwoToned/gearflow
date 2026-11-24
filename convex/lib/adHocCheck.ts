@@ -9,6 +9,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { writeActivityLog } from "./audit";
 import { assertWithinUndoWindow } from "./undoWindow";
+import type { CheckPhotoUpload } from "./undoPhotos";
 import {
   conditionWord,
   resolveCheckCondition,
@@ -32,6 +33,8 @@ export interface AdHocCheckDetails {
   serverSavedAt: number;
   /** Exactly the photo files this save proved it owns (`./undoPhotos`); the Undo deletes only these. */
   photoStorageIds?: string[];
+  /** The same photos as proven uploads (row id + upload time), so the Undo finds each row exactly. */
+  photoUploads?: CheckPhotoUpload[];
   notes?: string;
 }
 

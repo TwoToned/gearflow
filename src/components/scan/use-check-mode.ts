@@ -189,7 +189,7 @@ function useCheckSave(s: CheckModeDeps & {
     const tag = asset.assetTag;
     const hadPhotos = Object.values(snapshot.states).some((st) => st.photos.length > 0);
     const performUndo = async () => {
-      await writes.undoAdHocCheck(auditId);
+      const res = await writes.undoAdHocCheck(auditId);
       s.markUndone(auditId);
       if (!tagRef.current) {
         // The Undo deleted the photos' files with the records (overseer ruling), so the
@@ -197,7 +197,7 @@ function useCheckSave(s: CheckModeDeps & {
         s.draft.restore(withoutPhotos(snapshot));
         s.reload(tag);
       }
-      return hadPhotos ? "Undone · photos need re-adding" : undefined;
+      return undoPhotoNote(hadPhotos, res?.photosKept ?? 0);
     };
     return announceListWrite({
       title: s.failCount > 0 ? `Saved check on ${tag} · ${s.failCount} failed` : `Saved check on ${tag}`,
@@ -236,6 +236,12 @@ function useCheckSave(s: CheckModeDeps & {
   };
 
   return { saving, save };
+}
+
+/** The Undo toast's photo words: kept files (in use elsewhere, or unverifiable) are named as kept. */
+function undoPhotoNote(hadPhotos: boolean, kept: number): string | undefined {
+  if (kept > 0) return "Undone · photos kept (in use elsewhere) · re-add them to this check";
+  return hadPhotos ? "Undone · photos need re-adding" : undefined;
 }
 
 function withoutPhotos(d: CheckDraft): CheckDraft {

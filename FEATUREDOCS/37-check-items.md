@@ -116,12 +116,23 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   keeps its one Undo.
 - **The save proves each photo is the check's own** (review B1, `assertOwnedCheckPhotos`),
   so the Undo can never be pointed at someone else's file. A check photo must be an
-  `/api/files/{id}` upload that is one of the org's recent `fileUploads` rows, uploaded by
-  this user less than 6 hours ago, filed in the `check-photos` folder (the check form's
-  `PhotoGridInput folder`, `CHECK_PHOTO_FOLDER`), and not already on another check record.
-  Anything else (a quote/invoice PDF id, another user's upload, an external URL) is refused
-  at save with `upload it again from the check`. The save records the proven storage ids
-  on its audit row, and the Undo deletes only those.
+  `/api/files/{id}` upload that is one of THIS user's uploads from the last 6 hours (found
+  exactly on `fileUploads.by_uploadedById`, bounded by `_creationTime`, so a busy org can't
+  push it out of a window), this org's, filed in the `check-photos` folder (the check form's
+  `PhotoGridInput folder`, `CHECK_PHOTO_FOLDER`), and **used nowhere yet**. Anything else
+  (a quote/invoice PDF id, another user's upload, an external URL) is refused at save with
+  `upload it again from the check`. The save records each proven upload (storage id,
+  `fileUploads` row id, upload time) on its audit row, and the Undo deletes only those,
+  finding each row exactly.
+- **"Used nowhere" means anywhere in the org**, checked at save AND again at Undo: a check
+  record or maintenance record (photos or attachments) created since the upload, a
+  maintenance record EDITED since then (found through its `maintenance` activity rows), and
+  any media row (`modelMedia`, `assetMedia`, `kitMedia`, `projectMedia`, `clientMedia`,
+  `locationMedia`, `subHireMedia`, by `by_fileId`). The record scans read from the upload
+  time on existing indexes and are capped at 1000 rows each; **a capped scan fails closed**:
+  the save is refused (`can't be verified right now`), and the Undo keeps every file. The
+  Undo returns `photosKept`, and the toast then says `Undone · photos kept (in use
+  elsewhere) · re-add them to this check`.
 
 ### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 

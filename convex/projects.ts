@@ -8,6 +8,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeJobCost, jobCostRedactor } from "./lib/crewPayVisibility";
 import { JOB_COST_FIELDS } from "./lib/crewPayFields";
 import { createLiveVersionForProject } from "./lib/projectVersionState";
+import { loadOrgProjects } from "./lib/orgProjects";
 import {
   JOB_SEGMENT_KEYS,
   inStatusSegment,
@@ -17,14 +18,6 @@ import {
   type JobListFilter,
   type JobSegmentKey,
 } from "./lib/projectSegments";
-
-/** The org's project rows, shared by listPage / segmentCounts / needsYouIds (one org-wide read, one place to bound later). */
-async function loadOrgProjects(ctx: QueryCtx, orgId: string) {
-  return await ctx.db
-    .query("projects")
-    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: T3-style pagination rework approved but unshipped (no search index on projects yet) — see docs/exceptions.md R-8.3.3
-    .collect();
-}
 
 /** An unknown segment key reads as "no segment" (a stale bookmark must still list). */
 function parseSegment(raw: string | undefined): JobSegmentKey | undefined {

@@ -90,6 +90,17 @@ reimplementing it. `asset-form.tsx` is intentionally **not** refactored onto it
 crew-member form (see [31-crew-management](./31-crew-management.md)), the
 **model form** (`model-form.tsx`), and future forms.
 
+### Models list (UX Phase 14, `/assets/models`)
+A `ListPage` (`src/components/assets/models-list.tsx`, config in `src/lib/list-views/models.ts`) over
+`modelsList.listPage`: server-side search/filter/sort/paging, strip `All · With stock · No stock · Due for
+T&T · Archived` (counts from `modelsList.segmentCounts`; Due reuses the Assets list's `dueAssetMap` rule).
+Columns: Owned, Available (units available now: active serialised units + bulk `availableQuantity`), Day rate;
+opt-in from ⋯ › Columns: Value (replacement cost, redacted for a `noFinancials` key), Type, Tags. Page ⋯:
+Export CSV, Import CSV, Import rates…. Bulk: `Edit rates n` and `Assign checks n` (the two moved dialogs in
+`model-bulk-dialogs.tsx`; no Undo yet, it waits for the shared field-edit Undo primitive). Archive stays on
+the model page: a model archive deletes the model's assets, so it has no exact reverse. `models.reorderLevel`
+(optional, never read as 0) feeds the Sales stock list ([67](./67-sales-line-items.md)).
+
 The **model form** (`/assets/models/new` + `/assets/models/[id]/edit`, both
 render `ModelForm` — edit pre-fills, reusing create) uses the shell with these
 sections: Identity (name, manufacturer, model number, SKU, category via

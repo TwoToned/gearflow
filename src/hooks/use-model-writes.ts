@@ -25,6 +25,8 @@ export function useModelWrites() {
   const archiveM = useMutation(api.modelWrites.archiveNative);
   const bulkRatesM = useMutation(api.modelWrites.bulkUpdateRatesNative);
   const adjustSaleStockM = useMutation(api.modelWrites.adjustSaleStockNative);
+  const adjustSaleStockManyM = useMutation(api.modelWrites.adjustSaleStockManyNative);
+  const undoSaleStockM = useMutation(api.modelWrites.undoSaleStockNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -59,6 +61,25 @@ export function useModelWrites() {
     ): Promise<{ count: number }> => {
       const org = requireOrg();
       return await bulkRatesM({ orgId: org, modelIds, rateType, operation, value, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** The same whole-number `delta` on each model (UX Phase 14): returns each write's audit id for ONE exact Undo. */
+    adjustSaleStockMany: async (modelIds: string[], delta: number, reason?: string): Promise<{ auditIds: string[]; count: number }> => {
+      const org = requireOrg();
+      const auditIds = modelIds.map(() => createId());
+      await adjustSaleStockManyM({
+        orgId: org,
+        adjustments: modelIds.map((id) => ({ id, delta })),
+        reason,
+        now: Date.now(),
+        actor: actor(),
+        auditIds,
+      });
+      return { auditIds, count: modelIds.length };
+    },
+    /** Exactly reverses `adjustSaleStockMany` (ids only; the server refuses if the stock moved since). */
+    undoSaleStock: async (auditIds: string[]): Promise<{ restored: number }> => {
+      const org = requireOrg();
+      return await undoSaleStockM({ orgId: org, auditIds, now: Date.now(), actor: actor() });
     },
     adjustSaleStock: async (id: string, delta: number, reason?: string): Promise<{ id: string; saleStockQuantity: number }> => {
       const org = requireOrg();

@@ -39,7 +39,8 @@ headers (`sort`/`onSort`, `aria-sort`) and a `leading` slot. `useTablePreference
 | Table | Location | Key Filters |
 |-------|----------|-------------|
 | Assets Registry | (ListPage, see above: `src/components/assets/assets-list.tsx`) | Status, Condition, Location, Category, Tags, Model |
-| Equipment Models | `src/components/assets/model-table.tsx` | Category, Asset Type |
+| Equipment Models | (ListPage, see above: `src/components/assets/models-list.tsx`) | Category, Type, Tags |
+| Sales stock | (ListPage: `src/components/assets/sales-stock-list.tsx`) | Category |
 | Projects | (ListPage, see above: `src/components/projects/jobs-list.tsx`) | Status, Type, Client, PM, Dates |
 | Kits | `src/app/(app)/kits/page.tsx` | Status, Condition, Location, Category |
 | Clients | `src/components/clients/client-table.tsx` | Type |

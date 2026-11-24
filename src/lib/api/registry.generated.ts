@@ -32321,6 +32321,281 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "modelsList.listPage",
+    "module": "modelsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "assetTypeIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0c4063a4d1ca861c",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Models list with owned/available counts, derived segment and filters.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.saleStockPage",
+    "module": "modelsList",
+    "fn": "saleStockPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "58b7a96599cd7335",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Sales stock list: available, derived reserved and on hand, reorder level.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.saleStockSegmentCounts",
+    "module": "modelsList",
+    "fn": "saleStockSegmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Sales stock list (all, low, out).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.segmentCounts",
+    "module": "modelsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Models list (all, with stock, no stock, due for T&T, archived).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.adjustSaleStockManyNative",
+    "module": "modelWrites",
+    "fn": "adjustSaleStockManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "adjustments",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "018f7a00356d364a",
+    "returnsSha": "3fe9af373e6ab6e8",
+    "stability": "tracks-app",
+    "summary": "Adjust the new-stock sale pool of several models by a delta each (restock or correction).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "modelWrites.adjustSaleStockNative",
     "module": "modelWrites",
     "fn": "adjustSaleStockNative",
@@ -32719,6 +32994,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoSaleStockNative",
+    "module": "modelWrites",
+    "fn": "undoSaleStockNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent manual sale-stock adjustment by its audit ids (refuses if the stock moved since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -65817,10 +66139,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1275,
-  agentReachable: 643,
-  queries: 455,
-  mutations: 820,
-  agentReachableQueries: 319,
-  agentReachableMutations: 324,
+  total: 1281,
+  agentReachable: 649,
+  queries: 459,
+  mutations: 822,
+  agentReachableQueries: 323,
+  agentReachableMutations: 326,
 } as const;

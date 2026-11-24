@@ -184,6 +184,26 @@ describe("supplier list and the cost-line closure", () => {
   });
 });
 
+describe("supplier list: hire facts (D71)", () => {
+  test("On hire now (units), Due back and the Overdue returns segment come from the order's return dates", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "oh", organizationId: ORG, supplierId: "s2", orderNumber: "SH-9", type: "SUBHIRE", status: "RECEIVED", returnDueDate: day(-3) });
+      await ctx.db.insert("supplierOrderItems", { id: "it1", orderId: "oh", description: "Deck", quantity: 4 });
+      await ctx.db.insert("supplierOrderItems", { id: "it2", orderId: "oh", description: "Stairs", quantity: 2 });
+      await ctx.db.insert("supplierOrders", { id: "back", organizationId: ORG, supplierId: "s1", orderNumber: "SH-8", type: "SUBHIRE", status: "RECEIVED", returnDueDate: day(-9), returnedDate: day(-8) });
+    });
+    const q = (segment: string) => as(t, asUser).query(api.peopleLists.supplierPage, { orgId: ORG, now: NOW, segment });
+    const late = await q("overdue");
+    expect(late.items.map((r) => r.id)).toEqual(["s2"]);
+    expect(late.items[0]).toMatchObject({ onHireUnits: 6, onHireOrders: 1, lateDays: 3 });
+    const all = await q("all");
+    expect(all.items.find((r) => r.id === "s1")).toMatchObject({ onHireUnits: 0, lateDays: 0 }); // a returned order is not on hire
+    expect((await as(t, asUser).query(api.peopleLists.supplierSegmentCounts, { orgId: ORG, now: NOW })).overdue).toBe(1);
+  });
+});
+
 describe("crew list: review follow-ups", () => {
   test("an UNDATED pending call makes the person Unconfirmed with an undated Next call (not Available)", async () => {
     const t = makeT();

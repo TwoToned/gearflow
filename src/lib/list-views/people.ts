@@ -325,13 +325,14 @@ export function clientsCsv(rows: ClientSource[]): string {
 const SUPPLIER_SEGMENTS = [
   { key: "all", label: "All" },
   { key: "open", label: "Open orders" },
+  { key: "overdue", label: "Overdue returns" },
   { key: "archived", label: "Archived" },
 ] as const;
 
 export const SUPPLIERS_SPEC: ListUrlSpec = {
   segments: SUPPLIER_SEGMENTS.map((s) => s.key),
   filters: [],
-  sorts: ["name", "openOrders", "spend", "phone", "accountNumber", "email"],
+  sorts: ["name", "openOrders", "onHire", "dueBack", "spend", "phone", "accountNumber", "email"],
   defaultSort: "name:asc",
 };
 
@@ -341,6 +342,8 @@ export const supplierSegments = (counts: Record<string, number> | undefined): Li
 export function supplierColumns(moneyVisible: boolean): FactColumn[] {
   return [
     { id: "openOrders", header: "Open orders", sortKey: "openOrders", align: "end" },
+    { id: "onHire", header: "On hire now", sortKey: "onHire", align: "end" },
+    { id: "dueBack", header: "Due back", sortKey: "dueBack" },
     ...(moneyVisible ? [{ id: "spend", header: "Spend YTD", sortKey: "spend", align: "end" as const }] : []),
     { id: "phone", header: "Phone", sortKey: "phone", optional: true },
     { id: "accountNumber", header: "Account #", sortKey: "accountNumber", optional: true },
@@ -364,6 +367,10 @@ export interface SupplierSource {
   isActive: boolean;
   openOrders: number;
   spendYtd?: number;
+  onHireOrders?: number;
+  onHireUnits?: number;
+  dueBackDay?: number | null;
+  lateDays?: number;
 }
 
 /** The head sub line: `3 with open orders · 5 open orders · $12,000 this year` (spend only when sent). */
@@ -380,6 +387,8 @@ export function supplierSubline(c: { open?: number; openOrders?: number; spendYt
 export function supplierRowOf(s: SupplierSource, menu?: ActionMenuSpec): LineRowData {
   const facts = defined({
     openOrders: textFact(s.openOrders > 0 ? String(s.openOrders) : undefined),
+    onHire: textFact(s.onHireUnits ? `${s.onHireUnits} unit${s.onHireUnits === 1 ? "" : "s"}` : undefined),
+    dueBack: textFact(s.dueBackDay == null ? undefined : dayLabel(s.dueBackDay)),
     spend: moneyFact(s.spendYtd), // absent without the job-cost line
     phone: textFact(s.phone),
     accountNumber: textFact(s.accountNumber),
@@ -392,6 +401,7 @@ export function supplierRowOf(s: SupplierSource, menu?: ActionMenuSpec): LineRow
     title: s.name,
     subtitle: s.contactName ?? undefined,
     tags: tagsOrUndefined(s.tags),
+    flags: s.lateDays ? [{ label: `${s.lateDays}d overdue`, tone: "error" as const }] : undefined,
     facts,
     status: s.isActive ? undefined : ARCHIVED,
     menu,

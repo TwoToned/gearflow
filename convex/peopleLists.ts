@@ -21,6 +21,7 @@ import { compareValues, matchesSearch, paginateItems } from "./lib/listQuery";
 import { loadOrgProjects } from "./lib/orgProjects";
 import { collectCapped } from "./lib/pagination";
 import { resolveNow } from "./lib/projectSegments";
+import { isOnHire, returnLateDays } from "./lib/orderHireState";
 
 /**
  * The People lists (UX Phase 13, spec §9f): Crew, Clients, Suppliers, each as ONE
@@ -294,37 +295,61 @@ export const clientSegmentCounts = query({
 
 const OPEN_ORDER = new Set(["DRAFT", "ORDERED", "PARTIAL"]);
 const COMMITTED = new Set(["ORDERED", "PARTIAL", "RECEIVED"]);
-const SUPPLIER_SEGMENTS = ["all", "open", "archived"] as const;
+const SUPPLIER_SEGMENTS = ["all", "open", "overdue", "archived"] as const;
 type SupplierSegment = (typeof SUPPLIER_SEGMENTS)[number];
 
-type SupplierFacts = { openOrders: number; spendYtd?: number };
+type SupplierFacts = { openOrders: number; spendYtd?: number; onHireOrders: number; onHireUnits: number; dueBackDay: number | null; lateDays: number };
 
 /** One order's contribution; spend is committed orders ordered this calendar year, and exists only with money. */
-function addOrder(f: SupplierFacts, o: Doc<"supplierOrders">, yearStart: number, showMoney: boolean) {
+function addOrder(f: SupplierFacts, o: Doc<"supplierOrders">, yearStart: number, showMoney: boolean, today: number) {
   const status = o.status ?? "DRAFT";
+  if (isOnHire(o)) addHire(f, o, today);
   if (OPEN_ORDER.has(status)) f.openOrders++;
   const thisYear = (o.orderDate ?? o.createdAt ?? 0) >= yearStart;
   if (showMoney && COMMITTED.has(status) && thisYear) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
 }
 
-function supplierFacts(suppliers: Doc<"suppliers">[], orders: Doc<"supplierOrders">[], yearStart: number, showMoney: boolean) {
+/** An order still on hire: counts, its due day (the earliest wins) and how late the most overdue one is. */
+function addHire(f: SupplierFacts, o: Doc<"supplierOrders">, today: number) {
+  f.onHireOrders++;
+  if (o.returnDueDate != null) {
+    const due = dayNumber(o.returnDueDate);
+    f.dueBackDay = f.dueBackDay == null ? due : Math.min(f.dueBackDay, due);
+    f.lateDays = Math.max(f.lateDays, returnLateDays(o, today));
+  }
+}
+
+function supplierFacts(suppliers: Doc<"suppliers">[], orders: Doc<"supplierOrders">[], yearStart: number, showMoney: boolean, today: number) {
   const facts = new Map<string, SupplierFacts>();
-  for (const s of suppliers) facts.set(s.id, showMoney ? { openOrders: 0, spendYtd: 0 } : { openOrders: 0 });
+  for (const s of suppliers) facts.set(s.id, { openOrders: 0, onHireOrders: 0, onHireUnits: 0, dueBackDay: null, lateDays: 0, ...(showMoney ? { spendYtd: 0 } : {}) });
   for (const o of orders) {
     const f = facts.get(o.supplierId);
-    if (f) addOrder(f, o, yearStart, showMoney);
+    if (f) addOrder(f, o, yearStart, showMoney, today);
   }
   return facts;
 }
 
+/** Units on hire per supplier: the line quantities of the orders still on hire only (bounded by those orders). */
+async function addHireUnits(ctx: QueryCtx, orgId: string, orders: Doc<"supplierOrders">[], facts: Map<string, SupplierFacts>) {
+  for (const o of orders.filter(isOnHire)) {
+    const f = facts.get(o.supplierId);
+    if (!f || o.organizationId !== orgId) continue;
+    const items = await collectCapped(ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", o.id)), 500);
+    f.onHireUnits += items.rows.reduce((n, i) => n + (i.quantity ?? 0), 0);
+  }
+}
+
 async function loadSuppliers(ctx: QueryCtx, orgId: string, nowArg: number | undefined) {
-  const yearStart = Date.UTC(new Date(resolveNow(nowArg)).getUTCFullYear(), 0, 1);
+  const nowMs = resolveNow(nowArg);
+  const today = dayNumber(nowMs);
+  const yearStart = Date.UTC(new Date(nowMs).getUTCFullYear(), 0, 1);
   const showMoney = await canSeeJobCost(ctx, orgId);
   const [suppliers, orders] = await Promise.all([
     collectCapped(ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
     collectCapped(ctx.db.query("supplierOrders").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
   ]);
-  const facts = supplierFacts(suppliers.rows, orders.rows, yearStart, showMoney);
+  const facts = supplierFacts(suppliers.rows, orders.rows, yearStart, showMoney, today);
+  await addHireUnits(ctx, orgId, orders.rows, facts);
   return { suppliers: suppliers.rows, facts, showMoney, truncated: suppliers.truncated || orders.truncated };
 }
 
@@ -332,6 +357,8 @@ type SupplierSortFn = (s: Doc<"suppliers">, f: SupplierFacts) => unknown;
 const supplierByName: SupplierSortFn = (s) => s.name.toLowerCase();
 const SUPPLIER_SORT_VALUE: Record<string, SupplierSortFn> = {
   openOrders: (_s, f) => f.openOrders,
+  onHire: (_s, f) => f.onHireUnits,
+  dueBack: (_s, f) => f.dueBackDay ?? Number.POSITIVE_INFINITY,
   spend: (_s, f) => f.spendYtd ?? null, // absent without money, so its order can't leak it
   phone: (s) => s.phone ?? "",
   email: (s) => s.email ?? "",
@@ -340,10 +367,14 @@ const SUPPLIER_SORT_VALUE: Record<string, SupplierSortFn> = {
 };
 const supplierSortValue = (s: Doc<"suppliers">, f: SupplierFacts, key: string): unknown => (SUPPLIER_SORT_VALUE[key] ?? supplierByName)(s, f);
 
-const inSupplierSegment = (active: boolean, openOrders: number, seg: SupplierSegment) =>
-  seg === "archived" ? !active : seg === "open" ? active && openOrders > 0 : active;
+const inSupplierSegment = (active: boolean, f: SupplierFacts, seg: SupplierSegment) => {
+  if (seg === "archived") return !active;
+  if (seg === "open") return active && f.openOrders > 0;
+  if (seg === "overdue") return active && f.lateDays > 0;
+  return active;
+};
 
-const SUPPLIER_SORTS = new Set(["name", "openOrders", "spend", "phone", "accountNumber", "email"]);
+const SUPPLIER_SORTS = new Set(["name", "openOrders", "onHire", "dueBack", "spend", "phone", "accountNumber", "email"]);
 
 export const supplierPage = query({
   args: {
@@ -363,7 +394,7 @@ export const supplierPage = query({
     const seg = (SUPPLIER_SEGMENTS as readonly string[]).includes(a.segment ?? "") ? (a.segment as SupplierSegment) : "all";
     const sortBy = SUPPLIER_SORTS.has(a.sortBy ?? "") ? (a.sortBy as string) : "name";
     const matches = (s: Doc<"suppliers">) => !a.search || matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search);
-    const filtered = suppliers.filter((s) => inSupplierSegment((s.isActive ?? true) === true, facts.get(s.id)!.openOrders, seg) && matches(s));
+    const filtered = suppliers.filter((s) => inSupplierSegment((s.isActive ?? true) === true, facts.get(s.id)!, seg) && matches(s));
     const sorted = [...filtered].sort(
       (x, y) => compareValues(supplierSortValue(x, facts.get(x.id)!, sortBy), supplierSortValue(y, facts.get(y.id)!, sortBy), dir(a.sortOrder)) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1),
     );
@@ -381,12 +412,12 @@ export const supplierSegmentCounts = query({
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "supplier");
     const { suppliers, facts, showMoney, truncated } = await loadSuppliers(ctx, orgId, now);
-    const counts = { all: 0, open: 0, archived: 0, truncated: truncated ? 1 : 0, openOrders: 0 };
+    const counts = { all: 0, open: 0, overdue: 0, archived: 0, truncated: truncated ? 1 : 0, openOrders: 0 };
     let spend = 0;
     for (const s of suppliers) {
       const active = (s.isActive ?? true) === true;
       const f = facts.get(s.id)!;
-      for (const k of SUPPLIER_SEGMENTS) if (inSupplierSegment(active, f.openOrders, k)) counts[k]++;
+      for (const k of SUPPLIER_SEGMENTS) if (inSupplierSegment(active, f, k)) counts[k]++;
       counts.openOrders += active ? f.openOrders : 0;
       spend += f.spendYtd ?? 0;
     }

@@ -10,7 +10,7 @@ describe("projectTotalsFromEntry", () => {
     });
   });
 
-  it("a margin the read left out (below the crew-pay line) is null — never a $0 the viewer would print", () => {
+  it("a margin the read left out (a caller without job cost) is null — never a $0 the viewer would print", () => {
     expect(projectTotalsFromEntry({ entityType: "project", entityId: "p1", data: { subtotal: 100, total: 110 } })?.margin).toBeNull();
   });
 

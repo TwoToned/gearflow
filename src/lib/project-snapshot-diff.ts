@@ -108,7 +108,7 @@ export function diffSnapshotEntries(before: SnapshotEntryLike[], after: Snapshot
 export interface FinancialTotals {
   subtotal: number;
   total: number;
-  /** Null when the read left it out: below the crew-pay line the margin (which back-solves crew cost) is absent — never a $0. */
+  /** Null when the read left it out: the margin is JOB cost, absent for a caller who fails the job-cost rule (`canSeeJobCost`: invoice:read, not a noFinancials key) — never a $0. */
   margin: number | null;
 }
 

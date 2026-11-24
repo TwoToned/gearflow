@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { ROLE_RATE_FIELDS } from "./lib/crewPayFields";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -41,8 +42,6 @@ export const ratesVisible = query({
   },
 });
 
-/** A role's pay fields: the cost (`defaultRate`) and the charge (`chargeRate`). */
-const ROLE_RATE_FIELDS =["defaultRate", "chargeRate"] as const;
 
 /**
  * Field-level read boundary for every crew-role read: the rates are stripped

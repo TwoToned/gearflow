@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
-import { MEMBER_RATE_FIELDS } from "./lib/crewMemberRedaction";
+import { MEMBER_RATE_FIELDS } from "./lib/crewPayFields";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertRefInOrg, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";

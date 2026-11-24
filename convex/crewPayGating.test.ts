@@ -163,12 +163,21 @@ describe("S1: every crew member and role read follows the one pay rule", () => {
       await ctx.db.patch(r!._id, { chargeRate: 900 });
     });
 
-  test("a member (holds crew:read, below manager) gets no member or role rate", async () => {
+  test("a member (holds crew:read, below manager) gets no member or role rate — overtime multiplier included", async () => {
     const t = makeT(); await seed(t, "member"); await withCharge(t);
+    await t.run(async (ctx) => {
+      const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first();
+      await ctx.db.patch(c!._id, { overtimeMultiplier: 1.5 });
+    });
     const r = await reads(t);
     expect(r.member).toMatchObject({ firstName: "Bob" });
     expect(r.member.defaultHourlyRate).toBeUndefined();
     expect(r.member.defaultDayRate).toBeUndefined();
+    expect(r.member.overtimeMultiplier).toBeUndefined();
+    const getById = (await t.withIdentity(asUser).query(api.crewMembers.getById, { id: "c1" })) as Record<string, unknown>;
+    expect(getById.overtimeMultiplier).toBeUndefined();
+    const detail = (await t.withIdentity(asUser).query(api.crew.memberDetail, { id: "c1", orgId: ORG }))!;
+    expect(detail.overtimeMultiplier).toBeNull();
     for (const row of [r.roleList, r.roleById]) {
       expect(row.name).toBe("Rigger");
       expect(row.defaultRate).toBeUndefined();
@@ -237,8 +246,13 @@ describe("S1: every crew member and role read follows the one pay rule", () => {
 
   test("a manager gets every rate", async () => {
     const t = makeT(); await seed(t, "manager"); await withCharge(t);
+    await t.run(async (ctx) => {
+      const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first();
+      await ctx.db.patch(c!._id, { overtimeMultiplier: 1.5 });
+    });
     const r = await reads(t);
     expect(r.member.defaultHourlyRate).toBe(45);
+    expect(r.member.overtimeMultiplier).toBe(1.5);
     expect(r.roleList).toMatchObject({ defaultRate: 600, chargeRate: 900 });
     expect(r.roleById).toMatchObject({ defaultRate: 600, chargeRate: 900 });
     expect(r.member.icalToken).toBeUndefined();

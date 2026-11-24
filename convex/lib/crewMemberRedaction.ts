@@ -2,9 +2,7 @@ import type { QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { callerMay, getAuthContext, redactFields } from "./auth";
 import { canSeeCrewPay } from "./crewPayVisibility";
-
-/** A crew member's default pay rates. */
-export const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
+import { MEMBER_RATE_FIELDS } from "./crewPayFields";
 
 /**
  * THE field-level read boundary for every crew-member read (`crewMembers.list`,

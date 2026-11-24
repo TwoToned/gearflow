@@ -4,7 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
-import { MEMBER_RATE_FIELDS } from "./lib/crewMemberRedaction";
+import { MEMBER_RATE_FIELDS, ROLE_RATE_FIELDS } from "./lib/crewPayFields";
 import { coveredDaysFull, crewShortfallByDay } from "./lib/crewShortfall";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
@@ -28,8 +28,7 @@ import { canCrewCall } from "./lib/crewCallTransitions";
 // ONE definition of the pay fields (R-3.1): the planner (`crewAvailability`)
 // and the crew dashboard redact with these too.
 export const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
-// The member rates live with the member-row redactor (lib/crewMemberRedaction.ts).
-const ROLE_RATE_FIELDS = ["defaultRate"] as const;
+// The member and role pay field lists are ONE definition each (lib/crewPayFields.ts).
 
 /** The single-use offer-respond bearer credential (`/api/crew/respond/[token]`).
  *  Only the trusted backend ever needs it (offer + reminder emails, the respond

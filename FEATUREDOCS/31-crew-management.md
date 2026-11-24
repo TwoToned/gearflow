@@ -824,8 +824,9 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   `canSeeCrewPay(ctx, orgId)` (`convex/lib/crewPayVisibility.ts`) holds —
   manager+ standing (`isCallerManagerPlus`, re-read from the member row) AND not
   a `noFinancials` API key. The service identity always passes. Field lists are
-  the `ASSIGNMENT_COST_FIELDS`/`MEMBER_RATE_FIELDS` constants in
-  `convex/crewAssignments.ts`. Covered by `convex/crewReadRedaction.test.ts` and
+  ONE definition each: `ASSIGNMENT_COST_FIELDS` (`convex/crewAssignments.ts`) and
+  `MEMBER_RATE_FIELDS` (day rate, hourly rate, overtime multiplier) /
+  `ROLE_RATE_FIELDS` (cost and charge rate) in `convex/lib/crewPayFields.ts`. Covered by `convex/crewReadRedaction.test.ts` and
   `convex/crewPayGating.test.ts` (member, manager, noFinancials key). The `/crew`
   list's Day rate column is absent unless `crewRoles.ratesVisible` says the
   caller sees pay, and `crewWrites.updateNative` ignores rate set/clear from a

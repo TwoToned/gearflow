@@ -505,7 +505,7 @@ resolved = blank — and never stored. The entry that CARRIES a shared charge is
 most advanced one (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the
 earliest; never "the earliest" alone, or a later draft steals it. Every read that
 returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
-`crewAssignments.{membersForAssignment,projectCrew,projectLabourCost,list,getById,listByProject,listByServiceIds}`,
+`crewAssignments.{membersForAssignment,projectCrew,list,getById,listByProject,listByServiceIds}`,
 `crewDashboard.{pickerList,pendingTimeEntries,activeAssignmentsSummary,pendingOffers,upcomingShifts}`,
 `crewMembers.{list,listPage,getById}`, `crew.memberDetail`,
 `crewRoles.{list,listForSettings,getById}`) gates it on `canSeeCrewPay`
@@ -516,26 +516,46 @@ pay), so every one that returns crew pay decides for its real caller with
 `callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`, the same `crewPayVisible`; an
 API-key actor counts as noFinancials — fail closed): `exportTimesheetCSV`,
 `getProjectServices` (`redactServiceCrewPay` strips each call's `estimatedCost` /
-`rateOverride` / `resolvedRate`, and Logistics then renders no cost cell) and
-`getAssignmentIcsData` (which also never returns `responseToken`). A TOTAL that
-includes crew cost is pay too, ABSENT (never zeroed) below the line so nothing can
-be back-solved: a service's `costTotal` and the project's `serviceCostTotal` /
-`labourCostTotal` / `margin` (`SERVICE_CREW_COST_FIELDS` / `PROJECT_CREW_COST_FIELDS`
-in `convex/lib/crewPayFields.ts`, `crewPayRedactor`) on `projects.*`,
-`projectServices.*`, snapshot entries (`projectLocksRead`, which also always strips
-a crew call's `responseToken`), `getProject(s)` / `getTemplates` /
-`getProjectServices(Summary)` — a crew-cost column is not a sort key there either —
-and `projectCosts.operationalCosts` returns its all-zero EMPTY shape (a stable
-contract). Every UI then renders no margin and no cost. The activity log still
-WRITES pay in its field diffs (the audit needs them) but every read
-(`activityLog.{list,listByEntity,recentForProject,exportRows}`, and the CSV action
-for its real caller) drops those change rows below the line (`redactActivityPay`,
-`convex/lib/activityPay.ts`, the same field lists). A helper that
-returns a full assignment row with no authz of its own is a plain module, never a
+`rateOverride` / `resolvedRate` and the service's own `costTotal`, so Logistics
+renders no row cost/margin cell) and the timeline PDF route (`?showCost` prints
+service costs only with pay).
+
+**Two money lines, never one** (owner ruling 2026-11-24, "anyone with invoice read"):
+- **Individual pay** — a person's or role's rate, a call's cost, a service's own
+  crew-rolled `costTotal` (`MEMBER_RATE_FIELDS` / `ROLE_RATE_FIELDS` /
+  `SERVICE_CREW_COST_FIELDS`, `convex/lib/crewPayFields.ts`) — needs the PAY line
+  above (`canSeeCrewPay` / `callerSeesCrewPay` / `crewPayRedactor`).
+- **Job cost** — the project's `serviceCostTotal` / `labourCostTotal` / `margin`
+  (`JOB_COST_FIELDS`), the services summary's cost total, `projectCosts.operationalCosts`
+  and `crewAssignments.projectLabourCost` (the same number as `labourCostTotal`) —
+  needs `invoice:read` and not a `noFinancials` key: ONE rule, `jobCostVisible`
+  (`crewPayRule.ts`, next to `crewPayVisible`), decided by `canSeeJobCost` /
+  `jobCostRedactor` in Convex (via `callerMayRead`, so a key's scope counts) and
+  `callerSeesJobCost` / `withoutJobCost` / `jobCostSortAllowed` in server actions.
+  Never inline an `invoice:read` check. Every built-in role holds `invoice:read`
+  (warehouse and viewer included), so in practice only a key without the invoice
+  scope and a `noFinancials` key lose it. Sites: `projects.*`, `projectDetail.bundle`
+  (job page, MCP `get_project`, Mira), `warehouseDetail.bundle`, the project entry
+  of snapshot reads (`projectLocksRead`, which also always strips a crew call's
+  `responseToken`), `getProject(s)` / `getTemplates` / `getProjectServicesSummary`.
+
+Both are ABSENT (never zeroed) for a caller who fails them, so nothing can be
+back-solved; a hidden field is not a sort key either; a whole-payload read returns
+its all-zero shape (`operationalCosts`' EMPTY, a stable contract). The UI renders
+what the server sent: Finance's margin + Costs and the quote revision viewer's
+Margin by presence (`null` counts as absent — `mapProject` maps absent to `null`),
+Logistics' `Show cost` by `logisticsCostView` (footer = job cost, row cells = pay).
+The activity log still WRITES money in its field diffs (the audit needs them) but
+every read (`activityLog.{list,listByEntity,recentForProject,exportRows}`, and the
+CSV action for its real caller) drops each change row by its line
+(`activityMoneyRedactor`, `convex/lib/activityPay.ts`). A helper that returns a
+full assignment row with no authz of its own is a plain module, never a
 `"use server"` export (`src/lib/crew-assignment-email-data.ts`). Writes follow the
-same line: below it a service save keeps each call's stored rate inputs
-(`crewRateInputs` in `convex/projectServicesWrites.ts`). Never write a second "who sees pay" check; add a new pay-bearing read to
-that list, and don't hide a column client-side. A crew member's `icalToken` (the
+pay line: below it a service save keeps each call's stored rate inputs
+(`crewRateInputs` in `convex/projectServicesWrites.ts`) and the service's stored
+`costTotal`, and a create ignores a supplied one. Never write a third "who sees
+money" check; add a new money-bearing read to the right list, and don't hide a
+column client-side. A crew member's `icalToken` (the
 public calendar feed's bearer secret) leaves Convex only through `memberRowRedactor`
 (`convex/lib/crewMemberRedaction.ts`): to the member themself or `crew:update`, on a
 user session, never an API key; never return it from a service-token server action

@@ -175,11 +175,18 @@ quote. A read whose entire payload is financial returns an all-zero shape rather
 than a partial redaction. If figures come back as zeros across the board,
 suspect the flag before you suspect the data.
 
-Crew pay is manager-only. Below manager (or on a no-financials key), crew
-rates, crew call costs and every total that includes crew cost — a service's
-cost, a job's service and labour cost, and its margin — are simply absent, and
-the job's operational P&L comes back all zeros. Absent is not $0: say "not
-visible to this role", never "this job made no margin".
+Two lines decide who sees what:
+
+- **A job's cost and margin** — its service cost, labour cost, margin and
+  operational P&L — are for anyone who can read invoices (every built-in role
+  can) on a key without the no-financials flag.
+- **Individual pay** — crew rates, crew call costs, and a single service's own
+  cost (it rolls up that service's crew pay) — is manager-only, and never on a
+  no-financials key.
+
+Past either line the figures are simply absent (and the P&L comes back all
+zeros). Absent is not $0: say "not visible to this role", never "this job made
+no margin".
 
 ## The Xero boundary
 

@@ -173,7 +173,7 @@ decide whether a client has paid.
 | Assignments on a job | `crewAssignments.listByProject` / `.projectCrew` | read | `crew:read` | `projectId` |
 | Who is free for a job | `crewAssignments.membersForAssignment` | read | `crew:read` | `projectId`, `rangeStartMs?`, `rangeEndMs?`, `search?` |
 | Clashes for a job | `crewAssignments.conflictsForProject` | read | `crew:read` | `projectId`, `rangeStartMs`, `rangeEndMs` |
-| Labour cost (redacted under `noFinancials`) | `crewAssignments.projectLabourCost` | read | `crew:read` | `projectId` |
+| Labour cost (all zeros under `noFinancials` or without `invoice:read`) | `crewAssignments.projectLabourCost` | read | `crew:read` | `projectId` |
 | Assign (curated `assign_crew`) | `crewAssignmentsWrites.createNative` | M | `crew:create` | `projectId`, `crewMemberId`, `startDate?`, `endDate?`, `startTime?`, `endTime?`, `crewRoleId?`, `phase?`, `status?`, `rateOverride?`, `isProjectManager?` |
 | Edit / change status | `crewAssignmentsWrites.updateNative` / `.updateStatusNative` | M | `crew:update` | `id`, … / `id`, `status` |
 | Bulk status | `crewAssignmentsWrites.bulkStatusNative` | M | `crew:update` | `ids[]`, `status` |

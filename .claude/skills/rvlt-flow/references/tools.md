@@ -42,7 +42,7 @@ surface as `rvlt_flow_v1_<name>`.
 | `list_crew` | Every crew member: name, role, contact, active | |
 | `get_warehouse_status` | Org-wide: what's out, due back, overdue | |
 | `list_overbookings` | Every conflict in a date range | Same data as the Overbooking Board |
-| `get_project_financials` | Cost and margin for one job | Redacted entirely under a no-financials key |
+| `get_project_financials` | Cost and margin for one job | All zeros under a no-financials key or without invoice read |
 | `get_project_document` | A short-lived download URL for one of the 5 PDFs | See below |
 
 `get_project_document` takes a `docType` of `packing-list`, `return-sheet`,

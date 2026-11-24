@@ -79,12 +79,21 @@ A key flagged `noFinancials` has cost/margin fields redacted on every read
 (model purchase/replacement cost, crew rates, `get_project_financials`
 returns all zeros). Sell rates stay visible — you need them to quote.
 
-Crew pay follows a stricter rule: crew rates, crew call costs, and any total
-that includes crew cost (a service's `costTotal`, a project's
-`serviceCostTotal` / `labourCostTotal` / `margin`) are returned only when the
-acting user is a manager or above AND the key is not `noFinancials`. Otherwise
-those fields are ABSENT from the row (not zero), and `get_project_financials`
-returns all zeros.
+Two lines decide the rest of the money:
+
+- **Job cost** — a project's `serviceCostTotal` / `labourCostTotal` / `margin`
+  (on `get_project`, `list_projects` and every other project read),
+  `get_project_financials`, a services summary's cost total and a project's
+  labour-cost total — needs the `invoice:read` scope AND a key that is not
+  `noFinancials`. Every built-in role holds `invoice:read`, so in practice the
+  key's own scope and flag decide.
+- **Individual pay** — crew rates, crew call costs and a single service's own
+  `costTotal` (it rolls up that service's crew pay) — is stricter: the acting
+  user must be a manager or above AND the key not `noFinancials`.
+
+A caller who fails a line gets those fields ABSENT from the row (not zero), and
+can't sort by them; `get_project_financials` and the labour-cost total return
+all zeros.
 
 Org is never an argument. `orgId`/`organizationId` are overwritten from the
 key on every call; `NOT_FOUND` for a valid-looking id means it belongs to
@@ -231,7 +240,7 @@ compatibility promise. Prefer them.
 | `get_warehouse_status` | `warehouseList.bundle` | read | `warehouse:read` | none — out, due back, overdue |
 | `create_maintenance` | `maintenanceWrites.createNative` | medium | `maintenance:create` | `recordId` (you mint it, e.g. `MAINT-2026-0142`), `title`, `type` (REPAIR\|PREVENTATIVE\|TEST_AND_TAG\|INSPECTION\|CLEANING\|FIRMWARE_UPDATE), `assetLinks[]` |
 | `list_overbookings` | `overbookingBoard.bundle` | read | `project:read` | `rangeStart`, `rangeEnd` |
-| `get_project_financials` | `projectCosts.operationalCosts` | read | `project:read` | `projectId` — all zeros under `noFinancials` |
+| `get_project_financials` | `projectCosts.operationalCosts` | read | `project:read` | `projectId` — all zeros under `noFinancials` or without `invoice:read` |
 | `get_project_document` | — | read | `project:read` / `invoice:read` | `projectId`, `docType` |
 
 Plus three discovery tools: `list_operations` (`resource?`, `kind?`, `cursor?`,

@@ -181,12 +181,14 @@ typed price).
 revenue). `crewChargeTotal` is the per-service, pre-discount input that feeds
 `lineTotal`; conflating the two names would have been an R-3.10 violation.
 
-**Visibility:** cost (`defaultRate`, `costTotal`) and margin (charge - cost) are
-manager+ only (`useIsManagerPlus()`, `src/lib/use-permissions.ts`); the charge
-rate/total (`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role
-(members see the client-facing price, not the internal cost or margin). The
-roles admin table (below) is the one place BOTH rate columns are manager+-gated —
-server-enforced via `crewRoles.ts` `listForSettings`.
+**Visibility:** two lines, both server-enforced (see "Two money lines" below).
+A role's rates and a service's own cost (`defaultRate`, `costTotal`) and the
+row's margin are individual pay: manager+ and not a `noFinancials` key. The
+JOB's cost and margin (the project's totals) need `invoice:read` and not a
+`noFinancials` key (owner ruling 2026-11-24). The charge rate/total
+(`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role. The
+roles admin table (below) is the one place BOTH rate columns are pay-gated —
+`crewRoles.ts` `listForSettings`.
 
 ## Service ↔ Crew Cost Linkage (issue #796)
 A `CrewAssignment` with a `serviceId` is "owned" by that `ProjectService`: its
@@ -849,45 +851,62 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   the same `crewPayVisible`; an API-key actor is noFinancials):
   `exportTimesheetCSV`, `getProjectServices` (`redactServiceCrewPay`: each call's
   `estimatedCost`, `rateOverride` and `resolvedRate` are ABSENT, and the Logistics
-  crew row — service child and People view — then has no cost cell) and
-  `getAssignmentIcsData` (crew:read, never `responseToken`). Below the pay line a
+  crew row — service child and People view — then has no cost cell).
+  (`getAssignmentIcsData` had no callers and is deleted.) Below the pay line a
   service save keeps each call's stored `rateOverride`/`rateType`
   (`crewRateInputs`). `buildAssignmentEmailData` (the full row, token and pay)
   moved out of the `"use server"` file to `src/lib/crew-assignment-email-data.ts`:
   as an exported action it was callable from any session with no authz.
-- **Totals that include crew cost are pay too (ruling).** A service's `costTotal`
-  rolls up its crew's pay, and the project's `serviceCostTotal`,
-  `labourCostTotal` and `margin` include (or back-solve) it. Below the pay line
-  each is ABSENT, never reduced — `SERVICE_CREW_COST_FIELDS` /
-  `PROJECT_CREW_COST_FIELDS` (`convex/lib/crewPayFields.ts`) through
-  `crewPayRedactor` (`convex/lib/crewPayVisibility.ts`):
-  - Convex: `projects.{list,getById,listPage,listBoard,listByIds,getByOrgAndNumber}`
-    (and `listPage` won't sort on one), `projectServices.{list,getById,listByProject}`,
-    `projectLocksRead.{snapshotEntries,currentEntries}` (project and service
-    entries; a crew call entry also loses its cost, and ALWAYS its
-    `responseToken`), and `projectCosts.operationalCosts`, which returns its
-    all-zero EMPTY shape (its fields are a stable MCP contract).
-  - Server actions (`callerSeesCrewPay`): `getProject`, `getProjects` (no sort on
-    one either), `getTemplates`, `getProjectServices` (each service's `costTotal`)
-    and `getProjectServicesSummary` (`costTotal`, `totalCost` and `internalTotal`
-    absent; `chargeTotal`, `onDocumentsTotal` and `serviceCount` stay).
-  - UI: the Finance tab's summary shows no margin and no Costs section, the
-    Operational P&L panel hides (EMPTY has no total), Logistics shows no service
-    cost or margin cell and no footer Cost/Margin, and the quote revision viewer
-    drops its Margin cell. Below the line the form never shows Cost, so a
-    service create can't set `costTotal` and a save keeps the stored one (the
+- **Two money lines (owner ruling 2026-11-24, "anyone with invoice read").**
+  Each is ABSENT, never reduced, for a caller who fails it, so nothing can be
+  back-solved; a hidden field is never a sort key.
+  - **Individual pay** (the pay line above): rates, a call's cost, and a
+    service's own `costTotal`, which rolls up its crew's pay
+    (`SERVICE_CREW_COST_FIELDS`, `crewPayRedactor`): `projectServices.{list,getById,listByProject}`,
+    the service and crew-call entries of `projectLocksRead.{snapshotEntries,currentEntries}`
+    (a crew call entry ALWAYS loses its `responseToken`), `getProjectServices`,
+    and the timeline PDF's `?showCost` (`/api/documents/timeline/[projectId]`
+    needs `project:read`; costs print only with pay). Logistics renders no row
+    cost/margin cell without it. Below the line the form never shows Cost, so a
+    service create ignores `costTotal` and a save keeps the stored one (the
     pricing lock's own $0 default still applies).
-  Tests: `convex/crewCostTotals.test.ts`, `src/server/__tests__/project-services-pay.test.ts`,
-  the FinancialSummary smoke and `service-rows.test.ts`.
-- **Pay in the activity log.** A crew member edit logs its field diff, rates
+  - **Job cost**: the project's `serviceCostTotal`, `labourCostTotal` and
+    `margin` (`JOB_COST_FIELDS`, `convex/lib/crewPayFields.ts`) need
+    `invoice:read` and not a `noFinancials` key — ONE rule, `jobCostVisible`
+    (`convex/lib/crewPayRule.ts`), decided by `canSeeJobCost` / `jobCostRedactor`
+    (Convex, via `callerMayRead`, so an agent key's scope counts) and
+    `callerSeesJobCost` / `withoutJobCost` / `jobCostSortAllowed` (server
+    actions). Every built-in role holds `invoice:read`, so in practice only a
+    key without the invoice scope and a `noFinancials` key lose it.
+    - Convex: `projects.{list,getById,listPage,listBoard,listByIds,getByOrgAndNumber}`
+      (`listPage` won't sort on one without it), `projectDetail.bundle` (the job
+      page, MCP `get_project`, Mira), `warehouseDetail.bundle`, the project entry
+      of the snapshot reads, and the two whole-payload reads that return their
+      all-zero shape without it: `projectCosts.operationalCosts` (EMPTY, a stable
+      MCP contract) and `crewAssignments.projectLabourCost` (the same number as
+      `labourCostTotal`).
+    - Server actions: `getProject`, `getProjects` (no sort on one either),
+      `getTemplates`, and `getProjectServicesSummary` (`costTotal`, `totalCost`
+      and `internalTotal`; `chargeTotal`, `onDocumentsTotal` and `serviceCount`
+      always stay).
+    - UI, by what the server sent: the Finance tab's margin and Costs section
+      (absent and `null` are the same — `mapProject` maps absent to `null`), the
+      Operational P&L panel (hidden on EMPTY), the quote revision viewer's Margin
+      cell, and Logistics' footer Cost/Margin (`logisticsCostView`: `Show cost`
+      is offered when the summary carries the total or a row carries its own
+      cost; the footer shows only the former, row cells only the latter).
+  Tests: `convex/crewCostTotals.test.ts` (both lines on every read; mutants of
+  the rule fail it), `convex/jobCostBundles.test.ts`,
+  `src/lib/crew-pay-caller.test.ts`, `src/server/__tests__/projects-crew-cost.test.ts`,
+  `src/server/__tests__/project-services-pay.test.ts`, the FinancialSummary smoke
+  and `service-rows.test.ts`.
+- **Money in the activity log.** A crew member edit logs its field diff, rates
   included (`crewWrites.updateNative`'s `details.changes`) — the audit keeps
-  them. Reads redact: `activityLog.{list,listByEntity,recentForProject,exportRows}`
-  drop a change row for any field on the pay lists (`redactActivityPay`,
-  `convex/lib/activityPay.ts`) for a caller below the pay line, and the CSV
-  action (`exportActivityLogCSV`, service identity) does the same for its real
-  caller. The only write that logs a pay field today is that one; the timeline
-  PDF (`/api/documents/timeline/[projectId]`) needs `project:read` and prints
-  costs only with crew pay.
+  them. Reads redact each change row by its line (`activityMoneyRedactor`,
+  `convex/lib/activityPay.ts`): pay fields below the pay line, job-cost fields
+  without job cost, in `activityLog.{list,listByEntity,recentForProject,exportRows}`
+  and in the CSV action (`exportActivityLogCSV`, service identity) for its real
+  caller. The only write that logs a money field today is that one.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

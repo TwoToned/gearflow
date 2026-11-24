@@ -401,6 +401,10 @@ describe("ScanPage — Check mode", () => {
     expect(screen.getByText("Aura Wash")).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
     expect(saveButton()).toHaveProperty("disabled", false); // answers kept
+    // Still on that asset: a plain error, never the lost-save toast or its Retry.
+    expect(h.toasts.map((t) => t.title)).toContain("Couldn't save the check");
+    expect(h.toasts.find((t) => /wasn't saved/.test(t.title))).toBeUndefined();
+    expect(h.toasts.some((t) => t.action?.label === "Retry")).toBe(false);
   });
 
   it("a scan over unsaved answers asks to discard; Keep keeps them, Discard loads the new tag", async () => {

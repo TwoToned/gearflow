@@ -215,6 +215,19 @@ describe("ScanPage — Test & tag mode", () => {
     expect(screen.getByText("Finish the visual inspection (1 left)")).toBeTruthy();
   });
 
+  it("a test save that fails while still on the item shows a plain error, with no lost-save Retry", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    h.record.mockRejectedValueOnce(new Error("Network down"));
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(saveButton());
+    expect(replace).not.toHaveBeenCalled();
+    expect(saveButton()).toHaveProperty("disabled", false); // answers kept on screen
+    expect(h.toasts.map((t) => t.title)).toContain("Couldn't save the test");
+    expect(h.toasts.find((t) => /wasn't saved/.test(t.title))).toBeUndefined();
+    expect(h.toasts.some((t) => t.action?.label === "Retry")).toBe(false);
+  });
+
   it("a test save that fails after a mid-save scan names the item and offers Retry with the same answers", async () => {
     h.testCards["TT-0413"] = card("TT-0413", { tt: tt({ id: "tt2", testTagId: "TT-0413", description: "Drill" }) });
     setUrl("/scan?mode=tt&tag=TT-0412");

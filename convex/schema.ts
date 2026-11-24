@@ -583,6 +583,10 @@ export default defineSchema({
     // than migrating/dropping, to avoid a churny schema edit for an inert field.
     salePrice: v.optional(v.number()),
     saleStockQuantity: v.optional(v.number()),
+    // UX Phase 14 (D41, owner-approved 2026-11-24) — re-order point for the
+    // new-stock sale pool. Whole units >= 0. Absent = no reorder level set (never
+    // read as 0). `Reserved`/`On hand` are DERIVED (convex/lib/saleStockFacts.ts).
+    reorderLevel: v.optional(v.number()),
     weight: v.optional(v.number()),
     powerDraw: v.optional(v.number()),
     requiresTestAndTag: v.optional(v.boolean()),

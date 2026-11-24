@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { getFunctionName } from "convex/server";
@@ -418,6 +418,54 @@ describe("ScanPage — Check mode", () => {
 });
 
 describe("ScanPage — overlays open", () => {
+  // Radix Select needs pointer-capture / scrollIntoView shims in jsdom.
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  it("a SELECT-type check item opens its options; a fail option fails the item and asks for a reason", async () => {
+    h.items = [
+      item("power", "Power on"),
+      {
+        id: "a-lens", sortOrder: 1,
+        checkItem: {
+          id: "lens", label: "Lens", description: null, type: "DROPDOWN", category: null, measurementUnit: null, measurementMin: null, measurementMax: null,
+          dropdownOptions: [{ label: "Clean", isFail: false }, { label: "Cracked", isFail: true }],
+        },
+      },
+    ];
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    const lens = screen.getByText("Lens").closest("[data-check-item]") as HTMLElement;
+    await userEvent.click(within(lens).getByRole("combobox"));
+    const listbox = await screen.findByRole("listbox");
+    expect(within(listbox).getByRole("option", { name: /Clean/ })).toBeTruthy();
+    await userEvent.click(within(listbox).getByRole("option", { name: /Cracked/ }));
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(within(lens).getByRole("combobox").textContent).toContain("Cracked");
+    expect(within(lens).getByPlaceholderText("Describe the failure...")).toBeTruthy();
+  });
+
+  it("Discard over a mode change: Esc keeps the answers and the mode; Discard then switches", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    const words = screen.getByRole("toolbar", { name: "Scan mode" });
+    await userEvent.click(within(words).getByRole("button", { name: /Test & tag/ }));
+    await screen.findByRole("dialog", { name: "Discard this check?" });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Discard this check?" })).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+    expect(saveButton()).toHaveProperty("disabled", false); // answers kept, still Check mode
+    await userEvent.click(within(words).getByRole("button", { name: /Test & tag/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Discard this check?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt&tag=AURA-01", { scroll: false });
+  });
+
   it("page ⋯, card ⋯, Last scans row ⋯ and the save caret all open", async () => {
     setUrl("/scan?mode=check&tag=ZZ-9");
     const { unmount } = render(<ScanPage />);

@@ -242,8 +242,12 @@ function PlannerBody(p: BodyProps) {
     menuFor: callMenu,
   };
   const sel = needs ? opens : calls;
-  const liveCount = liveTickCount(needs, sel.ids, all, shown.open);
-  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear, days: p.days });
+  // A tick counts — and a bulk verb acts on it — only while its call is still
+  // live AND selectable: one dimmed after it was ticked (a filter or segment
+  // changed) drops out of the count and the action alike.
+  const selectable = new Set(order);
+  const liveCount = liveTickCount(needs, sel.ids, selectable, shown.open);
+  const bulk = useBulk({ all, open: shown.open, calls: calls.ids, selectable, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear, days: p.days });
   const openOrder = shown.open.map((o) => o.serviceId);
   const onOpenOpen = (o: OpenCall, day?: string) => p.perms.create && offerTo(o, day);
   const views = {
@@ -295,11 +299,13 @@ function selectableOrder(members: PlannerMember[], days: string[], filters: Plan
   return gridOrder(members, days).filter((id) => !isDimmed(byId.get(id)!, filters, userId));
 }
 
-/** Ticks that still exist in the live data (a call cancelled or removed elsewhere drops out of the count). */
-function liveTickCount(needs: boolean, ids: ReadonlySet<string>, all: PlannerMember[], open: OpenCall[]): number {
+/**
+ * Ticks still selectable now: in the live data (a call cancelled elsewhere drops
+ * out) and not dimmed (`selectable` is the grid's selectable reading order).
+ */
+function liveTickCount(needs: boolean, ids: ReadonlySet<string>, selectable: ReadonlySet<string>, open: OpenCall[]): number {
   if (needs) return open.filter((o) => ids.has(o.serviceId)).length;
-  const live = new Set(all.flatMap((m) => m.assignments.map((c) => c.id)));
-  return [...ids].filter((id) => live.has(id)).length;
+  return [...ids].filter((id) => selectable.has(id)).length;
 }
 
 /** Which body the planner shows: loading, the phone day list, Needs crew, the grid, or the grid's empty state. */
@@ -313,14 +319,15 @@ function viewKind(loading: boolean, phone: boolean, needs: boolean, noPeople: bo
 const hasFilters = (url: PlannerUrl) => Object.keys(url.state.filters).length > 0 || !!url.state.q.trim();
 
 function useBulk(a: {
-  all: PlannerMember[]; open: OpenCall[]; calls: ReadonlySet<string>; opens: ReadonlySet<string>; needs: boolean; perms: Perms;
+  all: PlannerMember[]; open: OpenCall[]; calls: ReadonlySet<string>; selectable: ReadonlySet<string>; opens: ReadonlySet<string>; needs: boolean; perms: Perms;
   w: ReturnType<typeof usePlannerWrites>; clear: () => void; days: readonly string[];
 }): BulkAction[] {
   const statusById = new Map<string, string | null | undefined>();
   const jobById = new Map<string, string | undefined>();
   for (const m of a.all) for (const c of m.assignments) { statusById.set(c.id, c.status); jobById.set(c.id, c.project?.projectNumber); }
-  // Only ids still in the live data count: a call cancelled elsewhere drops out of every count.
-  const ticked = a.needs ? [] : [...a.calls].filter((id) => statusById.has(id));
+  // Only ticks still live AND selectable count — and only they are acted on: a call
+  // cancelled elsewhere, or dimmed after it was ticked, drops out of every count and verb.
+  const ticked = a.needs ? [] : [...a.calls].filter((id) => statusById.has(id) && a.selectable.has(id));
   const pick = (ok: (s: string | null | undefined) => boolean) => ticked.filter((id) => ok(statusById.get(id)));
   const plan = planSuggestedOffers(a.needs ? a.open.filter((o) => a.opens.has(o.serviceId)) : [], a.all, a.days);
   const after = (f: () => Promise<void>) => async () => {

@@ -551,9 +551,11 @@ legend are gone (every block prints its own word).
   offered from this week books Thu–Sun; S2). Select-all and shift ranges
   skip calls **dimmed** by the Job filter or the Unconfirmed / Mine segment; a
   confirm that reaches more than one job names them (`Jobs: #2341, #2350.`); a
-  tick whose call left the live data drops out of every count. Crew mail goes
-  out in batches of `MAX_CREW_MAIL_BATCH` (100, the action's own cap), so a
-  500-call bulk write emails everyone.
+  tick whose call left the live data, or was dimmed after it was ticked, drops
+  out of every count AND every verb. Crew mail goes out in batches of
+  `MAX_CREW_MAIL_BATCH` (100, the action's own cap; ids deduped first), so a
+  500-call bulk write emails everyone; if a later batch fails, the toast says
+  `n sent, m not sent` with Retry for exactly the unsent rest.
 - **Which verb a call offers** comes from ONE table,
   `convex/lib/crewCallTransitions.ts` (`canCrewCall`), read by the server gates
   (`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the menus.

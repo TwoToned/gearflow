@@ -410,6 +410,23 @@ describe("CrewPlanner (smoke)", () => {
     expect(screen.getByRole("region", { name: "Wed, 18 Nov" }).textContent).toContain("needs 2");
   });
 
+  it("a call dimmed AFTER it was ticked drops out of the bulk count and the action", async () => {
+    const agm = { id: "p2", name: "AGM", projectNumber: "#2350", status: "CONFIRMED", projectManagerId: "you" };
+    queried.members = [{ ...members[0], assignments: [...members[0].assignments, call("x1", "2026-11-20", "PENDING", { project: agm })] }, members[1]];
+    const user = userEvent.setup();
+    const { rerender } = render(<CrewPlanner />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+    expect(screen.getByText("4 calls selected")).toBeTruthy();
+    // The Job filter now dims #2350's block: its tick no longer counts or acts.
+    nav.search = "job=p1";
+    rerender(<CrewPlanner />);
+    const bar = screen.getByRole("toolbar", { name: "Bulk actions" });
+    expect(within(bar).getByText("3 calls selected")).toBeTruthy();
+    await user.click(within(bar).getByRole("button", { name: "Cancel 3" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel 3 calls" }));
+    await waitFor(() => expect(asg.cancelMany).toHaveBeenCalledWith(["a1", "a2", "a3"]));
+  });
+
   it("select-all skips calls dimmed by the Job filter; a bulk confirm over two jobs names them", async () => {
     const agm = { id: "p2", name: "AGM", projectNumber: "#2350", status: "CONFIRMED", projectManagerId: "you" };
     const withTwoJobs = [{ ...members[0], assignments: [...members[0].assignments, call("x1", "2026-11-20", "PENDING", { project: agm })] }, members[1]];

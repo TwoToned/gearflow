@@ -183,6 +183,23 @@ describe("⌘K palette (smoke)", () => {
     await waitFor(() => expect(m.search).toHaveBeenCalledWith("14/11"));
   });
 
+  it("a date's search hits RENDER next to its day rows: day jobs first, then the search groups", async () => {
+    const user = userEvent.setup();
+    m.search.mockImplementation(async (q: string) =>
+      q === "14/11"
+        ? { results: [res("asset", "c1411", "CASE-14/11 — Road case", { href: "/assets/registry/c1411" })], groups: [{ type: "asset", total: 1, truncated: false }] }
+        : { results: [], groups: [] },
+    );
+    render(<CommandSearch />);
+    openPalette();
+    await user.type(box(), "14/11");
+    const assets = await screen.findByRole("group", { name: "Assets" }, { timeout: 2000 });
+    expect(within(assets).getByRole("option").textContent).toContain("CASE-14/11");
+    const groups = screen.getAllByRole("group").map((g) => g.getAttribute("aria-label"));
+    expect(groups.indexOf("Jobs on 14 Nov · 7")).toBeGreaterThanOrEqual(0);
+    expect(groups.indexOf("Jobs on 14 Nov · 7")).toBeLessThan(groups.indexOf("Assets"));
+  });
+
   it("a decimal or a fraction is a search, not a date: `1/4 inch jack` lists its search hits and no day", async () => {
     const user = userEvent.setup();
     m.search.mockImplementation(async (q: string) =>

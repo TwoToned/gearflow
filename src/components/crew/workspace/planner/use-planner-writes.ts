@@ -88,7 +88,11 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
   const asg = useCrewAssignmentWrites();
 
   /** A PENDING call on the open call's service, for this person (the whole run unless a day is picked). */
-  async function createCall(open: OpenCall, memberId: string, f: { crewRoleId: string; startTime: string; endTime: string; day?: string; span?: "day" | "run" }): Promise<string> {
+  async function createCall(
+    open: OpenCall,
+    memberId: string,
+    f: { crewRoleId: string; startTime: string; endTime: string; day?: string; span?: "day" | "run"; dates?: { startDate: string; endDate: string } },
+  ): Promise<string> {
     const { id } = await asg.create(open.projectId, {
       crewMemberId: memberId,
       crewRoleId: f.crewRoleId,
@@ -97,7 +101,7 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
       phase: open.phase as "EVENT",
       isProjectManager: false,
       generateShifts: false,
-      ...callDates(open, f.day && f.span ? { day: f.day, span: f.span } : undefined),
+      ...(f.dates ?? callDates(open, f.day && f.span ? { day: f.day, span: f.span } : undefined)),
       startTime: f.startTime,
       endTime: f.endTime,
     });
@@ -170,7 +174,9 @@ export function usePlannerWrites(ctx: PlannerWriteCtx) {
     const failed: string[] = [];
     for (const o of plan.offers) {
       try {
-        ids.push(await createCall(o.open, o.member.id, { crewRoleId: o.open.crewRoleId ?? "", startTime: o.open.startTime ?? "", endTime: o.open.endTime ?? "" }));
+        // Exactly the days the suggestion checked (S2), never the rest of the run.
+        const dates = { startDate: o.startDate, endDate: o.endDate };
+        ids.push(await createCall(o.open, o.member.id, { crewRoleId: o.open.crewRoleId ?? "", startTime: o.open.startTime ?? "", endTime: o.open.endTime ?? "", dates }));
       } catch (e) {
         failed.push(`${o.member.firstName} ${o.member.lastName}: ${(e as Error).message}`);
       }

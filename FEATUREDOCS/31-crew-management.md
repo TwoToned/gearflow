@@ -522,9 +522,9 @@ legend are gone (every block prints its own word).
   reads as Free; the old `TENTATIVE`/`ASSIGNED`/… values map too; the epoch-ms
   week is read as the viewer's LOCAL day, the way it was written).
 - **Needs crew** replaces the grid with the open calls by day (a multi-day run
-  once, under its first day in the week): job · call · times · `needs n` · up to
-  three people with that role free on EVERY day of the week the run covers
-  (preferred first). A row opens Offer a call with the first suggestion picked;
+  once, under its first short day in the week): job · call · times · `needs n` ·
+  up to three people with that role free on EVERY day Offer to suggested would
+  book (preferred first). A row opens Offer a call with the first suggestion picked;
   row ⋯ = Offer to…, Offer to suggested, Open job. When `openCalls` stopped at
   its cap (`truncated`), the list says `n+ open slots` and asks for a filter.
 - **Offer a call** (sheet): Person (each with their day state), Day, Job service
@@ -541,9 +541,12 @@ legend are gone (every block prints its own word).
   Undo `unconfirmManyNative(result)`), `Cancel n` (red, last, confirmed;
   `cancelManyNative` then `sendCancellationEmails(toTell)`; no Undo). Ticking
   open calls under Needs crew offers `Offer to suggested n`: free or preferred
-  people with the role on every day the run covers, up to each shortfall, one
-  person once per DAY across the batch (`planSuggestedOffers`; a run claims each
-  of its days), created then offered in one send. Select-all and shift ranges
+  people with the role on EVERY day the call will book, up to the worst gap
+  among them, one person once per DAY across the batch (`planSuggestedOffers`;
+  a call claims each day it books), created then offered in one send. The call
+  books `bookDays` — the run's first to last SHORT day inside the visible week —
+  so it never reaches a day the planner didn't check (a Thu → next-Tue run
+  offered from this week books Thu–Sun; S2). Select-all and shift ranges
   skip calls **dimmed** by the Job filter or the Unconfirmed / Mine segment; a
   confirm that reaches more than one job names them (`Jobs: #2341, #2350.`); a
   tick whose call left the live data drops out of every count. Crew mail goes

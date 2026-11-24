@@ -292,7 +292,8 @@ describe("CrewPlanner (smoke)", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Send 1 offer" }));
     await waitFor(() => expect(mail.sendCrewOffers).toHaveBeenCalledWith({ assignmentIds: ["newCall"] }));
-    expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ crewMemberId: "c2", serviceId: "svc1" }));
+    // S2: the call books exactly the day the suggestion was judged on.
+    expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ crewMemberId: "c2", serviceId: "svc1", startDate: "2026-11-18", endDate: "2026-11-18" }));
   });
 
   it("without crew:create / update: no primary, cells are not buttons, blocks have no verbs", () => {

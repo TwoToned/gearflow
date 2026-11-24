@@ -418,17 +418,34 @@ export function candidatesFor(o: OpenCall, members: PlannerMember[], days: reado
   return out.sort((a, b) => SUGGEST_RANK[a.day.kind]! - SUGGEST_RANK[b.day.kind]! || byLastName(a.member, b.member));
 }
 
+/**
+ * The days a suggested call BOOKS: from the run's first to its last short day
+ * in the visible window, as one contiguous span (a call is one date range).
+ * Everything a suggestion is judged on is in the window, where the planner
+ * holds each person's calls and availability, so a call never reaches a day
+ * nobody checked (review S2: a Thu–next-Tue run offered from this week books
+ * Thu–Sun, never next Monday).
+ */
+export function bookDays(o: OpenCall, window: readonly string[]): string[] {
+  const short = shortDaysIn(o, window);
+  if (short.length === 0) return [];
+  return window.filter((d) => d >= short[0] && d <= short[short.length - 1]);
+}
+
 export interface SuggestedOffer {
   open: OpenCall;
   member: PlannerMember;
+  /** The call's dates: exactly the days the suggestion was judged on (`bookDays`). */
+  startDate: string;
+  endDate: string;
 }
 
 /**
- * What `Offer to suggested n` would send: for each open call (its whole run),
- * up to its shortfall, the candidates free or preferred on every day of the
- * window it covers (never pencilled). One person is suggested once per DAY
- * across the batch — a multi-day run claims every day it covers — so two calls
- * on a shared day never go to the same person. `unfilled` names the calls left
+ * What `Offer to suggested n` would send: for each open call, the candidates
+ * free or preferred on EVERY day it will book (`bookDays`, never pencilled), up
+ * to the worst gap among those days. One person is suggested once per DAY
+ * across the batch — a call claims every day it books — so two calls on a
+ * shared day never go to the same person. `unfilled` names the calls left
  * with no one.
  */
 export function planSuggestedOffers(opens: OpenCall[], members: PlannerMember[], window: readonly string[]): { offers: SuggestedOffer[]; unfilled: OpenCall[] } {
@@ -436,16 +453,17 @@ export function planSuggestedOffers(opens: OpenCall[], members: PlannerMember[],
   const offers: SuggestedOffer[] = [];
   const unfilled: OpenCall[] = [];
   for (const open of opens) {
-    const days = daysCovered(open, window);
+    const days = bookDays(open, window);
+    const need = Math.max(0, ...days.map((d) => shortOn(open, d)));
     const free = (id: string) => days.every((d) => !used.has(`${id}:${d}`));
     const picks = candidatesFor(open, members, days)
       .filter((c) => c.day.kind !== "pencilled" && free(c.member.id))
-      .slice(0, Math.max(0, open.shortfall));
+      .slice(0, need);
     for (const p of picks) {
       for (const d of days) used.add(`${p.member.id}:${d}`);
-      offers.push({ open, member: p.member });
+      offers.push({ open, member: p.member, startDate: days[0], endDate: days[days.length - 1] });
     }
-    if (picks.length < open.shortfall) unfilled.push(open);
+    if (picks.length < need || days.length === 0) unfilled.push(open);
   }
   return { offers, unfilled };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  bookDays,
   callStatusWord,
   callsOn,
   candidatesFor,
@@ -232,6 +233,39 @@ describe("multi-day open calls (a Tue–Thu run)", () => {
     expect(planSuggestedOffers([run], [ana, ben], weekDays(WEEK)).offers.map((o) => o.member.id)).toEqual(["ben"]);
     // Offered for Tuesday alone, she can take it.
     expect(candidatesFor(run, [ana, ben], ["2026-11-17"]).map((c) => c.member.id)).toEqual(["ben", "ana"]);
+  });
+
+  it("S2: a Thu → next-Tue run offered from this week books Thu–Sun only, the days it checked", () => {
+    const long = open({ serviceId: "long", date: Date.parse(iso("2026-11-19")), endDate: Date.parse(iso("2026-11-24")), shortfall: 1 });
+    // Cara is booked NEXT Monday (outside this week, so the planner can't see it):
+    // the call she is offered must not reach that day.
+    const cara = member("cara", "Ng");
+    const plan = planSuggestedOffers([long], [cara], weekDays(WEEK));
+    expect(plan.offers).toHaveLength(1);
+    expect(plan.offers[0]).toMatchObject({ startDate: "2026-11-19", endDate: "2026-11-22" });
+    // Booked on Saturday (inside the week): she is not suggested at all.
+    const busy = member("dee", "Ox", { assignments: [call("z", "2026-11-21", "CONFIRMED", { serviceId: "other" })] });
+    expect(planSuggestedOffers([long], [busy], weekDays(WEEK)).offers).toEqual([]);
+  });
+
+  it("S2: a run short only on some days books from its first to its last short day, judged on each", () => {
+    const run2 = open({
+      serviceId: "run2", date: Date.parse(iso("2026-11-16")), endDate: Date.parse(iso("2026-11-20")), shortfall: 1,
+      shortDays: [{ day: Date.parse(iso("2026-11-18")), shortfall: 1 }, { day: Date.parse(iso("2026-11-19")), shortfall: 1 }],
+    });
+    expect(bookDays(run2, weekDays(WEEK))).toEqual(["2026-11-18", "2026-11-19"]);
+    // Unavailable Monday (a filled day it won't book): still suggested, for Wed–Thu.
+    const eve = member("eve", "Po", { availability: [{ id: "v", type: "UNAVAILABLE", startDate: iso("2026-11-16"), endDate: iso("2026-11-16") }] });
+    expect(planSuggestedOffers([run2], [eve], weekDays(WEEK)).offers[0]).toMatchObject({ startDate: "2026-11-18", endDate: "2026-11-19" });
+  });
+
+  it("the worst day decides: busy on ANY booked day sinks the candidate (best-day would let her through)", () => {
+    // Free Tue, booked Thu: her best day is free, her worst is booked.
+    const fay = member("fay", "Qu", { assignments: [call("w", "2026-11-19", "CONFIRMED", { serviceId: "other" })] });
+    expect(candidatesFor(run, [fay], daysCovered(run, weekDays(WEEK)))).toEqual([]);
+    // Preferred Tue, merely free Wed–Thu: ranked by the worse day (free), not "preferred".
+    const gus = member("gus", "Ra", { availability: [{ id: "v", type: "PREFERRED", startDate: iso("2026-11-17"), endDate: iso("2026-11-17") }] });
+    expect(candidatesFor(run, [gus], daysCovered(run, weekDays(WEEK)))[0].day.kind).toBe("free");
   });
 
   it("a run claims every day it covers: a Wednesday call can't go to the person the run took", () => {

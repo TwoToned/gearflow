@@ -16,7 +16,6 @@ import { useActiveOrganization, useSession } from "@/lib/auth-client";
 import {
   byLastName,
   candidatesFor,
-  daysCovered,
   localDayKey,
   isDimmed,
   memberMatches,
@@ -192,11 +191,14 @@ function usePlannerMenus(p: BodyProps, all: PlannerMember[], w: Writes) {
       },
     );
 
-  const offerTo = (o: OpenCall) =>
-    p.onOffer({ day: openDay(o, p.url.week), serviceId: o.serviceId, memberId: candidatesFor(o, all, daysCovered(o, p.days))[0]?.member.id });
-  const openMenu = (o: OpenCall): ActionMenuSpec =>
+  // Offer a call opens on `day` — the day being VIEWED (a phone day, a Needs crew
+  // section), else the run's first short day in the week — with the first person
+  // free that day picked (the sheet's span defaults to that day alone). S3.
+  const offerTo = (o: OpenCall, day: string = openDay(o, p.url.week)) =>
+    p.onOffer({ day, serviceId: o.serviceId, memberId: candidatesFor(o, all, [day])[0]?.member.id });
+  const openMenu = (o: OpenCall, day?: string): ActionMenuSpec =>
     buildOpenCallActions({
-      onOfferTo: when(p.perms.create, () => offerTo(o)),
+      onOfferTo: when(p.perms.create, () => offerTo(o, day)),
       onOfferSuggested: when(p.perms.create && p.perms.update, () => void w.offerSuggested(planSuggestedOffers([o], all, p.days))),
       suggestedCount: planSuggestedOffers([o], all, p.days).offers.length,
       onOpenJob: () => router.push(logisticsHref(o.projectId)),
@@ -243,7 +245,7 @@ function PlannerBody(p: BodyProps) {
   const liveCount = liveTickCount(needs, sel.ids, all, shown.open);
   const bulk = useBulk({ all, open: shown.open, calls: calls.ids, opens: opens.ids, needs, perms: p.perms, w, clear: sel.clear, days: p.days });
   const openOrder = shown.open.map((o) => o.serviceId);
-  const onOpenOpen = (o: OpenCall) => p.perms.create && offerTo(o);
+  const onOpenOpen = (o: OpenCall, day?: string) => p.perms.create && offerTo(o, day);
   const views = {
     phone: () => (
       <PhonePlanner

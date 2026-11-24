@@ -470,6 +470,25 @@ describe("CrewPlanner (smoke)", () => {
     expect(screen.getByRole("region", { name: "Needs crew" }).textContent).toContain("needs 1");
   });
 
+  it("S3: on a phone, an open run tapped on Thursday offers Thursday — not the run's first day", async () => {
+    const short = ["2026-11-17", "2026-11-18", "2026-11-19"].map((d) => ({ day: Date.parse(day(d)), shortfall: 1 }));
+    queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")), shortfall: 1, shortDays: short }];
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(within(screen.getByRole("tablist", { name: "Day" })).getByRole("tab", { name: /Thu 19/ }));
+    await user.click(within(screen.getByRole("region", { name: "Needs crew" })).getByText("#2341 Install"));
+    let sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Dev Patel · Thu, 19 Nov")).toBeTruthy();
+    expect(within(sheet).getByRole("combobox", { name: "Day" }).textContent).toMatch(/Thu, 19 Nov/);
+    await user.keyboard("{Escape}");
+    // The card's ⋯ › Offer to… offers the viewed day too.
+    await user.click(screen.getByRole("button", { name: "#2341 Install actions" }));
+    await user.click(await screen.findByRole("button", { name: /Offer to…/ }));
+    sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Dev Patel · Thu, 19 Nov")).toBeTruthy();
+  });
+
   it("Needs crew says `n+` when the server's read stopped at its cap (desktop and phone)", () => {
     queried.truncated = true;
     nav.search = "seg=needs";

@@ -48,9 +48,10 @@ export interface PhonePlannerProps {
   onToggle: (id: string) => void;
   onOpenCall: (call: PlannerCall, member: PlannerMember) => void;
   onOfferFree?: (member: PlannerMember, day: string) => void;
-  onOpenOpen: (o: OpenCall) => void;
+  /** Offer a call for this open call, on `day` — the day the card is listed under (S3). */
+  onOpenOpen: (o: OpenCall, day: string) => void;
   menuFor: (call: PlannerCall, member: PlannerMember) => ActionMenuSpec;
-  openMenuFor: (o: OpenCall) => ActionMenuSpec;
+  openMenuFor: (o: OpenCall, day: string) => ActionMenuSpec;
 }
 
 const label = (d: string) => formatWeekdayDayMonth(displayDate(d));
@@ -93,21 +94,25 @@ function Section({ title, count, children }: { title: string; count: number; chi
   );
 }
 
-/** An open call; under a day (`day`) it reads that day's own need, in the week strip its worst day's and its short days. */
-function OpenCard({ o, p, day }: { o: OpenCall; p: PhonePlannerProps; day?: string }) {
-  const need = day ? shortOn(o, day) : o.shortfall;
+/**
+ * An open call listed under `day`. In day mode (`dayMode`) it reads that day's
+ * own need; in the week strip its worst need and its short days. Either way a
+ * tap offers it on `day`, the day it is listed under — never the run's first day.
+ */
+function OpenCard({ o, p, day, dayMode }: { o: OpenCall; p: PhonePlannerProps; day: string; dayMode?: boolean }) {
+  const need = dayMode ? shortOn(o, day) : o.shortfall;
   return (
     <div className="flex min-h-16 items-center gap-3">
-      <button type="button" onClick={() => p.onOpenOpen(o)} className="flex min-h-16 min-w-0 flex-1 flex-col justify-center text-left">
+      <button type="button" onClick={() => p.onOpenOpen(o, day)} className="flex min-h-16 min-w-0 flex-1 flex-col justify-center text-left">
         <span className="truncate text-ui-text font-semibold text-ink">
           {o.projectNumber} {o.title}
         </span>
         <span className="truncate text-caption text-muted">
-          {[o.crewRoleName, callTimes(o), day ? "" : shortDaysText(o)].filter(Boolean).join(" · ")}
+          {[o.crewRoleName, callTimes(o), dayMode ? "" : shortDaysText(o)].filter(Boolean).join(" · ")}
         </span>
       </button>
       <StatusWord status={{ label: `needs ${need}`, intent: "error" }} className="text-caption" />
-      <ActionMenu spec={p.openMenuFor(o)} label={`${o.projectNumber} ${o.title} actions`} />
+      <ActionMenu spec={p.openMenuFor(o, day)} label={`${o.projectNumber} ${o.title} actions`} />
     </div>
   );
 }
@@ -166,7 +171,7 @@ function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
   return (
     <>
       <Section title="Needs crew" count={opens.length}>
-        {opens.map((o) => <OpenCard key={o.serviceId} o={o} p={p} day={day} />)}
+        {opens.map((o) => <OpenCard key={o.serviceId} o={o} p={p} day={day} dayMode />)}
       </Section>
       <Section title="Booked" count={booked.length}>
         {booked.map(({ m, c }) => <BookedCard key={c.id} m={m} c={c} p={p} />)}
@@ -200,7 +205,7 @@ export function PhonePlanner(p: PhonePlannerProps & { today: string }) {
         {p.truncated && <TruncatedNote open={p.open} />}
         {days.map((d) => (
           <Section key={d} title={label(d)} count={listedOn(d)}>
-            {p.open.filter((o) => openDay(o, p.week) === d).map((o) => <OpenCard key={o.serviceId} o={o} p={p} />)}
+            {p.open.filter((o) => openDay(o, p.week) === d).map((o) => <OpenCard key={o.serviceId} o={o} p={p} day={d} />)}
           </Section>
         ))}
       </div>

@@ -530,6 +530,22 @@ describe("CrewPlanner (smoke)", () => {
     await waitFor(() => expect(asg.create).toHaveBeenLastCalledWith("p1", expect.objectContaining({ startDate: "2026-11-17", endDate: "2026-11-19" })));
   });
 
+  it("S2 write path: Offer to suggested on a Thu → next-Tue run books exactly this week's short days", async () => {
+    const short = ["2026-11-19", "2026-11-20", "2026-11-21", "2026-11-22"].map((d) => ({ day: Date.parse(day(d)), shortfall: 1 }));
+    queried.open = [{ ...open[0], serviceId: "long", title: "Install", date: Date.parse(day("2026-11-19")), endDate: Date.parse(day("2026-11-24")), shortfall: 1, shortDays: short }];
+    const free = { id: "c9", firstName: "Ivy", lastName: "Ng", department: null, crewRole: { id: "r1", name: "Rigger" }, skillIds: [], assignments: [], availability: [] };
+    queried.members = [free];
+    nav.search = "seg=needs";
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    await user.click(within(screen.getByRole("table", { name: "Calls that need crew" })).getByRole("checkbox", { name: "Select #2341 Install" }));
+    await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Offer to suggested 1" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Send 1 offer" }));
+    await waitFor(() => expect(asg.create).toHaveBeenCalledTimes(1));
+    // Exactly Thu–Sun (what was judged), never the whole run into next week.
+    expect(asg.create).toHaveBeenCalledWith("p1", expect.objectContaining({ crewMemberId: "c9", serviceId: "long", startDate: "2026-11-19", endDate: "2026-11-22" }));
+  });
+
   it("B1: a run filled on Tue (a this-day-only call) is open only on Wed and Thu, and says so", async () => {
     const short = ["2026-11-18", "2026-11-19"].map((d) => ({ day: Date.parse(day(d)), shortfall: 1 }));
     queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")), shortfall: 1, shortDays: short }];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceTileCounts } from "./maintenanceOpen";
+import { isOpenMaintenance, isOverdueMaintenance, maintenanceTileCounts } from "./maintenanceOpen";
 
 const NOW = Date.UTC(2026, 10, 24);
 const DAY = 86_400_000;
@@ -17,6 +17,13 @@ describe("maintenanceTileCounts — the Maintenance page's four tiles", () => {
       { status: "CANCELLED", scheduledDate: NOW - DAY },
     ];
     expect(maintenanceTileCounts(rows, NOW, NOW - 10 * DAY)).toEqual({ open: 5, overdue: 2, inProgress: 1, completedSince: 1 });
+  });
+
+  it("an absent status is NOT open and never overdue (the server's status-index reads can't see it either)", () => {
+    expect(isOpenMaintenance(undefined)).toBe(false);
+    expect(isOpenMaintenance(null)).toBe(false);
+    expect(isOverdueMaintenance({ scheduledDate: NOW - DAY }, NOW)).toBe(false);
+    expect(maintenanceTileCounts([{ scheduledDate: NOW - DAY }, { status: null }], NOW, 0)).toEqual({ open: 0, overdue: 0, inProgress: 0, completedSince: 0 });
   });
 
   it("a date exactly now is not yet overdue", () => {

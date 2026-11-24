@@ -16,9 +16,13 @@ export const OPEN_MAINTENANCE_STATUSES = ["SCHEDULED", ...HOLDING_MAINTENANCE_ST
 
 export type OpenMaintenanceStatus = (typeof OPEN_MAINTENANCE_STATUSES)[number];
 
-/** An absent status reads as SCHEDULED (the Prisma default), as the writes treat it. */
+/**
+ * Open = one of the open statuses. An ABSENT status is NOT open: the server's
+ * index reads (`by_organizationId_status…` with `eq("status", s)`) can't see a row
+ * without one, so the page, this module and the server all leave it out.
+ */
 export function isOpenMaintenance(status: string | null | undefined): boolean {
-  return (OPEN_MAINTENANCE_STATUSES as readonly string[]).includes(status ?? "SCHEDULED");
+  return status != null && (OPEN_MAINTENANCE_STATUSES as readonly string[]).includes(status);
 }
 
 /**
@@ -32,7 +36,8 @@ export const OVERDUE_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as cons
 /** Overdue (above), with a scheduled date strictly before `now`. Undated work, or work with no status, is never overdue. */
 export function isOverdueMaintenance(r: { status?: string | null; scheduledDate?: number | null }, now: number): boolean {
   return (
-    (OVERDUE_MAINTENANCE_STATUSES as readonly string[]).includes(r.status ?? "SCHEDULED") &&
+    r.status != null &&
+    (OVERDUE_MAINTENANCE_STATUSES as readonly string[]).includes(r.status) &&
     typeof r.scheduledDate === "number" &&
     r.scheduledDate < now
   );

@@ -60,6 +60,8 @@ describe("navCounts.get — figures", () => {
       { id: "f", status: "QA" },
       { id: "g", status: "COMPLETED", scheduledDate: NOW - DAY },
       { id: "h", status: "CANCELLED" },
+      // No status at all: not open, not overdue, on the page and on the server.
+      { id: "z", status: undefined, scheduledDate: NOW - DAY },
     ];
     await t.run(async (ctx) => {
       for (const r of seeded) {

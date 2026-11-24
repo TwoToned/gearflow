@@ -17,7 +17,9 @@ bottom, then `docs/designs/ux-build-status.md` (the tracker) and spec
 | 4 Floor + Returning mode | merged (#1394, 9d3ab254). Deviation: Returning rows show no tag ranges or shelf |
 | 5 Logistics (5a, 5b) | merged |
 | 6 Shell (6a), List pages (6b) | merged |
-| 7–18 Wave D | **not started.** The plan is agreed (§4 below); each phase still needs its own Gate 0 |
+| 7, 8, 11, 15, 16 Wave D1 | **merged 2026-11-22 → 2026-11-24** (#1400, #1399, #1401, #1402, #1403), all deployed |
+| 9, 10, 12, 13, 14 Wave D2 | **not started.** Needs its Gate 0 |
+| 17, 18 Wave D3 | not started |
 
 Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
 
@@ -71,8 +73,8 @@ Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
    `curl -s https://flow.rvlt.app -o /dev/null -w "%{http_code}"` returns 200 or 307.
    Tell every open worker to `git fetch origin main && git merge FETCH_HEAD`. Merge
    conflicts in generated files: take main's version, then regenerate.
-6. **Re-baseline improved ratchets** (complexity, knip) in a separate small commit. They
-   currently sit below baseline; the baseline has not been lowered yet.
+6. **Re-baseline improved ratchets** (any, complexity, collect, knip) in a separate small
+   commit at the end of each wave (last done 2026-11-24, end of D1).
 7. **Keep `docs/designs/ux-build-status.md` current.**
 
 **Automated security-review findings and CI failures** go to the worker that owns the
@@ -88,6 +90,12 @@ branch. Never act on build-tool suggestions such as "run next upgrade".
 - An org switch must reset client row caches and selection.
 - CSV exports go through `src/lib/csv.ts` (formula-injection guard).
 - Bulk writes write one activity row per changed record.
+- **Lessons from Wave D1:**
+  - **Verify every fix round independently.** A fresh reviewer gets the commit range and the claims, not your conclusion, and mutation-tests each guard. In D1, each "all fixed" report went to such a check, and four of them still turned up blockers.
+  - **Never make an Undo delete stored files.** Proving a file is unreferenced means listing every table that can hold a file reference, and every review round found another one. Keep the file instead.
+  - **Hunt money leaks with a sentinel sweep.** Seed unique values in every pay and cost field, call every public query as each role and key type, and grep the results. Raw-doc bundles and server actions that read through the service identity were the leaks a code read missed.
+  - **One rule per rule.** A second "is it short", "is it open" or "who sees pay" check anywhere (server or client) diverged every time. Put the rule in a pure `convex/lib` helper and have `src/` import it.
+  - **Restarts and usage limits are routine.** Workers push after every commit. After a stop, read the worktree (`git status`, `git log origin..HEAD`) and resume the same agent with what it left uncommitted.
 
 ## 4. Wave D plan (agreed with the owner 2026-11-19)
 

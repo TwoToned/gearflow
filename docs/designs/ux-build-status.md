@@ -113,9 +113,10 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 |---|---|---|---|---|
 | 7 Job header + Overview + tab strip (M) | default | #1400 **merged 2026-11-22** (15450b14) | done. Independent review: 0 blockers, 6 should-fix, all fixed. An unapproved index was reverted (`by_projectId` used instead) | — |
 | 8 Packing + Versions (L) | Sonnet | #1399 **merged 2026-11-23** (8fc9b203) | done. Two independent reviews (0 blockers; 7 + 7 should-fix, all fixed). Ships `projectContainers.sealedAt` (approved) | — |
-| 11 Home v2 + palette + More counts (M) | default | `claude/ux-11-home-palette` · #1401 | S1 approved; S2 review: 0 blockers, 6 should-fix (incl. org-switch layout cross-write) being fixed; S3 (⌘K) / S4 building | — |
-| 15 Crew planner + timesheets (M) | default | `claude/ux-15-crew-planner` · #1402 | all 4 slices built; slice 3–4 review: 0 blockers, 6 should-fix (open-calls cap, multi-day calls, mail chunking, dimmed selection, org week start, undo author scope) being fixed | — |
-| 16 Scan check + Test & tag (M) | default | `claude/ux-16-scan-check` · #1403 | slice 1 review fixes (3 blockers) + slice 2 (/scan + Check) done; slices 3–4 building. Ad-hoc Undo deletes that save's photos (overseer ruling) | merges before Phase 14 |
+| 11 Home v2 + palette + More counts (M) | default | #1401 **merged 2026-11-24** (bb5a6714) | done. Three review rounds: 0 blockers; ~14 should-fix all fixed (date parse hijacking search, Show-all counts, ONE open/overdue maintenance rule, data reads gated on `read`). Fixture screenshots on `claude/ux-11-home-palette-shots` | — |
+| 15 Crew planner + timesheets (M) | default | #1402 **merged 2026-11-24** (f153c908) | done. Five review rounds: 5 blockers found and fixed. The blockers: crew gap counted per service, not per DAY, fixed with ONE `crewShortfallByDay` read by openCalls, Overbookings, readiness, auto-fill and Logistics; the auto-fill cancelling real offers; pay leaks through server actions; the `icalToken` leak; job cost via bundles. Pay and job-cost visibility rules below | — |
+| 16 Scan check + Test & tag (M) | default | #1403 **merged 2026-11-24** (09298de7) | done. Four review rounds. Final ruling: an Undo NEVER deletes a stored file (it restores the draft with its photos); the reference-scan approach was abandoned. Maintenance-job Undo is a guarded exact reverse | — |
+| Docs: tracker | overseer | #1408, #1411 **merged** | done | — |
 | Security hotfix: crew token + pay leak | default | #1410 **merged 2026-11-23** (acb51388) | done: `responseToken` is service-only; crew pay on raw reads is manager+ (`canSeeCrewPay`). Follow-ups: `crewMembers.listPage` and `crewAssignments.projectCrew` still return pay below manager | — |
 | Follow-up: CSV formula guard | default | #1405 **merged 2026-11-21** (d2b323c7) | done | — |
 | Follow-up: Next.js 16.4.3 → 16.4.5 | default | #1406 **merged 2026-11-22** (f3c5547f) | done (7 moderate advisories cleared) | — |
@@ -127,6 +128,20 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 
 **Owner, 2026-11-22:** Phase 16's T&T reading fields are FIVE optional columns (two readings, each with its own result, plus three `*Result` columns).
 
+**Owner, 2026-11-24 — who sees money (Phase 15):** two lines, one pure rule each, in `convex/lib/crewPayRule.ts`:
+- **Job cost and margin** (`serviceCostTotal`, `labourCostTotal`, `margin`, operational P&L, the Logistics footer, the Finance summary) need `invoice:read` and a key that is not `noFinancials` (`jobCostVisible`).
+- **Individual pay** (member/role rates, assignment cost, a service's own `costTotal`, activity-log rate diffs, timeline `showCost`) needs manager+ AND the job-cost line (`crewPayVisible`). Overseer ruling: pay implies job cost, so a key without `invoice` can't rebuild job cost from the parts.
+- **Note for the owner:** every built-in role holds `invoice:read`, warehouse and viewer included, so all signed-in roles see job margin. If they shouldn't, the change is to those roles' permissions, not the rule.
+
+**Overseer rulings, 2026-11-23/24:**
+- Phase 16: an Undo never deletes a stored file; it reverses this one from 2026-11-21. Photos from undone checks stay in storage (sweep logged below).
+- Phase 15: a crew shortfall is per day.
+- Phase 15: `icalToken` goes only to the member themself or a `crew:update` user session, never to an agent.
+- Phase 11: one open/overdue maintenance definition (`convex/lib/maintenanceOpen.ts`).
+- Phase 11: data reads are gated on `read`, not on any action (`canReadResource`).
+
+**Wave D1 done 2026-11-24.** Ratchets were re-baselined after the wave: any 136→103, complexity 676→631, collect 702→696, knip 402→392. There were six container restarts and one usage-limit stop during the wave; no committed work was lost. Wave D2 (9, 10, 12, 13, 14) needs its Gate 0.
+
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.
 - tailwind-merge drops the custom font-size tokens (`text-caption`, `text-table-cell`) in `cn()` at about 40 sites; needs `extendTailwindMerge`.
@@ -134,3 +149,14 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 - Job page: the `V` hint inside the version submenu is inert; Documents label lists go stale per mount.
 - The labour-cost store in `use-project-crew.ts` may be dead after Phase 7.
 - The `braces` R-6.6 exception expired 2026-10-17 (flagged to the owner earlier).
+- Orphaned check-photo uploads from undone checks: needs a server-side sweep of unreferenced `check-photos` uploads older than N days (Phase 16).
+- Exported `"use server"` senders with no authz, all cron-only today, should move to plain server modules:
+  - `sendNotificationEmails`, `pruneStaleNotificationEmailLogs`;
+  - `runOrgDormancySweep`, plus `reactivateOrganizationByToken`, which is token-gated by design, to confirm;
+  - `recalculateAllTestTagStatuses`, `sendTestTagReminderDigests`.
+
+  The email-authz scan can't see through imported helpers whose names it doesn't list.
+- `maintenanceRecords.update` (service-only) writes no activity row and has no callers.
+- Phase 16: `OutletDraft.notes` is dead, and next-due is derived in UTC but shown in local time (can be a day off near midnight).
+- Phase 15: Overbookings `fetchServicesData` misses a run that starts before its date range. The call sheet can't edit a call (needs a narrow `patchCallNative`). The planner's `Export this week`/`Print` and the Accepted colour (`status-colors.ts`) are deferred.
+- Phase 11: `@` palette pages aren't role-gated, and the 800 ms org-switch window.

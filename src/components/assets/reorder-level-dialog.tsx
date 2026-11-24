@@ -24,6 +24,12 @@ export interface ReorderTarget {
   reorderLevel: number | null;
 }
 
+const titleOf = (t: ReorderTarget[] | null): string =>
+  t && t.length > 1 ? `Set reorder level — ${t.length} models` : `Set reorder level — ${t?.[0]?.name ?? ""}`;
+
+/** `Now: 20.` for a single model that has a level. */
+const nowText = (t: ReorderTarget[] | null): string => (t && t.length === 1 && t[0].reorderLevel != null ? ` Now: ${t[0].reorderLevel}.` : "");
+
 /**
  * `Set reorder level…` (row ⋯ and bulk): one whole number applied to each model, or blank to clear
  * (an unset level is never 0). The page owns the write and its Undo.
@@ -41,7 +47,6 @@ export function ReorderLevelDialog({
   const [raw, setRaw] = React.useState("");
   const [pending, setPending] = React.useState(false);
   const parsed = parseLevel(raw);
-  const many = (targets?.length ?? 0) > 1;
 
   const save = async () => {
     if (!targets || parsed.kind === "invalid") return;
@@ -59,10 +64,10 @@ export function ReorderLevelDialog({
     <Dialog open={targets !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>{many ? `Set reorder level — ${targets!.length} models` : `Set reorder level — ${targets?.[0]?.name ?? ""}`}</DialogTitle>
+          <DialogTitle>{titleOf(targets)}</DialogTitle>
           <DialogDescription>
             An item reads as Low stock when what is available is at or under this number. Leave it blank to clear the level (blank is not 0).
-            {!many && targets?.[0]?.reorderLevel != null ? ` Now: ${targets[0].reorderLevel}.` : ""}
+            {nowText(targets)}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-2">

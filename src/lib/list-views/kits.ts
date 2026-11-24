@@ -101,20 +101,25 @@ export function kitFlags(k: Pick<KitSource, "state">): RowFlag[] {
 
 export function kitStatus(k: Pick<KitSource, "state">): StatusValue {
   const key = k.state.key;
-  const intent = key === "INCOMPLETE" ? "error" : key === "CHECKED_OUT" ? "live" : key === "IN_MAINTENANCE" || key === "RESERVED" ? "warning" : key === "RETIRED" ? "neutral" : "success";
+  const intent = key === "INCOMPLETE" ? "error" : key === "CHECKED_OUT" ? "primary" : key === "IN_MAINTENANCE" || key === "RESERVED" ? "warning" : key === "RETIRED" ? "neutral" : "success";
   return { label: STATE_LABELS[key] ?? key, intent, outline: key === "RETIRED" };
 }
 
-export function kitRowOf(k: KitSource, menu?: ActionMenuSpec): LineRowData {
-  const facts: Record<string, Fact> = {
+function kitFacts(k: KitSource): Record<string, Fact> {
+  const job = k.state.booking;
+  return {
     items: { kind: "qty", value: k.itemCount },
     complete: { kind: "text", label: k.state.key === "INCOMPLETE" ? "Missing" : "Complete" },
-    onJob: k.state.booking ? { kind: "text", label: `${k.state.booking.projectNumber} ${k.state.booking.projectName}` } : { kind: "text", label: "—" },
+    onJob: { kind: "text", label: job ? `${job.projectNumber} ${job.projectName}` : "—" },
     value: { kind: "money", amount: k.purchasePrice ?? null },
     condition: { kind: "text", label: conditionLabels[k.condition ?? "GOOD"] ?? "" },
+    ...(k.location?.name ? { location: { kind: "place" as const, label: k.location.name } } : {}),
+    ...(k.tags?.length ? { tags: { kind: "text" as const, label: k.tags.join(", ") } } : {}),
   };
-  if (k.location?.name) facts.location = { kind: "place", label: k.location.name };
-  if (k.tags?.length) facts.tags = { kind: "text", label: k.tags.join(", ") };
+}
+
+export function kitRowOf(k: KitSource, menu?: ActionMenuSpec): LineRowData {
+  const facts = kitFacts(k);
   return {
     id: k.id,
     kind: "kit",

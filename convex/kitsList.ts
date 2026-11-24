@@ -106,21 +106,26 @@ export const listPage = query({
     };
     const sorted = [...candidates].sort((x, y) => compareValues(kitSortKey(x, sortBy, sortCtx), kitSortKey(y, sortBy, sortCtx), dir) || x.assetTag.localeCompare(y.assetTag));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
-    const pageStates = allStates ?? (await loadKitStates(ctx, a.orgId, paged.items, now));
-    const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
-    const members = await memberCounts(ctx, a.orgId, paged.items);
-
-    const items = [];
-    for (const k of paged.items) {
-      items.push({
-        ...(redact ? redactFields(k, KIT_COST_FIELDS) : k),
-        ...kitRowFacts(k, sortCtx, pageStates.get(k.id)!, members.get(k.id) ?? 0),
-        media: await primaryKitPhoto(ctx, a.orgId, k.id),
-      });
-    }
+    const items = await shapeKitPage(ctx, a.orgId, paged.items, sortCtx, now);
     return { ...paged, items, truncated: kits.truncated || (needsAll && live.length > KIT_DERIVE_CAP) };
   },
 });
+
+/** The page's rows: cost-redacted kit, derived state, member count and primary photo. */
+async function shapeKitPage(ctx: QueryCtx, orgId: string, page: Doc<"kits">[], c: KitSortCtx, now: number) {
+  const pageStates = c.states ?? (await loadKitStates(ctx, orgId, page, now));
+  const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
+  const members = await memberCounts(ctx, orgId, page);
+  const items = [];
+  for (const k of page) {
+    items.push({
+      ...(redact ? redactFields(k, KIT_COST_FIELDS) : k),
+      ...kitRowFacts(k, c, pageStates.get(k.id)!, members.get(k.id) ?? 0),
+      media: await primaryKitPhoto(ctx, orgId, k.id),
+    });
+  }
+  return items;
+}
 
 /**
  * The kits the list can show. With a derived word (`seg` not null) every candidate's state is needed

@@ -95,7 +95,7 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
   const reorderFor = (ids: string[]): ReorderTarget[] =>
     ids.flatMap((id) => {
       const s = seen.current.get(id);
-      return s ? [{ id, name: s.name, reorderLevel: s.reorderLevel }] : [];
+      return s ? [{ id, name: s.name, reorderLevel: s.reorderLevel ?? null }] : [];
     });
 
   /** ONE guarded Undo closure per write; the server refuses if a level changed since. */

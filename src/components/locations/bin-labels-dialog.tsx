@@ -18,6 +18,27 @@ export function labelsToPrint(labels: BinLabel[], mode: "unprinted" | "all"): Bi
   return mode === "all" ? labels : labels.filter((l) => !l.printed);
 }
 
+/** Which labels print: the mode, the counts, and the chosen set (nothing unprinted means "unprinted only" would print nothing: show all). */
+function usePrintChoice(labels: BinLabel[] | null) {
+  const [mode, setMode] = React.useState<"unprinted" | "all">("unprinted");
+  const unprinted = labels?.filter((l) => !l.printed).length ?? 0;
+  const chosen = labels ? labelsToPrint(labels, unprinted === 0 ? "all" : mode) : [];
+  return { mode, setMode, unprinted, total: labels?.length ?? 0, chosen };
+}
+
+function ModeChoice({ mode, onChange, unprinted, all }: { mode: "unprinted" | "all"; onChange: (m: "unprinted" | "all") => void; unprinted: number; all: number }) {
+  return (
+    <div className="flex gap-4 text-ui-text" role="radiogroup" aria-label="Which labels">
+      {(["unprinted", "all"] as const).map((m) => (
+        <label key={m} className="flex items-center gap-2">
+          <input type="radio" name="bin-label-mode" checked={mode === m} onChange={() => onChange(m)} />
+          {m === "unprinted" ? `Unprinted only (${unprinted})` : `All (${all})`}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 /**
  * `Print bin labels` (print only for now, owner ruling 2026-11-24): a sheet of labels, each the location's
  * name and a QR code of its page address (a phone camera opens it). Printing stamps `labelPrintedAt` on
@@ -35,12 +56,7 @@ export function BinLabelsDialog({
   onClose: () => void;
   onPrinted: (ids: string[]) => Promise<void>;
 }) {
-  const [mode, setMode] = React.useState<"unprinted" | "all">("unprinted");
-  const open = labels !== null;
-  const unprinted = labels?.filter((l) => !l.printed).length ?? 0;
-  // With nothing unprinted, "unprinted only" would print nothing: show all.
-  const effective = unprinted === 0 ? "all" : mode;
-  const chosen = labels ? labelsToPrint(labels, effective) : [];
+  const { mode, setMode, unprinted, total, chosen } = usePrintChoice(labels);
 
   const print = async () => {
     window.print();
@@ -49,24 +65,15 @@ export function BinLabelsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={labels !== null} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Print bin labels</DialogTitle>
           <DialogDescription>
-            {labels?.length ?? 0} selected · {unprinted} not yet printed. Each label carries the location&apos;s name and a QR code of its page.
+            {total} selected · {unprinted} not yet printed. Each label carries the location&apos;s name and a QR code of its page.
           </DialogDescription>
         </DialogHeader>
-        {unprinted > 0 && unprinted < (labels?.length ?? 0) && (
-          <div className="flex gap-4 text-ui-text" role="radiogroup" aria-label="Which labels">
-            {(["unprinted", "all"] as const).map((m) => (
-              <label key={m} className="flex items-center gap-2">
-                <input type="radio" name="bin-label-mode" checked={mode === m} onChange={() => setMode(m)} />
-                {m === "unprinted" ? `Unprinted only (${unprinted})` : `All (${labels?.length})`}
-              </label>
-            ))}
-          </div>
-        )}
+        {unprinted > 0 && unprinted < total && <ModeChoice mode={mode} onChange={setMode} unprinted={unprinted} all={total} />}
         <div id="bin-labels-sheet" className="grid max-h-[50vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
           {chosen.map((l) => (
             <div key={l.id} className="flex flex-col items-center gap-2 rounded-[var(--r)] border border-line-2 bg-white p-3 text-center text-black">

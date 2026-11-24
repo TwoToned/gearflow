@@ -32,7 +32,7 @@ describe("kits list view", () => {
     expect(kitFlags(k)).toEqual([{ label: "2 items missing", tone: "error" }]);
     expect(kitStatus(k)).toMatchObject({ label: "Incomplete", intent: "error" });
     expect(kitStatus(kit())).toMatchObject({ label: "Available", intent: "success" });
-    expect(kitStatus(kit({ state: { key: "CHECKED_OUT", missing: [], booking: null } }))).toMatchObject({ label: "Out", intent: "live" });
+    expect(kitStatus(kit({ state: { key: "CHECKED_OUT", missing: [], booking: null } }))).toMatchObject({ label: "Out", intent: "primary" });
   });
 
   it("a blank price stays blank; no job prints a dash", () => {

@@ -9,6 +9,7 @@ import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { maintenanceTileCounts } from "./lib/maintenanceOpen";
+import { MAINTENANCE_DUE_CAP } from "./dashboardStats";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -68,6 +69,26 @@ describe("dashboardStats.bundle — maintenanceDue (the page's Overdue tile) and
     const pageOverdue = maintenanceTileCounts([...rows], NOW, 0).overdue;
     expect(pageOverdue).toBe(3);
     expect((await bundle(t)).maintenanceDue).toBe(pageOverdue);
+  });
+
+  test("the maintenance read is bounded: past MAINTENANCE_DUE_CAP per status it stops and says truncated", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i <= MAINTENANCE_DUE_CAP; i++) {
+        await ctx.db.insert("maintenanceRecords", {
+          id: `late${i}`, organizationId: ORG, type: "REPAIR", status: "SCHEDULED", title: `late${i}`,
+          scheduledDate: NOW - 1000 - i, createdAt: NOW, updatedAt: NOW,
+        });
+      }
+    });
+    const res = await bundle(t);
+    expect(res.maintenanceDue).toBe(MAINTENANCE_DUE_CAP);
+    expect(res.maintenanceTruncated).toBe(true);
+  });
+
+  test("under the cap nothing is truncated", async () => {
+    const t = makeT(); await seed(t);
+    expect((await bundle(t)).maintenanceTruncated).toBe(false);
   });
 
   test("a schedule-generated overdue PM cycle counts in maintenanceDue (as the page does) AND as a model due for service", async () => {

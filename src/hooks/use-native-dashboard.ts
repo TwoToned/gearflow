@@ -18,9 +18,12 @@ export interface NativeDashboardStats {
   activeProjects: number;
   activeCrew: number;
   pendingCrewOffers: number;
+  /** The Maintenance page's Overdue tile (every record, schedule cycles included). */
   maintenanceDue: number;
-  /** WS6 #945 — distinct models with an open, due recurring-PM cycle. Separate
-   *  from `maintenanceDue` (which excludes schedule-generated records). */
+  /** A maintenance read cap was hit: print `n+`. */
+  maintenanceTruncated?: boolean;
+  /** WS6 #945 — distinct models with an overdue recurring-PM cycle (those
+   *  cycles are also in `maintenanceDue`). */
   modelsDueForService: number;
   /** CHECKED_OUT lines on overdue-return jobs: the tile's sub-line (D85). */
   overdueReturns: number;

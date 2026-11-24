@@ -88,7 +88,9 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
     Maintenance page's Overdue tile: scheduled / in-progress work with its date passed
     (`isOverdueMaintenance`, `convex/lib/maintenanceOpen.ts`; held work — awaiting parts,
     QA — is not late), every record counted, schedule-generated cycles included, and
-    `dashboardStats.test.ts` holds it to the page's `maintenanceTileCounts`:
+    `dashboardStats.test.ts` holds it to the page's `maintenanceTileCounts`. Its read is
+    bounded (org + status + date index, `MAINTENANCE_DUE_CAP` 500 per status, then
+    `maintenanceTruncated` and the line prints `n+`):
 
     | Source | Read needed |
     |---|---|

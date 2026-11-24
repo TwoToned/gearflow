@@ -27,7 +27,7 @@ export interface NeedsAttentionLine {
 export interface NeedsAttentionInput {
   blockers?: { projectId: string }[];
   stats?: { overdueReturnJobs?: number; overdueTruncated?: boolean };
-  maintenance?: { maintenanceDue?: number; modelsDueForService?: number };
+  maintenance?: { maintenanceDue?: number; modelsDueForService?: number; maintenanceTruncated?: boolean };
   subHireOverdue?: number;
   overbookings?: { hardCount: number; pencilledCount: number; saleStockCount: number };
   crewOffers?: number;
@@ -99,8 +99,12 @@ function gearLines(i: NeedsAttentionInput): (NeedsAttentionLine | null)[] {
     line("hardOverbookings", o?.hardCount, ["hard overbooking", "hard overbookings"], "error", DASHBOARD_LINKS.overbookings),
     line("pencilled", o?.pencilledCount, ["pencilled collision", "pencilled collisions"], "warning", DASHBOARD_LINKS.overbookings),
     line("saleStock", o?.saleStockCount, ["sale stock to procure", "sale stock to procure"], "warning", DASHBOARD_LINKS.overbookings),
-    line("maintenanceDue", m?.maintenanceDue, ["maintenance due", "maintenance due"], "warning", DASHBOARD_LINKS.maintenanceDue),
-    line("modelsDue", m?.modelsDueForService, ["model due for service", "models due for service"], "warning", DASHBOARD_LINKS.modelsDueForService),
+    line("maintenanceDue", m?.maintenanceDue, ["maintenance due", "maintenance due"], "warning", DASHBOARD_LINKS.maintenanceDue, {
+      truncated: m?.maintenanceTruncated,
+    }),
+    line("modelsDue", m?.modelsDueForService, ["model due for service", "models due for service"], "warning", DASHBOARD_LINKS.modelsDueForService, {
+      truncated: m?.maintenanceTruncated,
+    }),
   ];
 }
 

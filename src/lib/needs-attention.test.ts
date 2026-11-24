@@ -36,6 +36,12 @@ describe("buildNeedsAttentionLines", () => {
     ]);
   });
 
+  it("a capped maintenance read prints n+ on its lines", () => {
+    const lines = buildNeedsAttentionLines({ ...FULL, maintenance: { maintenanceDue: 1000, modelsDueForService: 3, maintenanceTruncated: true } });
+    expect(lines.find((l) => l.key === "maintenanceDue")?.count).toBe("1000+");
+    expect(lines.find((l) => l.key === "modelsDue")?.count).toBe("3+");
+  });
+
   it("words the figure separately, singular vs plural", () => {
     const lines = buildNeedsAttentionLines(FULL);
     const by = (k: string) => lines.find((l) => l.key === k)!;

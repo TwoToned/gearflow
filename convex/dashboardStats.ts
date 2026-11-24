@@ -29,6 +29,9 @@ import { OVERDUE_MAINTENANCE_STATUSES, isOverdueMaintenance } from "./lib/mainte
 // for date-less draft/quote projects), keeping the reactive read-set minimal.
 const MIN_TS = -8_640_000_000_000_000;
 
+/** Per overdue status, the most late maintenance records Home reads (then `n+`). */
+export const MAINTENANCE_DUE_CAP = 500;
+
 export const bundle = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
@@ -58,16 +61,20 @@ export const bundle = query({
     // WS6 #945: the schedule-generated cycles ALSO feed the model-level
     // "N models due for service" line (modelsDueForService below), which opens
     // Due for service — a different list, so the two lines can overlap.
+    // Bounded: each status range is org-index-first, oldest first, capped at
+    // MAINTENANCE_DUE_CAP + 1; a hit sets `maintenanceTruncated` (the line prints n+).
     let maintenanceDue = 0;
+    let maintenanceTruncated = false;
     const dueForServiceModelIds = new Set<string>();
     for (const status of OVERDUE_MAINTENANCE_STATUSES) {
-      const due = await ctx.db
+      const read = await ctx.db
         .query("maintenanceRecords")
         .withIndex("by_organizationId_status_scheduledDate", (q) =>
           q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
         )
-        .collect();
-      for (const r of due) {
+        .take(MAINTENANCE_DUE_CAP + 1);
+      if (read.length > MAINTENANCE_DUE_CAP) maintenanceTruncated = true;
+      for (const r of read.slice(0, MAINTENANCE_DUE_CAP)) {
         if (!isOverdueMaintenance(r, now)) continue;
         maintenanceDue++;
         if (!r.serviceScheduleId) continue;
@@ -97,6 +104,9 @@ export const bundle = query({
       activeCrew: counter.activeCrew,
       pendingCrewOffers: counter.pendingCrewOffers,
       maintenanceDue,
+      // A per-status range hit MAINTENANCE_DUE_CAP: maintenanceDue (and
+      // modelsDueForService) are lower bounds.
+      maintenanceTruncated,
       // WS6 #945 — distinct models with an overdue (scheduled or in-progress)
       // recurring PM cycle. Model-level and opens Due for service; those cycles
       // are ALSO in `maintenanceDue`, which mirrors the Maintenance page's tile.

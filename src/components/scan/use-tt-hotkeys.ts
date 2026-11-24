@@ -40,7 +40,7 @@ const ANYWHERE: Record<string, keyof TtHotkeyActions> = { "ctrl+enter": "save" }
 const OUTSIDE_FIELDS: Record<string, keyof TtHotkeyActions> = { "ctrl+shift+p": "passAllVisual", escape: "back" };
 
 /** The action a key press asks for, or `null` when the page should leave it alone. */
-export function ttHotkeyFor(e: KeyPress): keyof TtHotkeyActions | null {
+function ttHotkeyFor(e: KeyPress): keyof TtHotkeyActions | null {
   const c = chord(e);
   return ANYWHERE[c] ?? (isTypingTarget(e.target) ? null : (OUTSIDE_FIELDS[c] ?? null));
 }

@@ -104,7 +104,7 @@ export function Overline({ children }: { children: React.ReactNode }) {
 export function Headline({ children, sub }: { children: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div>
-      <p className="font-display text-[22px] font-extrabold leading-tight text-ink">{children}</p>
+      <p className="font-display text-page-title font-extrabold leading-tight text-ink">{children}</p>
       {sub ? <p className="mt-0.5 text-table-cell text-muted">{sub}</p> : null}
     </div>
   );

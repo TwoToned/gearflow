@@ -27,7 +27,12 @@ https://flow.rvlt.app returns 200/307.
 | 11 | D85, D86, D87, D88, D89 | Accepted 2026-11-21 |
 | 15 | D46, D47, D48, D49 | Accepted 2026-11-21 |
 | 16 | D50, D51, D52, D53 | Accepted 2026-11-21 |
-| Wave D2, D3 | phases 9, 10, 12, 13, 14, 17, 18 (spec §11) | plan agreed 2026-11-19; each phase's Gate 0 still to ask |
+| 9 | D22, D23, D24, D25, D62 | Accepted 2026-11-24 |
+| 10 | D55, D56 | Accepted 2026-11-24 |
+| 12 | D30–D37, D62, D63, D64 | Accepted 2026-11-24 |
+| 13 | D38, D40, D71–D74 (schema: D71, D72) | Accepted 2026-11-24 |
+| 14 | D41–D45, D75–D80 (schema: D41, D42+D78, D76, D77) | Accepted 2026-11-24 |
+| Wave D3 | phases 17 (D54, D57–D61), 18 (D81–D84) | Gate 0 still to ask |
 
 Decisions PRs #1377 and #1379 merged 2026-11-17. Knip baseline lowered 405 → 402 after Phase 0 (#1381).
 
@@ -67,6 +72,20 @@ Each is built in its own PR with a /code-review; until then it stays listed as d
 | Timesheet query reason (approved 2026-11-21, D47) | §9h.4, Phase 15 | optional `crewTimeEntries.queryReason`, cleared on resubmit/approve | 15 |
 
 | T&T readings that are entered but never stored (approved 2026-11-21) | §9i, Phase 16 | three optional `testTagRecords` fields: RCD trip current, RCD push-button, microwave leakage | 16 |
+| Sales-stock reorder level (approved 2026-11-24, D41) | §9g, Phase 14 | optional per-model `reorderLevel`; `Reserved` stays derived | 14 |
+| Location capacity + bin labels (approved 2026-11-24, D42 + D78) | §9g/§9n, Phase 14 | optional `locations.capacity` + a stored label-printed state; `Last movement` stays derived | 14 |
+| Supplier-order return date (approved 2026-11-24, D71) | §9m, Phase 13 | optional stored return date on `supplierOrders`; `On hire`/`Returned` derived | 13 |
+| Crew documents (approved 2026-11-24, D72) | §9m, Phase 13 | new crew documents table (file, type, expiry) | 13 |
+| Maintenance parts (approved 2026-11-24, D76) | §9n, Phase 14 | new maintenance parts rows; cost = parts + labour, derived; `partsUsed` text stays readable | 14 |
+| Category T&T profile (approved 2026-11-24, D77) | §9n, Phase 14 | optional default T&T class + interval on categories, model can override | 14 |
+| Task links (approved 2026-11-24, plan round) | §8c, Phase 10 | new `projectTaskLinks` table (not a `workItemLinks` revival) | 10 |
+| Order return due (approved 2026-11-24, plan round) | §9m, Phase 13 | D71 is TWO optional fields: `supplierOrders.returnDueDate` + `returnedDate` | 13 |
+| Location last movement (approved 2026-11-24, plan round) | §9g, Phase 14 | optional `locations.lastMovementAt`, stamped by ONE helper from every location-changing write (guard test) | 14 |
+| Supplier contacts, supplier documents, multi-file order files (approved 2026-11-24, plan round) | §9m, Phase 13 | three new org-scoped tables | 13 |
+
+**Owner, 2026-11-24 (plan round):**
+- `update_project` keeps accepting `status` for now (Phase 9 is UI-only).
+- Crew documents are restrictive: visible to the member themself or `crew:update` on a user session; never warehouse/viewer or API keys; deleted with the member and by erasure.
 
 Not a schema change (2026-11-21, D50): an ad-hoc check's condition writes the existing `assets.condition` plus an activity row. `FAIR` reads **Worn** app-wide (owner, 2026-11-21), with the alias in the glossary.
 
@@ -140,7 +159,27 @@ Merge order: 7 first (it owns `projects/[id]/page.tsx`); 8 adds its tabs to that
 - Phase 11: one open/overdue maintenance definition (`convex/lib/maintenanceOpen.ts`).
 - Phase 11: data reads are gated on `read`, not on any action (`canReadResource`).
 
-**Wave D1 done 2026-11-24.** Ratchets were re-baselined after the wave: any 136→103, complexity 676→631, collect 702→696, knip 402→392. There were six container restarts and one usage-limit stop during the wave; no committed work was lost. Wave D2 (9, 10, 12, 13, 14) needs its Gate 0.
+**Wave D1 done 2026-11-24.** Ratchets were re-baselined after the wave: any 136→103, complexity 676→631, collect 702→696, knip 402→392. There were six container restarts and one usage-limit stop during the wave; no committed work was lost.
+
+**Deploy incident, 2026-11-24:** Coolify crashed. The two deploys for #1402 and #1413 failed at "Trigger Coolify deploy", after Convex prod had already been pushed. The owner restarted Coolify and re-ran the jobs; run 743 went green and prod returned 307. Lesson: a failed Coolify step leaves prod Convex AHEAD of the app container. Hold merges until the owner re-runs the job.
+
+### Wave D2 workers (Gate 0 accepted 2026-11-24)
+
+Merge order:
+- 9 and 10 both touch `projects/[id]/page.tsx`: 9 merges first, then 10 merges main.
+- 12 and 14 both touch models (12 = model detail + `ModelSheet`; 14 = the Models list): 12 merges first.
+- 13 owns the crew, client and supplier pages, plus its own `nav.ts` rows.
+
+| Phase | Worker | Branch / PR | State | Blockers |
+|---|---|---|---|---|
+| Shared primitives: `FormSheet`, `blankableNumber`, `fieldEditUndo` | Sonnet (Phase 12's) | `claude/ux-forms-sheet` · #1420 | reviewed; one hardening fix (org backstop in `undoFieldEdit`) | merges first; 9, 12, 13, 14 consume |
+| 9 New job wizard, edit sheet, templates (M) | Sonnet | `claude/ux-9-job-wizard` · #1417 | plan approved; slice 1 building | merges before 10 |
+| 10 Job Finance + Tasks & notes tabs (L) | Sonnet | `claude/ux-10-job-finance-tasks` · #1415 | plan approved; Slice A building; + `projectTaskLinks` slice | after 9 |
+| 12 Assets: asset/model pages + sheets (L) | Sonnet | `claude/ux-12-assets` · #1416 | plan approved; Model Archive becomes a true soft archive (the old cascade hard-deleted stock) | merges before 14 |
+| 13 People: lists, records, forms (L) | Sonnet | `claude/ux-13-people` · #1419 | plan approved; slice 1 building | — |
+| 14 Gear: lists, records, forms (L) | Sonnet | `claude/ux-14-gear` · #1418 | plan approved; 14a-1 building | after 12 |
+
+All subagents run on Sonnet (owner, 2026-11-24).
 
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.

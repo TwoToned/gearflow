@@ -28,7 +28,8 @@ Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
 - **Merge rule:** the overseer may merge a PR to `main` (a **merge commit**, never squash or
   rebase) once CI is green AND the overseer's review passes. Never force-push.
 - **Parallel phases:** run independent phases in parallel, **at most 6 workers** at once.
-- **Worker model:** Sonnet for L-sized phases. Other phases use the default model.
+- **Worker model:** Sonnet for EVERY subagent (builders, reviewers, verifiers) — owner,
+  2026-11-24, to save usage. Pass `model: "sonnet"` on every Agent call.
 - **Schema changes** need the owner's explicit yes, each one. Approved so far:
   `subHireItems.coverage` (2a), client pick-up/drop-off service types (5b), durable
   prep/de-prep and shared D10 memory (Phase 3 follow-ups, NOT yet built), and

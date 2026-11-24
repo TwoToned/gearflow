@@ -11,7 +11,7 @@ import {
   type CheckStates,
 } from "@/lib/check-item-state";
 import { focusRing } from "@/lib/utils";
-import { CHECK_PHOTO_FOLDER } from "../../../convex/lib/undoPhotos";
+import { CHECK_PHOTO_FOLDER } from "../../../convex/lib/checkPhotos";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -191,7 +191,7 @@ function FailBlock({
         onUploadingChange={onUploadingChange}
         compact
         maxPhotos={6}
-        // The ad-hoc check's Undo only deletes files from this folder (convex/lib/undoPhotos.ts).
+        // An ad-hoc check only accepts photos uploaded into this folder (convex/lib/checkPhotos.ts).
         folder={CHECK_PHOTO_FOLDER}
       />
       {(state?.photos.length ?? 0) === 0 && <p className="text-micro text-t-out">At least one photo is required.</p>}

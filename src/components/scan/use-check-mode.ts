@@ -185,9 +185,9 @@ interface SaveAttempt {
 
 /**
  * The awaited save. It makes ONE undo closure (`announceListWrite`), handed unchanged
- * to the toast and to the Last scans row; it reverses the save on the server (deleting
- * the photo files the save proved it owns) and, when nothing else is loaded, puts the
- * draft back without its photos. While it is in flight the answers no longer count as
+ * to the toast and to the Last scans row; it reverses the save on the server (its records
+ * only: never a stored file) and, when nothing else is loaded, puts the draft back with
+ * its photos. While it is in flight the answers no longer count as
  * unsaved, so a scan loads the next item at once; when it lands it clears only what is
  * still the saved asset's (review SF3).
  */
@@ -209,17 +209,15 @@ function useCheckSave(s: CheckModeDeps & {
 
   const announce = (asset: ScanAsset, auditId: string, snapshot: CheckDraft) => {
     const tag = asset.assetTag;
-    const hadPhotos = Object.values(snapshot.states).some((st) => st.photos.length > 0);
     const performUndo = async () => {
-      const res = await writes.undoAdHocCheck(auditId);
+      await writes.undoAdHocCheck(auditId);
       s.markUndone(auditId);
       if (!tagRef.current) {
-        // The Undo deleted the photos' files with the records (overseer ruling), so the
-        // draft comes back without them — a FAIL then asks for its photo again.
-        s.draft.restore(withoutPhotos(snapshot));
+        // The Undo never deletes a stored file (overseer ruling 2026-11-24), so the draft
+        // comes back exactly as saved, photos included (same URLs).
+        s.draft.restore(snapshot);
         s.reload(tag);
       }
-      return undoPhotoNote(hadPhotos, res?.photosKept ?? 0);
     };
     return announceListWrite({
       title: s.failCount > 0 ? `Saved check on ${tag} · ${s.failCount} failed` : `Saved check on ${tag}`,
@@ -279,15 +277,6 @@ function useCheckSave(s: CheckModeDeps & {
   return { saving, save };
 }
 
-/** The Undo toast's photo words: kept files (in use elsewhere, or unverifiable) are named as kept. */
-function undoPhotoNote(hadPhotos: boolean, kept: number): string | undefined {
-  if (kept > 0) return "Undone · photos kept (in use elsewhere) · re-add them to this check";
-  return hadPhotos ? "Undone · photos need re-adding" : undefined;
-}
-
-function withoutPhotos(d: CheckDraft): CheckDraft {
-  return { ...d, states: Object.fromEntries(Object.entries(d.states).map(([id, st]) => [id, { ...st, photos: [] }])) };
-}
 
 /** The model's check items, live (stable args, so the subscription settles). */
 function useCheckItemsFor(orgId: string | undefined, modelId: string | null): CheckItemData[] | undefined {

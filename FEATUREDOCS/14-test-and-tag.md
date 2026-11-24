@@ -205,7 +205,9 @@ deletes the record, its sub-tests and an untouched referral (a link it added to 
 EXISTING referral is deleted by `(maintenance record, asset)` after an org check, never by
 a bare link id; the save also rejects a colliding `maintenanceLinkId`), restores every field exactly
 (absent ones unset), and appends an `UNDO` activity row as the compliance trace. (Nothing
-else references a record today — labels print client-side and are not recorded.)
+else references a record today — labels print client-side and are not recorded.) Like
+every Phase 16 Undo, it deletes only the records its save created and NEVER deletes a
+stored file (overseer ruling 2026-11-24; the reasoning is in FEATUREDOCS/37).
 
 ## Auto-Incrementing IDs
 Same pattern as asset tags. Stored in `Organization.metadata.testTag`:

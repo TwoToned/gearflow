@@ -97,7 +97,7 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   maintenance records it opened (incident report / predictive record — re-read after the
   cores, since PM can dedup-skip). Check-level `notes` go there too (Q8).
 - **`undoAdHocCheckNative({ orgId, forwardAuditId, … })`** takes ids only and returns
-  `{ ok, photosDeleted }`. It refuses as a whole — changing nothing — for anyone but the
+  `{ ok }`. It refuses as a whole — changing nothing — for anyone but the
   person who saved it, more than 10 minutes after the save on the SERVER clock (the save
   stamps `serverSavedAt`; one `UNDO_WINDOW_MS` in `convex/lib/undoWindow.ts`, shared with
   the T&T undo), when the asset was checked again since (its newest check record isn't
@@ -107,32 +107,23 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   save's stamp (Q9), or it was undone already. Otherwise it deletes exactly that save's
   records and maintenance (+ links), restores the condition exactly (unset when it was
   absent) and appends an `UNDO` row; audit rows stay append-only.
-- **Photos go with the Undo** (overseer ruling 2026-11-23). A FAIL's required photo was
-  uploaded for this save, so the Undo also deletes its files — the `_storage` blob, its
-  thumbnail, their `storedFiles` rows and the `fileUploads` row
-  (`convex/lib/undoPhotos.ts`) — but only a file no OTHER check or maintenance record on
-  the asset references, and only this org's. The Scan page restores the draft WITHOUT the
-  photos and toasts `Undone · photos need re-adding`, so every save (a failed one too)
-  keeps its one Undo.
-- **The save proves each photo is the check's own** (review B1, `assertOwnedCheckPhotos`),
-  so the Undo can never be pointed at someone else's file. A check photo must be an
-  `/api/files/{id}` upload that is one of THIS user's uploads from the last 6 hours (found
-  exactly on `fileUploads.by_uploadedById`, bounded by `_creationTime`, so a busy org can't
-  push it out of a window), this org's, filed in the `check-photos` folder (the check form's
-  `PhotoGridInput folder`, `CHECK_PHOTO_FOLDER`), and **used nowhere yet**. Anything else
-  (a quote/invoice PDF id, another user's upload, an external URL) is refused at save with
-  `upload it again from the check`. The save records each proven upload (storage id,
-  `fileUploads` row id, upload time) on its audit row, and the Undo deletes only those,
-  finding each row exactly.
-- **"Used nowhere" means anywhere in the org**, checked at save AND again at Undo: a check
-  record or maintenance record (photos or attachments) created since the upload, a
-  maintenance record EDITED since then (found through its `maintenance` activity rows), and
-  any media row (`modelMedia`, `assetMedia`, `kitMedia`, `projectMedia`, `clientMedia`,
-  `locationMedia`, `subHireMedia`, by `by_fileId`). The record scans read from the upload
-  time on existing indexes and are capped at 1000 rows each; **a capped scan fails closed**:
-  the save is refused (`can't be verified right now`), and the Undo keeps every file. The
-  Undo returns `photosKept`, and the toast then says `Undone · photos kept (in use
-  elsewhere) · re-add them to this check`.
+- **The Undo NEVER deletes a stored file** (overseer ruling 2026-11-24, reversing the
+  2026-11-23 one). It deletes only the records its save created; every photo's blob,
+  `storedFiles` rows and `fileUploads` row stay exactly where they are. Deleting was
+  abandoned because a file can be referenced from places no scan can enumerate (a supplier
+  invoice attachment, item and crew images, media rows, thumbnails…), so any "used nowhere
+  else" check would always miss one. The Scan page restores the draft WITH its photos (same
+  URLs) and toasts plain `Check on X undone`, so the user loses nothing. A check-photo upload
+  left referenced by nothing is a logged follow-up (a server-side sweep), not handled here.
+- **The save proves each photo is the check's own** (review B1, `assertOwnedCheckPhotos`,
+  `convex/lib/checkPhotos.ts`), so a check can never be pointed at someone else's file. A
+  check photo must be an `/api/files/{id}` upload that is one of THIS user's uploads from the
+  last 6 hours (found exactly on `fileUploads.by_uploadedById`, bounded by `_creationTime`,
+  so a busy org can't push it out of a window), this org's, and filed in the `check-photos`
+  folder (the check form's `PhotoGridInput folder`, `CHECK_PHOTO_FOLDER`). Anything else (a
+  quote/invoice PDF id, another user's upload, an external URL) is refused at save with
+  `upload it again from the check`. There is no "used elsewhere" scan: it existed only to make
+  deletion safe, so reusing your own photo on a second check is allowed.
 
 ### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 
@@ -198,7 +189,7 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
 - **Save awaits** `saveAdHocCheck` before clearing the card (the card and its answers stay
   while pending and after an error). The save makes ONE `announceListWrite` closure, handed
   unchanged to the toast and to the Last scans row (10 s); it reverses the save and, when
-  nothing else is loaded, puts the draft back (without its photos, above).
+  nothing else is loaded, puts the draft back exactly, photos included (above).
 - **Create maintenance job…** (card ⋯; the save caret's `Save and create maintenance job` on a
   fail, which saves first and opens the dialog only once saved; a failed Last scans row ⋯):
   a Radix dialog prefilled with `Repair — <tag>` and what failed (`Yoke: tilt lock slips`),

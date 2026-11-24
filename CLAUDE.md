@@ -1082,9 +1082,10 @@ changing nothing, unless:
 - the caller is the person who saved it, and it is the first undo;
 - the record is still the asset's newest;
 - nothing it touched has changed since.
-The ad-hoc Undo also deletes the photo files its records held, but only files no other
-record on the asset references (`convex/lib/undoPhotos.ts`). A new exact Undo copies this
-shape.
+An Undo NEVER deletes a stored file: it deletes only the records its save created, and
+the photos stay (a file can be referenced from places no scan can enumerate). The save
+still proves each photo is the actor's own fresh upload (`convex/lib/checkPhotos.ts`).
+A new exact Undo copies this shape.
 
 The Scan page's own two rules:
 - Every input path ends in ONE `scan(tag)` (`src/components/scan/use-scan-session.ts`).

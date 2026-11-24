@@ -194,6 +194,27 @@ describe("ScanPage — phone (≤ 859 px, §9i.6)", () => {
 });
 
 describe("ScanPage — Test & tag mode", () => {
+  it("SF3: a scan mid-save loads the next item at once (no Discard), and the landing save leaves it and its answers alone", async () => {
+    h.testCards["TT-0413"] = card("TT-0413", { tt: tt({ id: "tt2", testTagId: "TT-0413", description: "Drill" }) });
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    let resolve!: (v: unknown) => void;
+    h.record.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(saveButton());
+    // While A's save is in flight its answers aren't "unsaved": B loads without asking.
+    await userEvent.type(screen.getByLabelText("Scan input"), "TT-0413{Enter}");
+    expect(screen.queryByRole("dialog", { name: "Discard this test?" })).toBeNull();
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt&tag=TT-0413", { scroll: false });
+    const visual = screen.getByRole("region", { name: /Visual inspection/ });
+    await userEvent.click(within(visual).getByRole("checkbox", { name: "Cord" }));
+    await act(async () => resolve({ id: "recA", nextDueDate: Date.UTC(2027, 1, 22), result: "PASS" }));
+    // B is still loaded (A's save didn't clear the scan), with B's tick intact.
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt&tag=TT-0413", { scroll: false });
+    expect(within(screen.getByRole("region", { name: /Visual inspection/ })).getByRole("checkbox", { name: "Cord" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("Finish the visual inspection (1 left)")).toBeTruthy();
+  });
+
   it("one scroll, no steps: blank readings block (D51), N/A unblocks, next due is derived (D52)", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412");
     render(<ScanPage />);
@@ -349,6 +370,23 @@ describe("ScanPage — Test & tag mode", () => {
     (document.activeElement as HTMLElement).blur();
     await userEvent.keyboard("{Escape}");
     expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt", { scroll: false });
+  });
+
+  it("keyboard: no shortcut fires while a menu or dialog is open (it owns the keyboard)", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    await screen.findByRole("menuitem", { name: "Retire from test & tag…" });
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await userEvent.keyboard("{Control>}{Shift>}P{/Shift}{/Control}");
+    expect(h.record).not.toHaveBeenCalled();
+    await userEvent.keyboard("{Escape}");
+    // A scan over the answers opens Discard; Ctrl+Enter there must not save underneath it.
+    await userEvent.type(screen.getByLabelText("Scan input"), "TT-OLD{Enter}");
+    await screen.findByRole("dialog", { name: "Discard this test?" });
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(h.record).not.toHaveBeenCalled();
   });
 
   it("keyboard: no T&T shortcut fires without an open test card", async () => {

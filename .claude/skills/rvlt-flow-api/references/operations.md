@@ -207,6 +207,7 @@ Sub-hire statuses: `DRAFT, CONFIRMED, ON_HIRE, RETURNED, CANCELLED`.
 |---|---|---|---|---|
 | Create (curated `create_maintenance`) | `maintenanceWrites.createNative` | M | `maintenance:create` | `recordId`, `title`, `type`, `assetLinks[]`, `status?`, `description?`, `scheduledDate?`, `assignedToId?`, `projectId?`, `cost?` |
 | Update / close out | `maintenanceWrites.updateNative` | M | `maintenance:update` | `id`, `title`, `type`, `assetLinks[]`, `status?`, `result?` (PASS\|FAIL\|CONDITIONAL), `completedDate?`, `assetDispositions?[]` |
+| Undo a maintenance record you just created | `maintenanceWrites.undoCreateNative` | **H** | `maintenance:create` | `id` — within 10 minutes, the creator only, once, and only while untouched (unedited, same status, no other asset linked, no checkoff progress). Puts assets it placed on hold back exactly |
 | Delete | `maintenanceWrites.deleteNative` | **H** | `maintenance:delete` | `id` |
 
 Statuses: `SCHEDULED, AWAITING_PARTS, IN_PROGRESS, QA, COMPLETED, CANCELLED`.

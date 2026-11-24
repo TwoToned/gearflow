@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   convexQuery: vi.fn(),
   mxCreate: vi.fn(),
   mxRemove: vi.fn(),
+  mxUndo: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
   info: vi.fn(),
   perms: { warehouse: ["read", "scan"], testTag: ["read", "create"], asset: ["read", "create"], checkItem: ["read"] } as Record<string, string[]>,
@@ -76,7 +77,7 @@ vi.mock("@/hooks/use-test-tag-writes", () => ({
   useTestTagWrites: () => ({ recordTest: h.record, undoRecordTest: h.undoRecord, create: h.ttCreate, remove: h.ttRemove, reactivate: h.ttReactivate, retire: h.ttRetire }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
-vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, remove: h.mxRemove }) }));
+vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, undoCreate: h.mxUndo, remove: h.mxRemove }) }));
 vi.mock("@/lib/use-permissions", () => ({
   useCurrentRole: () => ({ permissions: h.perms, isLoading: false }),
   useCanDo: (r: string, a: string) => h.perms[r]?.includes(a) ?? false,
@@ -153,7 +154,7 @@ describe("ScanPage — Create maintenance job", () => {
     setUrl("/scan?mode=check&tag=AURA-01");
     h.save.mockResolvedValueOnce({ success: true, recordIds: ["r1", "r2"], auditId: "aud9", condition: "DAMAGED" });
     h.mxCreate.mockResolvedValueOnce({ id: "mx1" });
-    h.mxRemove.mockResolvedValue({ id: "mx1" });
+    h.mxUndo.mockResolvedValue({ ok: true });
     render(<ScanPage />);
     await failYoke();
     await userEvent.click(screen.getByRole("button", { name: "More ways to save" }));
@@ -167,11 +168,12 @@ describe("ScanPage — Create maintenance job", () => {
     const toast = h.toasts.find((t) => t.title === "Maintenance job created for AURA-01");
     await act(async () => toast!.action!.onClick());
     await act(async () => toast!.action!.onClick()); // the ONE guarded closure: a second click does nothing
-    expect(h.mxRemove).toHaveBeenCalledTimes(1);
-    expect(h.mxRemove).toHaveBeenCalledWith("mx1");
+    expect(h.mxUndo).toHaveBeenCalledTimes(1);
+    expect(h.mxUndo).toHaveBeenCalledWith("mx1"); // the guarded exact reverse
+    expect(h.mxRemove).not.toHaveBeenCalled(); // never a bare delete
   });
 
-  it("the card ⋯ opens the dialog; a passing check offers no 'Save and create maintenance job'; no Undo without maintenance:delete", async () => {
+  it("the card ⋯ opens the dialog; a passing check offers no 'Save and create maintenance job'; the Undo needs only maintenance:create", async () => {
     h.perms = { ...h.perms, maintenance: ["create"] };
     setUrl("/scan?mode=check&tag=AURA-01");
     h.mxCreate.mockResolvedValueOnce({ id: "mx2" });
@@ -186,7 +188,11 @@ describe("ScanPage — Create maintenance job", () => {
     const dialog = await screen.findByRole("dialog", { name: "Create maintenance job" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Create job" }));
     expect(h.mxCreate).toHaveBeenCalledTimes(1);
-    expect(h.toasts.find((t) => t.title === "Maintenance job created for AURA-01")?.action).toBeUndefined();
+    // undoCreateNative is gated on maintenance:create (the author's own write), not delete.
+    const toast = h.toasts.find((t) => t.title === "Maintenance job created for AURA-01");
+    h.mxUndo.mockResolvedValue({ ok: true });
+    await act(async () => toast!.action!.onClick());
+    expect(h.mxUndo).toHaveBeenCalledWith("mx2");
   });
 
   it("absent without maintenance:create", async () => {

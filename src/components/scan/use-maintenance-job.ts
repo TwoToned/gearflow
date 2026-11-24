@@ -17,14 +17,13 @@ export interface MaintenancePrefill {
 /**
  * The Scan page's `Create maintenance job…` (spec §9i.2 card ⋯, the save caret's `Save and
  * create maintenance job` on a fail, and a failed Last scans row). One EXISTING mutation,
- * `maintenanceWrites.createNative` (a SCHEDULED repair linked to the asset), and its exact
- * reverse `deleteNative` as the Undo, through ONE `announceListWrite` closure. The Undo is
- * absent without `maintenance:delete` (the returns station's "Raise repair" precedent).
+ * `maintenanceWrites.createNative` (a SCHEDULED repair linked to the asset), and its guarded
+ * exact reverse `undoCreateNative` as the Undo (author only, 10 minutes, refused once a
+ * colleague touched the job), through ONE `announceListWrite` closure.
  */
 export function useMaintenanceJob() {
   const writes = useMaintenanceWrites();
   const canCreate = useCanDo("maintenance", "create");
-  const canDelete = useCanDo("maintenance", "delete");
   const [prefill, setPrefill] = useState<MaintenancePrefill | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -38,11 +37,9 @@ export function useMaintenanceJob() {
       announceListWrite({
         title: `Maintenance job created for ${p.assetTag}`,
         undoneTitle: `Maintenance job for ${p.assetTag} removed`,
-        performUndo: canDelete
-          ? async () => {
-              await writes.remove(id);
-            }
-          : undefined,
+        performUndo: async () => {
+          await writes.undoCreate(id);
+        },
       });
       setPrefill(null);
       return true;

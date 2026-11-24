@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   convexQuery: vi.fn(),
   mxCreate: vi.fn(),
   mxRemove: vi.fn(),
+  mxUndo: vi.fn(),
   toasts: [] as Array<{ title: string; action?: { label: string; onClick: () => void } }>,
   perms: { testTag: ["read", "create"], asset: ["read", "create"], maintenance: ["create", "delete"] } as Record<string, string[]>,
   mobile: false,
@@ -64,7 +65,7 @@ vi.mock("@/hooks/use-test-tag-writes", () => ({
   }),
 }));
 vi.mock("convex/react", () => ({ useConvex: () => ({ query: h.convexQuery }) }));
-vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, remove: h.mxRemove }) }));
+vi.mock("@/hooks/use-maintenance-writes", () => ({ useMaintenanceWrites: () => ({ create: h.mxCreate, undoCreate: h.mxUndo, remove: h.mxRemove }) }));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org_1" } }),
   useSession: () => ({ data: { user: { id: "u1", name: "Sam Tester" } } }),
@@ -140,7 +141,7 @@ describe("ScanPage — T&T Create maintenance job", () => {
   it("on a fail, the card ⋯ opens the dialog prefilled with what failed; Undo deletes exactly that job", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412");
     h.mxCreate.mockResolvedValueOnce({ id: "mx7" });
-    h.mxRemove.mockResolvedValue({ id: "mx7" });
+    h.mxUndo.mockResolvedValue({ ok: true });
     render(<ScanPage />);
     await answerPassing();
     await userEvent.click(screen.getByRole("button", { name: "Plug: failed" }));
@@ -152,8 +153,9 @@ describe("ScanPage — T&T Create maintenance job", () => {
     expect(h.mxCreate).toHaveBeenCalledWith(expect.objectContaining({ assetId: "a1", type: "REPAIR", title: "Repair — AURA-01" }));
     const toast = h.toasts.find((t) => t.title === "Maintenance job created for AURA-01");
     await act(async () => toast!.action!.onClick());
-    expect(h.mxRemove).toHaveBeenCalledTimes(1);
-    expect(h.mxRemove).toHaveBeenCalledWith("mx7");
+    expect(h.mxUndo).toHaveBeenCalledTimes(1);
+    expect(h.mxUndo).toHaveBeenCalledWith("mx7");
+    expect(h.mxRemove).not.toHaveBeenCalled();
   });
 
   it("the save caret offers 'Save and create maintenance job' only on a fail", async () => {

@@ -197,9 +197,10 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   fail, which saves first and opens the dialog only once saved; a failed Last scans row ⋯):
   a Radix dialog prefilled with `Repair — <tag>` and what failed (`Yoke: tilt lock slips`),
   written through the existing `maintenanceWrites.createNative` (a SCHEDULED repair linked to
-  the asset). Its Undo is the exact `deleteNative` of that record, through ONE
-  `announceListWrite` closure, and is absent without `maintenance:delete`; the action itself
-  is absent without `maintenance:create` (`src/components/scan/use-maintenance-job.ts`).
+  the asset). Its Undo is the guarded exact reverse `maintenanceWrites.undoCreateNative`
+  (FEATUREDOCS/15), never a bare delete, through ONE `announceListWrite` closure; the
+  action and its Undo are absent without `maintenance:create`
+  (`src/components/scan/use-maintenance-job.ts`).
   This is separate from the incident record a FAIL opens server-side.
 - **Scan feedback**: the shared `useScanFeedback` (`success` on save, `error` on failure,
   `exception` on a tag it can't check), toggled from the page ⋯ (`Scan sounds`). Last scans

@@ -99,6 +99,22 @@ Overdue maintenance generates notifications. Shows first asset name + count for 
 ## Deletion
 Deleting a maintenance record releases any held assets and removes the record atomically (single transaction).
 
+## Undo a create (`undoCreateNative`, Phase 16)
+`maintenanceWrites.undoCreateNative({ orgId, id, … })` (`maintenance:create`,
+`danger: "high"`) is the exact reverse of one `createNative`, used by the Scan page's
+"Create maintenance job" Undo (FEATUREDOCS/37). The create's own audit row now carries a
+server-written snapshot (`kind: "maintenanceCreate"`, `serverSavedAt`, the status created,
+the link row ids it inserted, and each asset it moved AVAILABLE → IN_MAINTENANCE with its old
+`updatedAt`; `convex/lib/maintenanceUndo.ts`). The Undo takes ids only and refuses as a
+whole unless it is the creator, within 10 minutes on the server clock, the first undo, the
+record is untouched (`updatedAt` and `createdAt` as created, status unchanged), its link rows
+are exactly the ones the create inserted (no WS6 CHECKOFF row, no other link), and each held
+asset is as the create left it. It then deletes the record and its links, puts each held
+asset back to AVAILABLE with its old `updatedAt` (one another holding record still holds
+stays IN_MAINTENANCE), and appends an `UNDO` row. The `maintenance.created` webhook, if one
+went out, is not recalled. A record created before this change has no snapshot and can't
+be undone.
+
 ## Incident-report records
 
 Records created via the "Report Issue" flow or an immediate check-item FAIL

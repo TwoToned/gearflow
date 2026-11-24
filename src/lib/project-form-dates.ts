@@ -37,7 +37,7 @@ export function resolveWindowMs(values: {
   return { start: start ? start.getTime() : null, end: end ? end.getTime() : null };
 }
 
-export interface RentalWindowStrings {
+interface RentalWindowStrings {
   rentalStartDate?: string;
   rentalEndDate?: string;
   projectStartDate?: string;

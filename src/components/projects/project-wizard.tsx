@@ -2,103 +2,38 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, Controller, type Path, type UseFormReturn } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
-import { PROJECT_TYPE_OPTIONS } from "@/lib/project-type-labels";
-import { fromDateStr, normalizeDate, resolveWindowMs, shiftWindowWithRental, toDateStr } from "@/lib/project-form-dates";
-import { Loader2, X, Check, ArrowLeft, ArrowRight, Sparkles, Truck } from "lucide-react";
+import { Loader2, Check, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { cn, focusRing, disabledState } from "@/lib/utils";
-import {
-  RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
-} from "@/components/ui/range-calendar";
-import {
-  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useServerMutation } from "@/hooks/use-server-mutation";
-import { useServerQuery } from "@/hooks/use-server-query";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
-import { peekNextProjectNumber, checkProjectNumberAvailable } from "@/server/projects";
+import { checkProjectNumberAvailable } from "@/server/projects";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
-import { useClientSearch, useClient, useClientContacts } from "@/hooks/use-clients";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { useLocations } from "@/hooks/use-locations";
-import { useOrgTags } from "@/hooks/use-org-tags";
-import { getOrgMembers } from "@/server/org-members";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { LockedField } from "@/components/ui/locked-field";
-import { Textarea } from "@/components/ui/textarea";
-import { useProjectPricingLock } from "@/hooks/use-project-lock";
 import { useDateMoveGate } from "@/hooks/use-date-move-gate";
 import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
-import { resolveLockCopy, scrollToLockStrip } from "@/lib/lock-copy";
-import { ComboboxPicker } from "@/components/ui/combobox-picker";
-import { TagInput } from "@/components/ui/tag-input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { QuickCreateClient } from "@/components/clients/quick-create-client";
-import { QuickCreateLocation } from "@/components/assets/quick-create-location";
 import { CoachingTip } from "@/components/onboarding/coaching-tip";
 import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { activeMilestoneKey } from "@/lib/activation-milestones";
+import { PROJECT_TYPE_LABELS } from "@/lib/project-type-labels";
+import { resolveWindowMs } from "@/lib/project-form-dates";
+import {
+  ProjectFields, projectFormDefaults, useProjectFieldsState,
+  type EditableProject, type ProjectFieldsSection,
+} from "@/components/projects/project-fields";
 
-const TYPE_OPTIONS = PROJECT_TYPE_OPTIONS;
-
-/**
- * The project detail shape the wizard needs in edit mode. Loosely typed (all
- * optional, dates as `unknown`) so the page can pass its `useProjectDetail`
- * composite straight through — the wizard normalises everything to the form's
- * `yyyy-MM-dd` / `HH:mm` string shape itself.
- */
-export interface EditableProject {
-  id: string;
-  projectNumber?: string | null;
-  name?: string | null;
-  clientId?: string | null;
-  clientContactId?: string | null;
-  status?: ProjectFormValues["status"] | null;
-  type?: ProjectFormValues["type"] | null;
-  description?: string | null;
-  locationId?: string | null;
-  siteContactName?: string | null;
-  siteContactPhone?: string | null;
-  siteContactEmail?: string | null;
-  loadInDate?: unknown;
-  loadInTime?: string | null;
-  eventStartDate?: unknown;
-  eventStartTime?: string | null;
-  eventEndDate?: unknown;
-  eventEndTime?: string | null;
-  loadOutDate?: unknown;
-  loadOutTime?: string | null;
-  /** WS2 (#941) — the gear-committed window; blank means "same as rental". */
-  projectStartDate?: unknown;
-  projectStartTime?: string | null;
-  projectEndDate?: unknown;
-  projectEndTime?: string | null;
-  rentalStartDate?: unknown;
-  rentalEndDate?: unknown;
-  crewNotes?: string | null;
-  internalNotes?: string | null;
-  clientNotes?: string | null;
-  discountPercent?: number | string | null;
-  tags?: string[] | null;
-  isTemplate?: boolean;
-  projectManagers?: { user: { id: string } }[];
-}
+export type { EditableProject };
 
 type StepKey = "basics" | "schedule" | "site" | "review";
-const STEPS: { key: StepKey; label: string; tip: string; fields: Path<ProjectFormValues>[] }[] = [
-  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", fields: ["name", "projectNumber", "clientId", "clientContactId", "type", "description", "tags"] },
-  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the job window later.", fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
-  { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
-  { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", fields: [] },
+const STEPS: { key: StepKey; label: string; tip: string; sections: ProjectFieldsSection[]; fields: (keyof ProjectFormValues)[] }[] = [
+  { key: "basics", label: "Basics", tip: "Name it, aim it at a client, and you're rolling — tighten the rest as the gig firms up.", sections: ["job", "money"], fields: ["name", "projectNumber", "clientId", "clientContactId", "type", "description", "tags"] },
+  { key: "schedule", label: "Schedule", tip: "Rough dates are fine. You can tighten the job window later.", sections: ["schedule"], fields: ["rentalStartDate", "rentalEndDate", "projectStartDate", "projectStartTime", "projectEndDate", "projectEndTime"] },
+  { key: "site", label: "Site", tip: "Where it's happening and who to call on the day. All optional.", sections: ["where"], fields: ["locationId", "siteContactName", "siteContactPhone", "siteContactEmail"] },
+  { key: "review", label: "Review", tip: "Looks right? Create the job and start adding gear.", sections: [], fields: [] },
 ];
 
 /** Split out purely to keep `onSuccess`'s own complexity under the ceiling
@@ -121,30 +56,16 @@ export function ProjectWizard({
   const managerWrites = useProjectManagerWrites();
   const orgId = activeOrg?.id;
   const projectWrites = useProjectWrites(orgId);
-  // D3 (#1107) — see the identical note in model-form.tsx. Reads the FULL
-  // milestone state (not just the active key) because the hand-off needs
+  // D3 (#1107) — reads the FULL milestone state because the hand-off needs
   // firstModelId/firstModelName too, to deep-link + label "Add <model> to it".
   const activationState = useActivationMilestones(orgId);
   const isActiveProjectMilestone =
     activationState != null && activeMilestoneKey(activationState) === "project";
 
   const isEditing = !!project;
-
-  // #1230 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry
-  // (convex/lib/projectLocks.ts). `taxRate` is likewise locked but has no
-  // field in this form (org-default only, resolved server-side) — nothing to
-  // wrap. Skipped entirely on create (no project yet to be locked).
-  const wizardLockStatus = useProjectPricingLock(isEditing ? project.id : undefined, orgId);
-  const discountLocked = isEditing && wizardLockStatus.pricingLocked;
-  const discountLockReason = resolveLockCopy(wizardLockStatus).oneLiner;
   const isTemplate = isTemplateProp ?? project?.isTemplate ?? false;
 
-  const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);
-
   const [step, setStep] = useState(0);
-  const [quickClient, setQuickClient] = useState(false);
-  const [quickLocation, setQuickLocation] = useState(false);
-  const [managerIds, setManagerIds] = useState<string[]>(initialManagerIds);
 
   // WCAG "focus is never silently lost" (R-8.1.7, #894): the just-clicked
   // Continue/Back button unmounts on step change, and without an explicit
@@ -161,135 +82,14 @@ export function ProjectWizard({
     if (step !== 0) stepHeadingRef.current?.focus();
   }, [step]);
 
-  const { data: nextProjectNumber } = useServerQuery({
-    queryKey: ["project-number-next", orgId],
-    queryFn: () => peekNextProjectNumber(),
-    enabled: !isTemplate && !isEditing && !!orgId,
-  });
-
-  // Phase 7 — native INDEXED client search (bounded, reactive) instead of loading the
-  // whole org list to JS-filter. Debounced as the user types.
-  const [clientQuery, setClientQuery] = useState("");
-  const debouncedClientQuery = useDebouncedValue(clientQuery, 200);
-  const clients = useClientSearch(orgId, debouncedClientQuery);
-  const clientOptions = (clients ?? []).map((c) => ({ value: c.id, label: c.name, description: c.contactName || undefined }));
-  const rawLocations = useLocations(orgId) ?? [];
-  const locNameById = new Map(rawLocations.map((l) => [l.id, l.name]));
-  const locationOptions = rawLocations.map((l) => ({ value: l.id, label: l.parentId ? `${locNameById.get(l.parentId) ?? ""} → ${l.name}` : l.name, description: l.address || undefined }));
-  const orgTags = useOrgTags(orgId);
-  const { data: membersData, error: membersError } = useServerQuery({ queryKey: ["org-members", orgId], queryFn: () => getOrgMembers({ pageSize: 200 }) });
-  const memberOptions = (membersData?.members || []).map((m) => ({ value: m.user.id, label: m.user.name || m.user.email, description: m.user.name ? m.user.email : undefined }));
-
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectSchema),
-    defaultValues: project
-      ? {
-          projectNumber: project.projectNumber ?? "",
-          name: project.name ?? "",
-          clientId: project.clientId ?? "",
-          clientContactId: project.clientContactId ?? "",
-          status: project.status ?? "ENQUIRY",
-          type: project.type ?? "OTHER",
-          description: project.description ?? "",
-          locationId: project.locationId ?? "",
-          siteContactName: project.siteContactName ?? "",
-          siteContactPhone: project.siteContactPhone ?? "",
-          siteContactEmail: project.siteContactEmail ?? "",
-          // Dates → the form's "yyyy-MM-dd" string shape; times stay "HH:mm".
-          // loadInDate/loadOutDate/eventStartDate/eventEndDate are DEPRECATED — the
-          // wizard reads them for a pre-WS2 project (so an old value isn't silently
-          // dropped) but never writes them; project*/rental* are the two windows now.
-          loadInDate: normalizeDate(project.loadInDate),
-          loadInTime: project.loadInTime ?? "",
-          eventStartDate: normalizeDate(project.eventStartDate),
-          eventStartTime: project.eventStartTime ?? "",
-          eventEndDate: normalizeDate(project.eventEndDate),
-          eventEndTime: project.eventEndTime ?? "",
-          loadOutDate: normalizeDate(project.loadOutDate),
-          loadOutTime: project.loadOutTime ?? "",
-          projectStartDate: normalizeDate(project.projectStartDate),
-          projectStartTime: project.projectStartTime ?? "",
-          projectEndDate: normalizeDate(project.projectEndDate),
-          projectEndTime: project.projectEndTime ?? "",
-          rentalStartDate: normalizeDate(project.rentalStartDate),
-          rentalEndDate: normalizeDate(project.rentalEndDate),
-          crewNotes: project.crewNotes ?? "",
-          internalNotes: project.internalNotes ?? "",
-          clientNotes: project.clientNotes ?? "",
-          discountPercent: project.discountPercent != null ? Number(project.discountPercent) : undefined,
-          tags: project.tags ?? [],
-        }
-      : {
-          projectNumber: "", name: "", clientId: "", clientContactId: "", status: "ENQUIRY", type: "OTHER",
-          description: "", locationId: "", siteContactName: "", siteContactPhone: "", siteContactEmail: "",
-          loadInDate: undefined, loadInTime: "", eventStartDate: undefined, eventStartTime: "",
-          eventEndDate: undefined, eventEndTime: "", loadOutDate: undefined, loadOutTime: "",
-          projectStartDate: undefined, projectStartTime: "", projectEndDate: undefined, projectEndTime: "",
-          rentalStartDate: undefined, rentalEndDate: undefined,
-          crewNotes: "", internalNotes: "", clientNotes: "", tags: [],
-        },
+    defaultValues: projectFormDefaults(project),
   });
+  const state = useProjectFieldsState({ form, project, orgId, isTemplate });
+  const { managerIds, initialManagerIds } = state;
 
   const v = form.watch();
-  // Resolve the selected client directly (it may not be in the current search page) —
-  // used for the display label AND the discount-default prefill below.
-  const selectedClient = useClient(v.clientId || undefined);
-  const selectedClientName = selectedClient?.name;
-
-  // QW-4 (#953): prefill Discount from the selected client's `defaultDiscount` — a
-  // UX convenience only; the server-authoritative snapshot happens in
-  // `projectWrites.createNative` (R-9.3) regardless of what the wizard sends. Re-
-  // prefills each time the client changes, but ONLY while the user hasn't touched
-  // the field themselves — once they type a value (including an explicit 0), their
-  // choice wins and further client changes leave it alone. Never fires on initial
-  // load of an existing project (editing doesn't retroactively re-apply the
-  // client's CURRENT default over whatever discount was actually saved).
-  const discountTouchedRef = useRef(false);
-  const prefilledDiscountForClientId = useRef(project?.clientId ?? "");
-  useEffect(() => {
-    const currentClientId = v.clientId || "";
-    if (!currentClientId) return;
-    if (discountTouchedRef.current) return;
-    if (prefilledDiscountForClientId.current === currentClientId) return;
-    if (selectedClient === undefined || selectedClient?.id !== currentClientId) return; // still loading / stale
-    prefilledDiscountForClientId.current = currentClientId;
-    form.setValue(
-      "discountPercent",
-      selectedClient?.defaultDiscount != null ? Number(selectedClient.defaultDiscount) : undefined,
-      { shouldDirty: false },
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [v.clientId, selectedClient]);
-
-  // Per-project contact picker (WS9 #948) — the client's contacts, reactively.
-  // Changing clientId invalidates any previously-picked contact (it belonged to a
-  // DIFFERENT client), so reset the field the moment the client selection changes —
-  // the server also enforces this (projectWrites.ts), this is just UX so a stale
-  // pick never lingers in the form between the change and submit.
-  const clientContacts = useClientContacts(v.clientId || undefined, orgId);
-  const contactOptions = (clientContacts ?? []).map((c) => ({
-    value: c.id,
-    label: c.name || c.email || c.phone || "Unnamed contact",
-    description: c.isPrimary ? "Primary" : undefined,
-  }));
-  const prevClientIdRef = useRef(project?.clientId ?? "");
-  useEffect(() => {
-    const currentClientId = v.clientId || "";
-    if (currentClientId !== prevClientIdRef.current) {
-      prevClientIdRef.current = currentClientId;
-      form.setValue("clientContactId", "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [v.clientId]);
-
-  // Pre-fill the project code from the org's next sequence so the (now required)
-  // field is populated by default — the user accepts it or types their own.
-  useEffect(() => {
-    if (nextProjectNumber && !form.getValues("projectNumber")) {
-      form.setValue("projectNumber", nextProjectNumber);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextProjectNumber]);
 
   const mutation = useServerMutation({
     mutationFn: async (data: ProjectFormValues) => {
@@ -315,12 +115,10 @@ export function ProjectWizard({
         : await projectWrites.create({ ...data, isTemplate });
 
       // Reconcile managers to the full selected set in one call — the server
-      // diffs against the current rows (create mode = add all; edit mode = add
-      // /remove only the delta). Was a Promise.all fan-out of one round-trip per
-      // changed manager. Only call when the set actually changed: setProjectManagers
-      // needs project:manage, and an unchanged save must stay a pure
-      // create/update (a non-owner without manage permission would otherwise fail
-      // on a manager no-op).
+      // diffs against the current rows. Only call when the set actually changed:
+      // setProjectManagers needs project:manage, and an unchanged save must stay a
+      // pure create/update (a non-owner without manage permission would otherwise
+      // fail on a manager no-op).
       const managersChanged =
         managerIds.length !== initialManagerIds.length ||
         managerIds.some((id) => !initialManagerIds.includes(id));
@@ -330,10 +128,8 @@ export function ProjectWizard({
       return result;
     },
     onSuccess: (result) => {
-      // D3 (#1107) — offered, never forced: the navigation below is
-      // unchanged either way, this only adds an optional action button.
-      // Templates never complete the "project" milestone (activationMilestones
-      // excludes them), so they never offer this hand-off either.
+      // D3 (#1107) — offered, never forced. Templates never complete the
+      // "project" milestone, so they never offer this hand-off either.
       const firstModelId = activationState?.firstModelId;
       const offerHandoff = !isEditing && !isTemplate && isActiveProjectMilestone && !!firstModelId;
       if (offerHandoff) {
@@ -362,12 +158,8 @@ export function ProjectWizard({
     },
   });
 
-  // #1227 (Q3 of the QOL sweep) — non-blocking preview: does moving THIS
-  // project's dates strand another job's gear? Only meaningful in edit mode
-  // (create has no "before" window to compare against — currentWindow is
-  // {null,null}, which the hook's own no-op guard treats as "always moved",
-  // so the call site below skips it for create entirely rather than relying
-  // on that).
+  // #1227 — non-blocking preview: does moving THIS project's dates strand
+  // another job's gear? Only meaningful in edit mode.
   const dateMoveGate = useDateMoveGate<ProjectFormValues>(
     orgId,
     project?.id ?? "",
@@ -389,9 +181,9 @@ export function ProjectWizard({
 
   // Prefer the getById-resolved name (the selected client may be off the current
   // bounded search page — e.g. editing an older project or after another search).
-  const clientName = selectedClientName ?? clientOptions.find((c) => c.value === v.clientId)?.label;
-  const locationName = locationOptions.find((l) => l.value === v.locationId)?.label;
-  const typeName = TYPE_OPTIONS.find((t) => t.value === v.type)?.label;
+  const clientName = state.selectedClientName ?? state.clientOptions.find((c) => c.value === v.clientId)?.label;
+  const locationName = state.locationOptions.find((l) => l.value === v.locationId)?.label;
+  const typeName = v.type ? PROJECT_TYPE_LABELS[v.type] : undefined;
 
   return (
     <>
@@ -443,130 +235,18 @@ export function ProjectWizard({
           >
             Step {step + 1}: {STEPS[step].label}
           </h2>
-          {step === 0 && (
-            <div className="space-y-5">
-              <div data-tour-anchor="tour-project-name">
-                <Field label="Name" required error={form.formState.errors.name?.message}>
-                  <Input {...form.register("name")} placeholder="e.g. Summer Festival 2026" autoFocus />
-                </Field>
-              </div>
-              {!isTemplate && (
-                <Field label="Job code" required hint="Pre-filled from your next sequence — edit if you need a custom code." error={form.formState.errors.projectNumber?.message}>
-                  <Input {...form.register("projectNumber")} placeholder={nextProjectNumber ? `Auto: ${nextProjectNumber}` : "e.g. PROJ-2026-0001"} className="font-mono" />
-                </Field>
-              )}
-              <Field label="Client">
-                <Controller control={form.control} name="clientId" render={({ field }) => (
-                  <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={clientOptions}
-                    onSearchChange={setClientQuery} loading={clients === undefined} selectedLabel={selectedClientName}
-                    placeholder="Select client…" searchPlaceholder="Search clients…" allowClear
-                    onCreateNew={() => setQuickClient(true)} createNewLabel="New client" emptyMessage="No clients found." />
-                )} />
-              </Field>
-              {v.clientId && (
-                <Field label="Contact" hint="Who this job's documents address — defaults to the client's primary contact.">
-                  <Controller control={form.control} name="clientContactId" render={({ field }) => (
-                    <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={contactOptions}
-                      loading={clientContacts === undefined} placeholder="Primary contact (default)" searchPlaceholder="Search contacts…"
-                      allowClear emptyMessage="This client has no contacts yet." />
-                  )} />
-                </Field>
-              )}
-              <Field
-                label="Discount (%)"
-                hint={
-                  selectedClient?.defaultDiscount != null
-                    ? "From client default — edit anytime. Won't retroactively change if you switch clients again after saving."
-                    : undefined
-                }
-              >
-                <LockedField
-                  locked={discountLocked}
-                  reason={discountLockReason}
-                  exitLabel="Unlock financials"
-                  onExit={scrollToLockStrip}
-                >
-                  <Input
-                    type="number" step="0.01" min="0" max="100" placeholder="0"
-                    {...form.register("discountPercent", { onChange: () => { discountTouchedRef.current = true; } })}
-                  />
-                </LockedField>
-              </Field>
-              <Field label="Job manager(s)" error={membersError ? "Couldn't load org members — you may not have permission to view them." : undefined}>
-                <ComboboxPicker value="" onChange={(id) => { if (id && !managerIds.includes(id)) setManagerIds((p) => [...p, id]); }}
-                  options={memberOptions.filter((m) => !managerIds.includes(m.value))} placeholder="Add manager…" searchPlaceholder="Search members…" emptyMessage="No members found." />
-                {managerIds.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-2">
-                    {managerIds.map((id) => {
-                      const m = memberOptions.find((x) => x.value === id);
-                      return (
-                        <span key={id} className="inline-flex items-center gap-1 rounded-full bg-paper-2 px-2 py-0.5 text-[12px] text-ink-2">
-                          {m?.label ?? id}
-                          <button type="button" aria-label="Remove manager" onClick={() => setManagerIds((p) => p.filter((x) => x !== id))} className={cn("rounded-full text-muted transition-colors hover:text-ink", focusRing)}><X className="h-3 w-3" /></button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </Field>
-              <Field label="Type">
-                <Controller control={form.control} name="type" render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger><SelectValue>{typeName ?? "Other"}</SelectValue></SelectTrigger>
-                    <SelectContent>{TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                )} />
-              </Field>
-              <Field label="Description">
-                <Textarea {...form.register("description")} placeholder="Brief description of the job" rows={2} />
-              </Field>
-              <Field label="Tags">
-                <Controller name="tags" control={form.control} render={({ field }) => (
-                  <TagInput value={field.value ?? []} onChange={field.onChange} suggestions={orgTags} placeholder="Add tags…" />
-                )} />
-              </Field>
-            </div>
-          )}
 
-          {step === 1 && <ScheduleStep form={form} />}
-
-          {step === 2 && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Field label="Location">
-                  <Controller control={form.control} name="locationId" render={({ field }) => (
-                    <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={locationOptions}
-                      placeholder="Select location…" searchPlaceholder="Search locations…" allowClear
-                      onCreateNew={() => setQuickLocation(true)} createNewLabel="New location" emptyMessage="No locations found." />
-                  )} />
-                </Field>
-              </div>
-              <Field label="Contact name"><Input {...form.register("siteContactName")} placeholder="Contact person on site" /></Field>
-              <Field label="Contact phone"><Input {...form.register("siteContactPhone")} placeholder="+61 400 000 000" /></Field>
-              <div className="sm:col-span-2">
-                <Field label="Contact email" error={form.formState.errors.siteContactEmail?.message}>
-                  <Input type="email" {...form.register("siteContactEmail")} placeholder="contact@example.com" />
-                </Field>
-              </div>
-              {/* #940 (WS1 — finance model) landed: the old "Financial" block here
-                  (hand-typed Deposit %/Deposit paid/Invoiced total inputs with no
-                  server-side math) is REMOVED, not just relocated. Deposit % now
-                  lives on the CLIENT payment profile (client detail page);
-                  deposit-paid/invoiced-total are derived from the project's real
-                  Quote/Invoice rows (Project page -> Finance tab), never hand-typed
-                  here again. See FEATUREDOCS/66-finance-quotes-invoices-xero.md. */}
-            </div>
-          )}
+          {step < 3 && <ProjectFields key={STEPS[step].key} form={form} state={state} sections={STEPS[step].sections} />}
 
           {step === 3 && (
             <div className="space-y-4">
               <h2 className="font-display text-section-header font-bold text-ink">{v.name || "Untitled job"}</h2>
               <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
                 <ReviewRow label="Client" value={clientName} />
-                <ReviewRow label="Contact" value={contactOptions.find((c) => c.value === v.clientContactId)?.label} />
+                <ReviewRow label="Contact" value={state.contactOptions.find((c) => c.value === v.clientContactId)?.label} />
                 <ReviewRow label="Type" value={typeName} />
                 <ReviewRow label="Managers" value={managerIds.length ? `${managerIds.length} assigned` : undefined} />
-                <ReviewRow label="Job code" value={v.projectNumber || (nextProjectNumber ? `Auto: ${nextProjectNumber}` : undefined)} mono />
+                <ReviewRow label="Job code" value={v.projectNumber || (state.nextProjectNumber ? `Auto: ${state.nextProjectNumber}` : undefined)} mono />
                 <ReviewRow label="Rental" value={dateRange(v.rentalStartDate, v.rentalEndDate)} />
                 <ReviewRow label="Job window" value={dateRange(v.projectStartDate, v.projectEndDate) || "Same as rental"} />
                 <ReviewRow label="Location" value={locationName} />
@@ -626,210 +306,7 @@ export function ProjectWizard({
           </div>
         </aside>
       </form>
-
-      <QuickCreateClient open={quickClient} onOpenChange={setQuickClient} onCreated={(id) => form.setValue("clientId", id)} />
-      <QuickCreateLocation open={quickLocation} onOpenChange={setQuickLocation} onCreated={(id) => form.setValue("locationId", id)} />
     </>
-  );
-}
-
-// ─── Schedule step ─────────────────────────────────────────────
-
-/**
- * Two windows (WS2 #941, locked decision): RENTAL (chargeable — what's invoiced)
- * and PROJECT (gear committed — when equipment leaves/returns the warehouse;
- * availability/conflicts read this one). Rental is the spine — pick it with a
- * preset or the range calendar. Project defaults to "same as rental" (ghost text,
- * ungenerated — R-3.1: it stays genuinely blank in the form/DB, not a copy) until
- * the user explicitly diverges it, e.g. an earlier load-in or later load-out than
- * the charged dates. Soft (non-blocking) hints flag when the project window
- * doesn't fully contain the rental window — that's unusual, not necessarily wrong.
- */
-function ScheduleStep({ form }: { form: UseFormReturn<ProjectFormValues> }) {
-  const v = form.watch();
-  const range: DateRange = {
-    start: fromDateStr(v.rentalStartDate),
-    end: fromDateStr(v.rentalEndDate),
-  };
-  const projectRange: DateRange = {
-    start: fromDateStr(v.projectStartDate),
-    end: fromDateStr(v.projectEndDate),
-  };
-
-  const setRange = (r: DateRange) => {
-    // D25: a set project window moves with the rental dates, by the same offset.
-    const shifted = shiftWindowWithRental(
-      { rentalStartDate: normalizeDate(v.rentalStartDate), rentalEndDate: normalizeDate(v.rentalEndDate) },
-      {
-        rentalStartDate: toDateStr(r.start), rentalEndDate: toDateStr(r.end),
-        projectStartDate: normalizeDate(v.projectStartDate), projectEndDate: normalizeDate(v.projectEndDate),
-      },
-    );
-    form.setValue("rentalStartDate", toDateStr(r.start), { shouldDirty: true });
-    form.setValue("rentalEndDate", toDateStr(r.end), { shouldDirty: true });
-    if (shifted.projectStartDate !== normalizeDate(v.projectStartDate)) form.setValue("projectStartDate", shifted.projectStartDate ?? "", { shouldDirty: true });
-    if (shifted.projectEndDate !== normalizeDate(v.projectEndDate)) form.setValue("projectEndDate", shifted.projectEndDate ?? "", { shouldDirty: true });
-  };
-  const setProjectRange = (r: DateRange) => {
-    form.setValue("projectStartDate", toDateStr(r.start), { shouldDirty: true });
-    form.setValue("projectEndDate", toDateStr(r.end), { shouldDirty: true });
-  };
-
-  const lenLabel = rangeLengthLabel(range);
-  const summary = range.start
-    ? range.end
-      ? `${format(range.start, "EEE d MMM")} → ${format(range.end, "EEE d MMM")}`
-      : `${format(range.start, "EEE d MMM")} — pick an end date`
-    : "No dates yet";
-
-  const projectLenLabel = rangeLengthLabel(projectRange);
-  const projectSummary = projectRange.start
-    ? projectRange.end
-      ? `${format(projectRange.start, "EEE d MMM")} → ${format(projectRange.end, "EEE d MMM")}`
-      : `${format(projectRange.start, "EEE d MMM")} — pick an end date`
-    : "Same as rental window";
-
-  // Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
-  // the rental window (gear leaves before/at the charged start, returns after/at
-  // the charged end). Flag it, don't block — an unusual booking is still valid.
-  const softWarning =
-    projectRange.start && range.start && projectRange.start > range.start
-      ? "The job window starts after the rental window — usually load-in is on or before the rental start."
-      : projectRange.end && range.end && projectRange.end < range.end
-        ? "The job window ends before the rental window — usually load-out is on or after the rental end."
-        : undefined;
-
-  return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <Label>Rental window</Label>
-        <p className="t-micro text-muted">When does the gear leave and come back? This is what gets charged.</p>
-      </div>
-
-      {/* Duration presets */}
-      <div className="flex flex-wrap gap-2">
-        {DURATION_PRESETS.map((p) => {
-          const active = lenLabel === (p.days === 0 ? "1 day" : `${p.days + 1} days`);
-          return (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => setRange(presetRange(p, range.start))}
-              className={cn(
-                "rounded-full border-2 px-3 py-1 text-table-cell font-medium transition-colors",
-                focusRing,
-                active
-                  ? "border-red bg-red-soft text-ink"
-                  : "border-line text-ink-2 hover:border-red/50 hover:text-ink",
-              )}
-            >
-              {p.label}
-            </button>
-          );
-        })}
-        {range.start && (
-          <button
-            type="button"
-            onClick={() => setRange({ start: undefined, end: undefined })}
-            className={cn("rounded-full px-3 py-1 text-table-cell font-medium text-muted transition-colors hover:text-t-out", focusRing)}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Calendar + live summary */}
-      <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-        <RangeCalendar value={range} onChange={setRange} />
-        <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-          <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-muted")}>{summary}</span>
-          {lenLabel && (
-            <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{lenLabel}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Project window — blank by default ("same as rental"), diverges only when set */}
-      <Accordion type="single" collapsible defaultValue={projectRange.start ? "project-window" : undefined}>
-        <AccordionItem value="project-window" className="border-line">
-          <AccordionTrigger>
-            Job window
-            {!projectRange.start && <span className="ml-2 t-micro font-normal text-muted">(same as rental)</span>}
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="space-y-3 pt-1">
-              <p className="t-micro text-muted">
-                When the gear is actually committed — set this only if load-in/load-out fall outside the rental
-                window (e.g. an earlier bump-in or a later strike).
-              </p>
-              <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-                <RangeCalendar value={projectRange} onChange={setProjectRange} />
-                <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
-                  <span className={cn("text-table-cell font-medium", projectRange.start ? "text-ink" : "text-muted")}>
-                    {projectSummary}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {projectLenLabel && (
-                      <span className="rounded-full bg-red-soft px-2.5 py-0.5 text-[12px] font-semibold text-ink">{projectLenLabel}</span>
-                    )}
-                    {projectRange.start && (
-                      <button
-                        type="button"
-                        onClick={() => setProjectRange({ start: undefined, end: undefined })}
-                        className={cn("rounded-full px-2.5 py-0.5 text-[12px] font-medium text-muted transition-colors hover:text-t-out", focusRing)}
-                      >
-                        Reset to rental
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {softWarning && (
-                <p className="t-micro text-red-text" role="status">{softWarning}</p>
-              )}
-              <div className="space-y-4 pt-1">
-                <MomentRow icon={Truck} label="Job starts" dateName="projectStartDate" timeName="projectStartTime" form={form} />
-                <MomentRow icon={Truck} label="Job ends" dateName="projectEndDate" timeName="projectEndTime" form={form} />
-              </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </div>
-  );
-}
-
-function MomentRow({
-  icon: Icon, label, dateName, timeName, form,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  dateName: Path<ProjectFormValues>;
-  timeName: Path<ProjectFormValues>;
-  form: UseFormReturn<ProjectFormValues>;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="w-24 shrink-0 text-table-cell font-medium text-ink-2">{label}</span>
-      <Input type="date" aria-label={`${label} date`} {...form.register(dateName)} className="flex-1" />
-      <Input type="time" aria-label={`${label} time`} {...form.register(timeName)} className="w-28" />
-    </div>
-  );
-}
-
-// ─── Field helpers ─────────────────────────────────────────────
-
-function Field({ label, required, hint, error, children }: { label: string; required?: boolean; hint?: string; error?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}{required && <span className="text-red-text"> *</span>}</Label>
-      {children}
-      {hint && !error && <p className="t-micro text-muted">{hint}</p>}
-      {error && <p className="t-micro text-t-out">{error}</p>}
-    </div>
   );
 }
 

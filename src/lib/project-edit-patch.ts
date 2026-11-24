@@ -13,9 +13,9 @@ import type { projectSchema } from "@/lib/validations/project";
  *   though the Discount input was disabled; and `status` is not a field of the
  *   form (it moves through the header stepper's gates), so a diff never sends it.
  */
-export type ParsedProjectForm = z.output<typeof projectSchema>;
+type ParsedProjectForm = z.output<typeof projectSchema>;
 
-export interface ProjectUpdate {
+interface ProjectUpdate {
   set: Record<string, unknown>;
   clear: string[];
 }
@@ -46,15 +46,12 @@ function normalise(value: unknown): unknown {
 
 const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-export function buildProjectUpdate(
-  parsed: ParsedProjectForm,
-  opts: { before?: ParsedProjectForm; now: number } ,
-): ProjectUpdate {
-  const { before, now } = opts;
+const read = (p: ParsedProjectForm, key: Key) => normalise((p as Record<string, unknown>)[key]);
+
+/** The fields that differ (every field when there is no `before`). */
+function collectFields(parsed: ParsedProjectForm, before?: ParsedProjectForm): ProjectUpdate {
   const set: Record<string, unknown> = {};
   const clear: string[] = [];
-  const read = (p: ParsedProjectForm, key: Key) => normalise((p as Record<string, unknown>)[key]);
-
   for (const key of [...REQUIRED_KEYS, ...OPTIONAL_KEYS]) {
     const next = read(parsed, key);
     if (before && sameValue(next, read(before, key))) continue;
@@ -62,6 +59,15 @@ export function buildProjectUpdate(
     else set[key] = next;
   }
   if (!before || !sameValue(parsed.tags, before.tags)) set.tags = parsed.tags;
+  return { set, clear };
+}
+
+export function buildProjectUpdate(
+  parsed: ParsedProjectForm,
+  opts: { before?: ParsedProjectForm; now: number },
+): ProjectUpdate {
+  const { before, now } = opts;
+  const { set, clear } = collectFields(parsed, before);
   // Full mode keeps its historical `status` write; a diff never sends it.
   if (!before) set.status = parsed.status;
   if (before && Object.keys(set).length === 0 && clear.length === 0) return { set: {}, clear: [] };
@@ -69,26 +75,3 @@ export function buildProjectUpdate(
   return { set, clear };
 }
 
-/** The keys a diff changed, for the sheet footer (`dates, project window changed`). */
-export function changedGroups(update: ProjectUpdate): string[] {
-  const keys = new Set([...Object.keys(update.set), ...update.clear]);
-  keys.delete("updatedAt");
-  const groups: [string, (k: string) => boolean][] = [
-    ["dates", (k) => k === "rentalStartDate" || k === "rentalEndDate"],
-    ["project window", (k) => /^project(Start|End)(Date|Time)$/.test(k)],
-    ["client", (k) => k === "clientId" || k === "clientContactId"],
-    ["where", (k) => k === "locationId" || k.startsWith("siteContact")],
-    ["discount", (k) => k === "discountPercent"],
-    ["tags", (k) => k === "tags"],
-  ];
-  const out: string[] = [];
-  for (const [label, test] of groups) {
-    const hit = [...keys].filter(test);
-    if (hit.length) {
-      out.push(label);
-      hit.forEach((k) => keys.delete(k));
-    }
-  }
-  if (keys.size) out.push("details");
-  return out;
-}

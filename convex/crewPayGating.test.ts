@@ -35,7 +35,8 @@ async function seed(t: T, role: string, key?: { noFinancials: boolean }) {
     }
     await ctx.db.insert("crewRoles", { id: "r1", organizationId: ORG, name: "Rigger", defaultRate: 600, rateType: "DAILY" });
     await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", isActive: true, crewRoleId: "r1", defaultHourlyRate: 45, skillIds: ["sk1"] });
-    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false, liveVersionId: "v1" });
+    // labourCostTotal as recalc stores it for the one unlinked 650 call (projectLabourCost reads it).
+    await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false, liveVersionId: "v1", labourCostTotal: 650 });
     await ctx.db.insert("crewAssignments", { id: "a1", organizationId: ORG, projectId: "p1", crewMemberId: "c1", crewRoleId: "r1", status: "CONFIRMED", startDate: D0, endDate: D0, rateOverride: 650, rateType: "DAILY", estimatedCost: 650 });
     // Two entries the same day on a DAILY rate: the day rate counts once.
     await ctx.db.insert("crewTimeEntries", { id: "t1", organizationId: ORG, crewMemberId: "c1", assignmentId: "a1", date: D0, startTime: "07:00", endTime: "12:00", totalHours: 5, status: "SUBMITTED" });

@@ -163,19 +163,20 @@ export const projectLabourCost = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    // A service-linked assignment's cost is already rolled into its service's
-    // `costTotal` (convex/lib/serviceCost.ts recalcServiceCostFromCrew), which
-    // feeds `serviceCostTotal` — summing it again here would double it against
-    // that. Mirrors recalcProjectTotals's `labourCostTotal` exclusion exactly
-    // (convex/lib/recalc.ts, issue #796) so this display total and the real P&L
-    // total never disagree.
-    // It IS the project's `labourCostTotal` (same exclusion), a JOB-LEVEL figure:
-    // it follows the job-cost rule (owner ruling 2026-11-24), never a second rule
-    // for the same number. A caller who fails it gets the all-zero shape (S1).
+    // The total IS the project's stored `labourCostTotal` (recalcProjectTotals,
+    // convex/lib/recalc.ts), READ, never recomputed: one number, one source
+    // (R-3.1). A recompute here with its own status filter disagreed with recalc
+    // (which counts CANCELLED/DECLINED calls — a logged follow-up), and the
+    // difference gave away the excluded person's cost. It is a JOB-LEVEL figure,
+    // so it follows the job-cost rule (owner ruling 2026-11-24); a caller who
+    // fails it gets the all-zero shape (S1). `assignmentCount` counts the live
+    // unlinked calls — a count, not money.
     if (!(await canSeeJobCost(ctx, orgId))) return { totalLabourCost: 0, assignmentCount: 0 };
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return { totalLabourCost: 0, assignmentCount: 0 };
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? "") && a.serviceId == null);
-    return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
+    return { totalLabourCost: project.labourCostTotal ?? 0, assignmentCount: assignments.length };
   },
 });
 

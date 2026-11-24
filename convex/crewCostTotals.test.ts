@@ -99,6 +99,20 @@ describe("job cost follows invoice:read; individual pay follows the pay line", (
     expect(await labour(t)).toEqual({ totalLabourCost: 300, assignmentCount: 1 });
   });
 
+  test("projectLabourCost IS the stored labourCostTotal, never a recompute (a cancelled call's cost can't be back-solved from a difference)", async () => {
+    const t = makeT(); await seed(t, "member");
+    await t.run(async (ctx) => {
+      // recalc counts every unlinked call, CANCELLED included (a logged follow-up): 300 + 777.
+      await ctx.db.insert("crewAssignments", { id: "a3", organizationId: ORG, projectId: "p1", crewMemberId: "c1", status: "CANCELLED", estimatedCost: 777 } as never);
+      const p1 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p1!._id, { labourCostTotal: 1077 });
+    });
+    const project = (await t.withIdentity(asUser).query(api.projects.getById, { id: "p1" })) as Record<string, unknown>;
+    const l = await labour(t);
+    expect(l.totalLabourCost).toBe(project.labourCostTotal); // one number, one source
+    expect(l.totalLabourCost).toBe(1077);
+  });
+
   test("a caller without invoice:read (a key scoped to project + crew only, acting as an owner) gets job cost ABSENT", async () => {
     const t = makeT(); await seed(t, "owner", { noFinancials: false, scopes: ["project:read", "crew:read"] });
     const r = await reads(t, asAgent);

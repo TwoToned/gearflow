@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/org-context";
-import { callerSeesCrewPay, crewCostSortAllowed, withoutProjectCrewCost } from "@/lib/crew-pay-caller";
+import { callerSeesJobCost, jobCostSortAllowed, withoutJobCost } from "@/lib/crew-pay-caller";
 import { getClientById, getClientMap, attachClient } from "@/lib/clients-read";
 import { buildProjectEquipmentTree } from "@/lib/project-line-item-read";
 import { resolvePrimaryDateRange } from "@/lib/project-dates";
@@ -286,11 +286,11 @@ export async function getProjects(params?: {
   // after attaching clients. Other sorts sort the mapped rows, then paginate.
   const sortByClient = sortBy === "client";
 
-  // Crew-cost totals are absent below the pay line, and can't be a sort key there.
-  const payVisible = await callerSeesCrewPay();
+  // Job-cost fields are absent without job cost, and can't be a sort key there.
+  const jobCostShown = await callerSeesJobCost();
   if (!sortByClient) {
     const dir = sortOrder === "desc" ? -1 : 1;
-    const key = crewCostSortAllowed(sortBy, payVisible) ? sortBy : "createdAt";
+    const key = jobCostSortAllowed(sortBy, jobCostShown) ? sortBy : "createdAt";
     filtered.sort((a, b) => compareProjectField(a, b, key) * dir);
   }
 
@@ -302,7 +302,7 @@ export async function getProjects(params?: {
     getLocationMap(organizationId),
   ]);
   let projects = pageRows.map((p) => ({
-    ...withoutProjectCrewCost(p, payVisible),
+    ...withoutJobCost(p, jobCostShown),
     client: p.clientId ? clientMap.get(p.clientId) ?? null : null,
     location: p.locationId ? locationMap.get(p.locationId) ?? null : null,
     // One resolved answer to "when is this job", so a caller never has to guess
@@ -541,10 +541,10 @@ export async function getProject(id: string) {
     };
   });
 
-  // `client` fetched in wave 1 (Convex), attached here. The crew-cost totals
-  // (and margin) are absent for a caller below the pay line (UX Phase 15 ruling).
+  // `client` fetched in wave 1 (Convex), attached here. Job-level cost and margin
+  // are absent for a caller without job cost (owner ruling 2026-11-24).
   return serialize({
-    ...withoutProjectCrewCost(project, await callerSeesCrewPay()),
+    ...withoutJobCost(project, await callerSeesJobCost()),
     primaryDateRange: resolvePrimaryDateRange(project),
     categories,
     client,
@@ -604,9 +604,9 @@ export async function getTemplates() {
     // Location FK was dropped (Phase B); attach `location` from the Convex mirror.
     getLocationMap(organizationId),
   ]);
-  const payVisible = await callerSeesCrewPay();
+  const jobCostShown = await callerSeesJobCost();
   const withCounts = templates.map((t) => ({
-    ...withoutProjectCrewCost(t, payVisible),
+    ...withoutJobCost(t, jobCostShown),
     location: t.locationId ? locationMap.get(t.locationId) ?? null : null,
     _count: { lineItems: topLevelCounts.get(t.id) ?? 0 },
   }));

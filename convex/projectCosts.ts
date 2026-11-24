@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
 import { liveRows } from "./lib/versionScope";
 
 /**
@@ -61,12 +61,11 @@ export const operationalCosts = query({
     // regardless of the acting user's role. Checked AFTER the RBAC gate (so a
     // key without project:read still gets FORBIDDEN, not a quiet zero) and
     // BEFORE any computation, so nothing costed is ever assembled for it.
-    // UX Phase 15 ruling: its labour and service cost totals INCLUDE crew pay, and
-    // its margin back-solves them, so below the pay line (the ONE rule,
-    // `canSeeCrewPay` — which a noFinancials key also fails) the whole payload is
-    // the all-zero EMPTY shape (its fields are a stable contract; it has no
-    // non-financial subset). The UI renders nothing for it there (`ratesVisible`).
-    if (!(await canSeeCrewPay(ctx, orgId))) return EMPTY;
+    // It is JOB-LEVEL cost and margin, so it follows the job-cost rule (owner
+    // ruling 2026-11-24, `canSeeJobCost`: invoice:read and not a noFinancials
+    // key). A caller who fails it gets the all-zero EMPTY shape (its fields are a
+    // stable contract; it has no non-financial subset), and the panel hides.
+    if (!(await canSeeJobCost(ctx, orgId))) return EMPTY;
 
     const project = await ctx.db
       .query("projects")

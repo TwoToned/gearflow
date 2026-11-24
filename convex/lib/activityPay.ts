@@ -1,4 +1,4 @@
-import { MEMBER_RATE_FIELDS, PROJECT_CREW_COST_FIELDS, ROLE_RATE_FIELDS, SERVICE_CREW_COST_FIELDS } from "./crewPayFields";
+import { JOB_COST_FIELDS, MEMBER_RATE_FIELDS, ROLE_RATE_FIELDS, SERVICE_CREW_COST_FIELDS } from "./crewPayFields";
 
 /**
  * The activity log keeps crew pay in its field diffs (`details.changes`, e.g.
@@ -12,7 +12,7 @@ const PAY_FIELDS: ReadonlySet<string> = new Set([
   ...MEMBER_RATE_FIELDS,
   ...ROLE_RATE_FIELDS,
   ...SERVICE_CREW_COST_FIELDS,
-  ...PROJECT_CREW_COST_FIELDS,
+  ...JOB_COST_FIELDS,
 ]);
 
 type WithDetails = { details?: unknown };

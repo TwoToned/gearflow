@@ -3,7 +3,7 @@ import { query, mutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
 import { MEMBER_RATE_FIELDS, ROLE_RATE_FIELDS } from "./lib/crewPayFields";
 import { coveredDaysFull, crewShortfallByDay } from "./lib/crewShortfall";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -169,8 +169,10 @@ export const projectLabourCost = query({
     // that. Mirrors recalcProjectTotals's `labourCostTotal` exclusion exactly
     // (convex/lib/recalc.ts, issue #796) so this display total and the real P&L
     // total never disagree.
-    // Its WHOLE payload is pay: below the pay line it is the all-zero shape (S1).
-    if (!(await canSeeCrewPay(ctx, orgId))) return { totalLabourCost: 0, assignmentCount: 0 };
+    // It IS the project's `labourCostTotal` (same exclusion), a JOB-LEVEL figure:
+    // it follows the job-cost rule (owner ruling 2026-11-24), never a second rule
+    // for the same number. A caller who fails it gets the all-zero shape (S1).
+    if (!(await canSeeJobCost(ctx, orgId))) return { totalLabourCost: 0, assignmentCount: 0 };
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? "") && a.serviceId == null);
     return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };

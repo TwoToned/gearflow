@@ -61,16 +61,16 @@ describe("getProjectServices — crew pay follows the one rule for the real call
     expect(((await getProjectServices("p1")) as unknown as Record<string, unknown>[])[0]).toMatchObject({ costTotal: 650 });
   });
 
-  it("getProjectServicesSummary: below the pay line the cost total and its aliases are ABSENT, every other field stays", async () => {
-    const member = (await getProjectServicesSummary("p1")) as unknown as Record<string, unknown>;
-    for (const f of ["costTotal", "totalCost", "internalTotal"]) expect(member, f).not.toHaveProperty(f);
-    expect(member).toEqual({ chargeTotal: 900, onDocumentsTotal: 900, serviceCount: 1 });
+  it("getProjectServicesSummary: its summed cost is JOB cost — a member with invoice:read sees it; without job cost it and its aliases are ABSENT", async () => {
+    // A member (invoice:read) sees the job-level total, though not any one service's own cost (above).
+    expect(await getProjectServicesSummary("p1")).toMatchObject({ costTotal: 650, totalCost: 650, internalTotal: 650, chargeTotal: 900 });
+    role.value = "custom:legacy"; // no invoice:read
+    const none = (await getProjectServicesSummary("p1")) as unknown as Record<string, unknown>;
+    for (const f of ["costTotal", "totalCost", "internalTotal"]) expect(none, f).not.toHaveProperty(f);
+    expect(none).toEqual({ chargeTotal: 900, onDocumentsTotal: 900, serviceCount: 1 });
     ambient.value = { actorType: "apiKey" };
     role.value = "owner";
     expect(await getProjectServicesSummary("p1")).not.toHaveProperty("costTotal");
-    ambient.value = null;
-    role.value = "manager";
-    expect(await getProjectServicesSummary("p1")).toMatchObject({ costTotal: 650, totalCost: 650, internalTotal: 650, chargeTotal: 900 });
   });
 
   it("an API key (noFinancials, fail closed) acting as an owner does not", async () => {

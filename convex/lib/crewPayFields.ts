@@ -1,7 +1,8 @@
 /**
- * THE crew pay field lists (R-3.1): every redaction of a crew member's or a
- * crew role's pay reads these, never a local copy. Gated by the one pay rule
- * (`canSeeCrewPay` / `crewPayVisible`).
+ * THE money field lists (R-3.1): every redaction of a crew member's or a crew
+ * role's pay, and of a job's cost, reads these, never a local copy. Pay is gated
+ * by the pay rule (`canSeeCrewPay` / `crewPayVisible`); `JOB_COST_FIELDS` by the
+ * job-cost rule (`canSeeJobCost` / `jobCostVisible`), lib/crewPayRule.ts.
  */
 
 /** A crew member's own pay: default rates and the overtime multiplier. */
@@ -19,8 +20,10 @@ export const ROLE_RATE_FIELDS = ["defaultRate", "chargeRate"] as const;
 export const SERVICE_CREW_COST_FIELDS = ["costTotal"] as const;
 
 /**
- * The project's totals that include crew cost: `serviceCostTotal` (services'
- * costs, crew rolled in), `labourCostTotal` (unlinked crew) and `margin`
- * (total − costs, which back-solves them). Absent below the pay line.
+ * JOB-LEVEL cost: the project's `serviceCostTotal` (services' costs, crew
+ * rolled in), `labourCostTotal` (unlinked crew) and `margin`. NOT behind the
+ * pay line: owner ruling 2026-11-24, these follow the job-cost rule
+ * (`canSeeJobCost` / `callerSeesJobCost`: `invoice:read` and not a
+ * `noFinancials` key), and are ABSENT for everyone else.
  */
-export const PROJECT_CREW_COST_FIELDS = ["serviceCostTotal", "labourCostTotal", "margin"] as const;
+export const JOB_COST_FIELDS = ["serviceCostTotal", "labourCostTotal", "margin"] as const;

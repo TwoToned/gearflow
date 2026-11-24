@@ -1,9 +1,10 @@
 // @vitest-environment node
 //
 // `getProject`, `getProjects` and `getTemplates` read the project row with the
-// service identity, so they strip its crew-cost totals (`serviceCostTotal`,
-// `labourCostTotal`, `margin`) for a caller below the crew-pay line — absent,
-// never zeroed — and `getProjects` won't sort on one (UX Phase 15 ruling).
+// service identity, so they decide JOB COST (`serviceCostTotal`,
+// `labourCostTotal`, `margin`) for the real caller with `callerSeesJobCost`
+// (owner ruling 2026-11-24: invoice:read, and not a noFinancials key): absent,
+// never zeroed, for a caller who fails it — and `getProjects` won't sort on one.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const role = vi.hoisted(() => ({ value: "member" as string }));
@@ -48,7 +49,9 @@ vi.mock("@/lib/locations-read", () => ({ getLocationMap: vi.fn(async () => new M
 
 import { getProject, getProjects, getTemplates } from "../projects";
 
-const CREW_COST = ["serviceCostTotal", "labourCostTotal", "margin"];
+const JOB_COST = ["serviceCostTotal", "labourCostTotal", "margin"];
+/** A role with no invoice:read: every built-in role holds it, so an unknown (removed) role stands in. */
+const NO_INVOICE_READ = "custom:legacy";
 type Row = Record<string, unknown>;
 
 beforeEach(() => {
@@ -58,13 +61,13 @@ beforeEach(() => {
   rows.list = [ROW("p1", 4050, 1000), ROW("p2", 99999, 2000), ROW("t1", 1, 500, { isTemplate: true })];
 });
 
-describe("project server actions strip crew-cost totals below the pay line", () => {
-  it("getProject: a member gets no crew-cost total; the rest of the row stays; a manager gets them", async () => {
-    const p = (await getProject("p1")) as Row;
-    for (const f of CREW_COST) expect(p, f).not.toHaveProperty(f);
-    expect(p).toMatchObject({ id: "p1", total: 5000 });
-    role.value = "manager";
+describe("project server actions follow the job-cost rule", () => {
+  it("getProject: a member WITH invoice:read gets job cost and margin; a role without it gets them ABSENT, the rest stays", async () => {
     expect(await getProject("p1")).toMatchObject({ serviceCostTotal: 650, labourCostTotal: 300, margin: 4050 });
+    role.value = NO_INVOICE_READ;
+    const p = (await getProject("p1")) as Row;
+    for (const f of JOB_COST) expect(p, f).not.toHaveProperty(f);
+    expect(p).toMatchObject({ id: "p1", total: 5000 });
   });
 
   it("getProject: an API key (noFinancials, fail closed) as an owner gets none", async () => {
@@ -73,28 +76,29 @@ describe("project server actions strip crew-cost totals below the pay line", () 
     expect(await getProject("p1")).not.toHaveProperty("margin");
   });
 
-  it("getProjects: a member's rows carry no crew-cost total", async () => {
+  it("getProjects: a member's rows carry job cost; a role without invoice:read gets none", async () => {
     const res = (await getProjects({})) as unknown as { projects: Row[] };
     expect(res.projects.length).toBeGreaterThan(0);
-    for (const p of res.projects) for (const f of CREW_COST) expect(p, f).not.toHaveProperty(f);
+    for (const p of res.projects) expect(p).toHaveProperty("margin");
+    role.value = NO_INVOICE_READ;
+    const none = (await getProjects({})) as unknown as { projects: Row[] };
+    for (const p of none.projects) for (const f of JOB_COST) expect(p, f).not.toHaveProperty(f);
   });
 
-  it("getProjects: a manager sorts by margin; a member asking the same gets the default order (the two differ)", async () => {
-    role.value = "manager";
+  it("getProjects: a member sorts by margin; a caller without job cost asking the same gets the default order (the two differ)", async () => {
     rows.list = [ROW("p1", 99999, 1000), ROW("p2", 1, 2000)]; // margin asc: p2, p1; createdAt asc: p1, p2
     const res = (await getProjects({ sortBy: "margin", sortOrder: "asc" })) as unknown as { projects: Row[] };
     expect(res.projects.map((p) => p.id)).toEqual(["p2", "p1"]);
     expect(res.projects[0]).toMatchObject({ margin: 1 });
-    role.value = "member";
-    const member = (await getProjects({ sortBy: "margin", sortOrder: "asc" })) as unknown as { projects: Row[] };
-    expect(member.projects.map((p) => p.id)).toEqual(["p1", "p2"]); // createdAt, not margin
+    role.value = NO_INVOICE_READ;
+    const none = (await getProjects({ sortBy: "margin", sortOrder: "asc" })) as unknown as { projects: Row[] };
+    expect(none.projects.map((p) => p.id)).toEqual(["p1", "p2"]); // createdAt, not margin
   });
 
-  it("getTemplates: no crew-cost total below the line", async () => {
+  it("getTemplates: job cost for a member, absent without invoice:read", async () => {
+    expect(((await getTemplates()) as unknown as Row[])[0]).toMatchObject({ id: "t1", margin: 1 });
+    role.value = NO_INVOICE_READ;
     const [t] = (await getTemplates()) as unknown as Row[];
-    expect(t).toMatchObject({ id: "t1" });
-    for (const f of CREW_COST) expect(t, f).not.toHaveProperty(f);
-    role.value = "manager";
-    expect(((await getTemplates()) as unknown as Row[])[0]).toMatchObject({ margin: 1 });
+    for (const f of JOB_COST) expect(t, f).not.toHaveProperty(f);
   });
 });

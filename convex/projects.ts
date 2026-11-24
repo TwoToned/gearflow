@@ -5,8 +5,8 @@ import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { canSeeCrewPay, crewPayRedactor } from "./lib/crewPayVisibility";
-import { PROJECT_CREW_COST_FIELDS } from "./lib/crewPayFields";
+import { canSeeJobCost, jobCostRedactor } from "./lib/crewPayVisibility";
+import { JOB_COST_FIELDS } from "./lib/crewPayFields";
 import { createLiveVersionForProject } from "./lib/projectVersionState";
 import {
   JOB_SEGMENT_KEYS,
@@ -49,7 +49,7 @@ export const list = query({
       .query("projects")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getProjectsByOrg) + the clients dashboard's org-wide rollup — see docs/exceptions.md R-8.3.3
       .collect();
-    return rows.map(await crewPayRedactor(ctx, orgId, PROJECT_CREW_COST_FIELDS));
+    return rows.map(await jobCostRedactor(ctx, orgId));
   },
 });
 
@@ -59,9 +59,9 @@ export const getById = query({
     const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "project"); // Phase 2 read bootstrap (#998)
     if (!doc) return doc;
-    // The totals that include crew cost (and the margin that back-solves them)
-    // are absent below the pay line (UX Phase 15 ruling, lib/crewPayFields.ts).
-    return (await crewPayRedactor(ctx, doc.organizationId, PROJECT_CREW_COST_FIELDS))(doc);
+    // Job-level cost and margin are absent for a caller who fails the job-cost
+    // rule (owner ruling 2026-11-24, lib/crewPayFields.ts JOB_COST_FIELDS).
+    return (await jobCostRedactor(ctx, doc.organizationId))(doc);
   },
 });
 
@@ -75,11 +75,11 @@ export const getById = query({
  * is only used to widen the search match (no location column exists), so it
  * isn't attached to the row.
  */
-/** The list's sort key: default `rentalStartDate`, and never a crew-cost total below the pay line (its order would leak it). */
+/** The list's sort key: default `rentalStartDate`, and never a job-cost field for a caller who can't see it (its order would leak it). */
 async function listSortKey(ctx: QueryCtx, orgId: string, sortBy: string | undefined): Promise<string> {
   if (!sortBy) return "rentalStartDate";
-  if (!(PROJECT_CREW_COST_FIELDS as readonly string[]).includes(sortBy)) return sortBy;
-  return (await canSeeCrewPay(ctx, orgId)) ? sortBy : "rentalStartDate";
+  if (!(JOB_COST_FIELDS as readonly string[]).includes(sortBy)) return sortBy;
+  return (await canSeeJobCost(ctx, orgId)) ? sortBy : "rentalStartDate";
 }
 
 export const listPage = query({
@@ -108,9 +108,9 @@ export const listPage = query({
     await requireOrgReadFor(ctx, a.orgId, "project"); // Phase 2 read bootstrap (#998)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    // Below the pay line a crew-cost total is absent from every row — and can't
-    // be used as a sort key either, or its ORDER would leak what the rows hide.
-    const redact = await crewPayRedactor(ctx, a.orgId, PROJECT_CREW_COST_FIELDS);
+    // Without job cost a job-cost field is absent from every row — and can't be
+    // used as a sort key either, or its ORDER would leak what the rows hide.
+    const redact = await jobCostRedactor(ctx, a.orgId);
     const sortBy = await listSortKey(ctx, a.orgId, a.sortBy);
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
     const segment = parseSegment(a.segment);
@@ -222,7 +222,7 @@ export const listBoard = query({
       return true;
     });
 
-    const redact = await crewPayRedactor(ctx, orgId, PROJECT_CREW_COST_FIELDS);
+    const redact = await jobCostRedactor(ctx, orgId);
     return filtered.map((p) => ({
       ...redact(p),
       client: p.clientId ? { name: clientNameFor(p.clientId) ?? null } : null,
@@ -245,7 +245,7 @@ export const listByIds = query({
     const docs = await Promise.all(
       unique.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
     );
-    const redact = await crewPayRedactor(ctx, orgId, PROJECT_CREW_COST_FIELDS);
+    const redact = await jobCostRedactor(ctx, orgId);
     return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId).map(redact);
   },
 });
@@ -540,7 +540,7 @@ export const getByOrgAndNumber = query({
         q.eq("organizationId", organizationId).eq("projectNumber", projectNumber),
       )
       .unique();
-    return doc && (await crewPayRedactor(ctx, organizationId, PROJECT_CREW_COST_FIELDS))(doc);
+    return doc && (await jobCostRedactor(ctx, organizationId))(doc);
   },
 });
 

@@ -1,8 +1,8 @@
 import { v } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
 import { redactFields, requireOrgPermission } from "./lib/auth";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
-import { PROJECT_CREW_COST_FIELDS, SERVICE_CREW_COST_FIELDS } from "./lib/crewPayFields";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
+import { JOB_COST_FIELDS, SERVICE_CREW_COST_FIELDS } from "./lib/crewPayFields";
 import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 import { canUnlockPricing } from "./lib/projectLocks";
 import { getAuthContext } from "./lib/auth";
@@ -14,15 +14,18 @@ type Redact = <E extends Entry>(e: E) => E;
 /**
  * A snapshot entry's `data` is the whole stored row, so it carries what the live
  * reads redact. Per entity, the same lists (lib/crewPayFields.ts): a crew call's
- * `responseToken` (a bearer credential) ALWAYS, and below the pay line (the ONE
- * rule, `canSeeCrewPay`) the call's cost, the service's crew-rolled `costTotal`
- * and the project's crew-cost totals + margin (UX Phase 15 ruling).
+ * `responseToken` (a bearer credential) ALWAYS; below the pay line
+ * (`canSeeCrewPay`) the call's cost and the service's crew-rolled `costTotal`;
+ * and without job cost (`canSeeJobCost`, owner ruling 2026-11-24) the project's
+ * job-level cost + margin.
  */
 async function entryRedactor(ctx: QueryCtx, orgId: string): Promise<Redact> {
-  const pay = await canSeeCrewPay(ctx, orgId);
-  const hidden: Record<string, readonly string[]> = pay
-    ? { crewAssignment: ["responseToken"] }
-    : { crewAssignment: ["responseToken", ...ASSIGNMENT_COST_FIELDS], service: SERVICE_CREW_COST_FIELDS, project: PROJECT_CREW_COST_FIELDS };
+  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
+  const hidden: Record<string, readonly string[]> = {
+    crewAssignment: pay ? ["responseToken"] : ["responseToken", ...ASSIGNMENT_COST_FIELDS],
+    ...(pay ? {} : { service: SERVICE_CREW_COST_FIELDS }),
+    ...(jobCost ? {} : { project: JOB_COST_FIELDS }),
+  };
   return (e) => {
     const fields = hidden[e.entityType];
     return fields && e.data ? { ...e, data: redactFields(e.data, fields) } : e;

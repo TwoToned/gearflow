@@ -13,7 +13,7 @@ import {
   getProjectServicesSummaryFromConvex,
   redactServiceCrewPay,
 } from "@/lib/project-service-read";
-import { callerSeesCrewPay } from "@/lib/crew-pay-caller";
+import { callerSeesCrewPay, callerSeesJobCost } from "@/lib/crew-pay-caller";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getCrewRoleMap, getCrewMemberMap, getCrewMemberById } from "@/lib/crew-read";
@@ -50,15 +50,16 @@ export async function getProjectServices(projectId: string) {
 export async function getProjectServicesSummary(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const [{ chargeTotal, costTotal, serviceCount }, payVisible] = await Promise.all([
+  const [{ chargeTotal, costTotal, serviceCount }, jobCostShown] = await Promise.all([
     getProjectServicesSummaryFromConvex(organizationId, projectId),
-    callerSeesCrewPay(),
+    callerSeesJobCost(),
   ]);
 
-  // The cost total rolls up the crew's pay, so below the pay line it — and its
-  // two legacy aliases — are ABSENT, not reduced: no crew number can be
-  // back-solved (UX Phase 15 ruling). Every other field stays.
-  const cost = payVisible
+  // The summed cost is a JOB-LEVEL figure (it is the project's service cost), so
+  // it — and its two legacy aliases — follow the job-cost rule (owner ruling
+  // 2026-11-24): ABSENT, not reduced, for a caller who fails it. Each service's
+  // own `costTotal` stays behind the pay line (`getProjectServices`).
+  const cost = jobCostShown
     ? { costTotal: roundCurrency(costTotal), totalCost: roundCurrency(costTotal), internalTotal: roundCurrency(costTotal) }
     : {};
   return serialize({

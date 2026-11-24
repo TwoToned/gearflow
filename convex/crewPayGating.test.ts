@@ -203,7 +203,7 @@ describe("S1: every crew member and role read follows the one pay rule", () => {
     return { detail, crew, labour, active };
   };
 
-  test("a member: memberDetail, projectCrew, projectLabourCost and the dashboard lists carry no pay", async () => {
+  test("a member: memberDetail, projectCrew and the dashboard lists carry no pay; projectLabourCost is JOB cost, which a member with invoice:read sees", async () => {
     const t = makeT(); await seed(t, "member");
     const r = await more(t);
     expect(r.detail).toMatchObject({ defaultHourlyRate: null, defaultDayRate: null, crewRole: { name: "Rigger", defaultRate: null } });
@@ -212,7 +212,8 @@ describe("S1: every crew member and role read follows the one pay rule", () => {
     expect(r.crew).not.toHaveProperty("estimatedCost");
     expect(r.crew.crewMember).not.toHaveProperty("defaultHourlyRate");
     expect(r.crew.crewRole).not.toHaveProperty("defaultRate");
-    expect(r.labour).toEqual({ totalLabourCost: 0, assignmentCount: 0 });
+    // The project's labourCostTotal by another read: the job-cost rule (owner ruling 2026-11-24).
+    expect(r.labour).toEqual({ totalLabourCost: 650, assignmentCount: 1 });
     expect(r.active).toMatchObject({ id: "a1" });
     expect(r.active).not.toHaveProperty("estimatedCost");
     expect(r.active).not.toHaveProperty("rateOverride");

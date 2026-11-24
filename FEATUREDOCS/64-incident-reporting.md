@@ -91,7 +91,11 @@ The existing **2-of-3-fails → `PREVENTATIVE`** predictive trigger
 *additional* trend signal — the two triggers use distinct client-minted id plans
 (`maintenancePlan` vs `incidentPlan`) so a single FAIL that also happens to be the
 2nd-of-3 for its check item creates **two** separate records: the immediate REPAIR
-report and the `[Auto]`-prefixed PREVENTATIVE trend record.
+report and the `[Auto]`-prefixed PREVENTATIVE trend record. The trend record is
+skipped while an OPEN `[Auto]` record for that check item already links the asset —
+open by the one definition in `convex/lib/maintenanceOpen.ts` (`isOpenMaintenance`:
+scheduled, awaiting parts, in progress or QA), so a record held for parts or in QA
+is not duplicated.
 
 Unlike the immediate "Report Issue" flow above, a check-triggered incident record
 does **not** touch `asset.status` — mirrors the predictive core's own reasoning: a

@@ -26,6 +26,7 @@
 import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import { writeActivityLog } from "./audit";
+import { isOpenMaintenance } from "./maintenanceOpen";
 
 /** One client-minted id bundle per DISTINCT failed check item id. */
 export interface PmPlanEntry {
@@ -75,8 +76,9 @@ export async function runPredictiveMaintenance(
       : null;
     const modelName = model?.name ?? "";
 
-    // Dedup: skip if an active (SCHEDULED / IN_PROGRESS) auto record for this
-    // check item already links the asset. Reads the fresh link + record state.
+    // Dedup: skip if an OPEN auto record for this check item already links the
+    // asset — the ONE open definition (lib/maintenanceOpen.ts), so a record held
+    // at AWAITING_PARTS or QA is not duplicated. Reads the fresh link + record state.
     const titleNeedle = `[Auto] ${checkItem.label}`;
     const links = await ctx.db
       .query("maintenanceRecordAssets")
@@ -86,8 +88,7 @@ export async function runPredictiveMaintenance(
     for (const l of links) {
       const rec = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", l.maintenanceRecordId)).unique();
       if (!rec || rec.organizationId !== orgId) continue; // org re-check
-      const status = rec.status ?? "SCHEDULED";
-      if ((status === "SCHEDULED" || status === "IN_PROGRESS") && rec.title.includes(titleNeedle)) {
+      if (isOpenMaintenance(rec.status) && rec.title.includes(titleNeedle)) {
         alreadyExists = true;
         break;
       }

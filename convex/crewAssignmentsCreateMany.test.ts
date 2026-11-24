@@ -65,13 +65,72 @@ describe("createManyNative", () => {
     expect(logs.filter((l) => l.id === "log1")).toHaveLength(1);
   });
 
-  test("Undo (bulkDeleteNative on the created ids) removes exactly those rows", async () => {
+  const assign = (t: T, items: { id: string; crewMemberId: string }[], who = t.withIdentity(asAdmin)) =>
+    who.mutation(api.crewAssignmentsWrites.createManyNative, { ...base, items });
+  const undo = (t: T, over: Record<string, unknown> = {}, who = t.withIdentity(asAdmin)) =>
+    who.mutation(api.crewAssignmentsWrites.undoCreateManyNative, { orgId: ORG, forwardAuditId: "log1", now: NOW + 1, actor, ...over });
+
+  test("Undo removes exactly the untouched calls this assign created, and nothing else", async () => {
     const t = makeT(); await seed(t);
-    const as = t.withIdentity(asAdmin);
-    const { created } = await as.mutation(api.crewAssignmentsWrites.createManyNative, { ...base, items: [{ id: "n1", crewMemberId: "c1" }] });
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }]);
     expect((await rows(t)).map((r) => r.id).sort()).toEqual(["live", "n1"]);
-    await as.mutation(api.crewAssignmentsWrites.bulkDeleteNative, { orgId: ORG, ids: created.map((c) => c.id), now: NOW, actor, auditId: "log2" });
+    expect(await undo(t)).toEqual({ removed: 1, kept: [] });
     expect((await rows(t)).map((r) => r.id)).toEqual(["live"]);
+  });
+
+  test("REPRO: a call that was confirmed and has an approved time entry is KEPT (and named), never wiped", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("crewMembers", { id: "c4", organizationId: ORG, firstName: "Di", lastName: "Eve", isActive: true }); });
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }, { id: "n2", crewMemberId: "c4" }]);
+    await t.run(async (ctx) => {
+      const n1 = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "n1")).first();
+      await ctx.db.patch(n1!._id, { status: "CONFIRMED", confirmedAt: NOW });
+      await ctx.db.insert("crewTimeEntries", { id: "te1", organizationId: ORG, assignmentId: "n1", crewMemberId: "c1", date: NOW, startTime: "09:00", endTime: "17:00", status: "APPROVED" });
+    });
+    const res = await undo(t);
+    expect(res.removed).toBe(1);
+    expect(res.kept).toEqual([{ id: "n1", crewMemberId: "c1", reason: "it has moved on" }]);
+    expect((await rows(t)).map((r) => r.id).sort()).toEqual(["live", "n1"]);
+    expect(await t.run(async (ctx) => ctx.db.query("crewTimeEntries").withIndex("by_cuid", (q) => q.eq("id", "te1")).first())).toBeTruthy();
+  });
+
+  test("a pending call with a shift or logged time, or one already offered, is kept", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("crewMembers", { id: "c4", organizationId: ORG, firstName: "Di", lastName: "Eve", isActive: true }); });
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }, { id: "n2", crewMemberId: "c4" }]);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("crewShifts", { id: "sh1", assignmentId: "n1", date: NOW });
+      const n2 = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "n2")).first();
+      await ctx.db.patch(n2!._id, { offeredAt: NOW });
+    });
+    const res = await undo(t);
+    expect(res.removed).toBe(0);
+    expect(res.kept.map((k) => k.reason).sort()).toEqual(["it has shifts", "it was offered"]);
+  });
+
+  test("a manager (crew:create, no crew:delete) can undo; another user, the second time, and outside the window are refused", async () => {
+    const t = makeT(); await seed(t, "manager");
+    const asManager = t.withIdentity({ subject: USER, orgId: ORG, role: "manager" });
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }], asManager);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: "manager" }); });
+    await expect(undo(t, {}, t.withIdentity({ subject: "user_2", orgId: ORG, role: "manager" }))).rejects.toThrow(/person who assigned/);
+    expect((await undo(t, {}, asManager)).removed).toBe(1);
+    await expect(undo(t, {}, asManager)).rejects.toThrow(/already undone/);
+    const t2 = makeT(); await seed(t2);
+    await assign(t2, [{ id: "n1", crewMemberId: "c1" }]);
+    await t2.run(async (ctx) => {
+      const f = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
+      await ctx.db.patch(f!._id, { details: { ...(f!.details as object), serverSavedAt: Date.now() - 11 * 60 * 1000 } });
+    });
+    await expect(undo(t2)).rejects.toThrow(/10 minutes/);
+    expect((await rows(t2)).map((r) => r.id).sort()).toEqual(["live", "n1"]);
+  });
+
+  test("the live-call check is org-filtered: another org's call on a job with the same id never blocks", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("crewAssignments", { id: "foreignCall", organizationId: OTHER, projectId: "p1", crewMemberId: "c1", status: "CONFIRMED" }); });
+    const res = await assign(t, [{ id: "n1", crewMemberId: "c1" }]);
+    expect(res.created).toHaveLength(1);
   });
 
   test("another org's project and a role without crew:create are refused; nothing is written", async () => {

@@ -63,7 +63,7 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
   const actor = useActor();
   const update = useMutation(api.crewWrites.updateNative);
   const createMany = useMutation(api.crewAssignmentsWrites.createManyNative);
-  const deleteMany = useMutation(api.crewAssignmentsWrites.bulkDeleteNative);
+  const undoCreateMany = useMutation(api.crewAssignmentsWrites.undoCreateManyNative);
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is CrewSource => !!r);
   const set = (id: string, patch: Record<string, unknown>) =>
     update({ id, orgId: orgId!, set: { ...patch, updatedAt: Date.now() }, clear: [], actor: actor(), auditId: createId(), now: Date.now() });
@@ -125,10 +125,11 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
   /** ONE transaction; unsent PENDING calls; Undo is `bulkDeleteNative` over exactly the created ids. */
   async function assign(ids: string[], job: { id: string; projectNumber: string; startDate?: number | null; endDate?: number | null }) {
     try {
+      const auditId = createId();
       const res = await createMany({
         orgId: orgId!, projectId: job.id, items: ids.map((id) => ({ id: createId(), crewMemberId: id })),
         ...(job.startDate != null ? { startDate: job.startDate } : {}), ...(job.endDate != null ? { endDate: job.endDate } : {}),
-        now: Date.now(), actor: actor(), auditId: createId(),
+        now: Date.now(), actor: actor(), auditId,
       });
       const names = (cid: string) => { const r = seen.current.get(cid); return r ? crewName(r) : cid; };
       const skipped = res.skipped.map((s) => ({ name: names(s.crewMemberId), why: s.reason }));
@@ -136,7 +137,13 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
       announceListWrite({
         title: listWriteTitle(`Assigned ${plural(createdIds.length, "crew member")} to ${job.projectNumber} · offers not sent yet`, skipped),
         undoneTitle: `Undone · ${plural(createdIds.length, "call")} removed`,
-        performUndo: createdIds.length > 0 ? async () => { await deleteMany({ orgId: orgId!, ids: createdIds, now: Date.now(), actor: actor(), auditId: createId() }); } : undefined,
+        // Server-side exact Undo: ids only, author + window + once; keeps (and names) any call that has moved on.
+        performUndo: createdIds.length > 0
+          ? async () => {
+              const r = await undoCreateMany({ orgId: orgId!, forwardAuditId: auditId, now: Date.now(), actor: actor() });
+              return r.kept.length > 0 ? `${plural(r.removed, "call")} removed · ${r.kept.length} stayed (${r.kept[0].reason})` : undefined;
+            }
+          : undefined,
       });
     } catch (e) {
       showError(e, { fallbackTitle: "Could not assign to the job" });

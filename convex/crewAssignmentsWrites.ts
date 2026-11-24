@@ -12,6 +12,7 @@ import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen } from "./lib/fieldGuards";
 import { collectCapped } from "./lib/pagination";
+import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
@@ -122,10 +123,10 @@ async function recalcAfterBulkDelete(ctx: MutationCtx, orgId: string, serviceIds
   for (const projectId of projectIds) await recalcProjectTotals(ctx, projectId, orgId, taxRate, now);
 }
 
-async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string; metadata?: Record<string, unknown> }) {
+async function logAssignment(ctx: MutationCtx, a: { orgId: string; actor: Actor; auditId: string; now: number; action: string; id: string; name: string; summary: string; projectId?: string; metadata?: Record<string, unknown>; details?: unknown }) {
   await writeActivityLog(ctx, {
     id: a.auditId, organizationId: a.orgId, action: a.action, entityType: "crew_assignment", entityId: a.id,
-    entityName: a.name, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary, metadata: a.metadata, projectId: a.projectId, createdAt: a.now,
+    entityName: a.name, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary, metadata: a.metadata, details: a.details, projectId: a.projectId, createdAt: a.now,
   });
 }
 
@@ -682,15 +683,75 @@ export const createManyNative = mutation({
         orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: created[0].id,
         name: `${created.length} crew call${created.length === 1 ? "" : "s"}`,
         summary: `Assigned ${created.length} crew member${created.length === 1 ? "" : "s"} to ${project.projectNumber}`,
-        metadata: { createdIds: created.map((c) => c.id), ...afterLockAuditMetadata(defaultToZero) }, projectId: a.projectId,
+        metadata: afterLockAuditMetadata(defaultToZero), projectId: a.projectId,
+        // The snapshot `undoCreateManyNative` reads (never the caller): ids + the SERVER clock.
+        details: { kind: CREATE_MANY_KIND, createdIds: created.map((c) => c.id), serverSavedAt: Date.now() },
       });
     }
     return { created, skipped };
   },
 });
 
+const CREATE_MANY_KIND = "crewCreateMany";
+
+/**
+ * The EXACT Undo of one `createManyNative`, ids only (the forward audit id). Reads the created
+ * ids from the forward audit row; refuses unless the caller is the author, it is inside the
+ * server undo window and it has not been undone (an `undo:` marker row). It deletes ONLY a call
+ * that is still exactly as it was created (PENDING, never offered / answered / confirmed, no
+ * shifts, no time entries) and NAMES every call it kept. Never `bulkDeleteNative`: that cascades
+ * to shifts and time entries and needs `crew:delete`.
+ */
+export const undoCreateManyNative = mutation({
+  returns: v.object({ removed: v.number(), kept: v.array(v.object({ id: v.string(), crewMemberId: v.string(), reason: v.string() })) }),
+  args: { orgId: v.string(), forwardAuditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "crew", "create");
+    const actor = await resolveActor(ctx, a.actor);
+    const forward = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.forwardAuditId)).first();
+    const d = forward?.details as { kind?: string; createdIds?: string[]; serverSavedAt?: number } | undefined;
+    if (!forward || forward.organizationId !== a.orgId || d?.kind !== CREATE_MANY_KIND || !d.createdIds || d.serverSavedAt == null) throw new ConvexError("That assignment was not found, so it can't be undone.");
+    if (forward.userId !== actor.userId) throw new ConvexError("Only the person who assigned can undo it.");
+    assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+    const markerId = `undo:${a.forwardAuditId}`;
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", markerId)).first();
+    if (marker) throw new ConvexError("That assignment was already undone.");
+
+    const kept: { id: string; crewMemberId: string; reason: string }[] = [];
+    const projectIds = new Set<string>();
+    let removed = 0;
+    for (const id of d.createdIds) {
+      const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!doc || doc.organizationId !== a.orgId) continue; // already gone, or never this org's: nothing to keep or name
+      const reason = await whyCallStays(ctx, doc);
+      if (reason) { kept.push({ id, crewMemberId: doc.crewMemberId, reason }); continue; }
+      projectIds.add(doc.projectId);
+      await ctx.db.delete(doc._id);
+      await bumpCountersForTable(ctx, "crewAssignments", doc, null);
+      removed++;
+    }
+    if (removed > 0) await recalcAfterBulkDelete(ctx, a.orgId, new Set(), projectIds, a.now);
+    await logAssignment(ctx, { orgId: a.orgId, actor, auditId: markerId, now: a.now, action: "UNDO", id: forward.entityId, name: forward.entityName, summary: `Undid assigning ${removed} crew call${removed === 1 ? "" : "s"}`, projectId: forward.projectId ?? undefined, details: { undoOf: a.forwardAuditId, kept } });
+    return { removed, kept };
+  },
+});
+
+/** Why this created call must NOT be deleted by an Undo (or null when it is still exactly as created). */
+async function whyCallStays(ctx: MutationCtx, doc: { id: string; status?: string; offeredAt?: number; respondedAt?: number; confirmedAt?: number }): Promise<string | null> {
+  if ((doc.status ?? "PENDING") !== "PENDING") return "it has moved on";
+  if (doc.offeredAt != null || doc.respondedAt != null || doc.confirmedAt != null) return "it was offered";
+  const shift = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", doc.id)).first();
+  if (shift) return "it has shifts";
+  const entry = await ctx.db.query("crewTimeEntries").withIndex("by_assignmentId", (q) => q.eq("assignmentId", doc.id)).first();
+  return entry ? "it has time logged" : null;
+}
+
 export const agentOps: AgentOpsAnnotations = {
   createManyNative: { danger: "medium" },
+  // Deletes only still-PENDING, untouched calls this assign created; names what it kept.
+  undoCreateManyNative: { danger: "high" },
   bulkDeleteNative: { danger: "high" },
   bulkStatusNative: { danger: "medium" },
   // Withdraws calls (crew are told by the caller); reopens the slot; no Undo.

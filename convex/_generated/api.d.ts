@@ -218,6 +218,7 @@ import type * as modelCheckItems from "../modelCheckItems.js";
 import type * as modelMedia from "../modelMedia.js";
 import type * as modelWrites from "../modelWrites.js";
 import type * as models from "../models.js";
+import type * as modelsList from "../modelsList.js";
 import type * as navCounts from "../navCounts.js";
 import type * as notificationDismissals from "../notificationDismissals.js";
 import type * as notificationDismissalsWrites from "../notificationDismissalsWrites.js";
@@ -549,6 +550,7 @@ declare const fullApi: ApiFromModules<{
   modelMedia: typeof modelMedia;
   modelWrites: typeof modelWrites;
   models: typeof models;
+  modelsList: typeof modelsList;
   navCounts: typeof navCounts;
   notificationDismissals: typeof notificationDismissals;
   notificationDismissalsWrites: typeof notificationDismissalsWrites;

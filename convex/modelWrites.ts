@@ -3,7 +3,9 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertWithinUndoWindow } from "./lib/undoWindow";
+import type { Doc } from "./_generated/dataModel";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
@@ -401,7 +403,115 @@ export const adjustSaleStockNative = mutation({
   },
 });
 
+const saleAdjustment = v.object({ id: v.string(), delta: v.number() });
+
+/**
+ * Bulk / row `Adjust stock` (UX Phase 14, 14a-1). One manual adjustment per model through the same
+ * `adjustModelSaleStock` primitive as `adjustSaleStockNative`, returning each write's audit id so the
+ * list's ONE Undo (`undoSaleStockNative`) takes ids only. Atomic: any bad row rolls the batch back.
+ */
+export const adjustSaleStockManyNative = mutation({
+  returns: v.object({ results: v.array(v.object({ id: v.string(), auditId: v.string(), from: v.number(), to: v.number() })) }),
+  args: {
+    orgId: v.string(),
+    adjustments: v.array(saleAdjustment),
+    reason: v.optional(v.string()),
+    now: v.number(),
+    actor: actorValidator,
+    /** One caller-minted audit id per adjustment, same order (deterministic ids for the Undo toast). */
+    auditIds: v.array(v.string()),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    await assertBulkSizeOk(ctx, a.adjustments.length);
+    assertStrLen(a.reason, "reason", { max: 500 });
+    if (a.adjustments.length === 0) throw new ConvexError("Nothing to adjust");
+    if (a.auditIds.length !== a.adjustments.length) throw new ConvexError("One audit id per adjustment");
+    if (new Set(a.adjustments.map((x) => x.id)).size !== a.adjustments.length) throw new ConvexError("Each model can appear once");
+
+    const results: { id: string; auditId: string; from: number; to: number }[] = [];
+    for (const [i, adj] of a.adjustments.entries()) {
+      if (adj.delta === 0 || !Number.isInteger(adj.delta)) throw new ConvexError("Adjustment must be a nonzero whole number");
+      const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", adj.id)).first();
+      if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+      const r = await adjustModelSaleStock(ctx, { modelId: adj.id, orgId: a.orgId, delta: adj.delta, reason: a.reason, actor, now: a.now, auditId: a.auditIds[i] });
+      results.push({ id: adj.id, auditId: a.auditIds[i], from: r.from, to: r.to });
+    }
+    return { results };
+  },
+});
+
+/** How many recent audit rows are scanned for an earlier UNDO of the same adjustment. */
+const UNDO_SCAN_ROWS = 50;
+
+/**
+ * The exact Undo of `adjustSaleStockManyNative` (ids only). Reads each forward audit row
+ * (`details.saleStock {from, to, serverSavedAt}`) and refuses the WHOLE batch, changing nothing,
+ * unless for every row: it is a manual adjustment, by the caller, inside the server-clock window,
+ * not already undone, and the model's pool is still exactly `to` (no sale, restock or other
+ * adjustment since). Restores `from` and appends an UNDO audit row per model.
+ */
+export const undoSaleStockNative = mutation({
+  returns: v.object({ restored: v.number() }),
+  args: { orgId: v.string(), auditIds: v.array(v.string()), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    await assertBulkSizeOk(ctx, a.auditIds.length);
+    if (a.auditIds.length === 0) throw new ConvexError("Nothing to undo");
+    const serverNow = Date.now();
+
+    const plan: { model: Doc<"models">; from: number; to: number; auditId: string }[] = [];
+    for (const auditId of new Set(a.auditIds)) {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+      const sale = (row?.details as { saleStock?: { from?: number; to?: number; serverSavedAt?: number; projectId?: string } } | undefined)?.saleStock;
+      if (!row || row.organizationId !== a.orgId || row.entityType !== "model" || !sale || typeof sale.from !== "number" || typeof sale.to !== "number" || typeof sale.serverSavedAt !== "number" || sale.projectId) {
+        throw new ConvexError("This stock change can't be undone");
+      }
+      if (row.userId !== actor.userId) throw new ConvexError("Only the person who made this change can undo it");
+      assertWithinUndoWindow(sale.serverSavedAt, serverNow, "change");
+      const history = await ctx.db
+        .query("activityLogs")
+        .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", a.orgId).eq("entityType", "model").eq("entityId", row.entityId))
+        .order("desc")
+        .take(UNDO_SCAN_ROWS);
+      if (history.some((h) => h.action === "UNDO" && (h.details as { undoOf?: string } | undefined)?.undoOf === auditId)) {
+        throw new ConvexError("This stock change was already undone");
+      }
+      const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", row.entityId)).first();
+      if (!model || model.organizationId !== a.orgId) throw new ConvexError("Model not found");
+      if ((model.saleStockQuantity ?? 0) !== sale.to) throw new ConvexError(`${model.name}'s stock has changed since: it can't be undone`);
+      plan.push({ model, from: sale.from, to: sale.to, auditId });
+    }
+
+    for (const p of plan) {
+      await ctx.db.patch(p.model._id, { saleStockQuantity: p.from, updatedAt: a.now });
+      await writeActivityLog(ctx, {
+        id: `${p.auditId}:undo`,
+        organizationId: a.orgId,
+        action: "UNDO",
+        entityType: "model",
+        entityId: p.model.id,
+        entityName: p.model.name,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Undid a sale stock change on ${p.model.name} (${p.to} -> ${p.from})`,
+        details: { undoOf: p.auditId, saleStock: { from: p.to, to: p.from } },
+        createdAt: a.now,
+      });
+    }
+    return { restored: plan.length };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
+  adjustSaleStockManyNative: { danger: "low", summary: "Adjust the new-stock sale pool of several models by a delta each (restock or correction).", mcpTier: 2 },
+  undoSaleStockNative: { danger: "high", summary: "Exactly undo a recent manual sale-stock adjustment by its audit ids (refuses if the stock moved since)." },
   // Delete/archive tier (§9) — also cascade-DELETES every asset + bulkAsset of
   // this model (not just a soft archive of the model itself), so it's high on
   // both grounds.

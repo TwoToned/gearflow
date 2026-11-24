@@ -227,6 +227,45 @@ describe("autoFillServiceNative — first-come fill (work-layer Phase 4, #1246)"
     expect(res).toEqual({ filled: false, cancelled: [] });
   });
 
+  // B-1: the fill is PER DAY. A Mon–Wed run that needs 1 a day.
+  async function seedRun(t: T, ben: { startDate: number; endDate: number }) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectServices", { id: "run", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Run", date: T0, endDate: T0 + 2 * DAY, crewCountRequired: 1 } as never);
+      await ctx.db.insert("crewMembers", { id: "cm2", organizationId: ORG, firstName: "Ben", lastName: "Lee", isActive: true, status: "ACTIVE" });
+      await ctx.db.insert("crewAssignments", { id: "ana", organizationId: ORG, projectId: "p1", crewMemberId: "cm1", serviceId: "run", status: "ACCEPTED", startDate: T0, endDate: T0 });
+      await ctx.db.insert("crewAssignments", { id: "ben", organizationId: ORG, projectId: "p1", crewMemberId: "cm2", serviceId: "run", status: "OFFERED", responseToken: "tok-ben", ...ben });
+    });
+  }
+  const fill = (t: T, accepted: string) =>
+    t.withIdentity(SERVICE).mutation(api.crewAssignments.autoFillServiceNative, { serviceId: "run", organizationId: ORG, acceptedAssignmentId: accepted, now: T0 });
+  const status = (t: T, id: string) => t.run(async (ctx) => (await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).unique())?.status);
+
+  test("B-1: Ana accepts Monday on a Mon–Wed run — Ben's Tue–Wed offer is NOT cancelled (those days are still open)", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedRun(t, { startDate: T0 + DAY, endDate: T0 + 2 * DAY });
+    expect(await fill(t, "ana")).toEqual({ filled: false, cancelled: [] });
+    expect(await status(t, "ben")).toBe("OFFERED");
+  });
+
+  test("B-1: a whole-run accept still cancels the other open offers on the run", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedRun(t, { startDate: T0 + DAY, endDate: T0 + 2 * DAY });
+    await t.run(async (ctx) => {
+      const ana = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "ana")).unique();
+      await ctx.db.patch(ana!._id, { endDate: T0 + 2 * DAY });
+    });
+    const res = await fill(t, "ana");
+    expect(res).toEqual({ filled: true, cancelled: [{ assignmentId: "ben", crewMemberId: "cm2" }] });
+    expect(await status(t, "ben")).toBe("CANCELLED");
+  });
+
+  test("B-1: an offer whose own days are all full is cancelled even while another day of the run is open", async () => {
+    const t = makeT(); await seedBase(t);
+    await seedRun(t, { startDate: T0, endDate: T0 }); // Ben was offered Monday too
+    const res = await fill(t, "ana");
+    expect(res).toEqual({ filled: false, cancelled: [{ assignmentId: "ben", crewMemberId: "cm2" }] });
+  });
+
   test("a cross-org serviceId is rejected as not-found, never silently reaches into the other org", async () => {
     const t = makeT(); await seedBase(t);
     await t.run(async (ctx) => {

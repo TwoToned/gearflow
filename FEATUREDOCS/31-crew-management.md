@@ -676,7 +676,10 @@ when enough of those rows reach ACCEPTED/CONFIRMED to meet the service's
 (`/api/crew/respond/[token]`) calls a new service-gated mutation,
 `crewAssignments.autoFillServiceNative`, which auto-cancels the other still-open
 offers on that same service (no new table — `serviceId` is the existing
-grouping key) and the route best-effort emails each one a "position filled"
+grouping key). The fill is **per day** (UX Phase 15, `crewShortfallByDay` over the
+ACCEPTED/CONFIRMED rows, `coveredDaysFull`): an open offer is cancelled only when
+every day IT covers is now full, so a Monday-only accept on a Mon–Wed run never
+cancels a Tue–Wed offer. Then the route best-effort emails each one a "position filled"
 notice (`notifyPositionFilled`). **24h auto-nudge**: `src/server/crew-time-nudges.ts`'s
 `sendCrewOfferNudges` rides the SAME 15-minute notification cron
 (`/api/cron/notifications`) and the SAME `notificationEmailLogs` dedupe ledger

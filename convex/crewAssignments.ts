@@ -5,6 +5,7 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import { MEMBER_RATE_FIELDS } from "./lib/crewMemberRedaction";
+import { coveredDaysFull, crewShortfallByDay } from "./lib/crewShortfall";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -622,10 +623,11 @@ export const markOfferedIfOfferable = mutation({
  * it accepts an offer (`/api/crew/respond/[token]`, service-authed, no user
  * session to check RBAC against, same posture as `getByResponseToken` /
  * `patchAssignment` above). If the just-accepted assignment is linked to a
- * `projectServices` row (`serviceId`) and enough OTHER assignments on that
- * same service are now ACCEPTED/CONFIRMED to meet `crewCountRequired`, every
- * remaining OFFERED/PENDING sibling is auto-cancelled (single-use token
- * cleared) and returned so the caller can best-effort email each one a
+ * `projectServices` row (`serviceId`), the fill is decided PER DAY
+ * (`crewShortfallByDay` over the ACCEPTED/CONFIRMED rows, UX Phase 15): an
+ * OFFERED/PENDING sibling is auto-cancelled only when every day IT covers now
+ * meets `crewCountRequired` (single-use token cleared). `filled` says the whole
+ * run is full. Each cancelled row is returned so the caller can best-effort email each one a
  * "position filled" notice (`notifyPositionFilled`, `crew-communication.ts`)
  * — this mutation only does the DB write, never sends email itself (Convex
  * mutations can't call out).
@@ -637,23 +639,26 @@ export const autoFillServiceNative = mutation({
     await requireService(ctx);
     const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", serviceId)).unique();
     if (!service || service.organizationId !== organizationId) return { filled: false, cancelled: [] };
-    const required = service.crewCountRequired ?? 0;
-    if (required <= 0) return { filled: false, cancelled: [] };
-
     const siblings = (await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId)).collect())
       .filter((a) => a.organizationId === organizationId);
-    const filledCount = siblings.filter((a) => a.status === "ACCEPTED" || a.status === "CONFIRMED").length;
-    if (filledCount < required) return { filled: false, cancelled: [] };
+    // PER DAY (the ONE rule, lib/crewShortfall.ts): only ACCEPTED/CONFIRMED rows
+    // hold a place, each only on the days it covers. An open offer is cancelled
+    // only when EVERY day it covers is now full — a Monday-only accept never
+    // cancels a Tue–Wed offer on a Mon–Wed run.
+    const holding = siblings.filter((a) => a.status === "ACCEPTED" || a.status === "CONFIRMED");
+    const gap = crewShortfallByDay(service, holding);
+    if (!gap) return { filled: false, cancelled: [] };
 
     const cancelled: { assignmentId: string; crewMemberId: string }[] = [];
     for (const a of siblings) {
       if (a.id === acceptedAssignmentId) continue;
       if (a.status !== "OFFERED" && a.status !== "PENDING") continue;
+      if (!coveredDaysFull(service, holding, a)) continue;
       await ctx.db.patch(a._id, { status: "CANCELLED", updatedAt: now, responseToken: undefined });
       await bumpCountersForTable(ctx, "crewAssignments", a, { ...a, status: "CANCELLED" });
       cancelled.push({ assignmentId: a.id, crewMemberId: a.crewMemberId });
     }
-    return { filled: true, cancelled };
+    return { filled: gap.shortfall === 0, cancelled };
   },
 });
 

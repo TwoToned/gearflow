@@ -74,6 +74,24 @@ export function assignmentCoversDay(a: ShortfallAssignment, day: number): boolea
 }
 
 /**
+ * Is every day `a` would cover already at the requirement, counting only
+ * `filled` (the rows that hold a place)? The first-come fill's test for
+ * cancelling an open offer: a Tue–Wed offer on a Mon–Wed run is NOT made
+ * redundant by a Monday-only accept. A dateless service falls back to the
+ * whole-service count; an offer that covers none of the run's days is never
+ * "full" (it is left for a human).
+ */
+export function coveredDaysFull(service: ShortfallService, filled: readonly ShortfallAssignment[], a: ShortfallAssignment): boolean {
+  const gap = crewShortfallByDay(service, filled);
+  if (!gap) return false;
+  const days = serviceDays(service);
+  if (days.length === 0) return gap.shortfall === 0;
+  const covered = days.filter((d) => assignmentCoversDay(a, d));
+  const short = new Set(gap.shortDays.map((s) => s.day));
+  return covered.length > 0 && covered.every((d) => !short.has(d));
+}
+
+/**
  * The service's shortfall per day, or `null` when it states no requirement
  * (`crewCountRequired` null or 0 is never a gap).
  */

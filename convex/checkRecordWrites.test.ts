@@ -368,6 +368,35 @@ describe("predictive maintenance", () => {
     expect(ms.filter((m) => m.type === "REPAIR")).toHaveLength(1);
   });
 
+  test.each(["AWAITING_PARTS", "QA"] as const)(
+    "dedups against ANY open auto record (isOpenMaintenance): one held at %s blocks a duplicate",
+    async (status) => {
+      const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1"); await seedPriorFails(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("maintenanceRecords", { id: "held", organizationId: ORG, type: "PREVENTATIVE", status, title: "[Auto] Visual — AS1", createdAt: NOW, updatedAt: NOW });
+        await ctx.db.insert("maintenanceRecordAssets", { id: "hlink", maintenanceRecordId: "held", assetId: "as1" });
+      });
+      await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
+        orgId: ORG, assetId: "as1",
+        checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
+      });
+      expect((await maint(t)).filter((m) => m.type === "PREVENTATIVE")).toHaveLength(1);
+    },
+  );
+
+  test("a COMPLETED auto record does not block a new one (closed work isn't open)", async () => {
+    const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1"); await seedPriorFails(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "done", organizationId: ORG, type: "PREVENTATIVE", status: "COMPLETED", title: "[Auto] Visual — AS1", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("maintenanceRecordAssets", { id: "dlink", maintenanceRecordId: "done", assetId: "as1" });
+    });
+    await t.withIdentity(asUser).mutation(api.checkRecordWrites.saveAdHocCheck, {
+      orgId: ORG, assetId: "as1",
+      checks: [mkCheck({ recordId: "newr", result: "FAIL" })], maintenancePlan: [pmEntry()], incidentPlan: [incidentEntry()], auditId: "a1", now: NOW, actor,
+    });
+    expect((await maint(t)).filter((m) => m.type === "PREVENTATIVE")).toHaveLength(2);
+  });
+
   test("does not fire below the 2-fail threshold, but the immediate incident report still does", async () => {
     const t = makeT(); await seed(t); await seedCheckItem(t); await seedAsset(t, "as1");
     // Only the current FAIL (no priors) → failCount 1 → no PREVENTATIVE record.

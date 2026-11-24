@@ -17,34 +17,35 @@ import { PROJECT_TYPE_LABELS } from "@/lib/project-type-labels";
 // ─── Segments ────────────────────────────────────────────────────────────
 
 /**
- * One entry per segment. `shipped: false` entries (D86: Active, overdue) are
- * kept as config so enabling one is a one-line change, but are NOT accepted
- * yet: the strip and the URL spec never see them.
+ * The strip, in order. `active` (D86) is Booked + Out: what Home's Active jobs
+ * tile counts, so the tile can link to it. The server owns which statuses a key
+ * means (`convex/lib/projectSegments.ts`); this only knows the keys.
  */
 const SEGMENT_DEFS = [
-  { key: "all", label: "All", shipped: true },
-  { key: "quoting", label: "Quoting", shipped: true },
-  { key: "booked", label: "Booked", shipped: true },
-  { key: "out", label: OUT_LABEL, shipped: true },
-  { key: "done", label: "Done", shipped: true },
-  { key: "needs", label: "Needs you", shipped: true },
-  { key: "active", label: "Active", shipped: false },
-  { key: "overdue", label: "Overdue", shipped: false },
+  { key: "all", label: "All" },
+  { key: "active", label: "Active" },
+  { key: "quoting", label: "Quoting" },
+  { key: "booked", label: "Booked" },
+  { key: "out", label: OUT_LABEL },
+  { key: "done", label: "Done" },
+  { key: "needs", label: "Needs you" },
 ] as const;
-
-const SHIPPED_SEGMENTS = SEGMENT_DEFS.filter((s) => s.shipped);
 
 /** The strip: counts come from `projects.segmentCounts` (absent while loading). */
 export function jobSegments(counts: Record<string, number> | undefined): ListSegment[] {
-  return SHIPPED_SEGMENTS.map((s) => ({ key: s.key, label: s.label, count: counts?.[s.key] }));
+  return SEGMENT_DEFS.map((s) => ({ key: s.key, label: s.label, count: counts?.[s.key] }));
 }
 
 // ─── URL spec ────────────────────────────────────────────────────────────
 
+/** The one value of the `overdue` filter (D86: `?overdue=1`, Home's Overdue returns tile). */
+const OVERDUE_ON = "1";
+
 export const JOBS_SPEC: ListUrlSpec = {
-  segments: SHIPPED_SEGMENTS.map((s) => s.key),
+  segments: SEGMENT_DEFS.map((s) => s.key),
   // `show` carries `cancelled` (the page menu's Show cancelled); it has no filter word.
-  filters: ["status", "type", "client", "pm", "date", "show"],
+  // `overdue` carries `1`: overdue returns only (the shared rule in convex/lib/overdueReturns.ts).
+  filters: ["status", "type", "client", "pm", "date", "overdue", "show"],
   sorts: ["projectNumber", "name", "status", "rentalStartDate", "type", "total", "client"],
   defaultSort: "rentalStartDate:asc",
   views: ["table", "board"],
@@ -138,6 +139,8 @@ export function jobFilters(
     },
     { key: "pm", label: "PM", options: pms.map((m) => ({ value: m.id, label: m.name })) },
     { key: "date", label: "Dates", single: true, options: DATE_PRESETS.map((p) => ({ ...p })) },
+    // D86: reads `Returns: Overdue ✕` when set (Home's Overdue returns tile links here).
+    { key: "overdue", label: "Returns", single: true, options: [{ value: OVERDUE_ON, label: "Overdue" }] },
   ];
 }
 
@@ -178,6 +181,7 @@ export function jobsQueryArgs(state: ListUrlState, now: number) {
     clientIn: f.client,
     pmIn: f.pm,
     includeCancelled: f.show?.includes("cancelled") ? true : undefined,
+    overdue: f.overdue?.includes(OVERDUE_ON) ? true : undefined,
     ...resolveDatePreset(preset, now),
     page: state.page,
     pageSize: LIST_PAGE_SIZE,

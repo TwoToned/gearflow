@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
-import { requireOrgReadFor } from "./lib/auth";
+import { callerMayRead, requireOrgReadFor } from "./lib/auth";
 import { effectiveQuoteStatus, projectLiveRevision } from "./lib/quoteState";
 import { QUOTE_EXPIRING_SOON_DAYS, daysUntilValidUntil } from "./lib/quoteDates";
 import type { Doc } from "./_generated/dataModel";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { invoiceOutstanding, isInvoiceOverdue } from "./lib/invoiceOverdue";
 
 /**
  * The org-level Finance section (#992, Phase F) — "what's chaseable across
@@ -353,8 +354,18 @@ async function computeFinanceBundle(ctx: QueryCtx, orgId: string, now: number) {
     neverSent: buildNeverSent(draftQuotes, projectDocsById, clientsById),
     depositDue: buildDepositDue(projectDocsById, issuedByProjectId, clientsById),
     outstanding: buildOutstanding(issuedInvoices, projectDocsById, clientsById),
+    overdue: buildOverdue(issuedInvoices, projectDocsById, now),
+    // The ISSUED scan alone hit its cap: the overdue figures are a lower bound.
+    issuedCapped: issuedInvoices.length >= SECTION_CAP,
     capped,
   };
+}
+
+/** D88: the issued invoices past their due day and not settled, with what is still owed on each (derived). */
+function buildOverdue(issuedInvoices: Doc<"invoices">[], projectDocsById: Map<string, Doc<"projects">>, now: number) {
+  return issuedInvoices
+    .filter((inv) => projectDocsById.has(inv.projectId) && isInvoiceOverdue(inv, now))
+    .map((inv) => ({ invoiceId: inv.id, outstanding: invoiceOutstanding(inv) }));
 }
 
 /**
@@ -417,13 +428,22 @@ export const counts = query({
   args: { orgId: v.string(), now: v.number() },
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "invoice");
+    // It returns a dollar total (D88): the ROLE must read invoices, not just the org
+    // match. A role that can't gets null (the navCounts pattern), never a throw, so a
+    // client whose cached role disagrees with the server can't crash Home.
+    if (!(await callerMayRead(ctx, orgId, "invoice"))) return null;
     const b = await computeFinanceBundle(ctx, orgId, now);
+    const overdueOutstanding = Math.round(b.overdue.reduce((sum, r) => sum + r.outstanding, 0) * 100) / 100;
     return {
       quotesOutCount: b.quotesOut.length,
       expiringCount: b.expiring.length,
       neverSentCount: b.neverSent.length,
       depositDueCount: b.depositDue.length,
       outstandingCount: b.outstanding.length,
+      // D88 (additive): overdue invoices and what is still owed on them, derived on read.
+      overdueCount: b.overdue.length,
+      overdueOutstanding,
+      overdueTruncated: b.issuedCapped,
     };
   },
 });
@@ -435,7 +455,7 @@ export const agentOps: AgentOpsAnnotations = {
     danger: "low",
     mcpTier: 2,
   },
-  counts: { summary: "Cheap counts for the financeOrg.bundle sections, for a dashboard chip.", danger: "low", mcpTier: 3 },
+  counts: { summary: "Cheap counts for the financeOrg.bundle sections, plus overdue invoices and what is still owed on them, for a dashboard chip.", danger: "low", mcpTier: 3 },
   expiringForNotifications: {
     summary: "Quotes expiring within the notification window, for the quote_expiring bell/email pipeline (#1225).",
     danger: "low",

@@ -4,6 +4,7 @@ import { getAuthContext, isMemberAuth, requireSelfScope } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { deleteOwnDismissal } from "./lib/personalDismissal";
 
 /**
  * Browser-direct USER-scoped dismissal for the dashboard's "Get started"
@@ -79,10 +80,31 @@ export const dismissNative = mutation({
   },
 });
 
+/** Undo of `dismissNative` (UX Phase 11): removes exactly the row that Dismiss
+ *  created (`id`), only if it is the caller's own. See `lib/personalDismissal.ts`. */
+export const undismissNative = mutation({
+  returns: v.object({ removed: v.boolean() }),
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    await assertWritesEnabled(ctx, "org-activation");
+    await enforceBrowserWriteLimit(ctx);
+    const auth = await getAuthContext(ctx);
+    if (!isMemberAuth(auth)) {
+      throw new ConvexError("Unauthorized: a signed-in user is required.");
+    }
+    if (!auth.orgId) {
+      throw new ConvexError("Forbidden: no active organization.");
+    }
+    await requireSelfScope(ctx, "write");
+    return deleteOwnDismissal(ctx, "orgActivationDismissals", id, { organizationId: auth.orgId, userId: auth.userId });
+  },
+});
+
 /**
  * Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9).
  * Personal-scope (self:write) UI preference bookkeeping — no domain effect.
  */
 export const agentOps: AgentOpsAnnotations = {
   dismissNative: { summary: "Dismiss the caller's 'Get started' activation checklist card.", danger: "low", mcpTier: 3 },
+  undismissNative: { summary: "Undo the caller's own 'Get started' checklist dismissal (by the id that dismissal created).", danger: "low", mcpTier: 3 },
 };

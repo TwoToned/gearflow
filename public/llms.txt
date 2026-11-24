@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (631 agent-reachable)
+## Operations (634 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -23,6 +23,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `lineItemWrites.addLineItemSmartNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.addNative` (mutation, scope: project:manage_line_items,asset:update)
 - `lineItemWrites.unsellLineItemNative` (mutation, scope: project:manage_line_items,asset:update)
+- `navCounts.get` (query, scope: asset:read,testTag:read,maintenance:read,warehouse:read,client:read,supplier:read,location:read,crew:read)
 - `projectTasks.assignees` (query, scope: work:read,project:read)
 - `projectTasks.getById` (query, scope: work:read,project:read)
 - `projectTasks.listByProject` (query, scope: work:read,project:read)
@@ -531,8 +532,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `notificationsWrites.markUnreadManyNative` (mutation, scope: self:write)
 - `orgActivationDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgActivationDismissalsWrites.mine` (query, scope: self:read)
+- `orgActivationDismissalsWrites.undismissNative` (mutation, scope: self:write)
 - `orgSetupDismissalsWrites.dismissNative` (mutation, scope: self:write)
 - `orgSetupDismissalsWrites.mine` (query, scope: self:read)
+- `orgSetupDismissalsWrites.undismissNative` (mutation, scope: self:write)
 - `pushSubscriptions.isSubscribed` (query, scope: self:read)
 - `pushSubscriptionsWrites.subscribeNative` (mutation, scope: self:write)
 - `pushSubscriptionsWrites.unsubscribeNative` (mutation, scope: self:write)

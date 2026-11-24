@@ -1,6 +1,7 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { OPEN_MAINTENANCE_STATUSES as OPEN_MAINTENANCE } from "../../convex/lib/maintenanceOpen";
 import type {
   MaintenanceStatus,
   MaintenanceType,
@@ -298,13 +299,12 @@ export async function getMaintenanceTagsByOrg(
 
 // ─── Dashboard / project-cost aggregates (Phase A) ───────────────────────────
 
-/** Statuses that count as "open" maintenance work. */
-const OPEN_MAINTENANCE_STATUSES = new Set(["SCHEDULED", "IN_PROGRESS"]);
+/** Statuses that count as "open" maintenance work: the one definition in convex/lib/maintenanceOpen.ts. */
+const OPEN_MAINTENANCE_STATUSES = new Set<string>(OPEN_MAINTENANCE);
 
 /**
- * Count of open maintenance whose scheduled date has arrived (<= cutoffMs).
- * Replicates Prisma `count({ status: { in: [SCHEDULED, IN_PROGRESS] },
- * scheduledDate: { lte: now } })`. Operates on the mapped MaintenanceRecordRow
+ * Count of open maintenance whose scheduled date has arrived (<= cutoffMs) —
+ * the same due rule as `dashboardStats.bundle`. Operates on the mapped MaintenanceRecordRow
  * (scheduledDate is a Date | null; a null date never matches, like Prisma `lte`).
  */
 export function countDueMaintenance(

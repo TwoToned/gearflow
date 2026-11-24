@@ -60,6 +60,25 @@ describe("dashboardLists.upcoming", () => {
     expect(res[0]._count.lineItems).toBe(1); // only EQUIPMENT
     expect(res[1].client).toBeNull();
   });
+
+  test("reads ONE past the limit, so the widget can tell exactly 8 from more than 8", async () => {
+    const t = convexTest(schema, modules);
+    await member(t);
+    const seed = (n: number) =>
+      t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert("projects", {
+            id: `q${n}_${i}`, organizationId: ORG, projectNumber: `Q${i}`, name: `Q${i}`, status: "QUOTED", isTemplate: false,
+            rentalStartDate: NOW + (i + 1) * DAY, liveVersionId: `v-q${n}_${i}`,
+          });
+          await ctx.db.insert("projectVersions", { id: `v-q${n}_${i}`, organizationId: ORG, projectId: `q${n}_${i}`, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+        }
+      });
+    await seed(8);
+    expect(await t.withIdentity(asUser(ORG)).query(api.dashboardLists.upcoming, { orgId: ORG, now: NOW })).toHaveLength(8);
+    await seed(4);
+    expect(await t.withIdentity(asUser(ORG)).query(api.dashboardLists.upcoming, { orgId: ORG, now: NOW })).toHaveLength(9);
+  });
 });
 
 describe("dashboardLists.home", () => {

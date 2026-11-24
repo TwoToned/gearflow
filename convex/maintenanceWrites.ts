@@ -6,6 +6,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertMemberInOrg } from "./lib/orgRef";
+import { HOLDING_MAINTENANCE_STATUSES } from "./lib/maintenanceOpen";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -73,8 +74,8 @@ function assertMaintenanceFields(f: {
   assertArrayMax(f.photos, "photos", 20);
 }
 
-/** Statuses where the asset is physically in the workshop's hands. */
-const HOLDING_STATUSES = ["AWAITING_PARTS", "IN_PROGRESS", "QA"];
+/** Statuses where the asset is physically in the workshop's hands (the one definition in lib/maintenanceOpen.ts). */
+const HOLDING_STATUSES: readonly string[] = HOLDING_MAINTENANCE_STATUSES;
 
 /** Prisma default is SCHEDULED — an absent Convex `status` reads as SCHEDULED. */
 function statusOf(rec: { status?: string | null }): string {

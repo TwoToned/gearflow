@@ -118,12 +118,21 @@ Every job sits at one status. Statuses are ordered and mostly move forward.
 | `CANCELLED` | Dead. Releases stock. | Released |
 
 **What the Jobs list calls them.** The Jobs page groups statuses into segments, and
-operators use these words: **Quoting** (`ENQUIRY`, `QUOTING`, `QUOTED`), **Booked**
+operators use these words: **Active** (Booked + Out: what Home's Active jobs tile
+counts), **Quoting** (`ENQUIRY`, `QUOTING`, `QUOTED`), **Booked**
 (`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`), **Out** (`CHECKED_OUT`, `ON_SITE`),
 **Done** (`RETURNED`, `COMPLETED`, `INVOICED`), and **Needs you**, a derived set (an
-unresolved blocking discussion, an Out job past its end date, a quote untouched for 12
-days, or a hard-overbooked job). **All** is every job except `CANCELLED`. Saved views
+unresolved blocking discussion, an overdue return, a quote untouched for 12 days, or a
+hard-overbooked job). **All** is every job except `CANCELLED`. Saved views
 `My jobs`, `Out this week` and `Unquoted enquiries` are built in.
+
+**An overdue return** is judged by the gear, not the status word: a job that isn't
+closed (`RETURNED`/`COMPLETED`/`INVOICED`/`CANCELLED`), whose end date (rental end,
+else job end) has passed, with at least one line still out (`CHECKED_OUT`). So a
+part-deployed Booked job with gear out past its end counts; an Out job whose gear is
+all back does not. Home's Overdue returns tile counts these **jobs** (its sub-line is
+the number of lines still out), and the Jobs filter `Returns: Overdue` (`?overdue=1`)
+lists exactly them. One rule (`convex/lib/overdueReturns.ts`) feeds all three.
 
 **Pencilled vs hard is the single most important distinction in availability.**
 A pencilled job's gear is a soft hold — it shows in conflict views but does not

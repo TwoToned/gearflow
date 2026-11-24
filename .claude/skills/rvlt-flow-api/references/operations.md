@@ -242,7 +242,11 @@ Tasks are a plain list — nothing creates, moves or closes one automatically.
 
 Saved table views, notification preferences and dismissals for the acting
 user — `savedTableViews*`, `userNotificationPreferences*`,
-`notificationDismissals*`. Need `self:read` / `self:write`.
+`notificationDismissals*`, and the two dashboard checklist dismissals
+(`orgSetupDismissalsWrites.dismissNative` / `undismissNative`,
+`orgActivationDismissalsWrites.dismissNative` / `undismissNative`; undismiss
+takes the `id` the dismiss was sent with and removes only that row, only if it
+is the caller's own). Need `self:read` / `self:write`.
 
 ## Not reachable, ever
 

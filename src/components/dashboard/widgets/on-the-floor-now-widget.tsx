@@ -1,105 +1,76 @@
 "use client";
-// Extracted from dashboard/page.tsx's Zone 1 ("On the floor now") — same
-// hooks, same JSX, unchanged logic (R-3.1). An org-wide warehouse view (what's
-// out right now), not personal work.
+// An org-wide warehouse view (what's out right now), not personal work: the
+// rows, the count and the View all (the floor) are all the whole org's.
 
 import Link from "next/link";
-import { useNativeHome } from "@/hooks/use-native-dashboard";
-import { StaggerList, StaggerItem } from "@/components/ui/motion";
+import { useNativeFloorJobs } from "@/hooks/use-native-dashboard";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FlowMascot } from "@/components/ui/flow-mascot";
+import { StatusWord } from "@/components/ui/status-word";
+import { WidgetCount } from "@/components/dashboard/widget-chrome";
+import { floorBackText } from "@/lib/home-rows";
+import { jobStatusLabel } from "@/lib/list-views/jobs";
+import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
 
-const DAY = 24 * 60 * 60 * 1000;
-const LIVE_STATUSES = new Set(["CHECKED_OUT", "ON_SITE"]);
-
-function LivePulse() {
-  return (
-    <span className="relative flex h-2 w-2" aria-hidden>
-      <span className="absolute inline-flex h-full w-full motion-safe:animate-ping rounded-full bg-ok opacity-75" />
-      <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
-    </span>
-  );
+interface LiveJob {
+  id: string;
+  name: string;
+  projectNumber: string;
+  status: string;
+  rentalEndDate?: string | number | null;
+  client?: { name?: string | null } | null;
 }
 
-function LiveJobRow({ project, now }: { project: Record<string, unknown>; now: Date }) {
-  const client = project.client as { name?: string } | null;
-  const end = project.rentalEndDate ? new Date(project.rentalEndDate as string) : null;
-  const itemCount = (project._count as { lineItems?: number } | undefined)?.lineItems ?? 0;
-  let back = "";
-  if (end) {
-    const days = Math.round((end.getTime() - now.getTime()) / DAY);
-    back = days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "back today" : `back in ${days}d`;
-  }
-  const overdue = back.includes("overdue");
+function LiveJobRow({ job, now }: { job: LiveJob; now: number }) {
+  const back = floorBackText(job.rentalEndDate ? new Date(job.rentalEndDate).getTime() : null, now);
+  const sub = job.client?.name ?? "";
   return (
-    <Link
-      href={`/projects/${project.id}`}
-      className={cn(
-        "group block rounded-[var(--r)] border border-line bg-elev p-3 shadow-[var(--lit)] transition-all motion-safe:hover:-translate-y-0.5 hover:shadow-[var(--sh-card),var(--lit)]",
-        focusRing,
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-[14px] font-semibold text-ink">{project.name as string}</p>
-        <span className={`shrink-0 text-[11px] font-medium ${overdue ? "text-t-out" : "text-muted"}`}>{back}</span>
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[11px] text-muted">
-        <span className="inline-flex items-center gap-1 text-ok">
-          <LivePulse /> On site
+    <Link href={`/projects/${job.id}`} className={cn("group flex min-h-[52px] items-center gap-3 border-t border-line py-2", focusRing)}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13.5px] font-semibold text-ink group-hover:underline">
+          {job.name}
+          <span className="ml-1.5 font-mono text-[12px] font-medium text-muted">{job.projectNumber}</span>
         </span>
-        <span>·</span>
-        <span className="font-mono">{project.projectNumber as string}</span>
-        {client?.name ? (
-          <>
-            <span>·</span>
-            <span className="truncate">{client.name}</span>
-          </>
-        ) : null}
-        <span>·</span>
-        <span>
-          {itemCount} item{itemCount === 1 ? "" : "s"}
-        </span>
-      </div>
+        {sub && <span className="block truncate text-[12.5px] text-muted">{sub}</span>}
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-px">
+        {/* The real status word: `Out` for CHECKED_OUT, `On site` for ON_SITE (the live widget said "On site" for both). */}
+        <StatusWord status={{ label: jobStatusLabel(job.status), intent: getStatusIntent("project", job.status) }} className="text-[12.5px]" />
+        {back && <span className={cn("whitespace-nowrap text-[12.5px]", back.late ? "text-t-out" : "text-muted")}>{back.text}</span>}
+      </span>
     </Link>
   );
 }
 
+/** On the floor now (§6c.2): rows in two columns, soonest due back first, overdue in red. */
 export function OnTheFloorNowWidget({ orgId }: { orgId: string | undefined }) {
-  const myHome = useNativeHome(orgId);
-  const now = new Date();
-  const myProjects = (myHome?.myProjects ?? []) as unknown as Record<string, unknown>[];
-  const liveJobs = myProjects.filter((p) => LIVE_STATUSES.has(p.status as string));
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {liveJobs.length > 0 && <LivePulse />}
-          <span className="t-micro text-muted">what&rsquo;s out right now</span>
-        </div>
-        {liveJobs.length > 0 && <span className="text-[11px] text-muted">{liveJobs.length} live</span>}
+  const page = useNativeFloorJobs(orgId);
+  const now = useStableNow();
+  if (!page) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
       </div>
-      {!myHome ? (
-        <div className="space-y-2">
-          <Skeleton className="h-16 w-full rounded-[var(--r)]" />
-          <Skeleton className="h-16 w-full rounded-[var(--r)]" />
-        </div>
-      ) : liveJobs.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-          <FlowMascot className="h-10 w-10" eyeColor="var(--ok)" />
-          <p className="text-[14px] font-medium text-ink">Nothing out right now</p>
-          <p className="t-micro text-muted">The warehouse is full and calm. Enjoy it.</p>
-        </div>
-      ) : (
-        <StaggerList className="flex flex-col gap-2 sm:grid sm:grid-cols-2">
-          {liveJobs.slice(0, 4).map((p) => (
-            <StaggerItem key={p.id as string}>
-              <LiveJobRow project={p} now={now} />
-            </StaggerItem>
-          ))}
-        </StaggerList>
-      )}
-    </div>
+    );
+  }
+  const live = page.items as unknown as LiveJob[];
+  if (page.total === 0) {
+    return (
+      <p className="py-3 text-[13.5px] text-muted">
+        <span className="font-semibold text-ink">Nothing out right now.</span> The warehouse is full and calm. Enjoy it.
+      </p>
+    );
+  }
+  return (
+    <>
+      <WidgetCount>{page.total} live</WidgetCount>
+      <div className="grid gap-x-8 sm:grid-cols-2 [&>a:first-child]:border-t-0 sm:[&>a:nth-child(2)]:border-t-0">
+        {live.map((p) => (
+          <LiveJobRow key={p.id} job={p} now={now} />
+        ))}
+      </div>
+    </>
   );
 }

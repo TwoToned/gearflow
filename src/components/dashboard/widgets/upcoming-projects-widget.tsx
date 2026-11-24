@@ -1,86 +1,79 @@
 "use client";
-// Extracted from dashboard/page.tsx's "Upcoming" tile — same hook/JSX (R-3.1).
 
 import Link from "next/link";
 import { useNativeUpcoming } from "@/hooks/use-native-dashboard";
-import { StaggerList, StaggerItem } from "@/components/ui/motion";
+import { useFormatters } from "@/components/providers/format-provider";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusWord } from "@/components/ui/status-word";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
+import { WidgetCount } from "@/components/dashboard/widget-chrome";
+import { jobStatusLabel } from "@/lib/list-views/jobs";
 import { getStatusIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
-import { formatDateDayMonth } from "@/lib/formatters";
-import { ArrowRight } from "lucide-react";
+import { HOME_UPCOMING_LIMIT } from "../../../../convex/lib/jobStatusGroups";
 
-type Hue = "blue" | "amber" | "green" | "purple" | "coral" | "teal" | "red";
-const hueText: Record<Hue, string> = {
-  blue: "text-blue",
-  amber: "text-amber",
-  green: "text-green",
-  purple: "text-purple",
-  coral: "text-coral",
-  teal: "text-teal",
-  red: "text-red-text",
-};
+interface UpcomingJob {
+  id: string;
+  name: string;
+  projectNumber: string;
+  status: string;
+  rentalStartDate?: string | number | null;
+  rentalEndDate?: string | number | null;
+  client?: { name?: string } | null;
+}
 
-export function UpcomingProjectsWidget({ orgId }: { orgId: string | undefined }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const upcoming = useNativeUpcoming(orgId) as any;
-
+function UpcomingRow({ job }: { job: UpcomingJob }) {
+  const { formatDateDayMonth } = useFormatters();
+  const start = job.rentalStartDate ? formatDateDayMonth(new Date(job.rentalStartDate)) : null;
+  const end = job.rentalEndDate ? formatDateDayMonth(new Date(job.rentalEndDate)) : null;
+  const range = start && end && end !== start ? `${start} – ${end}` : start;
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-3 flex items-center justify-end">
-        <Link
-          href="/projects"
-          className={cn("inline-flex items-center gap-1 rounded-[var(--r)] text-[11px] text-muted hover:text-ink", focusRing)}
-        >
-          All <ArrowRight className="h-3 w-3" />
-        </Link>
+    <Link href={`/projects/${job.id}`} className={cn("group flex min-h-[52px] items-center gap-3 border-t border-line py-2", focusRing)}>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13.5px] font-semibold text-ink group-hover:underline">
+          {job.name}
+          <span className="ml-1.5 font-mono text-[12px] font-medium text-muted">{job.projectNumber}</span>
+        </span>
+        {job.client?.name && <span className="block truncate text-[12.5px] text-muted">{job.client.name}</span>}
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-px">
+        <span className="inline-flex items-center gap-1.5">
+          <StatusWord status={{ label: jobStatusLabel(job.status), intent: getStatusIntent("project", job.status) }} className="text-[12.5px]" />
+          <ProjectLockGlyph status={job.status} />
+        </span>
+        {range && <span className="whitespace-nowrap font-mono text-[12.5px] text-muted">{range}</span>}
+      </span>
+    </Link>
+  );
+}
+
+/** Upcoming (§6c.2): rows with a dot-word status, the lock glyph and a mono date range. */
+export function UpcomingProjectsWidget({ orgId }: { orgId: string | undefined }) {
+  const upcoming = useNativeUpcoming(orgId) as UpcomingJob[] | undefined;
+  if (!upcoming) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
       </div>
-      {!upcoming ? (
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      ) : upcoming.length === 0 ? (
-        <p className="t-body text-muted">Nothing booked ahead. Quote something.</p>
-      ) : (
-        <StaggerList className="space-y-1">
-          {(upcoming as Record<string, unknown>[]).slice(0, 4).map((p) => {
-            const client = p.client as { name?: string } | null;
-            const start = p.rentalStartDate ? new Date(p.rentalStartDate as string) : null;
-            const intent = getStatusIntent("project", p.status as string);
-            return (
-              <StaggerItem key={p.id as string}>
-                <Link
-                  href={`/projects/${p.id}`}
-                  className={cn(
-                    "group flex items-center justify-between gap-3 rounded-[var(--r)] px-2 py-2 transition-colors hover:bg-elev",
-                    focusRing,
-                  )}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-[14px] font-medium text-ink">{p.name as string}</p>
-                    <p className="t-micro truncate text-muted">
-                      <span className="font-mono">{p.projectNumber as string}</span>
-                      {client?.name ? <> · {client.name}</> : null}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <ProjectLockGlyph status={p.status as string | null | undefined} />
-                    {start && (
-                      <span
-                        className={`text-[11px] font-medium ${hueText[intent === "primary" ? "red" : (intent as Hue)] ?? "text-muted"}`}
-                      >
-                        {formatDateDayMonth(start)}
-                      </span>
-                    )}
-                  </div>
-                </Link>
-              </StaggerItem>
-            );
-          })}
-        </StaggerList>
-      )}
-    </div>
+    );
+  }
+  if (upcoming.length === 0) {
+    return (
+      <p className="py-3 text-[13.5px] text-muted">
+        <span className="font-semibold text-ink">Nothing booked ahead.</span> Quote something.
+      </p>
+    );
+  }
+  return (
+    <>
+      {/* The read returns one past HOME_UPCOMING_LIMIT: `8+` only when there really are more than 8. */}
+      <WidgetCount>{upcoming.length > HOME_UPCOMING_LIMIT ? `${HOME_UPCOMING_LIMIT}+` : upcoming.length}</WidgetCount>
+      <div className="grid gap-x-8 sm:grid-cols-2 [&>a:first-child]:border-t-0 sm:[&>a:nth-child(2)]:border-t-0">
+        {upcoming.slice(0, 4).map((p) => (
+          <UpcomingRow key={p.id} job={p} />
+        ))}
+      </div>
+    </>
   );
 }

@@ -41435,6 +41435,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
         "name": "orgId",
         "optional": false,
         "type": "string"
@@ -41446,10 +41451,10 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "f75cf9c7cfef7f2e",
+    "argsSha": "ac20f94bd020f7de",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents.",
+    "summary": "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents, overdue tasks (when `now` is given).",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,

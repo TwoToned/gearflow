@@ -12,7 +12,7 @@ describe("job tabs", () => {
 
   it("a template never has Packing, Finance or Versions", () => {
     const t = availableJobTabs({ isTemplate: true, panels: all });
-    expect(t).toEqual(["overview", "equipment", "labour", "tasks", "notes", "files"]);
+    expect(t).toEqual(["overview", "equipment", "labour", "tasks"]);
   });
 
   it("resolves ?tab= with aliases and falls back to Overview", () => {

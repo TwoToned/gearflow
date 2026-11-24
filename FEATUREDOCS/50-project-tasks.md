@@ -48,7 +48,19 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   (`entityType: "ProjectTask"`).
 
 ## UI
-- **Tasks tab** (`src/components/projects/tasks-panel.tsx`): add box, open list (tick to
+- **One `Tasks & notes` tab (UX Phase 10, #8c).** Tasks, Notes and Files are ONE job tab
+  (`tasks` in `src/lib/job-tabs.ts`; `?tab=notes` and `?tab=files` are aliases that land on
+  it and scroll to their section). Its badge is `done/total` plus a red `n overdue`.
+  `src/components/projects/tasks-notes/tasks-notes-tab.tsx` hosts the sections (Slice A
+  stacks the three existing bodies; later slices replace each). **Task links are deferred**
+  (owner ruling 2026-11-24: no schema until decided).
+- **"Overdue" is one rule** (`convex/lib/taskDue.ts`): `dueDate` is stored as UTC midnight of
+  the typed date, so its calendar day is the UTC day of that instant; "today" is the day
+  `now` falls on in the org's timezone (`orgSettings.timezone`, the same one invoice due days
+  use; UTC when the org stores none). Open tasks (TODO / IN_PROGRESS) due before today are
+  overdue. The tab badge, the `projectReadiness.forProject` overdue count and the grouping
+  all call it.
+- **Tasks section** (`src/components/projects/tasks-panel.tsx`, replaced in Phase 10 slice C): add box, open list (tick to
   complete), a "Closed" section (tick to reopen), and an edit dialog (title, notes, status,
   priority, due date, assignee, delete). Data via `src/hooks/use-project-task-list.ts`, which
   refetches the composite read when the live `projectTasks` subscription changes.

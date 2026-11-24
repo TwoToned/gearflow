@@ -593,6 +593,10 @@ export const createServiceNative = mutation({
     // regardless — issue #796 single source of truth). #1221: never gated
     // for a non-live target version.
     const defaultToZero = defaultsToZeroOnInsert(svcProject, targetVersionId);
+    // Below the crew-pay line the form never shows Cost (it rolls up crew pay), so
+    // a create can't set it either — the same rule as update (UX Phase 15). The
+    // lock's own $0 default below still applies.
+    if (!(await canSeeCrewPay(ctx, a.orgId))) a.costTotal = undefined;
     if (defaultToZero && (!a.crew || a.crew.length === 0)) {
       a.costTotal = 0;
     }

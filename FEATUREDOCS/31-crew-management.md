@@ -874,8 +874,9 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   - UI: the Finance tab's summary shows no margin and no Costs section, the
     Operational P&L panel hides (EMPTY has no total), Logistics shows no service
     cost or margin cell and no footer Cost/Margin, and the quote revision viewer
-    drops its Margin cell. A service save below the line keeps the stored
-    `costTotal` (the form read none).
+    drops its Margin cell. Below the line the form never shows Cost, so a
+    service create can't set `costTotal` and a save keeps the stored one (the
+    pricing lock's own $0 default still applies).
   Tests: `convex/crewCostTotals.test.ts`, `src/server/__tests__/project-services-pay.test.ts`,
   the FinancialSummary smoke and `service-rows.test.ts`.
 - **Pay in the activity log.** A crew member edit logs its field diff, rates

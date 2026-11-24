@@ -854,7 +854,7 @@ describe("projectServicesWrites — #1221 versionId follow-up", () => {
 
     test("lock interaction: live + locked defaults costTotal to $0; non-live + locked keeps the real cost", async () => {
       const t = makeT();
-      await member(t, "member");
+      await member(t, "manager"); // sets a cost: needs crew pay (a member's is ignored — crewCostTotals.test.ts)
       await seedProject(t, "p1", ORG, { pricingLocked: true });
       await seedSecondVersion(t);
 

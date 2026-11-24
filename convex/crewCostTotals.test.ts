@@ -128,6 +128,17 @@ describe("totals that include crew cost follow the one pay rule", () => {
     expect(await order(t)).toEqual(["p2", "p1"]);
   });
 
+  test("a create below the pay line can't set costTotal either (the form never shows Cost); a manager's can", async () => {
+    const base = { orgId: ORG, projectId: "p1", type: "MISC" as const, title: "Truck", showOnDocuments: true, quantity: 1, taxable: true, costTotal: 120, now: NOW, actor: { userId: USER, userName: "Alice" } };
+    const svc = (t: T, id: string) => t.run(async (ctx) => ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).first());
+    const t = makeT(); await seed(t, "member");
+    await t.withIdentity(asUser).mutation(api.projectServicesWrites.createServiceNative, { ...base, id: "s9", auditId: "c9" });
+    expect((await svc(t, "s9"))?.costTotal).toBeUndefined();
+    const tm = makeT(); await seed(tm, "manager");
+    await tm.withIdentity(asUser).mutation(api.projectServicesWrites.createServiceNative, { ...base, id: "s9", auditId: "c9" });
+    expect((await svc(tm, "s9"))?.costTotal).toBe(120);
+  });
+
   test("a service save by a caller below the pay line keeps the stored costTotal (the form read none)", async () => {
     const t = makeT(); await seed(t, "member");
     await t.withIdentity(asUser).mutation(api.projectServicesWrites.updateServiceNative, {

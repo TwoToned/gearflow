@@ -51,3 +51,4 @@ distinct from "debt paid down" instead of both looking like the same baseline co
 | 2026-09-27 | 711 | 719 | +8 | #1296 packing containers: projectContainers.ts, projectContainersWrites.ts, backfillProjectContainers.ts and the fulfillment.ts/warehouseOps.ts/versionReality.ts container roll-up/reality-carry additions each add a handful of legitimately bounded collect() calls (one project's containers, one container's member units, one version's containers/lines) — same class already exempted for the sibling plan tables, not an org-wide/whole-table scan. |
 | 2026-09-27 | 719 | 720 | +1 | #1296 phase 4: readPackingReadiness adds one bounded, indexed .collect() per project line item (projectLineItemUnits by_lineItemId) for the Packing readiness row, same convention warehouseDetail.ts already uses |
 | 2026-10-17 | 720 | 702 | -18 | (decrease — existing collects bounded/paginated) |
+| 2026-11-24 | 702 | 696 | -6 | (decrease — existing collects bounded/paginated) |

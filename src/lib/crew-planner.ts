@@ -419,51 +419,71 @@ export function candidatesFor(o: OpenCall, members: PlannerMember[], days: reado
 }
 
 /**
- * The days a suggested call BOOKS: from the run's first to its last short day
- * in the visible window, as one contiguous span (a call is one date range).
- * Everything a suggestion is judged on is in the window, where the planner
- * holds each person's calls and availability, so a call never reaches a day
- * nobody checked (review S2: a Thu–next-Tue run offered from this week books
- * Thu–Sun, never next Monday).
+ * The calls a suggestion BOOKS: one per contiguous run of SHORT days inside the
+ * visible window. A call is one date range, so a filled Tuesday between a short
+ * Monday and a short Wednesday gets two calls (Mon, Wed) and is never
+ * over-staffed. Everything is inside the window, where the planner holds each
+ * person's calls and availability, so a call never reaches a day nobody
+ * checked (review S2: a Thu–next-Tue run offered from this week books Thu–Sun,
+ * never next Monday).
  */
-export function bookDays(o: OpenCall, window: readonly string[]): string[] {
-  const short = shortDaysIn(o, window);
-  if (short.length === 0) return [];
-  return window.filter((d) => d >= short[0] && d <= short[short.length - 1]);
+export function bookSpans(o: OpenCall, window: readonly string[]): string[][] {
+  const spans: string[][] = [];
+  let run: string[] = [];
+  for (const d of window) {
+    if (shortOn(o, d) > 0) {
+      run.push(d);
+      continue;
+    }
+    if (run.length) spans.push(run);
+    run = [];
+  }
+  if (run.length) spans.push(run);
+  return spans;
 }
 
 export interface SuggestedOffer {
   open: OpenCall;
   member: PlannerMember;
-  /** The call's dates: exactly the days the suggestion was judged on (`bookDays`). */
+  /** The call's dates: exactly the span the suggestion was judged on (`bookSpans`). */
   startDate: string;
   endDate: string;
 }
 
+/** Candidates for one span: free or preferred on every day of it (never pencilled), not yet used on any. */
+function spanPicks(open: OpenCall, members: PlannerMember[], span: string[], used: ReadonlySet<string>): PlannerMember[] {
+  const need = Math.max(0, ...span.map((d) => shortOn(open, d)));
+  const free = (id: string) => span.every((d) => !used.has(`${id}:${d}`));
+  return candidatesFor(open, members, span)
+    .filter((c) => c.day.kind !== "pencilled" && free(c.member.id))
+    .slice(0, need)
+    .map((c) => c.member);
+}
+
 /**
- * What `Offer to suggested n` would send: for each open call, the candidates
- * free or preferred on EVERY day it will book (`bookDays`, never pencilled), up
- * to the worst gap among those days. One person is suggested once per DAY
- * across the batch — a call claims every day it books — so two calls on a
- * shared day never go to the same person. `unfilled` names the calls left
- * with no one.
+ * What `Offer to suggested n` would send: for each open call, for each span it
+ * books (`bookSpans`), up to the worst gap in that span, the people free or
+ * preferred on EVERY day of the span (the worst day decides). One person is
+ * suggested once per DAY across the batch — a call claims every day it books —
+ * so two calls on a shared day never go to the same person. `unfilled` names
+ * the open calls with any span left short.
  */
 export function planSuggestedOffers(opens: OpenCall[], members: PlannerMember[], window: readonly string[]): { offers: SuggestedOffer[]; unfilled: OpenCall[] } {
   const used = new Set<string>();
   const offers: SuggestedOffer[] = [];
   const unfilled: OpenCall[] = [];
   for (const open of opens) {
-    const days = bookDays(open, window);
-    const need = Math.max(0, ...days.map((d) => shortOn(open, d)));
-    const free = (id: string) => days.every((d) => !used.has(`${id}:${d}`));
-    const picks = candidatesFor(open, members, days)
-      .filter((c) => c.day.kind !== "pencilled" && free(c.member.id))
-      .slice(0, need);
-    for (const p of picks) {
-      for (const d of days) used.add(`${p.member.id}:${d}`);
-      offers.push({ open, member: p.member, startDate: days[0], endDate: days[days.length - 1] });
+    const spans = bookSpans(open, window);
+    let short = spans.length === 0;
+    for (const span of spans) {
+      const picks = spanPicks(open, members, span, used);
+      for (const m of picks) {
+        for (const d of span) used.add(`${m.id}:${d}`);
+        offers.push({ open, member: m, startDate: span[0], endDate: span[span.length - 1] });
+      }
+      if (picks.length < Math.max(0, ...span.map((d) => shortOn(open, d)))) short = true;
     }
-    if (picks.length < need || days.length === 0) unfilled.push(open);
+    if (short) unfilled.push(open);
   }
   return { offers, unfilled };
 }

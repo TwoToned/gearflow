@@ -7,7 +7,7 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusWord } from "@/components/ui/status-word";
-import { bookDays, callTimes, candidatesFor, displayDate, memberName, openDay, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { callTimes, candidatesFor, displayDate, memberName, openDay, shortDaysIn, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
 import { shortDaysText } from "@/lib/crew-short-days";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
@@ -52,9 +52,9 @@ export function TruncatedNote({ open }: { open: OpenCall[] }) {
   );
 }
 
-/** Free on EVERY day Offer to suggested would book (`bookDays`), preferred first. */
+/** Free on EVERY short day of the week (each day Offer to suggested would book), preferred first. */
 function Suggestions({ o, members, days }: { o: OpenCall; members: PlannerMember[]; days: readonly string[] }) {
-  const c = candidatesFor(o, members, bookDays(o, days)).slice(0, 3);
+  const c = candidatesFor(o, members, shortDaysIn(o, days)).slice(0, 3);
   if (c.length === 0) return <span className="text-caption text-faint">no one free</span>;
   return (
     <span className="inline-flex items-center gap-2 text-caption text-muted">

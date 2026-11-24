@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  bookDays,
+  bookSpans,
   callStatusWord,
   callsOn,
   candidatesFor,
@@ -248,12 +248,23 @@ describe("multi-day open calls (a Tue–Thu run)", () => {
     expect(planSuggestedOffers([long], [busy], weekDays(WEEK)).offers).toEqual([]);
   });
 
-  it("S2: a run short only on some days books from its first to its last short day, judged on each", () => {
+  it("a filled Tue between a short Mon and a short Wed: two calls (Mon, Wed), Tue never over-staffed", () => {
+    const gappy = open({
+      serviceId: "gappy", date: Date.parse(iso("2026-11-16")), endDate: Date.parse(iso("2026-11-18")), shortfall: 1,
+      shortDays: [{ day: Date.parse(iso("2026-11-16")), shortfall: 1 }, { day: Date.parse(iso("2026-11-18")), shortfall: 1 }],
+    });
+    expect(bookSpans(gappy, weekDays(WEEK))).toEqual([["2026-11-16"], ["2026-11-18"]]);
+    const plan = planSuggestedOffers([gappy], [member("ivy", "Ng")], weekDays(WEEK));
+    expect(plan.offers.map((o) => [o.startDate, o.endDate])).toEqual([["2026-11-16", "2026-11-16"], ["2026-11-18", "2026-11-18"]]);
+    expect(plan.unfilled).toEqual([]);
+  });
+
+  it("S2: a run short only on some days books exactly its short span, judged on each day of it", () => {
     const run2 = open({
       serviceId: "run2", date: Date.parse(iso("2026-11-16")), endDate: Date.parse(iso("2026-11-20")), shortfall: 1,
       shortDays: [{ day: Date.parse(iso("2026-11-18")), shortfall: 1 }, { day: Date.parse(iso("2026-11-19")), shortfall: 1 }],
     });
-    expect(bookDays(run2, weekDays(WEEK))).toEqual(["2026-11-18", "2026-11-19"]);
+    expect(bookSpans(run2, weekDays(WEEK))).toEqual([["2026-11-18", "2026-11-19"]]);
     // Unavailable Monday (a filled day it won't book): still suggested, for Wed–Thu.
     const eve = member("eve", "Po", { availability: [{ id: "v", type: "UNAVAILABLE", startDate: iso("2026-11-16"), endDate: iso("2026-11-16") }] });
     expect(planSuggestedOffers([run2], [eve], weekDays(WEEK)).offers[0]).toMatchObject({ startDate: "2026-11-18", endDate: "2026-11-19" });

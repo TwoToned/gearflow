@@ -547,10 +547,11 @@ legend are gone (every block prints its own word).
   open calls under Needs crew offers `Offer to suggested n`: free or preferred
   people with the role on EVERY day the call will book, up to the worst gap
   among them, one person once per DAY across the batch (`planSuggestedOffers`;
-  a call claims each day it books), created then offered in one send. The call
-  books `bookDays` — the run's first to last SHORT day inside the visible week —
-  so it never reaches a day the planner didn't check (a Thu → next-Tue run
-  offered from this week books Thu–Sun; S2). Select-all and shift ranges
+  a call claims each day it books), created then offered in one send. It books
+  `bookSpans` — one call per contiguous run of SHORT days inside the visible
+  week — so it never reaches a day the planner didn't check (a Thu → next-Tue
+  run offered from this week books Thu–Sun; S2) and a filled day between two
+  short ones is never over-staffed (short Mon and Wed: two calls). Select-all and shift ranges
   skip calls **dimmed** by the Job filter or the Unconfirmed / Mine segment; a
   confirm that reaches more than one job names them (`Jobs: #2341, #2350.`); a
   tick whose call left the live data, or was dimmed after it was ticked, drops

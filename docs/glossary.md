@@ -43,6 +43,8 @@ For the file-by-file breakdown of where each concept lives, see the
 | **Unplanned** (UI) | A line with no case planned for it on the job's Packing tab. A PLAN state; **Loose** is the PHYSICAL state (gear not in a case). A line can be Unplanned and Loose, or Planned and still Loose. |
 | **Sealed** (UI) | A packing case whose plan is locked (`projectContainers.sealedAt`): nothing is planned into or out of it until unsealed. Does not touch the warehouse. |
 | **Return** | UI label for checking an asset **in** from a project back to the warehouse. |
+| **Active** (UI, Jobs segment) | Booked + Out jobs (`AWAITING_PAYMENT`, `CONFIRMED`, `PREPPING`, `CHECKED_OUT`, `ON_SITE`), D86. The same set Home's Active jobs tile counts. See [10-projects.md](../FEATUREDOCS/10-projects.md). |
+| **Overdue return** | A job that is not closed, is past its end date, and still has gear `CHECKED_OUT` on its live version (`convex/lib/overdueReturns.ts`). Judged by the gear, not the status word. Home's tile counts these jobs; the Jobs filter `Returns: Overdue` (`?overdue=1`) lists them. |
 | **Docket** | A delivery or return document generated for a project (delivery docket / return docket) — see [13-pdfs.md](../FEATUREDOCS/13-pdfs.md). |
 | **Prep container (prep)** | The legacy free-text label for a case during pick/prep (`prepContainer`). Superseded by the first-class packing container (`projectContainers`; membership on the unit): see [83-packing-containers.md](../FEATUREDOCS/83-packing-containers.md). |
 | **Check item** | A pass/fail, measurement, notes, or dropdown quality check performed on an asset during deploy/return. See [37-check-items.md](../FEATUREDOCS/37-check-items.md). |

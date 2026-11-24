@@ -203,9 +203,23 @@ was granted `update` on `maintenance` (`convex/lib/permissionsCore.ts`) so
 floor staff can tick off services without also gaining create/delete on
 maintenance records.
 
-**Dashboard:** schedule-generated cycles are **excluded** from the existing
-`maintenanceDue` stat/chip (`serviceScheduleId` set = excluded) to prevent
-double-counting — see `FEATUREDOCS/17-notifications.md`'s chip note.
+**Dashboard:** Home's `maintenanceDue` line IS this page's Overdue tile: the same
+rule over every record, schedule-generated cycles **included** (as the tile counts
+them). Those cycles also feed the separate, model-level `modelsDueForService` line
+(opens `/maintenance/due`), so the two Home lines can overlap — see
+`FEATUREDOCS/17-notifications.md`'s chip note.
+
+**Open / overdue — ONE definition** (`convex/lib/maintenanceOpen.ts`, UX Phase 11):
+the holding statuses (AWAITING_PARTS, IN_PROGRESS, QA — the asset stays in
+MAINTENANCE, read by `maintenanceWrites`), open = SCHEDULED + holding, overdue =
+SCHEDULED / IN_PROGRESS with `scheduledDate < now` (`isOverdueMaintenance`; awaiting
+parts or in QA is held, not late). A record with no status is neither (the server's
+status-index reads can't see it). This page's tiles are `maintenanceTileCounts` and its
+row `Overdue` badge is `isOverdueMaintenance`; Home's `maintenanceDue`
+(`dashboardStats.bundle`), the phone More sheet's `Maintenance 20 open · 5 overdue`
+(`navCounts.get`) and the predictive-maintenance dedupe all read the same module, and
+`convex/dashboardStats.test.ts` / `convex/navCounts.test.ts` hold the server counts to
+`maintenanceTileCounts`, so the numbers agree.
 
 ## Related
 - **[FEATUREDOCS/64 — Incident Reporting](./64-incident-reporting.md)** — the

@@ -320,3 +320,32 @@ describe("UX Phase 7 — the job Overview's text links are 44px tap targets on a
     expect(src("components/projects/job-header.tsx")).toMatch(/"tap-area text-t-out"/);
   });
 });
+
+describe("UX Phase 11 — Home's rows and header words are 44px tap targets on a phone", () => {
+  const src = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
+  const HOME = "components/dashboard";
+
+  it("the header's quiet words (View all ›, the setup panel's Dismiss) use the shared tap-area", () => {
+    expect(src(`${HOME}/widget-chrome.tsx`)).toMatch(/HEADER_ACTION_TAP = "tap-area"/);
+    expect(src(`${HOME}/dashboard-card.tsx`)).toMatch(/cn\(HEADER_ACTION_TAP,[^)]*View all|HEADER_ACTION_TAP, "whitespace-nowrap/);
+    expect(src(`${HOME}/setup-panel.tsx`)).toMatch(/cn\(HEADER_ACTION_TAP,/);
+  });
+
+  it("every Home row link is at least 44px tall (setup rows, Needs attention lines, task / floor / upcoming rows)", () => {
+    expect(src(`${HOME}/setup-panel.tsx`)).toMatch(/className=\{cn\("flex min-h-11 /);
+    expect(src(`${HOME}/widgets/needs-attention-widget.tsx`)).toMatch(/"group flex min-h-11 /);
+    for (const w of ["my-tasks-widget", "on-the-floor-now-widget", "upcoming-projects-widget"]) {
+      expect(src(`${HOME}/widgets/${w}.tsx`), w).toMatch(/min-h-\[52px\]/);
+    }
+  });
+
+  it("the ⌘K palette's drill crumb and children toggle are 44px on a phone", () => {
+    const chrome = src("components/layout/palette/palette-chrome.tsx");
+    expect(chrome).toMatch(/onClick=\{onClick\} className="tap-area /);
+    expect(chrome).toMatch(/onClick=\{p\.onToggleChildren\}[^>]*max-md:size-11/);
+  });
+
+  it("the My tasks tick is a 44px button around its 18px circle", () => {
+    expect(src(`${HOME}/widgets/my-tasks-widget.tsx`)).toMatch(/flex size-11 shrink-0 items-center justify-center rounded-full/);
+  });
+});

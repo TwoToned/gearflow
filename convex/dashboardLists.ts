@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { HOME_UPCOMING_LIMIT, HOME_UPCOMING_STATUSES } from "./lib/jobStatusGroups";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
@@ -16,7 +17,7 @@ import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope"
  * actions' getOrgContext; Phase 5 domain slice, #1001).
  */
 
-const UPCOMING_STATUSES = new Set(["CONFIRMED", "PREPPING", "QUOTED", "AWAITING_PAYMENT"]);
+const UPCOMING_STATUSES = new Set<string>(HOME_UPCOMING_STATUSES);
 const HOME_INACTIVE_STATUSES = new Set(["COMPLETED", "INVOICED", "CANCELLED"]);
 
 /**
@@ -93,7 +94,8 @@ export const upcoming = query({
       const p = doc as unknown as ProjectDoc;
       if (p.isTemplate !== true && UPCOMING_STATUSES.has(p.status ?? "")) {
         candidates.push(p);
-        if (candidates.length >= 8) break;
+        // One past the limit, so the widget can tell "exactly 8" from "more than 8".
+        if (candidates.length > HOME_UPCOMING_LIMIT) break;
       }
     }
 

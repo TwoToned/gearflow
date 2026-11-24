@@ -1,6 +1,4 @@
 "use client";
-// Extracted from dashboard/page.tsx's Zone 2 ("Needs attention" chip tray) —
-// same hooks, same JSX, unchanged logic (R-3.1).
 
 import Link from "next/link";
 import {
@@ -11,160 +9,115 @@ import {
   useNativeOverbookingCounts,
   useNativeOrgFinanceCounts,
 } from "@/hooks/use-native-dashboard";
-import { ShieldAlert, AlertTriangle, UserCheck, Boxes, Send, Wrench } from "lucide-react";
+import { useCurrentRole } from "@/lib/use-permissions";
+import { useFormatters } from "@/components/providers/format-provider";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FlowMascot } from "@/components/ui/flow-mascot";
+import { StatusWord } from "@/components/ui/status-word";
+import { WidgetCount, useBoardHas } from "@/components/dashboard/widget-chrome";
+import { buildNeedsAttentionLines, type NeedsAttentionLine, type NeedsAttentionTone } from "@/lib/needs-attention";
+import { canOpenLink } from "@/lib/dashboard-links";
+import { canReadResource } from "@/lib/permission-reach";
+import type { ColorIntent } from "@/lib/status-colors";
+import type { Resource } from "@/lib/permissions";
 import { cn, focusRing } from "@/lib/utils";
-import type { LucideIcon } from "lucide-react";
 
-function NeedsAttention({
-  stats,
-  loading,
-  blockers,
-  pendingCrewOffers,
-  subHireOverdue,
-  overbookingCounts,
-  orgFinanceCounts,
-}: {
-  stats?: { overdueReturns?: number; maintenanceDue?: number; modelsDueForService?: number };
-  loading: boolean;
-  blockers: Record<string, unknown>[];
-  pendingCrewOffers?: number;
-  subHireOverdue: number;
-  overbookingCounts?: { hardCount: number; pencilledCount: number; saleStockCount: number };
-  orgFinanceCounts?: {
-    quotesOutCount: number;
-    expiringCount: number;
-    neverSentCount: number;
-    depositDueCount: number;
-    outstandingCount: number;
+const TONE_INTENT: Record<NeedsAttentionTone, ColorIntent> = { error: "error", warning: "warning", info: "neutral" };
+
+type Permissions = ReturnType<typeof useCurrentRole>["permissions"];
+
+/**
+ * The org id for a query only when the role may READ every resource it feeds
+ * (`canReadResource`: the `read` action, not any action); otherwise the query is
+ * skipped. Opening the line's target is a separate check (`canOpenLink`).
+ */
+function gated(orgId: string | undefined, permissions: Permissions, ...resources: Resource[]): string | undefined {
+  return resources.every((r) => canReadResource(permissions, r)) ? orgId : undefined;
+}
+
+/**
+ * Each line's read, skipped (and the line absent) when the role can't read what
+ * it counts (UX Phase 11, §6c.2). `useAuthedQuery` does not catch errors, so
+ * hiding a line is not enough: the query must not run.
+ */
+function useNeedsAttentionSources(orgId: string | undefined) {
+  const { permissions, isLoading: roleLoading } = useCurrentRole();
+  const projectOrg = gated(orgId, permissions, "project");
+  const stats = useNativeDashboardStats(projectOrg);
+  // Counted under subHire, opened on Suppliers: the read runs only when both are open.
+  const subHireOverdue = useNativeSubHireStats(gated(orgId, permissions, "subHire", "supplier"))?.overdueReturns;
+  const overbookings = useNativeOverbookingCounts(projectOrg);
+  const finance = useNativeOrgFinanceCounts(gated(orgId, permissions, "invoice"));
+  const blockers = useNativeBlocking(projectOrg) as { projectId: string }[] | undefined;
+  const crewOffers = useNativePendingCrewOffers(gated(orgId, permissions, "project", "crew"));
+  const canMaintenance = gated(orgId, permissions, "maintenance") !== undefined;
+  return {
+    permissions,
+    loading: roleLoading || stats.isLoading,
+    stats: stats.data,
+    maintenance: canMaintenance ? stats.data : undefined,
+    subHireOverdue,
+    overbookings,
+    // null = the server says this role can't read invoices: no line, never a crash.
+    finance: finance ?? undefined,
+    blockers,
+    crewOffers,
   };
-}) {
-  if (loading) {
-    return (
-      <div className="flex gap-2">
-        <Skeleton className="h-8 w-36 rounded-full" />
-        <Skeleton className="h-8 w-28 rounded-full" />
-      </div>
-    );
-  }
-  const chips = [
-    blockers.length > 0 && {
-      href: `/projects/${blockers[0].projectId}`,
-      label: `${blockers.length} blocker${blockers.length > 1 ? "s" : ""} need you`,
-      cls: "bg-out-soft text-t-out hover:bg-out-soft/70",
-      Icon: ShieldAlert,
-    },
-    (stats?.overdueReturns ?? 0) > 0 && {
-      href: "/projects",
-      label: `${stats?.overdueReturns} overdue return${(stats?.overdueReturns ?? 0) > 1 ? "s" : ""}`,
-      cls: "bg-out-soft text-t-out hover:bg-out-soft/70",
-      Icon: AlertTriangle,
-    },
-    subHireOverdue > 0 && {
-      href: "/suppliers",
-      label: `${subHireOverdue} sub-hire overdue`,
-      cls: "bg-out-soft text-t-out hover:bg-out-soft/70",
-      Icon: AlertTriangle,
-    },
-    (overbookingCounts?.hardCount ?? 0) > 0 && {
-      href: "/overbookings",
-      label: `${overbookingCounts?.hardCount} hard overbooking${(overbookingCounts?.hardCount ?? 0) > 1 ? "s" : ""}`,
-      cls: "bg-out-soft text-t-out hover:bg-out-soft/70",
-      Icon: AlertTriangle,
-    },
-    (overbookingCounts?.pencilledCount ?? 0) > 0 && {
-      href: "/overbookings",
-      label: `${overbookingCounts?.pencilledCount} pencilled collision${(overbookingCounts?.pencilledCount ?? 0) > 1 ? "s" : ""}`,
-      cls: "bg-warn-soft text-warn hover:bg-warn-soft/70",
-      Icon: AlertTriangle,
-    },
-    (overbookingCounts?.saleStockCount ?? 0) > 0 && {
-      href: "/overbookings",
-      label: `${overbookingCounts?.saleStockCount} sale stock to procure`,
-      cls: "bg-warn-soft text-warn hover:bg-warn-soft/70",
-      Icon: Boxes,
-    },
-    (stats?.maintenanceDue ?? 0) > 0 && {
-      href: "/maintenance",
-      label: `${stats?.maintenanceDue} maintenance due`,
-      cls: "bg-warn-soft text-warn hover:bg-warn-soft/70",
-      Icon: Wrench,
-    },
-    (stats?.modelsDueForService ?? 0) > 0 && {
-      href: "/maintenance/due",
-      label: `${stats?.modelsDueForService} model${(stats?.modelsDueForService ?? 0) > 1 ? "s" : ""} due for service`,
-      cls: "bg-warn-soft text-warn hover:bg-warn-soft/70",
-      Icon: Wrench,
-    },
-    (pendingCrewOffers ?? 0) > 0 && {
-      href: "/crew",
-      label: `${pendingCrewOffers} crew offer${(pendingCrewOffers ?? 0) > 1 ? "s" : ""} pending`,
-      cls: "bg-blue-soft text-blue hover:bg-blue-soft/70",
-      Icon: UserCheck,
-    },
-    (orgFinanceCounts?.expiringCount ?? 0) > 0 && {
-      href: "/finance",
-      label: `${orgFinanceCounts?.expiringCount} quote${(orgFinanceCounts?.expiringCount ?? 0) > 1 ? "s" : ""} expiring`,
-      cls: "bg-warn-soft text-warn hover:bg-warn-soft/70",
-      Icon: AlertTriangle,
-    },
-    (orgFinanceCounts?.quotesOutCount ?? 0) > 0 && {
-      href: "/finance",
-      label: `${orgFinanceCounts?.quotesOutCount} quote${(orgFinanceCounts?.quotesOutCount ?? 0) > 1 ? "s" : ""} out`,
-      cls: "bg-blue-soft text-blue hover:bg-blue-soft/70",
-      Icon: Send,
-    },
-  ].filter(Boolean) as { href: string; label: string; cls: string; Icon: LucideIcon }[];
+}
 
-  if (chips.length === 0) {
-    return (
-      <div className="flex items-center gap-3 py-1">
-        <FlowMascot className="h-9 w-9 shrink-0" eyeColor="var(--ok)" />
-        <div>
-          <p className="text-[14px] font-medium text-ink">All clear.</p>
-          <p className="t-micro text-muted">No overdue returns, no clashes, nothing waiting on you. Frame it.</p>
-        </div>
-      </div>
-    );
-  }
+function LineRow({ line }: { line: NeedsAttentionLine }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {chips.map((c) => (
-        <Link
-          key={c.label}
-          href={c.href}
-          className={cn(
-            "inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-table-cell font-medium shadow-[var(--sh-stk)] transition-colors",
-            focusRing,
-            c.cls,
-          )}
-        >
-          <c.Icon className="h-4 w-4" /> {c.label}
-        </Link>
-      ))}
-    </div>
+    <Link
+      href={line.link.href}
+      title={line.link.tip}
+      className={cn("group flex min-h-11 items-center gap-2.5 border-t border-line py-1 text-[13.5px] text-ink", focusRing)}
+    >
+      <span className="min-w-0 flex-1 group-hover:underline">
+        <StatusWord
+          status={{ label: line.count, intent: TONE_INTENT[line.tone] }}
+          className="font-mono text-[13.5px] font-semibold"
+        />{" "}
+        {line.text}
+      </span>
+      {line.detail && <span className="whitespace-nowrap font-mono text-[12.5px] text-muted">{line.detail}</span>}
+    </Link>
   );
 }
 
+/** Home's Needs attention (§6c.2): dot-word lines with a mono count, each deep-linked. */
 export function NeedsAttentionWidget({ orgId }: { orgId: string | undefined }) {
-  const nativeStats = useNativeDashboardStats(orgId);
-  const subHireStats = useNativeSubHireStats(orgId);
-  const overbookingCounts = useNativeOverbookingCounts(orgId);
-  const orgFinanceCounts = useNativeOrgFinanceCounts(orgId);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const myBlockers = useNativeBlocking(orgId) as any;
-  const pendingCrewOffers = useNativePendingCrewOffers(orgId);
+  const { loading, permissions, ...sources } = useNeedsAttentionSources(orgId);
+  const { formatCurrency } = useFormatters();
+  const overdueTileOnBoard = useBoardHas("statOverdueReturns");
 
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-6 w-3/4" />
+        <Skeleton className="h-6 w-1/2" />
+      </div>
+    );
+  }
+  const lines = buildNeedsAttentionLines({
+    ...sources,
+    overdueTileOnBoard,
+    canOpen: (link) => canOpenLink(link, permissions),
+    formatMoney: (n) => formatCurrency(n, { cents: false }),
+  });
+  if (lines.length === 0) {
+    return (
+      <p className="py-3 text-[13.5px] text-muted">
+        <span className="font-semibold text-ink">All clear.</span> No overdue returns, no clashes, nothing waiting on you.
+      </p>
+    );
+  }
   return (
-    <NeedsAttention
-      stats={nativeStats.data}
-      loading={nativeStats.isLoading}
-      blockers={myBlockers ?? []}
-      pendingCrewOffers={pendingCrewOffers}
-      subHireOverdue={subHireStats?.overdueReturns ?? 0}
-      overbookingCounts={overbookingCounts}
-      orgFinanceCounts={orgFinanceCounts}
-    />
+    <>
+      <WidgetCount>{lines.length}</WidgetCount>
+      <div className="[&>a:first-child]:border-t-0">
+        {lines.map((l) => (
+          <LineRow key={l.key} line={l} />
+        ))}
+      </div>
+    </>
   );
 }

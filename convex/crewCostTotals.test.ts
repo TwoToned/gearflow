@@ -101,17 +101,31 @@ describe("totals that include crew cost follow the one pay rule", () => {
     expect(masg.data).not.toHaveProperty("rateOverride");
   });
 
-  test("below the pay line a crew-cost total can't be a sort key either", async () => {
-    const t = makeT(); await seed(t, "member");
+  // The two orders DISAGREE: by margin p1 (4050) comes before p2 (99999); by
+  // rentalStartDate p2 (NOW − 1) comes before p1 (NOW). So a member asking to sort
+  // by margin must get the date order — honouring margin would leak it.
+  async function seedTwo(t: T, role: string) {
+    await seed(t, role);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "2342", name: "Zed", status: "CONFIRMED", isTemplate: false, margin: 1, rentalStartDate: NOW - 1 } as never);
+      await ctx.db.insert("projects", { id: "p2", organizationId: ORG, projectNumber: "2342", name: "Zed", status: "CONFIRMED", isTemplate: false, margin: 99999, rentalStartDate: NOW - 1 } as never);
       const p1 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       await ctx.db.patch(p1!._id, { rentalStartDate: NOW });
     });
-    const c = t.withIdentity(asUser);
-    const byMargin = (await c.query(api.projects.listPage, { orgId: ORG, sortBy: "margin", sortOrder: "asc" })).items.map((p) => p.id);
-    const byDefault = (await c.query(api.projects.listPage, { orgId: ORG, sortOrder: "asc" })).items.map((p) => p.id);
-    expect(byMargin).toEqual(byDefault);
+  }
+  const order = async (t: T, sortBy?: string) =>
+    (await t.withIdentity(asUser).query(api.projects.listPage, { orgId: ORG, sortOrder: "asc", ...(sortBy ? { sortBy } : {}) })).items.map((p) => p.id);
+
+  test("below the pay line a crew-cost total can't be a sort key: margin falls back to the date order", async () => {
+    const t = makeT(); await seedTwo(t, "member");
+    expect(await order(t)).toEqual(["p2", "p1"]);
+    expect(await order(t, "margin")).toEqual(["p2", "p1"]);
+    expect(await order(t, "labourCostTotal")).toEqual(["p2", "p1"]);
+  });
+
+  test("a manager can sort by margin (the fixture's orders really differ)", async () => {
+    const t = makeT(); await seedTwo(t, "manager");
+    expect(await order(t, "margin")).toEqual(["p1", "p2"]);
+    expect(await order(t)).toEqual(["p2", "p1"]);
   });
 
   test("a service save by a caller below the pay line keeps the stored costTotal (the form read none)", async () => {

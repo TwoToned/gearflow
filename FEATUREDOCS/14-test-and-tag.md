@@ -75,14 +75,21 @@ is a server redirect into it (old links, the item page's "Test now", the palette
 
 - **Any tag**: an asset tag or a test tag (`TT-0412`) reaches the same item
   (`scanLookup.testCard`, which also returns the resolved profile).
-- **States**: an asset not on the register → `Add to the register` (Undo deletes it); a
-  retired item → `Reactivate and test` (Undo retires it again); unknown / kit / bulk tags
-  say what to scan instead. Each is logged in Last scans.
+- **States**: an asset not on the register → `Add to the register` (Undo is the guarded
+  `testTagAssetsWrites.undoCreateNative`: author-only, 10 minutes on the server clock, and
+  only while the new item is untouched — still Not tested, active, `updatedAt` as created,
+  no test recorded since); a RETIRED item → `Reactivate and test` (Undo is
+  `undoReactivateNative`, restoring the prior status, `isActive` and `updatedAt` exactly);
+  an item that is inactive but not retired says so, with no Reactivate (the server only
+  reactivates a retired item); unknown / kit / bulk tags say what to scan instead; a tag the
+  page can't read says `Can't read tag X`. Each is logged in Last scans.
 - **The form** (`src/components/scan/tt-section.tsx`, draft `src/lib/tt-draft.ts`):
   - `Tested by: Name ▾` (org members; sticks for the session, defaults to you) and
     `Method: … ▾`.
   - Visual inspection: an always-on tick per enabled check (shift-click ticks a range),
-    `Fail` per check, `Pass all` with Undo, notes, `n/m` + a dot-word in the head.
+    `Fail` per check, `Pass all` with Undo, notes, `n/m` + a dot-word in the head. Pass
+    all's Undo (`revertPassAllVisual`) puts back only the ticks it made that still read
+    ticked; later fails, readings and notes survive.
   - Electrical: one row per enabled profile test with its threshold, the reading's own
     dot-word verdict, and `N/A`; pass / fail / N/A words for polarity and the RCD
     push-button; an optional insulation test voltage.
@@ -104,11 +111,17 @@ is a server redirect into it (old links, the item page's "Test now", the palette
   which stays reachable as a failure action.
 - **Card ⋯**: Open asset, `Quick pass: repeat the last test` (PREFILLS the last record's
   ticks, readings and method for review; every blocker still applies — it can no longer
-  save a reading-less PASS), Open in test & tag list, Clear this scan, `Retire from test &
+  save a reading-less PASS; absent for an item never tested), Open in test & tag list, Clear this scan, `Retire from test &
   tag…` (confirm; no Undo, because reactivating sets Not tested, not the prior status).
 - **Save awaits** `recordTest`; the save's ONE undo closure (`undoRecordTest`) is the
   toast's Undo and the Last scans row's (10 s), and restores the draft when nothing else is
-  loaded. A scan over unsaved answers asks `Discard this test?`; Escape never resets.
+  loaded. A scan over unsaved answers asks `Discard this test?`; Escape never resets
+  the answers.
+- **Keyboard** (`src/components/scan/use-tt-hotkeys.ts`, restored from the old page):
+  `Ctrl/⌘+Enter` saves (also from inside a reading or note), `Esc` goes back (clears the
+  scan, asking first over answers), `Ctrl/⌘+Shift+P` passes all visual checks. Only while
+  a test card is open and no dialog or menu is open; inside a text field only
+  `Ctrl/⌘+Enter` is taken.
 - Last scans (`n pass · n fail`) replaces the session log; the page ⋯ holds `Scan sounds`.
 
 ## Audio / Scan Feedback

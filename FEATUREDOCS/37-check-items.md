@@ -114,6 +114,14 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   the asset references, and only this org's. The Scan page restores the draft WITHOUT the
   photos and toasts `Undone · photos need re-adding`, so every save (a failed one too)
   keeps its one Undo.
+- **The save proves each photo is the check's own** (review B1, `assertOwnedCheckPhotos`),
+  so the Undo can never be pointed at someone else's file. A check photo must be an
+  `/api/files/{id}` upload that is one of the org's recent `fileUploads` rows, uploaded by
+  this user less than 6 hours ago, filed in the `check-photos` folder (the check form's
+  `PhotoGridInput folder`, `CHECK_PHOTO_FOLDER`), and not already on another check record.
+  Anything else (a quote/invoice PDF id, another user's upload, an external URL) is refused
+  at save with `upload it again from the check`. The save records the proven storage ids
+  on its audit row, and the Undo deletes only those.
 
 ### Warehouse Close (`convex/warehouseCloses.ts` reads + `convex/warehouseCloseWrites.ts` browser-direct mutations)
 
@@ -154,13 +162,19 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   bottom-nav Scan (`useScanTarget`), a Last scans row tap and the deep link all end in ONE
   `scan(tag)` (`use-scan-session.ts`): the same tag again toasts `already open`; a tag (or a
   mode change, or Clear) over unsaved answers asks `Discard this check?`; anything else loads.
-  Escape never resets.
+  Escape never resets. A tag the URL rule refuses (`readTag`: 1–128 characters of letters,
+  digits, space and `- _ . : /`), typed, scanned or from an old `/check/<tag>` link, is
+  never silently dropped: `Can't read tag X`, the exception sound and a Last scans row. While
+  a save is in flight its answers no longer count as unsaved, so a scan loads the next item
+  at once, and the landing save clears only what is still the saved asset's.
 - **The card** (`scanLookup.checkCard`): tag + status + flags (`T&T overdue 38d`, `Damaged`),
   the model linking to the asset, Where / On job / Last check / Last T&T, and for an asset
   out on a job `A check here is recorded on the asset, not the job.` Kit, bulk, T&T-only,
   unknown and no-check-items tags show a state with the next step and are logged in Last
   scans; none blocks the dock.
-- **The form** renders `CheckItemFields` inline: Pass all (with Undo) in the section head, the
+- **The form** renders `CheckItemFields` inline: Pass all in the section head (its Undo,
+  `revertPassAll`, un-answers only the items Pass all answered that still read Pass; later
+  answers, notes and photos survive), the
   FAIL reason + photo block, Condition `Good Worn Damaged` (preselected from the stored
   value, forced and locked to Damaged by any fail), Notes. `Save and scan next` (caret:
   `Save and keep this asset open`) is disabled with the reason in plain words.

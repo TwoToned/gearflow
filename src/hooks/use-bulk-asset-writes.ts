@@ -24,6 +24,8 @@ export function useBulkAssetWrites() {
   const updateM = useMutation(api.bulkAssetsWrites.updateNative);
   const deleteM = useMutation(api.bulkAssetsWrites.deleteNative);
   const archiveM = useMutation(api.bulkAssetsWrites.archiveNative);
+  const reinstateM = useMutation(api.bulkAssetsWrites.reinstateNative);
+  const undoRetireM = useMutation(api.bulkAssetsWrites.undoRetireNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -60,9 +62,22 @@ export function useBulkAssetWrites() {
       const org = requireOrg();
       return await deleteM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
     },
-    archive: async (id: string): Promise<{ id: string }> => {
+    /** Retire. `auditId` is the handle `undoRetire` takes. */
+    archive: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
       const org = requireOrg();
-      return await archiveM({ id, orgId: org, now: Date.now() });
+      const auditId = createId();
+      const r = await archiveM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    reinstate: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
+      const org = requireOrg();
+      const auditId = createId();
+      const r = await reinstateM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    undoRetire: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
+      const org = requireOrg();
+      return await undoRetireM({ id, orgId: org, auditId, now: Date.now(), actor: actor() });
     },
   };
 }

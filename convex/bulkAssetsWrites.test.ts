@@ -89,10 +89,10 @@ describe("bulkAssetsWrites", () => {
     expect(await bulk(t, "bk1")).toBeNull();
   });
 
-  test("archive soft-retires (no audit, parity); RBAC rejects a viewer", async () => {
+  test("archive soft-retires (audited with an Undo snapshot); RBAC rejects a viewer", async () => {
     const t = makeT(); await seedMember(t);
     await t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, base);
-    await t.withIdentity(asUser).mutation(api.bulkAssetsWrites.archiveNative, { id: "bk1", orgId: ORG, now: NOW + 5 });
+    await t.withIdentity(asUser).mutation(api.bulkAssetsWrites.archiveNative, { id: "bk1", orgId: ORG, now: NOW + 5, actor, auditId: "ar1" });
     const a = await bulk(t, "bk1");
     expect(a?.isActive).toBe(false);
     expect(a?.status).toBe("RETIRED");

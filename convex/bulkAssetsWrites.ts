@@ -11,6 +11,8 @@ import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 
 /**
  * Native BULK-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -196,6 +198,15 @@ export const deleteNative = mutation({
       .filter((ki) => ki.organizationId === a.orgId);
     if (kitRefs.length > 0) throw new ConvexError("Cannot delete — this bulk asset is part of a kit. Remove it from the kit first.");
 
+    // D32 / Q-11: Delete is only for a bare row (the same rule as a serialised unit).
+    const history = await assetHistoryReason(ctx, a.orgId, { bulkAssetId: a.id });
+    if (history) {
+      throw new ConvexError({
+        code: "ASSET_HAS_HISTORY",
+        message: `This bulk asset can't be deleted because ${assetHistoryText(history)}. Retire it instead.`,
+      });
+    }
+
     await ctx.db.delete(doc._id);
     await bumpCountersForTable(ctx, "bulkAssets", doc, null);
 
@@ -204,27 +215,77 @@ export const deleteNative = mutation({
   },
 });
 
-// Archive is no-audit (parity — the old archiveBulkAsset only patched, no logActivity),
-// so resolveActor is omitted; the other 3 guards stay.
+/** Retire (`RETIRED`) or reinstate (`ACTIVE`) one bulk row, audited with the exact-Undo snapshot. */
+async function setBulkRetired(
+  ctx: MutationCtx,
+  a: { id: string; orgId: string; now: number; actor: Actor; auditId: string },
+  retired: boolean,
+) {
+  const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+  if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
+  const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: "ACTIVE" as const };
+  const diff = diffFields(doc, { ...doc, ...set }, ["status", "isActive"]);
+  if (!diff) return { id: a.id, undoable: false };
+  await ctx.db.patch(doc._id, { ...set, updatedAt: a.now });
+  await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...set, updatedAt: a.now });
+  await recordFieldEdit(ctx, {
+    orgId: a.orgId, entityType: "bulkAsset", entityId: a.id, entityName: doc.assetTag, auditId: a.auditId, actor: a.actor, now: a.now,
+    summary: `${retired ? "Retired" : "Reinstated"} bulk asset ${doc.assetTag}`, diff,
+  });
+  return { id: a.id, undoable: true };
+}
+
+// Retire is audited now (D33/Q-11): the audit row is the exact-Undo snapshot, the
+// same shape as `assetWrites.archiveNative`.
 export const archiveNative = mutation({
-  returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number() },
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "bulkAsset");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "bulkAsset", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    return setBulkRetired(ctx, { ...a, actor }, true);
+  },
+});
 
+export const reinstateNative = mutation({
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "bulkAsset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "bulkAsset", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    return setBulkRetired(ctx, { ...a, actor }, false);
+  },
+});
+
+/** Exact reverse of ONE bulk retire / reinstate, from its own audit row (ids only). */
+export const undoRetireNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "bulkAsset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "bulkAsset", "update");
+    const actor = await resolveActor(ctx, a.actor);
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
-    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
-
-    const set = { isActive: false, status: "RETIRED" as const, updatedAt: a.now };
-    await ctx.db.patch(doc._id, set);
-    await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...set });
-    return { id: a.id };
+    return undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "bulkAsset", entityId: a.id, entityName: doc?.assetTag ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (doc && doc.organizationId === a.orgId ? doc : null),
+      apply: async (d, plan) => {
+        const patch = { ...plan.set, ...Object.fromEntries(plan.clear.map((k) => [k, undefined])), updatedAt: a.now };
+        await ctx.db.patch(d._id, patch);
+        await bumpCountersForTable(ctx, "bulkAssets", d, { ...d, ...patch });
+      },
+    });
   },
 });
 
 export const agentOps: AgentOpsAnnotations = {
+  reinstateNative: { danger: "medium" },
+  undoRetireNative: { danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },

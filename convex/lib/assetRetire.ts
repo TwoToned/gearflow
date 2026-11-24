@@ -1,6 +1,14 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { bumpAssetCounters } from "./counters";
+import { diffFields } from "./fieldEditUndo";
+
+/** A linked T&T row as the retire found it (absent fields are `null`). */
+export interface RetiredTestTag {
+  id: string;
+  status: string | null;
+  isActive: boolean | null;
+}
 
 /**
  * Retires ONE asset — isActive:false + status:RETIRED, retiring its linked T&T
@@ -12,21 +20,32 @@ import { bumpAssetCounters } from "./counters";
  * extracted from — callers that need an idempotency guard (e.g. skipping an
  * already-RETIRED asset) check the asset's current status themselves, same as the
  * `holdAssets`/`releaseAssets` guards in maintenanceWrites.ts.
+ *
+ * Returns what it changed, so the caller that offers Undo (`archiveNative`) can
+ * write it into its own audit row: the asset-field diff (`status`, `isActive`; `null`
+ * when nothing changed) and the T&T rows it retired with their prior state. The
+ * maintenance RETIRE disposition ignores it.
  */
 export async function retireAssetCore(
   ctx: MutationCtx,
   orgId: string,
   asset: Doc<"assets">,
   now: number,
-): Promise<void> {
+): Promise<{ diff: ReturnType<typeof diffFields>; testTags: RetiredTestTag[] }> {
   const linkedTT = await ctx.db
     .query("testTagAssets")
     .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", asset.id))
     .collect();
+  const testTags: RetiredTestTag[] = [];
   for (const tt of linkedTT) {
+    if (tt.status === "RETIRED" && tt.isActive === false) continue; // already as a retire leaves it
+    testTags.push({ id: tt.id, status: tt.status ?? null, isActive: tt.isActive ?? null });
     await ctx.db.patch(tt._id, { status: "RETIRED", isActive: false, updatedAt: now });
   }
 
-  await ctx.db.patch(asset._id, { isActive: false, status: "RETIRED", updatedAt: now });
-  await bumpAssetCounters(ctx, orgId, asset, { isActive: false, status: "RETIRED" });
+  const set = { isActive: false, status: "RETIRED" as const };
+  const diff = diffFields(asset, { ...asset, ...set }, ["status", "isActive"]);
+  await ctx.db.patch(asset._id, { ...set, updatedAt: now });
+  await bumpAssetCounters(ctx, orgId, asset, set);
+  return { diff, testTags };
 }

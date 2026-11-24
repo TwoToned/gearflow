@@ -30,6 +30,8 @@ export function useAssetWrites() {
   const bulkTagM = useMutation(api.assetWrites.bulkTagNative);
   const deleteM = useMutation(api.assetWrites.deleteNative);
   const archiveM = useMutation(api.assetWrites.archiveNative);
+  const reinstateM = useMutation(api.assetWrites.reinstateNative);
+  const undoRetireM = useMutation(api.assetWrites.undoRetireNative);
   const notesM = useMutation(api.assetWrites.updateNotesNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
@@ -134,9 +136,23 @@ export function useAssetWrites() {
       const org = requireOrg();
       return await deleteM({ id, orgId: org, actor: actor(), auditId: createId(), now: Date.now() });
     },
-    archive: async (id: string): Promise<{ ok: boolean }> => {
+    /** Retire. `auditId` is the handle `undoRetire` takes; `undoable` is false when nothing changed. */
+    archive: async (id: string): Promise<{ ok: boolean; undoable: boolean; auditId: string }> => {
       const org = requireOrg();
-      return await archiveM({ id, orgId: org, actor: actor(), auditId: createId(), now: Date.now() });
+      const auditId = createId();
+      const r = await archiveM({ id, orgId: org, actor: actor(), auditId, now: Date.now() });
+      return { ...r, auditId };
+    },
+    reinstate: async (id: string): Promise<{ ok: boolean; undoable: boolean; auditId: string }> => {
+      const org = requireOrg();
+      const auditId = createId();
+      const r = await reinstateM({ id, orgId: org, actor: actor(), auditId, now: Date.now() });
+      return { ...r, auditId };
+    },
+    /** The exact reverse of one retire / reinstate, from its own audit row (ids only). */
+    undoRetire: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
+      const org = requireOrg();
+      return await undoRetireM({ id, orgId: org, auditId, actor: actor(), now: Date.now() });
     },
     updateNotes: async (id: string, notes: string): Promise<{ ok: boolean }> => {
       const org = requireOrg();

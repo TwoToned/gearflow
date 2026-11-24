@@ -154,7 +154,7 @@ describe("assetWrites.archiveNative", () => {
       expect(tt?.status).toBe("RETIRED");
       expect(tt?.isActive).toBe(false);
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.summary).toMatch(/Archived asset/);
+      expect(log?.summary).toMatch(/Retired asset/);
     });
   });
 

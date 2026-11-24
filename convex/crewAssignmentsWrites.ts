@@ -588,7 +588,91 @@ export const generateShiftsNative = mutation({
   },
 });
 
+const LIVE_CALL = new Set(["PENDING", "OFFERED", "ACCEPTED", "CONFIRMED"]);
+
+/**
+ * createManyNative (UX Phase 13, the Crew list's `Assign n to job…`): ONE transaction
+ * creating a PENDING, UNSENT call per member on one job. No mail goes out here (offers
+ * are sent later through `sendCrewOffers`, after its own confirm), so the single Undo,
+ * `bulkDeleteNative(createdIds)`, reverses EXACTLY these rows and nothing else.
+ * Per-member gates: a member outside the org, or already holding a live call on the
+ * job, is skipped and named in the result (never thrown, never partially hidden).
+ * Pricing is the same resolution as `createNative` (override → member → role) and a
+ * locked job defaults to $0 the same way.
+ */
+export const createManyNative = mutation({
+  returns: v.object({
+    created: v.array(v.object({ id: v.string(), crewMemberId: v.string() })),
+    skipped: v.array(v.object({ crewMemberId: v.string(), reason: v.string() })),
+  }),
+  args: {
+    orgId: v.string(),
+    projectId: v.string(),
+    items: v.array(v.object({ id: v.string(), crewMemberId: v.string(), crewRoleId: v.optional(v.string()) })),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "crew");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "crew", "create");
+    await assertBulkSizeOk(ctx, a.items.length);
+    const actor = await resolveActor(ctx, a.actor);
+    const project = await requireCrewProjectInOrg(ctx, a.projectId, a.orgId);
+    if (a.startDate != null && a.endDate != null && a.endDate < a.startDate) throw new ConvexError("The end date is before the start date.");
+    const defaultToZero = defaultsToZeroOnInsert(project);
+
+    const created: { id: string; crewMemberId: string }[] = [];
+    const skipped: { crewMemberId: string; reason: string }[] = [];
+    const seen = new Set<string>();
+    for (const item of a.items) {
+      if (seen.has(item.crewMemberId)) continue; // a repeated member must not get two calls
+      seen.add(item.crewMemberId);
+      const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", item.crewMemberId)).first();
+      if (!member || member.organizationId !== a.orgId) { skipped.push({ crewMemberId: item.crewMemberId, reason: "not found" }); continue; }
+      if ((member.isActive ?? true) === false || member.status === "INACTIVE" || member.status === "ARCHIVED") { skipped.push({ crewMemberId: item.crewMemberId, reason: "inactive" }); continue; }
+      const existing = (await ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", item.crewMemberId)).collect())
+        .some((c) => c.organizationId === a.orgId && c.projectId === a.projectId && LIVE_CALL.has(c.status ?? "PENDING"));
+      if (existing) { skipped.push({ crewMemberId: item.crewMemberId, reason: "already on this job" }); continue; }
+      if (item.crewRoleId) await assertRefInOrg(ctx, "crewRoles", item.crewRoleId, a.orgId);
+      const dup = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", item.id)).first();
+      if (dup) throw new ConvexError("Assignment already exists");
+
+      const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, item.crewMemberId, item.crewRoleId);
+      const { rate, rateType } = resolveRate(undefined, null, crewMember, crewRole);
+      const estimatedCost = defaultToZero ? undefined : calculateEstimatedCost(rate, rateType, a.startDate ?? null, a.endDate ?? null, null);
+      const doc = {
+        id: item.id, organizationId: a.orgId, projectId: a.projectId, crewMemberId: item.crewMemberId,
+        ...(item.crewRoleId ? { crewRoleId: item.crewRoleId } : {}),
+        status: "PENDING" as const, isProjectManager: false,
+        ...(a.startDate != null ? { startDate: a.startDate } : {}), ...(a.endDate != null ? { endDate: a.endDate } : {}),
+        ...(estimatedCost != null ? { estimatedCost } : {}),
+        createdAt: a.now, updatedAt: a.now,
+      };
+      await ctx.db.insert("crewAssignments", doc);
+      await bumpCountersForTable(ctx, "crewAssignments", null, doc);
+      created.push({ id: item.id, crewMemberId: item.crewMemberId });
+    }
+
+    if (created.length > 0) {
+      const taxRate = await orgDefaultTaxRate(ctx, a.orgId);
+      await recalcProjectTotals(ctx, a.projectId, a.orgId, taxRate, a.now);
+      await logAssignment(ctx, {
+        orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: created[0].id,
+        name: `${created.length} crew call${created.length === 1 ? "" : "s"}`,
+        summary: `Assigned ${created.length} crew member${created.length === 1 ? "" : "s"} to ${project.projectNumber}`,
+        metadata: { createdIds: created.map((c) => c.id), ...afterLockAuditMetadata(defaultToZero) }, projectId: a.projectId,
+      });
+    }
+    return { created, skipped };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
+  createManyNative: { danger: "medium" },
   bulkDeleteNative: { danger: "high" },
   bulkStatusNative: { danger: "medium" },
   // Withdraws calls (crew are told by the caller); reopens the slot; no Undo.

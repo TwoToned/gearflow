@@ -238,6 +238,7 @@ import type * as paletteRecents from "../paletteRecents.js";
 import type * as parity from "../parity.js";
 import type * as payments from "../payments.js";
 import type * as paymentsWrites from "../paymentsWrites.js";
+import type * as peopleLists from "../peopleLists.js";
 import type * as pendingOrgJoinRequests from "../pendingOrgJoinRequests.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
 import type * as projectCategories from "../projectCategories.js";
@@ -569,6 +570,7 @@ declare const fullApi: ApiFromModules<{
   parity: typeof parity;
   payments: typeof payments;
   paymentsWrites: typeof paymentsWrites;
+  peopleLists: typeof peopleLists;
   pendingOrgJoinRequests: typeof pendingOrgJoinRequests;
   pendingSSOApprovals: typeof pendingSSOApprovals;
   projectCategories: typeof projectCategories;

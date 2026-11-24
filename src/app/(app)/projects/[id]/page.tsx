@@ -10,7 +10,7 @@ import { useMiraPageContext } from "@/hooks/use-mira-page-context";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { PackingTab } from "@/components/projects/packing-tab";
 import { LogisticsTab } from "@/components/projects/logistics/logistics-tab";
-import { TasksPanel } from "@/components/projects/tasks-panel";
+import { TasksNotesTab } from "@/components/projects/tasks-notes/tasks-notes-tab";
 import {
   ProjectContextRail,
   type ProjectContextRailProject,
@@ -36,7 +36,7 @@ import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
 import { JobTabRow } from "@/components/projects/job-tab-row";
 import { FinanceTabSlot, NotesTabSlot } from "@/components/projects/job-tab-slots";
-import { JOB_TAB_KEYS, availableJobTabs, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
+import { JOB_TAB_KEYS, availableJobTabs, jobTabSection, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
 export default function ProjectDetailPage({
   params,
@@ -250,42 +250,38 @@ export default function ProjectDetailPage({
         />
       </div>
     ),
-    // Tasks — projectTasks isn't in the snapshot; stays live.
+    // Tasks & notes (UX Phase 10): Tasks, Notes and Files merged into one tab.
+    // Tasks and Files are not in the version snapshot (stay live); the three note
+    // fields ARE captured, so a viewed version shows its own text, read-only.
     tasks: (
-      <>
-        <VersionNotTrackedNote what="Tasks" />
-        <TasksPanel projectId={id} />
-      </>
-    ),
-    // Notes — the three note fields ARE captured, so a viewed version shows
-    // its own text, read-only.
-    notes: (
-      <NotesTabSlot
-        liveCrewNotes={(composedProject.crewNotes as string) || ""}
-        liveInternalNotes={(composedProject.internalNotes as string) || ""}
-        liveClientNotes={(composedProject.clientNotes as string) || ""}
-        onChanged={() => refreshProjectDetail(id)}
-        onSave={saveProjectNotes}
+      <TasksNotesTab
+        projectId={id}
+        section={jobTabSection(requestedTab)}
+        notes={
+          <NotesTabSlot
+            liveCrewNotes={(composedProject.crewNotes as string) || ""}
+            liveInternalNotes={(composedProject.internalNotes as string) || ""}
+            liveClientNotes={(composedProject.clientNotes as string) || ""}
+            onChanged={() => refreshProjectDetail(id)}
+            onSave={saveProjectNotes}
+          />
+        }
+        files={
+          <MediaUploader
+            entityType="project"
+            entityId={id}
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
+            existingMedia={(project.media || []) as MediaItem[]}
+            onChanged={() => refreshProjectDetail(id)}
+            onUploadComplete={async (fileUpload) => {
+              await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
+            }}
+            onRemove={async (mediaId) => {
+              await media.remove(mediaId);
+            }}
+          />
+        }
       />
-    ),
-    // Files — projectMedia isn't in the snapshot; stays live.
-    files: (
-      <>
-        <VersionNotTrackedNote what="Files" />
-        <MediaUploader
-          entityType="project"
-          entityId={id}
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
-          existingMedia={(project.media || []) as MediaItem[]}
-          onChanged={() => refreshProjectDetail(id)}
-          onUploadComplete={async (fileUpload) => {
-            await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
-          }}
-          onRemove={async (mediaId) => {
-            await media.remove(mediaId);
-          }}
-        />
-      </>
     ),
     // Versions (D19, UX Phase 8): the dated list; Compare and Make live open the
     // sheet and dialog `VersionOverlays` hosts.
@@ -327,7 +323,6 @@ export default function ProjectDetailPage({
                 available={available}
                 value={activeTab}
                 onValueChange={setRequestedTab}
-                filesCount={(project.media || []).length}
               />
               <div role="tabpanel" id={`job-tabpanel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`} className="pt-4">
                 {panels[activeTab]}

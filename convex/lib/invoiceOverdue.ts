@@ -21,7 +21,8 @@ import type { Doc } from "../_generated/dataModel";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type InvoiceMoney = Pick<Doc<"invoices">, "total" | "amountPaid" | "xeroAmountCredited">;
-type InvoiceDue = Pick<Doc<"invoices">, "status" | "kind" | "paymentStatus" | "dueDate">;
+/** Structural (plain strings), so a client-side row shape reads it too. */
+type InvoiceDue = { status: string; kind: string; paymentStatus?: string | null; dueDate?: number | null };
 
 function cents(n: number): number {
   return Math.round(n * 100) / 100;

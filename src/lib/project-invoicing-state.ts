@@ -16,6 +16,8 @@
  * A plain module: no React, no Convex, so the rule is unit-testable.
  */
 
+import { isInvoiceOverdue } from "../../convex/lib/invoiceOverdue";
+
 export interface InvoiceLike {
   id: string;
   kind: string;
@@ -73,8 +75,26 @@ export interface InvoicingState {
    * breakdown was already shown on the earlier one(s).
    */
   remainingStep: NextInvoiceStep;
+  /** ISSUED invoices that are not credit notes (a refund is never "an invoice sent"). */
+  issuedInvoices: InvoiceLike[];
+  /** Σ ISSUED credit-note totals (negative); already folded into `invoicedTotal`. */
+  creditedTotal: number;
+  /**
+   * Every issued invoice is settled (or credits cancel what is owed) and at
+   * least one invoice is out. The `PAYMENT_SETTLED` condition as a human reads it.
+   */
+  allSettled: boolean;
+  /** Issued invoices past their due day. Empty when `now` was not supplied. */
+  overdueInvoices: InvoiceLike[];
   /** Headline state for the card's badge. */
-  headline: "NOT_STARTED" | "DRAFT" | "AWAITING_PAYMENT" | "PARTIALLY_PAID" | "PAID_IN_FULL";
+  headline:
+    | "NOT_STARTED"
+    | "DRAFT"
+    | "AWAITING_PAYMENT"
+    | "OVERDUE"
+    | "PARTIALLY_PAID"
+    | "DEPOSIT_PAID"
+    | "PAID_IN_FULL";
 }
 
 const isLive = (inv: InvoiceLike) => inv.status !== "VOID";
@@ -101,29 +121,39 @@ function deriveRemainingStep(notYetInvoiced: number | null, hasAnyInvoice: boole
 function deriveHeadline(
   live: InvoiceLike[],
   issued: InvoiceLike[],
-  outstanding: number,
-  notYetInvoiced: number | null,
+  facts: { outstanding: number; notYetInvoiced: number | null; overdueCount: number },
 ): InvoicingState["headline"] {
+  const { outstanding, notYetInvoiced, overdueCount } = facts;
   if (live.length === 0) return "NOT_STARTED";
   if (issued.length === 0) return "DRAFT";
   if (outstanding > 0) {
+    // D56: Overdue outranks Part paid.
+    if (overdueCount > 0) return "OVERDUE";
     return issued.some((i) => (i.amountPaid ?? 0) > 0) ? "PARTIALLY_PAID" : "AWAITING_PAYMENT";
   }
   // Everything issued is paid — but the job isn't fully invoiced until there's
   // nothing left to raise, so a paid partial alone is not "paid in full".
-  return notYetInvoiced != null && notYetInvoiced > 0.005 ? "AWAITING_PAYMENT" : "PAID_IN_FULL";
+  if (notYetInvoiced != null && notYetInvoiced > 0.005) {
+    return issued.some((i) => i.kind === "DEPOSIT") ? "DEPOSIT_PAID" : "AWAITING_PAYMENT";
+  }
+  return "PAID_IN_FULL";
 }
 
 export function deriveInvoicingState(
   invoices: InvoiceLike[],
   depositPercent: number,
   projectTotal: number | null,
+  /** Clock for the overdue test; omitted = nothing is reported overdue. */
+  now?: number,
 ): InvoicingState {
   const liveInvoices = invoices.filter(isLive);
-  const issued = liveInvoices.filter(isIssued);
+  const issuedAll = liveInvoices.filter(isIssued);
+  const issued = issuedAll.filter((i) => i.kind !== "CREDIT");
+  const creditedTotal = issuedAll.filter((i) => i.kind === "CREDIT").reduce((sum, i) => sum + i.total, 0);
 
-  const invoicedTotal = issued.reduce((sum, i) => sum + i.total, 0);
+  const invoicedTotal = issued.reduce((sum, i) => sum + i.total, 0) + creditedTotal;
   const paidTotal = issued.reduce((sum, i) => sum + (i.amountPaid ?? 0), 0);
+  const overdueInvoices = now == null ? [] : issued.filter((i) => isInvoiceOverdue(i, now));
   // Never negative: an overpayment is allowed server-side (recordNative doesn't
   // cap it), and "-$50 outstanding" would read as a debt rather than a credit.
   const outstanding = Math.max(0, invoicedTotal - paidTotal);
@@ -145,7 +175,11 @@ export function deriveInvoicingState(
         .find((i) => i.total - (i.amountPaid ?? 0) > 0.005) ?? null,
     partialStep: derivePartialStep(notYetInvoiced, depositPercent),
     remainingStep: deriveRemainingStep(notYetInvoiced, liveInvoices.length > 0),
-    headline: deriveHeadline(liveInvoices, issued, outstanding, notYetInvoiced),
+    issuedInvoices: issued,
+    creditedTotal,
+    allSettled: issued.length > 0 && (issued.every((i) => i.paymentStatus === "PAID") || outstanding <= 0.005),
+    overdueInvoices,
+    headline: deriveHeadline(liveInvoices, issued, { outstanding, notYetInvoiced, overdueCount: overdueInvoices.length }),
   };
 }
 
@@ -153,6 +187,8 @@ export const INVOICING_HEADLINE_LABEL: Record<InvoicingState["headline"], string
   NOT_STARTED: "Not started",
   DRAFT: "Draft",
   AWAITING_PAYMENT: "Awaiting payment",
+  OVERDUE: "Overdue",
   PARTIALLY_PAID: "Partially paid",
+  DEPOSIT_PAID: "Deposit paid",
   PAID_IN_FULL: "Paid in full",
 };

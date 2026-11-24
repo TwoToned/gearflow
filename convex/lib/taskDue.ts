@@ -29,9 +29,9 @@ export function dueDayNumber(dueDate: number): number {
   return Math.floor(dueDate / DAY_MS);
 }
 
-const isOpen = (status: string) => status === "TODO" || status === "IN_PROGRESS";
+const isOpen = (status: string | undefined) => status === "TODO" || status === "IN_PROGRESS";
 
-export function isTaskOverdue(task: { status: string; dueDate?: number | null }, now: number, timezone?: string): boolean {
+export function isTaskOverdue(task: { status?: string; dueDate?: number | null }, now: number, timezone?: string): boolean {
   if (!isOpen(task.status) || task.dueDate == null) return false;
   return dueDayNumber(task.dueDate) < todayDayNumber(now, timezone);
 }

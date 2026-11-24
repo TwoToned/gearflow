@@ -9,6 +9,8 @@ export interface TabStripItem {
   label: string;
   /** `44` or `9/14` — shown muted after the word. */
   count?: string | number;
+  /** A problem count shown in `error` red after the count (e.g. `2 overdue`). */
+  alert?: string;
 }
 
 /**
@@ -77,6 +79,12 @@ export function TabStrip({
               <>
                 {" "}
                 <span className="text-muted tabular-nums">{t.count}</span>
+              </>
+            ) : null}
+            {t.alert ? (
+              <>
+                {" "}
+                <span className="tabular-nums text-error">{t.alert}</span>
               </>
             ) : null}
           </TabsPrimitive.Trigger>

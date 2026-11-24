@@ -5,6 +5,8 @@ import type * as React from "react";
 import { useProjectTaskList } from "@/hooks/use-project-task-list";
 import { useProjectVersion } from "@/components/projects/project-version-context";
 import { usePackingTab } from "@/hooks/use-packing-tab";
+import { useTaskDueClock } from "@/hooks/use-task-due-clock";
+import { isTaskOverdue } from "../../../convex/lib/taskDue";
 import { packingCounts } from "@/lib/packing-tab";
 import { PackingTabPrimary } from "@/components/projects/packing/packing-tab-primary";
 import { VersionsTabPrimary } from "@/components/projects/versions/versions-tab-primary";
@@ -50,16 +52,17 @@ function usePackingTabCount(projectId: string): JobTabCounts["packing"] {
 }
 
 /** Every count the strip shows. Must render inside `ProjectVersionProvider`. */
-export function useJobTabCounts(projectId: string, filesCount: number): JobTabCounts {
+export function useJobTabCounts(projectId: string): JobTabCounts {
   const { tasks } = useProjectTaskList(projectId);
+  const { timezone, now } = useTaskDueClock();
   const { versions } = useProjectVersion();
   const packing = usePackingTabCount(projectId);
   return {
     tasks: {
       done: tasks.filter((t) => t.status === "DONE").length,
       total: tasks.filter((t) => t.status !== "CANCELLED").length,
+      overdue: tasks.filter((t) => isTaskOverdue({ status: t.status, dueDate: t.dueDate ? new Date(t.dueDate).getTime() : null }, now, timezone)).length,
     },
-    files: filesCount,
     packing,
     versions: versions.length,
   };

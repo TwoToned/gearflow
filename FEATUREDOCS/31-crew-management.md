@@ -681,7 +681,12 @@ grouping key). The fill is **per day** (UX Phase 15, `crewShortfallByDay` over t
 ACCEPTED/CONFIRMED rows, `coveredDaysFull`): an open offer is cancelled only when
 every day IT covers is now full, so a Monday-only accept on a Mon–Wed run never
 cancels a Tue–Wed offer. Then the route best-effort emails each one a "position filled"
-notice (`notifyPositionFilled`). **24h auto-nudge**: `src/server/crew-time-nudges.ts`'s
+notice (`notifyPositionFilled`, `src/lib/crew-position-filled.ts`). These
+no-session senders — the notice, both nudges and `buildAssignmentEmailData` —
+are PLAIN server-only modules, never `"use server"` exports (an exported action
+is callable from any session, and these have no authz of their own); a guard
+test (`src/server/__tests__/use-server-email-authz.test.ts`) fails on any
+ungated email/push sender in a `"use server"` file. **24h auto-nudge**: `src/lib/crew-time-nudges.ts`'s
 `sendCrewOfferNudges` rides the SAME 15-minute notification cron
 (`/api/cron/notifications`) and the SAME `notificationEmailLogs` dedupe ledger
 (`createIfMissing`, one nudge per assignment ever) — no second cron, no second
@@ -712,7 +717,7 @@ change.
 
 **Call-time reminders.** Off by default per org
 (`OrgSettings.crewTime.callReminderEnabled`, Settings → Crew & time).
-`sendCrewCallTimeReminders` (`src/server/crew-time-nudges.ts`), same cron and
+`sendCrewCallTimeReminders` (`src/lib/crew-time-nudges.ts`), same cron and
 dedupe ledger as the offer nudge above, emails each crew member on a
 CONFIRMED assignment starting "tomorrow" — resolved in the **org's stored
 timezone** (`startOfDayInTimezone`/`endOfDayInTimezone`, `src/lib/quote-validity.ts`,

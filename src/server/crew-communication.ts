@@ -14,7 +14,6 @@ import {
   crewConfirmationEmail,
   crewCancellationEmail,
   crewBulkMessageEmail,
-  crewPositionFilledEmail,
 } from "@/lib/crew-emails";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -524,22 +523,6 @@ export async function requestCrewAvailability(input: RequestAvailabilityInput) {
   return serialize({ offered, eligible: eligible.length, errors });
 }
 
-/**
- * "First-come fill" notice — sent to a crew member whose still-open offer was
- * auto-cancelled once the service's required headcount was reached by others
- * who accepted first (`crewAssignments.autoFillServiceNative`, called from the
- * public respond route). Best-effort: never blocks the accept response that
- * triggers it.
- */
-export async function notifyPositionFilled(assignmentId: string): Promise<void> {
-  const { assignment, emailData } = await buildAssignmentEmailData(assignmentId);
-  const crewEmail = assignment.crewMember.email;
-  if (!crewEmail) return;
-  const email = crewPositionFilledEmail(emailData);
-  await deliverSideEffectEmail({
-    idempotencyKey: `crew-position-filled:${assignmentId}`,
-    to: crewEmail,
-    subject: email.subject,
-    html: email.html,
-  });
-}
+// The "position filled" notice (no session, no authz of its own: the public
+// respond route sends it) is a PLAIN server module, never an exported action:
+// `@/lib/crew-position-filled`.

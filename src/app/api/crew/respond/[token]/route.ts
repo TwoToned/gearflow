@@ -4,7 +4,7 @@ import { api } from "../../../../../../convex/_generated/api";
 import { getProjectById } from "@/lib/projects-read";
 import { getCrewMemberById, getCrewRoleById } from "@/lib/crew-read";
 import { escapeHtml } from "@/lib/email-layout";
-import { notifyPositionFilled } from "@/server/crew-communication";
+import { notifyPositionFilled } from "@/lib/crew-position-filled";
 
 /**
  * GET /api/crew/respond/[token]?action=accept|decline

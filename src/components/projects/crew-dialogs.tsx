@@ -44,6 +44,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { serviceTypeToPhase } from "../../../convex/lib/serviceSchedule";
+import { crewGap, type CrewGapService } from "@/lib/logistics-model";
+import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
 import {
   Dialog,
   DialogContent,
@@ -124,10 +126,13 @@ export function AssignmentDialog({
 
   const { data: projectServices = [] } = useProjectServices(open ? projectId : undefined);
 
-  const serviceOptions = (projectServices as { id: string; title: string; type: string; crewCountRequired: number | null; crewAssignments: unknown[] }[])
+  const serviceOptions = (projectServices as ({ id: string; title: string; type: string } & CrewGapService)[])
     .filter((s) => (s as { status?: string }).status !== "CANCELLED")
     .map((s) => {
-      const assigned = s.crewAssignments?.length ?? 0;
+      // The per-day rule (`crewGap`): DECLINED/CANCELLED fill nothing, and the
+      // count is the worst day's — a Monday-only call on a Mon–Wed run is `0/1`.
+      const gap = crewGap(s);
+      const assigned = gap ? gap.filled : (s.crewAssignments ?? []).filter((a) => isFilledAssignmentStatus(a.status)).length;
       const needed = s.crewCountRequired ?? 0;
       const crewInfo = needed > 0 ? ` (${assigned}/${needed} crew)` : assigned > 0 ? ` (${assigned} crew)` : "";
       return {

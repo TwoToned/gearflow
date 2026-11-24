@@ -7,9 +7,10 @@
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { isClientServiceType } from "../../../../convex/lib/serviceTypes";
 import {
-  crewShort, filledOf, TYPE_WORDS, truckText, whenText,
+  crewGap, crewShort, filledOf, partialShortDays, TYPE_WORDS, truckText, whenText,
   type LogisticsAssignment, type LogisticsService,
 } from "@/lib/logistics-model";
+import { shortDaysText } from "@/lib/crew-short-days";
 import type { ActionMenuSpec, Fact, FactColumn, LineRowData, StatusValue } from "@/lib/primitives/types";
 import { getStatusIntent } from "@/lib/status-colors";
 import { assignmentStatusLabels } from "@/lib/status-labels";
@@ -48,14 +49,21 @@ export function whereLine(s: LogisticsService): string {
   return [s.address, truckText(s), s.vehicleDescription, trips].filter(Boolean).join(" · ");
 }
 
-/** `3 of 4`, `2 needed`, or `no crew`; the role leads when the service names one. */
+/**
+ * `3 of 4`, `2 needed`, or `no crew`; the role leads when the service names one.
+ * The count is the WORST day's (the per-day rule, `crewGap`), and a run short on
+ * only some days names them: `Rigger · 0 of 1 · Tue, Wed short`.
+ */
 export function crewText(s: LogisticsService): string {
   const filled = filledOf(s).length;
   const need = s.crewCountRequired ?? 0;
   const role = s.crewRole?.name;
   if (need <= 0 && filled === 0) return "no crew";
-  const count = need > 0 ? `${filled} of ${need}` : `${filled}`;
-  return [role, count].filter(Boolean).join(" · ");
+  const gap = crewGap(s);
+  const count = need > 0 ? `${gap ? gap.filled : filled} of ${need}` : `${filled}`;
+  const partial = partialShortDays(s);
+  const days = partial.length ? shortDaysText({ date: Date.parse(s.date!), endDate: Date.parse(s.endDate!), shortDays: partial.map((day) => ({ day })) }) : "";
+  return [role, count, days].filter(Boolean).join(" · ");
 }
 
 const margin = (s: LogisticsService): number | null =>

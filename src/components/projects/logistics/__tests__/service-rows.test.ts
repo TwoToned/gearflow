@@ -24,6 +24,16 @@ describe("serviceRow", () => {
     expect(serviceRow(svc({ costTotal: 400 }), { showCost: false }).facts.charge).toEqual({ kind: "text", label: "internal" });
     expect(serviceRow(svc({ lineTotal: 900 }), { showCost: false }).facts.charge).toEqual({ kind: "money", amount: 900 });
   });
+  test("a Monday-only call on a Mon–Wed run reads short on Logistics, naming the short days", () => {
+    const run = svc({
+      date: "2026-11-16T00:00:00.000Z", endDate: "2026-11-18T00:00:00.000Z", crewCountRequired: 1,
+      crewAssignments: [{ id: "a1", status: "CONFIRMED", estimatedCost: 300, startDate: "2026-11-16T00:00:00.000Z", endDate: "2026-11-16T00:00:00.000Z", crewMember: { id: "m", firstName: "Dev", lastName: "K", image: null } }],
+    });
+    const r = serviceRow(run, { showCost: false });
+    expect(r.flags).toEqual([{ label: "1 needed", tone: "error" }]);
+    expect(crewText(run)).toBe("Driver · 0 of 1 · Tue, Wed short");
+  });
+
   test("B-2: a crew call's cost cell exists only when the server sent the cost (absent below the pay line)", () => {
     expect(serviceRow(svc(), { showCost: false }).children?.[0].facts.charge).toEqual({ kind: "money", amount: 300 });
     const redacted = svc({ crewAssignments: [{ id: "a1", status: "CONFIRMED", crewMember: { id: "m", firstName: "Dev", lastName: "K", image: null } }] });

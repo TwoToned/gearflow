@@ -19,7 +19,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { useCrewAssignmentWrites } from "@/hooks/use-crew-assignment-writes";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { crewPickRank, dayKeyOf, dayLabel, filledOf, type LogisticsService } from "@/lib/logistics-model";
+import { crewPickRank, crewShort, dayKeyOf, dayLabel, filledOf, type LogisticsService } from "@/lib/logistics-model";
 import { serviceTypeToPhase } from "../../../../convex/lib/serviceSchedule";
 import { api } from "../../../../convex/_generated/api";
 import { pickConflictBadge, type CrewConflictSummary } from "../service-dialogs";
@@ -166,7 +166,8 @@ function PickBody({
 
   const taken = new Set(filledOf(service).map((a) => a.crewMember.id));
   const list = rankMembers(members ?? [], taken, roleOnly ? service.crewRole?.id ?? null : null);
-  const needed = Math.max((service.crewCountRequired ?? 0) - taken.size, 0);
+  // The worst day's gap (the per-day rule): a Monday-only call leaves Tue–Wed short.
+  const needed = crewShort(service);
   const toggle = (id: string) =>
     setPicked((p) => {
       const n = new Set(p);

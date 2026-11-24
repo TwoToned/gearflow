@@ -33,10 +33,12 @@ export function CrewSection(props: {
   const roleOptions = (s.roleDocs ?? [])
     .filter((r) => r.isActive === true)
     .map((r) => ({ value: r.id, label: r.name }));
-  const short = Math.max(needed - s.rows.length, 0);
+  // The per-day rule (`crewGap`): the worst day's count, never `Needed − rows`.
+  const short = s.crewGap?.shortfall ?? 0;
+  const filled = s.crewGap ? s.crewGap.filled : s.rows.length;
   return (
     <section className="space-y-3" aria-label="Crew">
-      <SectionHead title="Crew" hint={`${s.rows.length} of ${needed || 0}`} />
+      <SectionHead title="Crew" hint={`${filled} of ${needed || 0}`} />
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Role</Label>

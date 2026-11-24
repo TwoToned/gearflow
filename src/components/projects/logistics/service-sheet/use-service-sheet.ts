@@ -18,7 +18,7 @@ import {
   projectServiceSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
-import type { LogisticsService } from "@/lib/logistics-model";
+import { crewGap, type LogisticsService } from "@/lib/logistics-model";
 import { pickConflictBadge, type CrewConflictSummary, type CrewRateTableMember, type ServiceCrewTableRow } from "../../service-dialogs";
 import { refreshLogistics } from "../use-logistics-writes";
 import { marginOf, serviceFormDefaults } from "./service-form";
@@ -111,6 +111,15 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   const rawOverride = form.watch("chargeRateOverride");
   const override = rawOverride != null && (rawOverride as unknown) !== "" ? Number(rawOverride) : undefined;
   const math = useCrewMath(rows, members.byId, role, members, override);
+  // The crew gap as the form stands (its dates and Needed, the live calls' own
+  // days) — the ONE per-day rule, never `Needed − rows`.
+  const liveByMember = new Map(service.crewAssignments.map((a) => [a.crewMember.id, a]));
+  const crewGapNow = crewGap({
+    date: (form.watch("date") as unknown as string) || null,
+    endDate: (form.watch("endDate") as unknown as string) || (form.watch("date") as unknown as string) || null,
+    crewCountRequired: Number(form.watch("crewCountRequired") || 0),
+    crewAssignments: rows.map((r) => liveByMember.get(r.crewMemberId) ?? { status: "PENDING" }),
+  });
 
   const save = useServerMutation({
     // Crew is whatever is live NOW (Pick crew writes immediately), plus the rate edits made here.
@@ -137,7 +146,7 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   }).length;
 
   return {
-    form, rows, role, roleDocs, members, math, save, crewStatus, clashes,
+    form, rows, role, roleDocs, members, math, save, crewStatus, clashes, crewGap: crewGapNow,
     charge, cost, margin: marginOf(charge, cost),
     locked: lock.pricingLocked, lockReason: resolveLockCopy(lock).oneLiner,
     editRow: (id: string, patch: Partial<ServiceCrewTableRow>) => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } })),

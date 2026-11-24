@@ -39,3 +39,35 @@ export function isInvoiceOverdue(inv: InvoiceDue, now: number): boolean {
   if ((inv.paymentStatus ?? "UNPAID") === "PAID") return false;
   return inv.dueDate != null && now >= inv.dueDate + DAY_MS;
 }
+
+/**
+ * The ONE status word an invoice row shows (UX Phase 10, D56): payment folded
+ * into the document state, in this precedence — Void, Credit, Draft, Paid,
+ * **Overdue**, Part paid, Issued. Overdue outranks Part paid: a part-paid
+ * invoice past its due day reads as overdue, because that is what the operator
+ * has to act on. Paid outranks Overdue (a settled invoice is never late).
+ * Phase 17's hub imports this same function.
+ */
+export type InvoicePillState = "VOID" | "CREDIT" | "DRAFT" | "PAID" | "OVERDUE" | "PART_PAID" | "ISSUED";
+
+type InvoicePill = InvoiceDue & { amountPaid?: number | null };
+
+export function invoicePillState(inv: InvoicePill, now: number): InvoicePillState {
+  if (inv.status === "VOID") return "VOID";
+  if (inv.kind === "CREDIT") return "CREDIT";
+  if (inv.status === "DRAFT") return "DRAFT";
+  if ((inv.paymentStatus ?? "UNPAID") === "PAID") return "PAID";
+  if (isInvoiceOverdue(inv, now)) return "OVERDUE";
+  if (inv.paymentStatus === "PARTIALLY_PAID" || (inv.amountPaid ?? 0) > 0) return "PART_PAID";
+  return "ISSUED";
+}
+
+export const INVOICE_PILL_LABEL: Record<InvoicePillState, string> = {
+  VOID: "Void",
+  CREDIT: "Credit",
+  DRAFT: "Draft",
+  PAID: "Paid",
+  OVERDUE: "Overdue",
+  PART_PAID: "Part paid",
+  ISSUED: "Issued",
+};

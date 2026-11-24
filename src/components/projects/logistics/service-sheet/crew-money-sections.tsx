@@ -153,12 +153,22 @@ function ChargeFields({ s }: { s: ServiceSheetState }) {
           <Input id="service-charge-rate" type="number" step="0.01" placeholder="0.00" {...form.register("chargeRateOverride")} />
           <p className="text-caption text-muted">
             Overrides the role&apos;s charge rate for this service&apos;s crew. Blank uses the role default
-            {s.role?.chargeRate ? ` ($${s.role.chargeRate})` : " (none set, so no auto-pricing)"}.
+            <RoleRateHint s={s} />.
           </p>
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * ` ($400)` / ` (none set, so no auto-pricing)` — said only to a caller who sees
+ * crew pay. Below the pay line the role's rate is absent from the read, so any
+ * claim about it ("none set") would be false: the hint is absent too.
+ */
+function RoleRateHint({ s }: { s: ServiceSheetState }) {
+  if (!s.payVisible) return null;
+  return <>{s.role?.chargeRate ? ` ($${s.role.chargeRate})` : " (none set, so no auto-pricing)"}</>;
 }
 
 function CostMargin({ s }: { s: ServiceSheetState }) {

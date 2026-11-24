@@ -7,6 +7,7 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { toast } from "sonner";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
@@ -128,6 +129,9 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   const override = rawOverride != null && (rawOverride as unknown) !== "" ? Number(rawOverride) : undefined;
   const math = useCrewMath(rows, members.byId, role, members, override);
   const crewGapNow = formCrewGap(form, rows, service);
+  // The server's own answer for crew pay (`crewRoles.ratesVisible`, the one rule):
+  // below the pay line the sheet says nothing about role rates it can't see.
+  const payVisible = useAuthedQuery(api.crewRoles.ratesVisible, orgId ? { orgId } : "skip") === true;
 
   const save = useServerMutation({
     // Crew is whatever is live NOW (Pick crew writes immediately), plus the rate edits made here.
@@ -154,7 +158,7 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   }).length;
 
   return {
-    form, rows, role, roleDocs, members, math, save, crewStatus, clashes, crewGap: crewGapNow,
+    form, rows, role, roleDocs, members, math, save, crewStatus, clashes, crewGap: crewGapNow, payVisible,
     charge, cost, margin: marginOf(charge, cost),
     locked: lock.pricingLocked, lockReason: resolveLockCopy(lock).oneLiner,
     editRow: (id: string, patch: Partial<ServiceCrewTableRow>) => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } })),

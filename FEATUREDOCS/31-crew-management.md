@@ -831,9 +831,11 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   caller who can't (the stored rates stand, as with role edits, S4).
 - **Below the pay line the Logistics service sheet has no role rate** (by
   ruling): `crewRoles.list` returns no `defaultRate`/`chargeRate` to such a
-  caller, so the sheet's role charge-rate hint and its crew cost preview come
-  up empty. Pricing itself is unaffected — it is computed server-side from the
-  stored rates.
+  caller, so the sheet's crew cost preview comes up empty and the charge-rate
+  override's hint drops its role-rate part entirely (`RoleRateHint`, gated on
+  `crewRoles.ratesVisible`) — never "(none set, so no auto-pricing)", which
+  would be a false claim about a rate the caller simply can't see. Pricing
+  itself is unaffected — it is computed server-side from the stored rates.
 - **Server actions decide pay for their real caller (B-2).** They read Convex
   with the service identity, which always passes `canSeeCrewPay`, so each one
   that returns crew pay calls `callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`,

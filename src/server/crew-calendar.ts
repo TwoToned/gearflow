@@ -3,6 +3,7 @@
 import { randomBytes } from "crypto";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
+import { callerSeesCrewPay } from "@/lib/crew-pay-caller";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
@@ -164,13 +165,22 @@ export async function setIcalIncludeTentative(crewMemberId: string, includeTenta
 
 // ─── Assignment .ics Download ────────────────────────────────────────────────
 
+/**
+ * An assignment for an .ics download. Read with the service identity, so it
+ * strips here what a browser caller may not hold (B-2 sweep): the single-use
+ * `responseToken` (a bearer credential for the accept/decline route) ALWAYS,
+ * and the pay fields unless the real caller sees crew pay (`callerSeesCrewPay`).
+ */
 export async function getAssignmentIcsData(assignmentId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requirePermission("crew", "read");
 
-  const assignment = await getAssignmentById(assignmentId);
-  if (!assignment || assignment.organizationId !== organizationId) {
+  const row = await getAssignmentById(assignmentId);
+  if (!row || row.organizationId !== organizationId) {
     throw new Error("Assignment not found");
   }
+  const { responseToken, estimatedCost, rateOverride, ...rest } = row;
+  void responseToken;
+  const assignment = (await callerSeesCrewPay()) ? { ...rest, estimatedCost, rateOverride } : rest;
 
   const [member, roleMap, project, shifts] = await Promise.all([
     getCrewMemberById(assignment.crewMemberId),

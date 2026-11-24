@@ -246,6 +246,8 @@ describe("attachServiceCrew", () => {
       id: "a1",
       status: "CONFIRMED",
       estimatedCost: 200,
+      startDate: null,
+      endDate: null,
       crewMember: { id: "m1", firstName: "Ada", lastName: "Lovelace", image: "img.png" },
       rateOverride: null,
       rateType: null,

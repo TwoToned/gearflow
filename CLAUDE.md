@@ -511,9 +511,17 @@ returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
 `crewRoles.{list,listForSettings,getById}`) gates it on `canSeeCrewPay`
 (`convex/lib/crewPayVisibility.ts`), which decides with THE one rule,
 `crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ and not a `noFinancials`
-key). The Node-side timesheet CSV has no Convex ctx, so it calls that same
-`crewPayVisible` directly (an API-key actor counts as noFinancials there — fail
-closed). Never write a second "who sees pay" check; add a new pay-bearing read to
+key). A server action reads Convex with the SERVICE identity (which always sees
+pay), so every one that returns crew pay decides for its real caller with
+`callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`, the same `crewPayVisible`; an
+API-key actor counts as noFinancials — fail closed): `exportTimesheetCSV`,
+`getProjectServices` (`redactServiceCrewPay` strips each call's `estimatedCost` /
+`rateOverride` / `resolvedRate`, and Logistics then renders no cost cell) and
+`getAssignmentIcsData` (which also never returns `responseToken`). A helper that
+returns a full assignment row with no authz of its own is a plain module, never a
+`"use server"` export (`src/lib/crew-assignment-email-data.ts`). Writes follow the
+same line: below it a service save keeps each call's stored rate inputs
+(`crewRateInputs` in `convex/projectServicesWrites.ts`). Never write a second "who sees pay" check; add a new pay-bearing read to
 that list, and don't hide a column client-side. A crew member's `icalToken` (the
 public calendar feed's bearer secret) leaves Convex only through `memberRowRedactor`
 (`convex/lib/crewMemberRedaction.ts`): to the member themself or `crew:update`, on a

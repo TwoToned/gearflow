@@ -15,7 +15,11 @@ export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED
 export interface LogisticsAssignment {
   id: string;
   status: string;
-  estimatedCost: number | null;
+  /** ABSENT when the caller can't see crew pay (the server strips it). */
+  estimatedCost?: number | null;
+  /** The call's own days (ISO), for the per-day crew gap. */
+  startDate?: string | null;
+  endDate?: string | null;
   /** The per-assignment rate inputs the service sheet's rate table edits. */
   rateOverride?: number | null;
   rateType?: string | null;

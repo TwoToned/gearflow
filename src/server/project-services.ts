@@ -11,7 +11,9 @@ import {
   getProjectServiceByIdFromConvex,
   getServiceTemplatesFromConvex,
   getProjectServicesSummaryFromConvex,
+  redactServiceCrewPay,
 } from "@/lib/project-service-read";
+import { callerSeesCrewPay } from "@/lib/crew-pay-caller";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getCrewRoleMap, getCrewMemberMap, getCrewMemberById } from "@/lib/crew-read";
@@ -38,8 +40,11 @@ import { sendCrewOffer } from "@/server/crew-communication";
 
 export async function getProjectServices(projectId: string) {
   const { organizationId } = await getOrgContext();
-  const services = await getProjectServicesFromConvex(organizationId, projectId);
-  return serialize(services);
+  // Read with the service identity (which always sees pay), so the crew pay on
+  // each service's calls is stripped HERE for a caller below the pay line — the
+  // ONE crew-pay rule, decided for the real caller (B-2).
+  const [services, payVisible] = await Promise.all([getProjectServicesFromConvex(organizationId, projectId), callerSeesCrewPay()]);
+  return serialize(redactServiceCrewPay(services, payVisible));
 }
 
 export async function getProjectServicesSummary(projectId: string) {

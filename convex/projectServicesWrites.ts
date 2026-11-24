@@ -4,6 +4,7 @@ import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
@@ -433,6 +434,23 @@ async function cascadeDeleteService(ctx: MutationCtx, service: Doc<"projectServi
   await ctx.db.delete(service._id);
 }
 
+/**
+ * A service-form crew row's PAY inputs (`rateOverride`, `rateType`) are the
+ * caller's to set only when it can see crew pay (the ONE rule,
+ * `canSeeCrewPay`). Below the pay line the form read no rates
+ * (`redactServiceCrewPay`), so it can't set or clear them: a new call takes
+ * none (the cascade resolves it), a surviving call keeps its stored ones.
+ * `estimatedHours` is not pay and stays editable (B-2).
+ */
+function crewRateInputs<C extends { rateOverride?: number; rateType?: string }>(
+  c: C,
+  stored: { rateOverride?: number; rateType?: string } | null,
+  payVisible: boolean,
+): C {
+  if (payVisible) return c;
+  return { ...c, rateOverride: stored?.rateOverride, rateType: stored?.rateType };
+}
+
 // ─── Crew-assignment insert (partial-unique (projectId, crewMemberId, serviceId) +
 //     by_cuid idempotency + counter bump) — inlined from createManyServiceAssignments ─
 
@@ -650,7 +668,9 @@ export const createServiceNative = mutation({
       const phase = serviceTypeToPhase(a.type);
       const { crewStart, crewEnd } = deriveCrewTimes(a.startTime, a.endTime, a.scheduledTime, a.type);
       if (a.crewRoleId) await assertCrewRoleInOrg(ctx, a.crewRoleId, a.orgId);
-      for (const c of a.crew) {
+      const payVisible = await canSeeCrewPay(ctx, a.orgId);
+      for (const c0 of a.crew) {
+        const c = crewRateInputs(c0, null, payVisible);
         await assertCrewMemberInOrg(ctx, c.crewMemberId, a.orgId);
         await insertServiceAssignment(ctx, {
           id: c.id,
@@ -821,8 +841,10 @@ export const updateServiceNative = mutation({
       const phase = serviceTypeToPhase(a.type);
       const { crewStart, crewEnd } = deriveCrewTimes(a.startTime, a.endTime, a.scheduledTime, a.type);
       if (a.crewRoleId) await assertCrewRoleInOrg(ctx, a.crewRoleId, a.orgId);
-      for (const c of a.crew) {
-        if (existingMemberIds.has(c.crewMemberId)) continue; // survivor
+      const payVisible = await canSeeCrewPay(ctx, a.orgId);
+      for (const c0 of a.crew) {
+        if (existingMemberIds.has(c0.crewMemberId)) continue; // survivor
+        const c = crewRateInputs(c0, null, payVisible);
         await assertCrewMemberInOrg(ctx, c.crewMemberId, a.orgId);
         await insertServiceAssignment(ctx, {
           id: c.id,
@@ -849,8 +871,10 @@ export const updateServiceNative = mutation({
       // short of editing it directly from the crew side (issue #796).
       const newRoleId = a.crewRoleId || null;
       for (const asg of existingAssignments) {
-        const c = desiredByMember.get(asg.crewMemberId);
-        if (!c) continue; // was removed above
+        const desired = desiredByMember.get(asg.crewMemberId);
+        if (!desired) continue; // was removed above
+        // Below the pay line the stored rate inputs stand (the caller read none, B-2).
+        const c = crewRateInputs(desired, asg, payVisible);
         assertCrewMoney(c.rateOverride, "rateOverride");
         assertCrewMoney(c.estimatedHours, "estimatedHours");
         const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, asg.crewMemberId, newRoleId ?? undefined);

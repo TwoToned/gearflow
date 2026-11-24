@@ -834,6 +834,18 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   caller, so the sheet's role charge-rate hint and its crew cost preview come
   up empty. Pricing itself is unaffected — it is computed server-side from the
   stored rates.
+- **Server actions decide pay for their real caller (B-2).** They read Convex
+  with the service identity, which always passes `canSeeCrewPay`, so each one
+  that returns crew pay calls `callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`,
+  the same `crewPayVisible`; an API-key actor is noFinancials):
+  `exportTimesheetCSV`, `getProjectServices` (`redactServiceCrewPay`: each call's
+  `estimatedCost`, `rateOverride` and `resolvedRate` are ABSENT, and the Logistics
+  crew row — service child and People view — then has no cost cell) and
+  `getAssignmentIcsData` (crew:read, never `responseToken`). Below the pay line a
+  service save keeps each call's stored `rateOverride`/`rateType`
+  (`crewRateInputs`). `buildAssignmentEmailData` (the full row, token and pay)
+  moved out of the `"use server"` file to `src/lib/crew-assignment-email-data.ts`:
+  as an exported action it was callable from any session with no authz.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

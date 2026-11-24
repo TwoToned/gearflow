@@ -43,18 +43,43 @@ export interface ServiceCrewMember {
 export interface ServiceCrewAssignment {
   id: string;
   status: string | null;
-  /** Present in getProjectServices, absent (always null) in getProjectServiceById. */
-  estimatedCost: number | null;
+  /** Present in getProjectServices, absent (always null) in getProjectServiceById.
+   *  ABSENT (no key) when the caller can't see crew pay — `redactServiceCrewPay`. */
+  estimatedCost?: number | null;
   crewMember: ServiceCrewMember | null;
+  /** The call's own days (UTC midnight ISO), for the per-day crew gap. */
+  startDate: string | null;
+  endDate: string | null;
   /** Rate-cascade inputs (issue #796 per-crew rate table) — the row's own override,
    *  if set, plus the resolved rate/type the SAME cascade (convex/lib/crewRate.ts)
    *  would produce, so the UI can show "$X/day (from role default)" without
-   *  re-implementing the cascade. */
-  rateOverride: number | null;
+   *  re-implementing the cascade. ABSENT below the pay line (`SERVICE_CREW_PAY_FIELDS`). */
+  rateOverride?: number | null;
   rateType: string | null;
   estimatedHours: number | null;
-  resolvedRate: number;
+  resolvedRate?: number;
   resolvedRateType: string;
+}
+
+/** The pay fields a service's crew row carries (stripped below the pay line). */
+const SERVICE_CREW_PAY_FIELDS = ["estimatedCost", "rateOverride", "resolvedRate"] as const;
+
+/**
+ * Strip crew pay from service rows for a caller who can't see it (the ONE
+ * crew-pay rule, decided by the server action for its real caller —
+ * `callerSeesCrewPay`). These rows are read with the service identity, which
+ * always passes `canSeeCrewPay`, so the redaction must happen here (B-2).
+ */
+export function redactServiceCrewPay<R extends { crewAssignments: ServiceCrewAssignment[] }>(rows: R[], payVisible: boolean): R[] {
+  if (payVisible) return rows;
+  return rows.map((s) => ({
+    ...s,
+    crewAssignments: s.crewAssignments.map((a) => {
+      const out: ServiceCrewAssignment = { ...a };
+      for (const f of SERVICE_CREW_PAY_FIELDS) delete out[f];
+      return out;
+    }),
+  }));
 }
 
 export interface ProjectServiceRow {
@@ -258,6 +283,8 @@ export function attachServiceCrew(
       id: a.id,
       status: orNull(a.status),
       estimatedCost: withEstimatedCost ? orNull(a.estimatedCost) : null,
+      startDate: a.startDate != null ? new Date(a.startDate).toISOString() : null,
+      endDate: a.endDate != null ? new Date(a.endDate).toISOString() : null,
       crewMember: member
         ? {
             id: member.id,

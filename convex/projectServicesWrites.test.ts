@@ -120,7 +120,7 @@ describe("createServiceNative", () => {
 
   test("crew rate cascade runs on create — resolved rate lands in estimatedCost + rolls up into costTotal (#796)", async () => {
     const t = makeT();
-    await member(t, "member");
+    await member(t, "manager"); // sets per-call rates: needs crew pay (B-2)
     await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Bob", lastName: "Roe", status: "ACTIVE", defaultDayRate: 300 });
@@ -233,6 +233,29 @@ describe("updateServiceNative", () => {
     expect((await projById(t, "p1"))?.total).toBe(220); // 200 + 10% tax
   });
 
+  test("B-2: a save by a caller below the pay line (the form read no rates) keeps the call's stored rate; a manager's can change it", async () => {
+    const t = makeT();
+    await seedService(t); // as a `member` (project:update, below the pay line)
+    await t.run(async (ctx) => {
+      const a = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { rateOverride: 650, rateType: "DAILY" });
+    });
+    const save = (crew: Record<string, unknown>) =>
+      t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.updateServiceNative, {
+        id: "s1", orgId: ORG, ...baseInput, unitPrice: 100, crewRoleId: "cr1", crew: [{ id: "a1", crewMemberId: "cm1", ...crew }], now: NOW + 1, actor: ACTOR, auditId: `u-${Math.random()}`,
+      });
+    await save({}); // the redacted form sends no rate
+    expect((await asgsForService(t, "s1"))[0]).toMatchObject({ rateOverride: 650, rateType: "DAILY" });
+    await save({ rateOverride: 1, rateType: "HOURLY" }); // and one it sends anyway is ignored
+    expect((await asgsForService(t, "s1"))[0]).toMatchObject({ rateOverride: 650, rateType: "DAILY" });
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", ORG).eq("userId", USER)).first();
+      await ctx.db.patch(m!._id, { role: "manager" });
+    });
+    await save({ rateOverride: 700, rateType: "DAILY" });
+    expect((await asgsForService(t, "s1"))[0]).toMatchObject({ rateOverride: 700 });
+  });
+
   test("role-patch survivors when crewRoleId changes", async () => {
     const t = makeT();
     await seedService(t);
@@ -311,7 +334,7 @@ describe("updateServiceNative", () => {
 
   test("survivor rate-table edit recomputes estimatedCost + rolls up costTotal, without waiting on a role change (#796)", async () => {
     const t = makeT();
-    await member(t, "member");
+    await member(t, "manager"); // edits per-call rates: needs crew pay (B-2)
     await seedProject(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("crewMembers", { id: "cm1", organizationId: ORG, firstName: "Bob", lastName: "Roe", status: "ACTIVE", defaultDayRate: 300 });

@@ -74,16 +74,15 @@ export function typeTag(s: LogisticsService): string[] | undefined {
   return s.title.trim().toLowerCase() === word.toLowerCase() ? undefined : [word];
 }
 
+/**
+ * A crew call under its service. Its cost cell exists only when the server sent
+ * the cost: below the pay line `estimatedCost` is ABSENT (`redactServiceCrewPay`),
+ * and so is the cell — never a blank or a $0 standing in for pay (B-2).
+ */
 function crewChild(a: LogisticsAssignment): LineRowData {
-  return {
-    id: a.id,
-    kind: "crew",
-    title: personName(a),
-    facts: {
-      status: { kind: "text", label: assignmentStatusLabels[a.status] ?? a.status },
-      charge: { kind: "money", amount: a.estimatedCost != null && a.estimatedCost > 0 ? a.estimatedCost : null },
-    },
-  };
+  const facts: Record<string, Fact> = { status: { kind: "text", label: assignmentStatusLabels[a.status] ?? a.status } };
+  if (a.estimatedCost !== undefined) facts.charge = { kind: "money", amount: a.estimatedCost != null && a.estimatedCost > 0 ? a.estimatedCost : null };
+  return { id: a.id, kind: "crew", title: personName(a), facts };
 }
 
 export function serviceRow(

@@ -18,13 +18,10 @@ import {
 } from "@/lib/crew-emails";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getLocationById } from "@/lib/locations-read";
-import {
-  getAssignmentById,
-  getAssignmentsByProject,
-} from "@/lib/crew-scheduling-read";
-import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
+import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
+import { getCrewMemberById } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
+import { buildAssignmentEmailData } from "@/lib/crew-assignment-email-data";
 import { crewMailBatchSchema } from "@/lib/validations/crew";
 import { canCrewCall } from "../../convex/lib/crewCallTransitions";
 
@@ -32,82 +29,8 @@ function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-// ─── Build email data from assignment ────────────────────────────────────────
-
-// Exported for `src/server/crew-time-nudges.ts` (the 24h offer nudge + the
-// day-before call-time reminder, both cron-invoked — no session to check
-// permissions against). This function does no authz itself; every USER-
-// FACING caller in this file still gates on `requirePermission` before it.
-export async function buildAssignmentEmailData(assignmentId: string) {
-  // crewAssignment / crewMember / crewRole and project are all dual-written /
-  // Convex-only — re-source the assignment + its crew member, role and project
-  // from Convex (the old Prisma `crewAssignment.findUnique` reads empty). The
-  // organization name stays Prisma (Better-Auth-adjacent org table, kept).
-  const assignmentRow = await getAssignmentById(assignmentId);
-  if (!assignmentRow) throw new Error("Assignment not found");
-
-  const [crewMember, project, roleMap, org] = await Promise.all([
-    getCrewMemberById(assignmentRow.crewMemberId),
-    getProjectByIdMapped(assignmentRow.projectId, assignmentRow.organizationId),
-    assignmentRow.crewRoleId ? getCrewRoleMap(assignmentRow.organizationId) : Promise.resolve(null),
-    prisma.organization.findUnique({
-      where: { id: assignmentRow.organizationId },
-      select: { name: true },
-    }),
-  ]);
-  if (!crewMember) throw new Error("Assignment not found");
-  if (!project) throw new Error("Assignment not found");
-
-  const roleName = assignmentRow.crewRoleId
-    ? roleMap?.get(assignmentRow.crewRoleId)?.name ?? null
-    : null;
-
-  // Location FK was dropped (Phase B); resolve the project's location from the
-  // Convex mirror (replaces the old nested `project.location` select).
-  const location = project.locationId
-    ? await getLocationById(project.locationId)
-    : null;
-
-  // Reconstruct the nested shape the senders consume (assignment.crewMember /
-  // .project / .organizationId).
-  const assignment = {
-    ...assignmentRow,
-    crewMember: {
-      firstName: crewMember.firstName,
-      lastName: crewMember.lastName,
-      email: crewMember.email ?? null,
-    },
-    crewRole: roleName ? { name: roleName } : null,
-    project: {
-      name: project.name,
-      projectNumber: project.projectNumber,
-      siteContactName: project.siteContactName,
-      siteContactPhone: project.siteContactPhone,
-    },
-    organization: org ? { name: org.name } : null,
-  };
-
-  return {
-    assignment,
-    emailData: {
-      crewFirstName: crewMember.firstName,
-      projectName: project.name,
-      projectNumber: project.projectNumber,
-      roleName,
-      phase: assignmentRow.phase,
-      startDate: assignmentRow.startDate?.toISOString() || null,
-      endDate: assignmentRow.endDate?.toISOString() || null,
-      startTime: assignmentRow.startTime,
-      endTime: assignmentRow.endTime,
-      locationName: location?.name || null,
-      locationAddress: location?.address || null,
-      siteContactName: project.siteContactName,
-      siteContactPhone: project.siteContactPhone,
-      notes: assignmentRow.notes,
-      orgName: org?.name || "RVLT Flow",
-    },
-  };
-}
+// Email data (the full assignment row, token and pay included) is built by a
+// PLAIN server module, never an exported action: `@/lib/crew-assignment-email-data`.
 
 // ─── Send Offer ──────────────────────────────────────────────────────────────
 

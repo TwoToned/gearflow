@@ -24,6 +24,14 @@ describe("serviceRow", () => {
     expect(serviceRow(svc({ costTotal: 400 }), { showCost: false }).facts.charge).toEqual({ kind: "text", label: "internal" });
     expect(serviceRow(svc({ lineTotal: 900 }), { showCost: false }).facts.charge).toEqual({ kind: "money", amount: 900 });
   });
+  test("B-2: a crew call's cost cell exists only when the server sent the cost (absent below the pay line)", () => {
+    expect(serviceRow(svc(), { showCost: false }).children?.[0].facts.charge).toEqual({ kind: "money", amount: 300 });
+    const redacted = svc({ crewAssignments: [{ id: "a1", status: "CONFIRMED", crewMember: { id: "m", firstName: "Dev", lastName: "K", image: null } }] });
+    const child = serviceRow(redacted, { showCost: false }).children?.[0];
+    expect(child?.facts).not.toHaveProperty("charge");
+    expect(child?.facts.status).toBeDefined();
+  });
+
   test("cost and margin facts exist only when asked for", () => {
     const off = serviceRow(svc({ lineTotal: 900, costTotal: 400 }), { showCost: false });
     expect(off.facts.cost).toBeUndefined();

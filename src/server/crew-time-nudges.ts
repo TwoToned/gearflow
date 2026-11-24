@@ -31,7 +31,7 @@ import { env } from "@/env";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getCrewAssignmentsByOrg } from "@/lib/crew-scheduling-read";
 import { crewOfferReminderEmail, crewCallTimeReminderEmail } from "@/lib/crew-emails";
-import { buildAssignmentEmailData } from "@/server/crew-communication";
+import { buildAssignmentEmailData } from "@/lib/crew-assignment-email-data";
 import { startOfDayInTimezone, endOfDayInTimezone } from "@/lib/quote-validity";
 
 export interface CrewTimeNudgeResult {

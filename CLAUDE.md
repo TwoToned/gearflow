@@ -504,8 +504,11 @@ person per assignment (a job-less FLAT entry: once per person per day), nothing
 resolved = blank — and never stored. The entry that CARRIES a shared charge is the
 most advanced one (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the
 earliest; never "the earliest" alone, or a later draft steals it. Every read that
-returns crew pay (`allEntries`, `plannerData`, `membersForAssignment`,
-`crewDashboard.pickerList`, `crewRoles.listForSettings`) gates it on `canSeeCrewPay`
+returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
+`crewAssignments.{membersForAssignment,projectCrew,projectLabourCost,list,getById,listByProject,listByServiceIds}`,
+`crewDashboard.{pickerList,pendingTimeEntries,activeAssignmentsSummary,pendingOffers,upcomingShifts}`,
+`crewMembers.{list,listPage,getById}`, `crew.memberDetail`,
+`crewRoles.{list,listForSettings,getById}`) gates it on `canSeeCrewPay`
 (`convex/lib/crewPayVisibility.ts`), which decides with THE one rule,
 `crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ and not a `noFinancials`
 key). The Node-side timesheet CSV has no Convex ctx, so it calls that same

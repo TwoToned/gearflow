@@ -56,6 +56,7 @@ const CREW_PAGE = {
       status: "ACTIVE",
       type: "EMPLOYEE",
       tags: [],
+      defaultDayRate: 650,
       crewRole: { id: "role1", name: "Sound Engineer", color: "#123456" },
     },
   ],
@@ -66,12 +67,14 @@ const CREW_PAGE = {
 };
 
 let lastCrewPageArgs: unknown;
+const pay = vi.hoisted(() => ({ visible: true }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
     useAuthedQuery: (query: FunctionReference<"query">, args: unknown) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query);
+      if (name === "crewRoles:ratesVisible") return pay.visible;
       if (name === "crewMembers:listPage") {
         lastCrewPageArgs = args;
         return CREW_PAGE;
@@ -93,6 +96,18 @@ describe("CrewTable (smoke)", () => {
     render(<CrewTable />);
     expect(screen.getAllByText("Alice Smith").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Sound Engineer").length).toBeGreaterThan(0);
+  });
+
+  it("the Day rate column shows only when the server says the caller sees crew pay (S1)", () => {
+    pay.visible = true;
+    const { unmount } = render(<CrewTable />);
+    expect(screen.getAllByText("Day rate").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$650.00").length).toBeGreaterThan(0);
+    unmount();
+    pay.visible = false;
+    render(<CrewTable />);
+    expect(screen.queryByText("Day rate")).toBeNull();
+    pay.visible = true;
   });
 
   it("passes the current org id + default sort/page as listPage args", () => {

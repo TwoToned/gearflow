@@ -83,9 +83,12 @@ async function crewLookups(ctx: QueryCtx, orgId: string) {
 // The single-use offer `responseToken` is a bearer credential (it accepts or
 // declines the call as the crew member): it NEVER reaches a crew:read caller
 // (parity with `crewAvailability.plannerData` / `crewAssignments.projectCrew`).
-const isoAssignment = <A extends Record<string, unknown>>(a: A) => {
-  const { responseToken, ...rest } = a;
+// The pay fields (`ASSIGNMENT_COST_FIELDS`) go only to a caller who sees crew
+// pay (`canSeeCrewPay`, resolved once per query and passed in) — review S1.
+const isoAssignment = <A extends Record<string, unknown>>(a: A, payVisible: boolean) => {
+  const { responseToken, ...all } = a;
   void responseToken;
+  const rest = payVisible ? all : redactFields(all, ASSIGNMENT_COST_FIELDS);
   return { ...rest, startDate: iso(a.startDate as number | null), endDate: iso(a.endDate as number | null), offeredAt: iso(a.offeredAt as number | null), respondedAt: iso(a.respondedAt as number | null), confirmedAt: iso(a.confirmedAt as number | null), createdAt: iso(a.createdAt as number | null), updatedAt: iso(a.updatedAt as number | null) };
 };
 
@@ -105,7 +108,7 @@ export const pickerList = query({
       const memberAssignments = (byMember.get(m.id) ?? [])
         .filter((a) => !EXCLUDED.has(a.status ?? ""))
         .sort((a, b) => cmpDescNulls(a.startDate, b.startDate))
-        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; const shown = payVisible ? a : redactFields(a, ASSIGNMENT_COST_FIELDS); return { ...isoAssignment(shown), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
+        .map((a) => { const p = g.projById.get(a.projectId); const aRole = a.crewRoleId ? g.roleById.get(a.crewRoleId) : null; return { ...isoAssignment(a, payVisible), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null, crewRole: aRole ? { id: aRole.id, name: aRole.name } : null }; });
       return { id: m.id, firstName: m.firstName, lastName: m.lastName, department: m.department ?? null, crewRole: role ? { name: role.name } : null, assignments: memberAssignments };
     });
   },
@@ -154,12 +157,13 @@ export const pendingTimeEntries = query({
     const assignById = new Map(
       fetchedAssignments.filter((a): a is NonNullable<typeof a> => a != null && a.organizationId === orgId).map((a) => [a.id, a]),
     );
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     return top.map((e) => {
       const member = g.memberById.get(e.crewMemberId) ?? null;
       const assignment = e.assignmentId ? assignById.get(e.assignmentId) ?? null : null;
       const p = assignment ? g.projById.get(assignment.projectId) ?? null : null;
       const role = assignment?.crewRoleId ? g.roleById.get(assignment.crewRoleId) ?? null : null;
-      return { ...e, date: iso(e.date), createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt), crewMember: member ? { firstName: member.firstName, lastName: member.lastName } : null, assignment: assignment ? { ...isoAssignment(assignment), project: p ? { name: p.name, projectNumber: p.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null };
+      return { ...e, date: iso(e.date), createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt), crewMember: member ? { firstName: member.firstName, lastName: member.lastName } : null, assignment: assignment ? { ...isoAssignment(assignment, payVisible), project: p ? { name: p.name, projectNumber: p.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null };
     });
   },
 });
@@ -169,6 +173,7 @@ export const activeAssignmentsSummary = query({
   handler: async (ctx, { orgId, nowMs }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), assignmentsByStatus(ctx, orgId, ACTIVE)]);
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     return assignments
       .filter((a) => a.endDate == null || a.endDate >= nowMs)
       .sort((a, b) => cmpAscNulls(a.startDate, b.startDate))
@@ -177,7 +182,7 @@ export const activeAssignmentsSummary = query({
         const member = g.memberById.get(a.crewMemberId) ?? null;
         const role = a.crewRoleId ? g.roleById.get(a.crewRoleId) ?? null : null;
         const p = g.projById.get(a.projectId) ?? null;
-        return { ...isoAssignment(a), crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null, crewRole: role ? { name: role.name } : null, project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null };
+        return { ...isoAssignment(a, payVisible), crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null, crewRole: role ? { name: role.name } : null, project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null };
       });
   },
 });
@@ -187,6 +192,7 @@ export const pendingOffers = query({
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
     const [g, assignments] = await Promise.all([crewLookups(ctx, orgId), assignmentsByStatus(ctx, orgId, PENDING)]);
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     return assignments
       .sort((a, b) => cmpDescNulls(a.createdAt, b.createdAt))
       .slice(0, 15)
@@ -194,7 +200,7 @@ export const pendingOffers = query({
         const member = g.memberById.get(a.crewMemberId) ?? null;
         const role = a.crewRoleId ? g.roleById.get(a.crewRoleId) ?? null : null;
         const p = g.projById.get(a.projectId) ?? null;
-        return { ...isoAssignment(a), crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName, email: member.email ?? null } : null, crewRole: role ? { name: role.name } : null, project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null };
+        return { ...isoAssignment(a, payVisible), crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName, email: member.email ?? null } : null, crewRole: role ? { name: role.name } : null, project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber } : null };
       });
   },
 });
@@ -213,6 +219,7 @@ export const upcomingShifts = query({
       Array.from(orgAssignmentIds, (id) => ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", id)).collect()),
     );
     const shifts = shiftLists.flat();
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     return shifts
       .filter((s) => s.status === "SCHEDULED" && s.date >= startOfToday && orgAssignmentIds.has(s.assignmentId))
       .sort((a, b) => cmpAscNulls(a.date, b.date))
@@ -222,7 +229,7 @@ export const upcomingShifts = query({
         const member = assignment ? g.memberById.get(assignment.crewMemberId) ?? null : null;
         const role = assignment?.crewRoleId ? g.roleById.get(assignment.crewRoleId) ?? null : null;
         const p = assignment ? g.projById.get(assignment.projectId) ?? null : null;
-        return { ...s, date: iso(s.date), assignment: assignment ? { ...isoAssignment(assignment), crewMember: member ? { firstName: member.firstName, lastName: member.lastName } : null, crewRole: role ? { name: role.name } : null, project: p ? { name: p.name, projectNumber: p.projectNumber } : null } : null };
+        return { ...s, date: iso(s.date), assignment: assignment ? { ...isoAssignment(assignment, payVisible), crewMember: member ? { firstName: member.firstName, lastName: member.lastName } : null, crewRole: role ? { name: role.name } : null, project: p ? { name: p.name, projectNumber: p.projectNumber } : null } : null };
       });
   },
 });

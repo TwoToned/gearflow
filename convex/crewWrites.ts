@@ -1,6 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { MEMBER_RATE_FIELDS } from "./crewAssignments";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertRefInOrg, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
@@ -189,8 +191,12 @@ export const updateNative = mutation({
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
     // Apply set (+ clear-to-null) — the patchMember pattern.
-    const NEVER_CLEAR = new Set(["id", "organizationId"]);
-    const setObj = sanitizeClientSet(set); // strip organizationId/id — no cross-tenant reassign
+    // A caller who can't SEE crew pay read the member without its rates, so it
+    // can't change or clear them either: the stored rates stand (review S1, the
+    // crewRolesWrites S4 rule). Never a blind wipe from a redacted form.
+    const payVisible = await canSeeCrewPay(ctx, orgId);
+    const NEVER_CLEAR = new Set(["id", "organizationId", ...(payVisible ? [] : MEMBER_RATE_FIELDS)]);
+    const setObj = sanitizeClientSet(set, payVisible ? [] : MEMBER_RATE_FIELDS); // strip organizationId/id — no cross-tenant reassign
     // R-8.6.2 — the create path already re-enforces crewMemberSchema's bounds; a
     // direct-mutation caller could otherwise skip them on update by only ever calling
     // updateNative with an out-of-bound value.

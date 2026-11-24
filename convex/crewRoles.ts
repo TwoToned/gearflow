@@ -1,5 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
@@ -17,10 +19,10 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 export const agentOps: AgentOpsAnnotations = {
-  list: { summary: "List crew roles for the org (includes rate fields).", danger: "low", mcpTier: 2 },
-  listForSettings: { summary: "Crew roles for the settings admin table, rate fields redacted below manager+.", danger: "low", mcpTier: 2 },
+  list: { summary: "List crew roles for the org (rate fields only for callers who see crew pay: manager+ and not a noFinancials key).", danger: "low", mcpTier: 2 },
+  listForSettings: { summary: "Crew roles for the roles sheet, rate fields only for callers who see crew pay.", danger: "low", mcpTier: 2 },
   usage: { summary: "Usage counts (crew/assignments/services) for a crew role, for the archive-with-usage-guard pre-check.", danger: "low", mcpTier: 3 },
-  getById: { summary: "Get a single crew role by id.", danger: "low", mcpTier: 2 },
+  getById: { summary: "Get a single crew role by id (rate fields only for callers who see crew pay).", danger: "low", mcpTier: 2 },
   ratesVisible: { summary: "Whether the caller may see crew pay (role cost/charge rates): manager+ and not a noFinancials key.", danger: "low", mcpTier: 3 },
 };
 
@@ -39,39 +41,52 @@ export const ratesVisible = query({
   },
 });
 
+/** A role's pay fields: the cost (`defaultRate`) and the charge (`chargeRate`). */
+const ROLE_RATE_FIELDS =["defaultRate", "chargeRate"] as const;
+
+/**
+ * Field-level read boundary for every crew-role read: the rates are stripped
+ * (absent keys) unless the ONE crew-pay rule says the caller sees pay
+ * (`canSeeCrewPay`: manager+ AND not a `noFinancials` key; the service
+ * identity always does, so server-side cost math keeps its inputs). Resolved
+ * once per call, applied per row (UX Phase 15, review S1).
+ */
+async function roleRowRedactor(ctx: QueryCtx, orgId: string): Promise<<R extends Doc<"crewRoles">>(row: R) => R> {
+  if (await canSeeCrewPay(ctx, orgId)) return (row) => row;
+  return (row) => redactFields(row, ROLE_RATE_FIELDS);
+}
+
+async function orgRoles(ctx: QueryCtx, orgId: string): Promise<Doc<"crewRoles">[]> {
+  const rows = await ctx.db
+    .query("crewRoles")
+    .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
+    .collect();
+  return rows.map(await roleRowRedactor(ctx, orgId));
+}
+
+/**
+ * Every role in the org. Rates follow the crew-pay rule (`roleRowRedactor`):
+ * a cost preview below the pay line gets no rate to preview with, which is the
+ * point — pay is decided server-side, never by a client hiding a column.
+ */
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
-      .query("crewRoles")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
-      .collect();
+    return await orgRoles(ctx, orgId);
   },
 });
 
 /**
- * Roles-admin list (WS10 #949, `/crew/settings`) — same rows as `list`, but with
- * the cost (`defaultRate`) and charge (`chargeRate`) columns stripped for anyone
- * below manager+ standing (R-9.3 server-is-the-authority: the roles admin table
- * hides both rate columns from non-managers, so the redaction must happen here,
- * not just in the client component). Deliberately a SEPARATE query from `list` —
- * `list` is also used by cost-preview call sites elsewhere in the app (the
- * per-service crew rate table) that still need `defaultRate` to compute a live
- * preview regardless of viewer role; narrowing THAT query would regress those
- * call sites, which are out of scope for this ticket.
+ * Roles-admin list (WS10 #949, the Crew roles & rates sheet). The same rows and
+ * the same redaction as `list` (both read `roleRowRedactor`); kept as its own
+ * operation for the roles sheet and API callers that already name it.
  */
 export const listForSettings = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    const rows = await ctx.db
-      .query("crewRoles")
-      .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: small bounded per-org config set (crew roles) — see docs/exceptions.md R-8.3.3
-      .collect();
-    // The one crew-pay rule (manager+ AND not a noFinancials key), S5.
-    const payVisible = await canSeeCrewPay(ctx, orgId);
-    return payVisible ? rows : rows.map((r) => redactFields(r, ["defaultRate", "chargeRate"]));
+    return await orgRoles(ctx, orgId);
   },
 });
 
@@ -95,7 +110,8 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("crewRoles").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "crew"); // Phase 2 read bootstrap (#998)
-    return doc;
+    if (!doc) return doc;
+    return (await roleRowRedactor(ctx, doc.organizationId))(doc);
   },
 });
 

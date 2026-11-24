@@ -70,12 +70,15 @@ describe("crewRoles.listForSettings — role-gated field visibility", () => {
     expect(rows[0].chargeRate).toBeUndefined();
   });
 
-  test("the plain `list` query (used by cost-preview call sites) is UNCHANGED — still full rows for everyone", async () => {
+  // UX Phase 15 review S1: the plain `list` used to return rates to everyone
+  // (for cost previews). It now follows the same one pay rule as listForSettings.
+  test("the plain `list` query follows the same pay rule — no rates below manager", async () => {
     const t = convexTest(schema, modules);
     await member(t, "member");
     await seedRole(t);
     const rows = await t.withIdentity(asUser(ORG)).query(api.crewRoles.list, { orgId: ORG });
-    expect(rows[0].defaultRate).toBe(300);
-    expect(rows[0].chargeRate).toBe(500);
+    expect(rows[0].name).toBeDefined();
+    expect(rows[0].defaultRate).toBeUndefined();
+    expect(rows[0].chargeRate).toBeUndefined();
   });
 });

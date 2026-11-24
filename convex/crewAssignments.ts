@@ -2,7 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
@@ -151,8 +151,9 @@ export const projectCrew = query({
         confirmedBy,
       });
     }
-    const auth = await getAuthContext(ctx);
-    return (await isAgentNoFinancials(ctx, auth)) ? out.map(redactAssignmentCost) : out;
+    // The one crew-pay rule (manager+ AND not a noFinancials key) — review S1:
+    // a member holding crew:read sees the crew, not their rates or the cost.
+    return (await canSeeCrewPay(ctx, orgId)) ? out : out.map(redactAssignmentCost);
   },
 });
 
@@ -167,6 +168,8 @@ export const projectLabourCost = query({
     // that. Mirrors recalcProjectTotals's `labourCostTotal` exclusion exactly
     // (convex/lib/recalc.ts, issue #796) so this display total and the real P&L
     // total never disagree.
+    // Its WHOLE payload is pay: below the pay line it is the all-zero shape (S1).
+    if (!(await canSeeCrewPay(ctx, orgId))) return { totalLabourCost: 0, assignmentCount: 0 };
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? "") && a.serviceId == null);
     return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };

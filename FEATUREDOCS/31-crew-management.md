@@ -789,13 +789,21 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   the respond route, all on the service token) — never hand the token to the
   browser to build one.
 - **Crew pay on those reads is manager+.** `estimatedCost`/`rateOverride` on the
-  four assignment reads, and `defaultDayRate`/`defaultHourlyRate` on
-  `crewMembers.{list,getById}`, reach only callers for whom
+  four assignment reads, `projectCrew` (and its nested member/role rates),
+  `crew.memberDetail` and the crew dashboard lists; `defaultDayRate`/
+  `defaultHourlyRate` on `crewMembers.{list,listPage,getById}`; the role
+  `defaultRate`/`chargeRate` on `crewRoles.{list,listForSettings,getById}`
+  (`roleRowRedactor`); and `projectLabourCost` (all-zero shape, its whole
+  payload is pay) reach only callers for whom
   `canSeeCrewPay(ctx, orgId)` (`convex/lib/crewPayVisibility.ts`) holds —
   manager+ standing (`isCallerManagerPlus`, re-read from the member row) AND not
   a `noFinancials` API key. The service identity always passes. Field lists are
   the `ASSIGNMENT_COST_FIELDS`/`MEMBER_RATE_FIELDS` constants in
-  `convex/crewAssignments.ts`. Covered by `convex/crewReadRedaction.test.ts`.
+  `convex/crewAssignments.ts`. Covered by `convex/crewReadRedaction.test.ts` and
+  `convex/crewPayGating.test.ts` (member, manager, noFinancials key). The `/crew`
+  list's Day rate column is absent unless `crewRoles.ratesVisible` says the
+  caller sees pay, and `crewWrites.updateNative` ignores rate set/clear from a
+  caller who can't (the stored rates stand, as with role edits, S4).
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

@@ -114,10 +114,12 @@ export const listPage = query({
     );
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
-    const auth = await getAuthContext(ctx);
+    // The same row boundary as list/getById: icalToken always, and the default
+    // rates unless the caller sees crew pay (review S1).
+    const redact = await memberRowRedactor(ctx, a.orgId);
     const items = pageRows.map((m) => {
       const role = m.crewRoleId ? roleMap.get(m.crewRoleId) ?? null : null;
-      const redacted = auth?.kind === "service" ? m : redactFields(m, ["icalToken"]);
+      const redacted = redact(m);
       return {
         ...redacted,
         crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,

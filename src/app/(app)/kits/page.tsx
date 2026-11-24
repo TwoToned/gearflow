@@ -111,7 +111,7 @@ function useKitColumns(
       filterOptions: [
         { value: "NEW", label: "New", color: getStatusColor("condition", "NEW").dot },
         { value: "GOOD", label: "Good", color: getStatusColor("condition", "GOOD").dot },
-        { value: "FAIR", label: "Fair", color: getStatusColor("condition", "FAIR").dot },
+        { value: "FAIR", label: conditionLabels.FAIR, color: getStatusColor("condition", "FAIR").dot },
         { value: "POOR", label: "Poor", color: getStatusColor("condition", "POOR").dot },
         { value: "DAMAGED", label: "Damaged", color: getStatusColor("condition", "DAMAGED").dot },
       ],

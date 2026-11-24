@@ -101,6 +101,8 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/warehouse/returns` | Redirect → `/warehouse?mode=returning` (query kept) |
 | `/warehouse/[projectId]` | Check out/in interface; `?doc=pull-sheet` opens the pull-sheet dialog |
 | `/warehouse/[projectId]/pull-sheet` | Redirect → `/warehouse/[projectId]?doc=pull-sheet` |
+| `/scan` | The Scan page (Phase 16): `?mode=check` (ad-hoc check, FEATUREDOCS/37) or `?mode=tt` (test & tag, FEATUREDOCS/14), `?tag=` the loaded tag; NAV Warehouse › Scan |
+| `/check/[assetTag]` | Redirect → `/scan?mode=check&tag=…` |
 | `/locations` | Location hierarchy |
 | `/locations/new` | Create location |
 | `/locations/[id]` | Location detail |
@@ -112,7 +114,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/test-and-tag/registry` | T&T item list |
 | `/test-and-tag/new` | Create T&T item |
 | `/test-and-tag/[id]` | T&T item detail + test records |
-| `/test-and-tag/quick-test` | Quick test form |
+| `/test-and-tag/quick-test` | Redirect → `/scan?mode=tt` (`?id=` carried as `tag`) |
 | `/test-and-tag/reports` | 10 report types |
 | `/reports` | Business analytics |
 | `/activity` | Activity log (audit trail) |

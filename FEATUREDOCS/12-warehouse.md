@@ -391,10 +391,10 @@ The three scan mutations on `warehouse/[projectId]/page.tsx` — `scanMutation` 
 **and** a vibration pattern on every resolve result via the shared **`useScanFeedback`**
 hook (`@/hooks/use-scan-feedback`, backed by `src/lib/scan-feedback.ts`; see FEATUREDOCS/14
 §"Audio / Scan Feedback" for the underlying implementation and the legacy `playBeep` defects
-it replaced). A `<ScanFeedbackToggle>` icon button (`@/components/scan-feedback-toggle`) sits
-in the page header, next to the Documents/pick-list actions, controlling audio and haptics
-for all three scanners at once — one toggle, not two (#1220, D5 of
-`docs/designs/qol-sweep-2026-09.md`).
+it replaced). One toggle controls audio and haptics for every scanner at once — one
+toggle, not two (#1220, D5 of `docs/designs/qol-sweep-2026-09.md`); it is a page-menu item
+(`Scan sounds: On/Off`, same `rvlt.scanAudio` key) on the surfaces that use it. (The old
+`<ScanFeedbackToggle>` icon button was deleted in Phase 16 with its last consumer.)
 
 Each resolve branch maps to one of the 4 tone kinds (`SCAN_FEEDBACK_TONES`), each mirrored
 one-for-one by a vibration pattern (`SCAN_FEEDBACK_HAPTICS`, `navigator.vibrate` shape — a
@@ -439,12 +439,11 @@ interface ScanHistoryEntry {
 ```
 
 — and the hook keeps the last **five** `{ ...entry, kind, at }` records in memory, newest
-first (`entries`), rendered by `<ScanHistoryStrip>`
-(`src/components/warehouse/scan-history-strip.tsx`) above the scan input on every scan
-surface: the Pick/Prep, Deploy and Return tabs here, `/warehouse/returns`,
-`/test-and-tag/quick-test`, and `/check/[assetTag]`. An un-migrated `play(kind)` call (no
-second argument) still beeps and buzzes exactly as before — the widening is additive, call
-sites adopt it one at a time.
+first (`entries`). The `<ScanHistoryStrip>` that rendered them is **deleted** (Phase 16):
+every scan surface now renders its own entries through the `ScanStrip` primitive
+(`src/components/ui/scan-strip.tsx`) — the warehouse job page's dock, the floor, and the
+Scan page's Last scans (FEATUREDOCS/37 and 14), each handing the strip the write's own
+undo closure. A `play(kind)` call with no second argument still beeps and buzzes.
 
 State is **in-memory and per-mount, deliberately not persisted** (D6 of
 `docs/designs/qol-sweep-2026-09.md`) — a strip that survived a refresh would read as a log,
@@ -689,8 +688,8 @@ Sidebar: the "Returns" sub-item under Warehouse opens `/warehouse?mode=returning
 (success/error/exception tones), built inline per the issue's own instruction
 because the sibling quick-wins tracking issue (#937, "QW-1 shared beep") hadn't
 landed a shared `useScanFeedback` helper yet when this was built. Follows the
-one existing precedent in the codebase (`playBeep()` in
-`src/app/(app)/test-and-tag/quick-test/page.tsx`), extended from binary
+one existing precedent in the codebase (`playBeep()` in the since-deleted
+quick-test wizard page), extended from binary
 success/fail to the three outcomes the returns station has. **Consolidation
 TODO:** once #937 lands, replace this file's usage with the shared helper and
 delete it — don't let two beep helpers coexist long-term.

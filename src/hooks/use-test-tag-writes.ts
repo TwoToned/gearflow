@@ -28,20 +28,27 @@ type UpdateInput = {
   testProfileId?: string | null; outletCount?: number | null; notes?: string;
   assetId?: string | null; bulkAssetId?: string | null;
 };
+type Verdict = "PASS" | "FAIL" | "NOT_APPLICABLE";
 type SubTestInput = {
-  label: string; sortOrder: number; result: "PASS" | "FAIL";
+  label: string; sortOrder: number; result?: "PASS" | "FAIL";
   earthContinuityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; earthContinuityReading?: number | null;
   insulationResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; insulationReading?: number | null;
   leakageCurrentResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; leakageCurrentReading?: number | null;
   polarityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; notes?: string;
 };
+/**
+ * One test, as the tester answered it. Phase 16: there is no `result` and no
+ * `nextDueDate` — the server derives both (overall result from the per-reading
+ * verdicts, D51/Q11; next due from the asset's interval, D52). Each reading carries
+ * its OWN verdict; a reading left blank sends neither field (an enabled blank is
+ * rejected), an explicit N/A sends `NOT_APPLICABLE` with no reading.
+ */
 type RecordTestInput = {
   testTagAssetId: string;
   testProfileId?: string;
   testDate: Date | string;
   testedById?: string;
   testerName: string;
-  result: "PASS" | "FAIL";
   visualInspectionResult?: "PASS" | "FAIL";
   visualCordCondition?: boolean; visualPlugCondition?: boolean; visualHousingCondition?: boolean;
   visualSwitchCondition?: boolean; visualVentsUnobstructed?: boolean; visualCordGrip?: boolean;
@@ -49,15 +56,17 @@ type RecordTestInput = {
   visualNotes?: string;
   equipmentClassTested?: "CLASS_I" | "CLASS_II" | "CLASS_II_DOUBLE_INSULATED" | "LEAD_CORD_ASSEMBLY";
   testMethod?: "INSULATION_RESISTANCE" | "LEAKAGE_CURRENT" | "BOTH";
-  earthContinuityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; earthContinuityReading?: number;
-  insulationResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; insulationReading?: number; insulationTestVoltage?: number;
-  leakageCurrentResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; leakageCurrentReading?: number;
-  polarityResult?: "PASS" | "FAIL" | "NOT_APPLICABLE";
-  rcdTripTimeResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; rcdTripTimeReading?: number;
-  functionalTestResult?: "PASS" | "FAIL" | "NOT_APPLICABLE"; functionalTestNotes?: string;
+  earthContinuityResult?: Verdict; earthContinuityReading?: number;
+  insulationResult?: Verdict; insulationReading?: number; insulationTestVoltage?: number;
+  leakageCurrentResult?: Verdict; leakageCurrentReading?: number;
+  polarityResult?: Verdict;
+  rcdTripTimeResult?: Verdict; rcdTripTimeReading?: number;
+  rcdTripCurrentResult?: Verdict; rcdTripCurrentReading?: number;
+  rcdPushButtonResult?: Verdict;
+  microwaveLeakageResult?: Verdict; microwaveLeakageReading?: number;
+  functionalTestResult?: Verdict; functionalTestNotes?: string;
   failureAction?: "NONE" | "REPAIRED" | "REMOVED_FROM_SERVICE" | "DISPOSED" | "REFERRED_TO_ELECTRICIAN";
   failureNotes?: string;
-  nextDueDate: Date | string;
   subTests?: SubTestInput[];
   outletCount?: number;
 };
@@ -75,6 +84,9 @@ export function useTestTagWrites() {
   const reactivateM = useMutation(api.testTagAssetsWrites.reactivateNative);
   const backfillM = useMutation(api.testTagAssetsWrites.backfillNative);
   const recordTestM = useMutation(api.testTagRecordsWrites.createNative);
+  const undoRecordTestM = useMutation(api.testTagRecordsWrites.undoCreateNative);
+  const undoCreateM = useMutation(api.testTagAssetsWrites.undoCreateNative);
+  const undoReactivateM = useMutation(api.testTagAssetsWrites.undoReactivateNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -103,6 +115,16 @@ export function useTestTagWrites() {
       const org = requireOrg();
       return await deleteM({ id, orgId: org });
     },
+    /** The exact reverse of one {@link create} (ids only; the server guards it). */
+    undoCreate: async (id: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoCreateM({ orgId: org, id, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+    /** The exact reverse of one {@link reactivate}: back to retired, with its old `updatedAt`. */
+    undoReactivate: async (id: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoReactivateM({ orgId: org, id, auditId: createId(), now: Date.now(), actor: actor() });
+    },
     reactivate: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();
       return await reactivateM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
@@ -116,15 +138,14 @@ export function useTestTagWrites() {
      * scalars + failure actions + maintenance referral + status recalc + audit)
      * in ONE atomic native mutation. Mints every id client-side; dates → epoch ms.
      */
-    recordTest: async (data: RecordTestInput): Promise<{ id: string }> => {
+    recordTest: async (data: RecordTestInput): Promise<{ id: string; nextDueDate: number; result: "PASS" | "FAIL" }> => {
       const org = requireOrg();
-      const { testDate, nextDueDate, subTests, ...rest } = data;
+      const { testDate, subTests, ...rest } = data;
       return await recordTestM({
         orgId: org,
         recordId: createId(),
         ...rest,
         testDate: new Date(testDate).getTime(),
-        nextDueDate: new Date(nextDueDate).getTime(),
         subTests: subTests?.map((st) => ({ id: createId(), ...st })),
         maintenanceId: createId(),
         maintenanceLinkId: createId(),
@@ -132,6 +153,15 @@ export function useTestTagWrites() {
         actor: actor(),
         auditId: createId(),
       } as Parameters<typeof recordTestM>[0]);
+    },
+    /**
+     * The exact reverse of one {@link recordTest} (record id only). The server allows it
+     * within 10 minutes of the save, for the tester who saved it, while nothing has
+     * touched the item since, and leaves an UNDO activity row as the trace.
+     */
+    undoRecordTest: async (recordId: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoRecordTestM({ orgId: org, recordId, auditId: createId(), now: Date.now(), actor: actor() });
     },
   };
 }

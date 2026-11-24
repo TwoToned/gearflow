@@ -13,6 +13,7 @@ import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { TagInput } from "@/components/ui/tag-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { OUT_LABEL } from "@/lib/vocabulary";
+import { conditionLabels } from "@/lib/status-labels";
 
 /** The Assets list's bulk Edit… and Add tag… dialogs (moved verbatim from the retired AssetTable). */
 
@@ -89,7 +90,7 @@ export function BulkEditDialog({
               <option value="">— No change —</option>
               <option value="NEW">New</option>
               <option value="GOOD">Good</option>
-              <option value="FAIR">Fair</option>
+              <option value="FAIR">{conditionLabels.FAIR}</option>
               <option value="POOR">Poor</option>
               <option value="DAMAGED">Damaged</option>
             </select>

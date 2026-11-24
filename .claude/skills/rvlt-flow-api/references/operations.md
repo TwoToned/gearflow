@@ -99,7 +99,9 @@ RESERVED, SOLD`. Conditions: `NEW, GOOD, FAIR, POOR, DAMAGED`.
 | Empty a container | `warehouseWrites.clearPrepContainer` | L | `warehouse:check_out` | `projectId`, `containerName` |
 | Commit a unit to a line (curated `reserve_items`) | `warehouseWrites.reassignLineItemUnit` | M | `warehouse:check_out` | `projectId`, `unitId`, `targetLineItemId` |
 | Un-prep a line (curated `release_items`) | `warehouseWrites.undeprepLine` | **H** | `warehouse:check_out` | `projectId`, `lineItemId` |
-| Ad-hoc check record on a unit (the one `warehouse:scan` write) | `checkRecordWrites.saveAdHocCheck` | M | `warehouse:scan` | `assetId`, `bulkAssetId?`, `checks`, `incidentPlan`, `maintenancePlan` — describe first |
+| What a scanned tag is, before a check | `scanLookup.checkCard` | read | `warehouse:read` | `value` (an asset tag or a test tag) — `kind` (`asset`/`kit`/`bulk`/`ttOnly`/`unknown`), location, the job it is on, last check, check-item count, last test & tag |
+| Ad-hoc check record on a unit | `checkRecordWrites.saveAdHocCheck` | M | `warehouse:scan` | `assetId`, `bulkAssetId?`, `checks`, `incidentPlan`, `maintenancePlan`, `condition?` (`GOOD`/`FAIR`/`DAMAGED` — any failed check forces `DAMAGED`; written only if it changes the word: NEW/GOOD read Good, FAIR/POOR read Worn), `notes?` — describe first. A check photo must be a recent upload of your own (made from the check, under 6 hours old, in the org's check-photos folder); anything else is refused. Returns the `auditId` the undo takes |
+| Undo your own ad-hoc check | `checkRecordWrites.undoAdHocCheckNative` | **H** | `warehouse:scan` | `forwardAuditId` — within 10 minutes of saving, the saver only, once; refuses if the asset was checked again since, its condition or a maintenance record the check opened changed since. Deletes only the records the check created; it never deletes a photo file. Returns `{ ok }` |
 | Check out loose lines (curated `dispatch_gear`) | `warehouseWrites.checkOutItems` | **H** | `warehouse:check_out` | `projectId`, `items[{ lineItemId, assetId?, quantity?, notes?, includeAccessoryIds?[] }]`, `includeAccessories`, `auditIds[]` |
 | Check out a kit / kits | `warehouseWrites.checkOutKit` / `.checkOutKitsBatch` | **H** | `warehouse:check_out` | `projectId`, `kitId` / `kitIds[]`, `auditIds[]` |
 | Add-and-dispatch in one go | `warehouseWrites.quickAddAndCheckOut` | M | `warehouse:check_out` | `projectId`, `modelId`, `assetId?`, `bulkAssetId?`, `quantity?`, `prepContainer?` |
@@ -205,9 +207,25 @@ Sub-hire statuses: `DRAFT, CONFIRMED, ON_HIRE, RETURNED, CANCELLED`.
 |---|---|---|---|---|
 | Create (curated `create_maintenance`) | `maintenanceWrites.createNative` | M | `maintenance:create` | `recordId`, `title`, `type`, `assetLinks[]`, `status?`, `description?`, `scheduledDate?`, `assignedToId?`, `projectId?`, `cost?` |
 | Update / close out | `maintenanceWrites.updateNative` | M | `maintenance:update` | `id`, `title`, `type`, `assetLinks[]`, `status?`, `result?` (PASS\|FAIL\|CONDITIONAL), `completedDate?`, `assetDispositions?[]` |
+| Undo a maintenance record you just created | `maintenanceWrites.undoCreateNative` | **H** | `maintenance:create` | `id` — within 10 minutes, the creator only, once, and only while untouched (unedited, same status, no other asset linked, no checkoff progress). Puts assets it placed on hold back exactly |
 | Delete | `maintenanceWrites.deleteNative` | **H** | `maintenance:delete` | `id` |
 
 Statuses: `SCHEDULED, AWAITING_PARTS, IN_PROGRESS, QA, COMPLETED, CANCELLED`.
+
+## Test & tag (electrical safety)
+
+| Job | Operation | Kind | Scope | Args |
+|---|---|---|---|---|
+| What a scanned tag is, plus the profile it is tested to | `scanLookup.testCard` | read | `testTag:read` | `value` (an asset tag or a test tag) — the `checkCard` shape plus `profile` (visual checks, electrical tests with thresholds, outlets) |
+| Record a test | `testTagRecordsWrites.createNative` | **H** | `testTag:create` | `recordId`, `testTagAssetId`, `testDate`, `testerName`, the visual ticks, and each reading with **its own** verdict (`<test>Result` + `<test>Reading`). Send no `result` and no `nextDueDate`: the server derives the overall result from the verdicts and next due from the item's interval, and returns both. Every test the profile enables must be answered — a blank is rejected, send `NOT_APPLICABLE` (with no reading) to skip one; a verdict that contradicts the profile's limit is rejected. The test is held to the item's own resolved profile: `testProfileId?` may only name that profile (any other, or an inactive one, is rejected). `testDate` can't be in the future. For a multi-outlet profile send 1–50 `subTests` and `outletCount` equal to that number. `failureAction?` applies only to a derived fail |
+| Undo your own test | `testTagRecordsWrites.undoCreateNative` | **H** | `testTag:create` | `recordId` — within 10 minutes of saving, the tester only, while the item is untouched and the record is still its newest; leaves an `UNDO` activity row |
+| Put an item on the register | `testTagAssetsWrites.createNative` | M | `testTag:create` | `id`, `description`, `assetId?` (link an inventory asset), `equipmentClass?`, `applianceType?`, `testIntervalMonths?` — starts as not yet tested |
+| Undo putting an item on the register | `testTagAssetsWrites.undoCreateNative` | **H** | `testTag:create` | `id` — within 10 minutes, the person who added it only, once, and only while the item is untouched (still not yet tested, active, unedited, no test recorded) |
+| Bring a retired item back to be tested | `testTagAssetsWrites.reactivateNative` | M | `testTag:update` | `id` — a RETIRED item only (any other is refused); it returns as not yet tested |
+| Undo a reactivation | `testTagAssetsWrites.undoReactivateNative` | **H** | `testTag:update` | `id` — within 10 minutes, the person who reactivated it only, once, while the item is untouched; restores its previous status, active flag and last-updated time exactly |
+
+Readings: `earthContinuity`, `insulation`, `leakageCurrent`, `rcdTripTime`, `rcdTripCurrent`,
+`microwaveLeakage` (reading + verdict); `polarity`, `rcdPushButton` (verdict only).
 
 ## Tasks
 

@@ -21,7 +21,7 @@ export type NavIconKey =
   | "home" | "jobs" | "finance" | "schedule" | "crew" | "assets" | "warehouse"
   | "testTag" | "maintenance" | "clients" | "suppliers" | "locations" | "activity"
   | "settings" | "templates" | "overbookings" | "planner" | "timesheets" | "models"
-  | "categories" | "kits" | "roi" | "salesStock" | "returns" | "registry" | "quickTest"
+  | "categories" | "kits" | "roi" | "salesStock" | "returns" | "scan" | "registry" | "quickTest"
   | "reports" | "more";
 
 /** The sidebar's three hairline groups (§6d.2). */
@@ -104,13 +104,18 @@ export const NAV: readonly NavItem[] = [
   },
   {
     key: "warehouse", label: "Warehouse", url: "/warehouse", icon: "warehouse", hue: "teal", group: 1, moreGroup: "gear", resource: "warehouse",
-    subs: [{ key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse", count: "returnsOverdue" }],
+    subs: [
+      { key: "warehouse-returns", label: "Returns", url: "/warehouse?mode=returning", icon: "returns", resource: "warehouse", count: "returnsOverdue" },
+      // The Scan page (Phase 16, plan Q6b): Check mode's desktop entry.
+      { key: "warehouse-scan", label: "Scan", url: "/scan", icon: "scan", resource: "warehouse" },
+    ],
   },
   {
     key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag", count: "testTagOverdue",
     subs: [
       { key: "tt-registry", label: "Registry", url: "/test-and-tag/registry", icon: "registry", resource: "testTag" },
-      { key: "tt-quick-test", label: "Quick Test", url: "/test-and-tag/quick-test", icon: "quickTest", resource: "testTag" },
+      // The Scan page's Test & tag mode (Phase 16); the old wizard route redirects here.
+      { key: "tt-quick-test", label: "Quick Test", url: "/scan?mode=tt", icon: "quickTest", resource: "testTag" },
       { key: "tt-reports", label: "Reports", url: "/test-and-tag/reports", icon: "reports", resource: "reports" },
     ],
   },
@@ -146,6 +151,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/changelog": "reached from the user menu / what's-new links",
   "/my-tasks": "removed from the rail (6d.9); still a valid route",
   "/warehouse/returns": "redirect to the floor's Returning mode (`/warehouse?mode=returning`, Phase 4)",
+  "/test-and-tag/quick-test": "redirect to the Scan page's Test & tag mode (`/scan?mode=tt`, Phase 16)",
   "/crew/settings": "redirect to the Crew roles & rates sheet (`/crew/planner?sheet=roles`, Phase 15)",
   "/crew/timesheets": "the Crew page's Timesheets head word (D48); a deep link, not a sub-row",
   "/maintenance/due": "a filter view reached from Maintenance",

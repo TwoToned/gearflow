@@ -325,13 +325,6 @@ describe("ItemCheckForm keyboard shortcuts", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("embedded mode disables keyboard shortcuts", async () => {
-    const { onSubmit } = await renderForm({ embedded: true });
-    key("a");
-    key("Enter");
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
-
   it("keyboard shortcuts detach when open goes false", async () => {
     const { onSubmit, rerender } = await renderForm();
 

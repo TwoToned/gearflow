@@ -1113,6 +1113,26 @@ independent reverse implementations for one write is how a double-undo or a
 "did that already fire?" bug gets in — one guarded closure, shared, is the
 only way the two surfaces can't disagree about whether the write was undone.
 
+### An exact Undo reads its OWN forward audit row — ids only (Phase 16)
+`checkRecordWrites.undoAdHocCheckNative` and `testTagRecordsWrites.undoCreateNative` (the
+Scan page's Undo, FEATUREDOCS/37 and 14) take ids only. Everything they restore comes from
+a snapshot the forward save wrote into its own audit row's `details` in the same
+transaction (before/after values, the record and maintenance ids it created, and
+`serverSavedAt`). Never add a caller-supplied "restore to" value. Both refuse as a whole,
+changing nothing, unless:
+- it is within `UNDO_WINDOW_MS` (`convex/lib/undoWindow.ts`) on the SERVER clock;
+- the caller is the person who saved it, and it is the first undo;
+- the record is still the asset's newest;
+- nothing it touched has changed since.
+An Undo NEVER deletes a stored file: it deletes only the records its save created, and
+the photos stay (a file can be referenced from places no scan can enumerate). The save
+still proves each photo is the actor's own fresh upload (`convex/lib/checkPhotos.ts`).
+A new exact Undo copies this shape.
+
+The Scan page's own two rules:
+- Every input path ends in ONE `scan(tag)` (`src/components/scan/use-scan-session.ts`).
+- A save hands its ONE `announceListWrite` closure to both the toast and Last scans.
+
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 

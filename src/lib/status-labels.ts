@@ -183,10 +183,12 @@ export const projectMediaTypeLabels: Record<string, string> = {
 };
 
 // --- Asset Condition ---
+// `FAIR` reads "Worn" app-wide (owner, 2026-11-21, D50 — the ad-hoc check's word);
+// the enum value is unchanged. Alias in docs/glossary.md.
 export const conditionLabels: Record<string, string> = {
   NEW: "New",
   GOOD: "Good",
-  FAIR: "Fair",
+  FAIR: "Worn",
   POOR: "Poor",
   DAMAGED: "Damaged",
 };

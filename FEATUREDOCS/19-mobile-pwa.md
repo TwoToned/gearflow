@@ -413,8 +413,17 @@ target (`Packing into → LX-04 ▾`) and the mode words `Prep as I scan · Chec
 `ScanStrip` lists the last scans by tone (success with Undo, warning with Run check, error
 with Add & prep, neutral saved on device · syncing). The strip's Undo is the exact
 `scanUndo` closure from `announceWarehouseWrite`. The single pipeline that feeds them
-(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3; the legacy
-`ScanHistoryStrip` stays until a surface adopts these.
+(`useDurableScanIntake` → result → `announceWarehouseWrite`) is Phase 3. The legacy
+`ScanHistoryStrip` is deleted (Phase 16): its last consumers moved to these.
+
+Three additive props serve the **Scan page** (`/scan`, Phase 16): `ScanDock.cameraContinuous`
+(default `true`; `false` passes the existing `continuous` flag through so the camera sheet
+closes on a read — one item per scan), `modes={[]}` (no mode row; the page's
+`Check · Test & tag` words sit above the dock), and `ScanStripEntry.onSelect` (the row's
+text becomes a button — the Scan page re-scans that tag). The Scan page registers
+`useScanTarget`, so the bottom-nav Scan lands in its ONE `scan(tag)` pipeline (the same one
+the dock's wedge and camera, a Last scans row tap and the `?tag=` deep link use) — no
+second camera or decoder, and the camera still opens only from the tap.
 
 ### Scan Lookup (`convex/scanLookup.ts`, `resolve` query — formerly `src/server/scan-lookup.ts`)
 Resolves barcode value to entity URL:
@@ -422,6 +431,20 @@ Resolves barcode value to entity URL:
 2. Check `Kit` by `assetTag` → `/kits/{id}`
 3. Check `BulkAsset` by `assetTag` → `/assets/registry/{id}`
 4. Check `TestTagAsset` by `testTagId` → `/test-and-tag/{id}`
+
+**Scan page cards (Phase 16, spec §9i).** The same module serves the Scan page's result
+card: `checkCard` (warehouse read) and `testCard` (testTag read, + the resolved test
+profile), both `{ orgId, value }` with no clock in the args, built by `convex/lib/scanCard.ts`.
+The same order resolves the tag, but a test tag linked to a serialised asset reaches THAT
+asset, so `AURA-01` and `TT-0412` open the same card. `kind` is
+`asset | kit | bulk | ttOnly | unknown`; an asset carries Where (location), On job (the
+most committed active unit — out > packed > to pick — with `backAt` = the job's end),
+Last check (the newest group sharing a `performedAt`, from a bounded 50-row read, with
+`truncated`), the model's check-item count and its Last T&T row. Every read on a global
+index is org re-checked (a foreign location / project / line / model / T&T row is never
+returned). The job lookup (`unitsFor` / `activityFromUnits`) moved to
+`convex/lib/scanActivity.ts`, shared with `resolve`. Both card reads are SAFE_TAG-gated
+the same way as `resolve` (one `safeTag` helper).
 
 ### QR Code Generation
 `src/components/assets/asset-qr-code.tsx` — generates and prints QR codes encoding asset tag value.

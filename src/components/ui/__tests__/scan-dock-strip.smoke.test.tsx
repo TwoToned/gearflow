@@ -5,8 +5,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("@/components/scanner/camera-scanner-dialog", () => ({
-  CameraScannerDialog: ({ open, title }: { open: boolean; title: string }) =>
-    open ? <div role="dialog">{title}</div> : null,
+  CameraScannerDialog: ({ open, title, continuous }: { open: boolean; title: string; continuous?: boolean }) =>
+    open ? <div role="dialog" data-continuous={String(!!continuous)}>{title}</div> : null,
 }));
 
 import { ScanDock, PREP_SCAN_MODES } from "@/components/ui/scan-dock";
@@ -103,6 +103,42 @@ describe("ScanDock filter props", () => {
     expect(input.id).toBe("");
     await userEvent.type(input, "X{Enter}");
     expect(onScan).toHaveBeenCalledWith("X");
+  });
+});
+
+describe("ScanDock Scan-page props (Phase 16)", () => {
+  it("keeps the camera live by default and closes on a read with cameraContinuous={false}", async () => {
+    const { unmount } = render(<ScanDock onScan={() => {}} mode="prep" onModeChange={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan with camera" }));
+    expect((await screen.findByRole("dialog")).getAttribute("data-continuous")).toBe("true");
+    unmount();
+    render(<ScanDock onScan={() => {}} mode="" modes={[]} onModeChange={() => {}} cameraContinuous={false} />);
+    await userEvent.click(screen.getByRole("button", { name: "Scan with camera" }));
+    expect((await screen.findByRole("dialog")).getAttribute("data-continuous")).toBe("false");
+  });
+
+  it("renders no mode row when modes is empty", () => {
+    render(<ScanDock onScan={() => {}} mode="" modes={[]} onModeChange={() => {}} />);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByLabelText("Scan input")).toBeTruthy();
+  });
+});
+
+describe("ScanStrip onSelect", () => {
+  it("makes the row text a button that calls onSelect; without it the text is plain", async () => {
+    const onSelect = vi.fn();
+    render(
+      <ScanStrip
+        entries={[
+          { id: "1", tone: "success", text: "AURA-01 · Saved", onSelect },
+          { id: "2", tone: "error", text: "ZZ-9 · No asset carries this tag" },
+        ]}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "AURA-01 · Saved" }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "ZZ-9 · No asset carries this tag" })).toBeNull();
   });
 });
 

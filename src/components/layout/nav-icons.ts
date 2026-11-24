@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderOpen, Landmark, CalendarRange, HardHat, Package, Warehouse,
   ShieldCheck, Wrench, Users, Truck, MapPin, ScrollText, Settings, BookTemplate,
   AlertTriangle, Clock, Boxes, Tags, Container, TrendingUp, PackagePlus, Undo2,
-  BarChart3, Zap, MoreHorizontal, type LucideIcon,
+  BarChart3, Zap, MoreHorizontal, ScanLine, type LucideIcon,
 } from "lucide-react";
 import type { NavHue, NavIconKey } from "@/lib/nav";
 
@@ -32,6 +32,7 @@ export const NAV_ICONS: Record<NavIconKey, LucideIcon> = {
   roi: TrendingUp,
   salesStock: PackagePlus,
   returns: Undo2,
+  scan: ScanLine,
   registry: Package,
   quickTest: Zap,
   reports: BarChart3,

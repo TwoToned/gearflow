@@ -9701,6 +9701,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "array"
       },
       {
+        "name": "condition",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "incidentPlan",
         "optional": false,
         "type": "array"
@@ -9709,6 +9714,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "maintenancePlan",
         "optional": false,
         "type": "array"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
       },
       {
         "name": "now",
@@ -9722,7 +9732,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ceb2bfa94ca72f52",
+    "argsSha": "40f204c4b57c668d",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": null,
@@ -9866,6 +9876,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "checkRecordWrites.undoAdHocCheckNative",
+    "module": "checkRecordWrites",
+    "fn": "undoAdHocCheckNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "warehouse",
+    "action": "scan",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "scan"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "905ed2ad029837e1",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -28962,6 +29024,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "a87ee2247677f349",
     "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceWrites.undoCreateNative",
+    "module": "maintenanceWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -48083,6 +48197,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "Device-local physical scan replay is bound to the capturing browser user; service and agent tokens are rejected."
   },
   {
+    "operation": "scanLookup.checkCard",
+    "module": "scanLookup",
+    "fn": "checkCard",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "warehouse",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "warehouse",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b98fde57c61e7126",
+    "returnsSha": "8cf109cbd34f657d",
+    "stability": "tracks-app",
+    "summary": "Scan page, Check mode: what a scanned tag (asset tag or test tag) is — asset/kit/bulk/T&T-only/unknown — with where it lives, the job it is on, its last check, its check-item count and its last test & tag.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "scanLookup.resolve",
     "module": "scanLookup",
     "fn": "resolve",
@@ -48114,6 +48265,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "82ebe5773940055e",
     "stability": "tracks-app",
     "summary": "Resolve a scanned barcode/tag to its asset/kit/bulk-asset/test-tag navigation target, plus which jobs it is on right now (to pick / packed / out) and any kit-member or accessory guard.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "scanLookup.testCard",
+    "module": "scanLookup",
+    "fn": "testCard",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b98fde57c61e7126",
+    "returnsSha": "035db9c0e4eaf45b",
+    "stability": "tracks-app",
+    "summary": "Scan page, Test & tag mode: the same card as checkCard (asset tag or test tag) plus the test profile the item is tested against (visual checks, electrical tests, thresholds, outlets).",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -57142,6 +57330,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "testTagAssetsWrites.undoCreateNative",
+    "module": "testTagAssetsWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagAssetsWrites.undoReactivateNative",
+    "module": "testTagAssetsWrites",
+    "fn": "undoReactivateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "testTagAssetsWrites.updateNative",
     "module": "testTagAssetsWrites",
     "fn": "updateNative",
@@ -58286,9 +58578,14 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
-        "name": "nextDueDate",
-        "optional": false,
+        "name": "microwaveLeakageReading",
+        "optional": true,
         "type": "number"
+      },
+      {
+        "name": "microwaveLeakageResult",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "now",
@@ -58311,6 +58608,21 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "union"
       },
       {
+        "name": "rcdPushButtonResult",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "rcdTripCurrentReading",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "rcdTripCurrentResult",
+        "optional": true,
+        "type": "union"
+      },
+      {
         "name": "rcdTripTimeReading",
         "optional": true,
         "type": "number"
@@ -58324,11 +58636,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "recordId",
         "optional": false,
         "type": "string"
-      },
-      {
-        "name": "result",
-        "optional": false,
-        "type": "union"
       },
       {
         "name": "subTests",
@@ -58422,8 +58729,60 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a4e72fdcd9b61bb2",
-    "returnsSha": "8b114161049d5d20",
+    "argsSha": "6c47cf3af1a8d4f7",
+    "returnsSha": "c7b6c41f8a7bee98",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagRecordsWrites.undoCreateNative",
+    "module": "testTagRecordsWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fa3f832afdba790d",
+    "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -65458,10 +65817,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1268,
-  agentReachable: 636,
-  queries: 453,
-  mutations: 815,
-  agentReachableQueries: 317,
-  agentReachableMutations: 319,
+  total: 1275,
+  agentReachable: 643,
+  queries: 455,
+  mutations: 820,
+  agentReachableQueries: 319,
+  agentReachableMutations: 324,
 } as const;

@@ -19,6 +19,12 @@ import { CrewRateTable } from "../../service-dialogs";
 import { SectionHead } from "./when-where-sections";
 import type { ServiceSheetState } from "./use-service-sheet";
 
+/** The per-day rule (`crewGap`): the worst day's count and gap, never `Needed − rows`. */
+function crewCounts(s: ServiceSheetState): { short: number; filled: number } {
+  if (!s.crewGap) return { short: 0, filled: s.rows.length };
+  return { short: s.crewGap.shortfall, filled: s.crewGap.filled };
+}
+
 export function CrewSection(props: {
   s: ServiceSheetState;
   onPick: () => void;
@@ -33,9 +39,7 @@ export function CrewSection(props: {
   const roleOptions = (s.roleDocs ?? [])
     .filter((r) => r.isActive === true)
     .map((r) => ({ value: r.id, label: r.name }));
-  // The per-day rule (`crewGap`): the worst day's count, never `Needed − rows`.
-  const short = s.crewGap?.shortfall ?? 0;
-  const filled = s.crewGap ? s.crewGap.filled : s.rows.length;
+  const { short, filled } = crewCounts(s);
   return (
     <section className="space-y-3" aria-label="Crew">
       <SectionHead title="Crew" hint={`${filled} of ${needed || 0}`} />

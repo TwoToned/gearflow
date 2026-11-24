@@ -165,6 +165,13 @@ export async function setIcalIncludeTentative(crewMemberId: string, includeTenta
 
 // ─── Assignment .ics Download ────────────────────────────────────────────────
 
+/** The row minus the respond token, and minus pay unless the real caller sees it. */
+async function browserSafeAssignment<R extends { responseToken: unknown; estimatedCost: unknown; rateOverride: unknown }>(row: R) {
+  const { responseToken, estimatedCost, rateOverride, ...rest } = row;
+  void responseToken;
+  return (await callerSeesCrewPay()) ? { ...rest, estimatedCost, rateOverride } : rest;
+}
+
 /**
  * An assignment for an .ics download. Read with the service identity, so it
  * strips here what a browser caller may not hold (B-2 sweep): the single-use
@@ -178,9 +185,7 @@ export async function getAssignmentIcsData(assignmentId: string) {
   if (!row || row.organizationId !== organizationId) {
     throw new Error("Assignment not found");
   }
-  const { responseToken, estimatedCost, rateOverride, ...rest } = row;
-  void responseToken;
-  const assignment = (await callerSeesCrewPay()) ? { ...rest, estimatedCost, rateOverride } : rest;
+  const assignment = await browserSafeAssignment(row);
 
   const [member, roleMap, project, shifts] = await Promise.all([
     getCrewMemberById(assignment.crewMemberId),

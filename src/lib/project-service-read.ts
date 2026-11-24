@@ -23,6 +23,7 @@ type RawAssignment = Doc<"crewAssignments">;
 
 const toDate = (v: number | undefined): Date | null => (typeof v === "number" ? new Date(v) : null);
 const orNull = <T>(v: T | undefined): T | null => (v === undefined ? null : v);
+const isoOrNull = (ms: number | undefined): string | null => (ms == null ? null : new Date(ms).toISOString());
 const req = <T>(v: T | undefined): T => v as T;
 
 // ─── Row shapes (mirror the Prisma include shapes the UI consumes) ───────────
@@ -283,8 +284,8 @@ export function attachServiceCrew(
       id: a.id,
       status: orNull(a.status),
       estimatedCost: withEstimatedCost ? orNull(a.estimatedCost) : null,
-      startDate: a.startDate != null ? new Date(a.startDate).toISOString() : null,
-      endDate: a.endDate != null ? new Date(a.endDate).toISOString() : null,
+      startDate: isoOrNull(a.startDate),
+      endDate: isoOrNull(a.endDate),
       crewMember: member
         ? {
             id: member.id,

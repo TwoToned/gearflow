@@ -92,6 +92,22 @@ function useCrewMath(
   return { previewCost, costTotal, crewChargeTotal: rows.length > 0 ? chargeTotal : 0 };
 }
 
+/**
+ * The crew gap as the form stands (its dates and Needed, the live calls' own
+ * days; a newly picked row covers the whole run) — the ONE per-day rule
+ * (`crewGap`), never `Needed − rows`.
+ */
+function formCrewGap(form: UseFormReturn<ProjectServiceFormValues>, rows: ServiceCrewTableRow[], service: LogisticsService) {
+  const liveByMember = new Map(service.crewAssignments.map((a) => [a.crewMember.id, a]));
+  const date = (form.watch("date") as unknown as string) || null;
+  return crewGap({
+    date,
+    endDate: (form.watch("endDate") as unknown as string) || date,
+    crewCountRequired: Number(form.watch("crewCountRequired") || 0),
+    crewAssignments: rows.map((r) => liveByMember.get(r.crewMemberId) ?? { status: "PENDING" }),
+  });
+}
+
 export function useServiceSheet(args: { service: LogisticsService; projectId: string; orgId: string | undefined; onClose: () => void }) {
   const { service, projectId, orgId, onClose } = args;
   const writes = useProjectServiceWrites();
@@ -111,15 +127,7 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   const rawOverride = form.watch("chargeRateOverride");
   const override = rawOverride != null && (rawOverride as unknown) !== "" ? Number(rawOverride) : undefined;
   const math = useCrewMath(rows, members.byId, role, members, override);
-  // The crew gap as the form stands (its dates and Needed, the live calls' own
-  // days) — the ONE per-day rule, never `Needed − rows`.
-  const liveByMember = new Map(service.crewAssignments.map((a) => [a.crewMember.id, a]));
-  const crewGapNow = crewGap({
-    date: (form.watch("date") as unknown as string) || null,
-    endDate: (form.watch("endDate") as unknown as string) || (form.watch("date") as unknown as string) || null,
-    crewCountRequired: Number(form.watch("crewCountRequired") || 0),
-    crewAssignments: rows.map((r) => liveByMember.get(r.crewMemberId) ?? { status: "PENDING" }),
-  });
+  const crewGapNow = formCrewGap(form, rows, service);
 
   const save = useServerMutation({
     // Crew is whatever is live NOW (Pick crew writes immediately), plus the rate edits made here.

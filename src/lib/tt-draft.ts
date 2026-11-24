@@ -203,6 +203,11 @@ export function revertPassAllVisual(d: TtDraft, changed: VisualPassAll): TtDraft
   return { ...d, visual };
 }
 
+/** Whether {@link revertPassAllVisual} would change anything (else its Undo says "Nothing to undo"). */
+export function canRevertPassAllVisual(d: TtDraft, changed: VisualPassAll): boolean {
+  return Object.keys(changed).some((key) => d.visual[key] === true);
+}
+
 /** A draft holds answers once anything was ticked, typed or picked. */
 export function ttDraftDirty(d: TtDraft): boolean {
   const outletAnswered = d.outlets.some((o) => o.polarity !== null || o.notes !== "" || Object.keys(o.readings).length > 0);

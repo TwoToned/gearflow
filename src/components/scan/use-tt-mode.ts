@@ -12,6 +12,7 @@ import type { LastScan } from "@/lib/scan-page";
 import type { ScanFeedbackKind } from "@/lib/scan-feedback";
 import { showError } from "@/lib/show-error";
 import {
+  canRevertPassAllVisual,
   emptyTtDraft,
   passAllVisual,
   prefillFromRecord,
@@ -98,8 +99,11 @@ export function useTtMode(d: TtModeDeps) {
   const [label, setLabel] = useState<PrintLabel | null>(null);
   const current = draftFor(draft, item, profile);
   const tagRef = useRef(d.tag);
+  // The stored draft as of the last render, read by an Undo that fires later.
+  const latestDraft = useRef(draft);
   useEffect(() => {
     tagRef.current = d.tag;
+    latestDraft.current = draft;
   });
   // Print once the label for the saved record is mounted (fixes F7: it printed the page).
   useEffect(() => {
@@ -119,11 +123,18 @@ export function useTtMode(d: TtModeDeps) {
     if (!item) return;
     const forId = item.id;
     const { draft: next, changed } = passAllVisual(current, profile);
+    // Everything already ticked: no write, so no toast and no Undo to offer.
+    if (Object.keys(changed).length === 0) return;
     setDraft(next);
     announceListWrite({
       title: "Every visual check ticked",
       undoneTitle: "Visual ticks restored",
-      performUndo: async () => setDraft((prev) => (prev.forTtId === forId ? revertPassAllVisual(prev, changed) : prev)),
+      performUndo: async () => {
+        const now = latestDraft.current;
+        // The draft was cleared, or every tick Pass all made has been changed since.
+        if (now.forTtId !== forId || !canRevertPassAllVisual(now, changed)) return "Nothing to undo";
+        setDraft((prev) => (prev.forTtId === forId ? revertPassAllVisual(prev, changed) : prev));
+      },
     });
   };
   const blocker = blockerFor(item, tester, current, profile);

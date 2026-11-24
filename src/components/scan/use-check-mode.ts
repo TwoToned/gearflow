@@ -13,6 +13,7 @@ import {
   checksPayload,
   checkStatesDirty,
   passAllStates,
+  canRevertPassAll,
   passAllTargets,
   revertPassAll,
   type CheckItemData,
@@ -115,6 +116,11 @@ function useCheckDraft(assetId: string | null) {
   const [draft, setDraft] = useState<CheckDraft>(EMPTY_DRAFT);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const current = draft.forAssetId === assetId ? draft : { ...EMPTY_DRAFT, forAssetId: assetId };
+  // The stored draft as of the last render, read by an Undo that fires later.
+  const latest = useRef(draft);
+  useEffect(() => {
+    latest.current = draft;
+  });
 
   const update = useCallback(
     (checkItemId: string, updates: Partial<CheckState>) =>
@@ -133,14 +139,19 @@ function useCheckDraft(assetId: string | null) {
    * all answered, only while they still read Pass and the draft is still this asset's.
    */
   const passAll = (items: CheckItemData[] | undefined) => {
-    if (!items) return;
-    const ids = passAllTargets(items, current.states);
+    const ids = items ? passAllTargets(items, current.states) : [];
+    // Nothing to answer: no write, so no toast and no Undo to offer.
+    if (!items || ids.length === 0) return;
     setDraft({ ...current, states: passAllStates(items, current.states) });
     announceListWrite({
       title: "All pass/fail items marked Pass",
       undoneTitle: "Pass all undone",
-      performUndo: async () =>
-        setDraft((prev) => (prev.forAssetId === assetId ? { ...prev, states: revertPassAll(prev.states, ids) } : prev)),
+      performUndo: async () => {
+        const now = latest.current;
+        // The draft was cleared, or every item it answered has been answered since.
+        if (now.forAssetId !== assetId || !canRevertPassAll(now.states, ids)) return "Nothing to undo";
+        setDraft((prev) => (prev.forAssetId === assetId ? { ...prev, states: revertPassAll(prev.states, ids) } : prev));
+      },
     });
   };
 

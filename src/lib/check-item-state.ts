@@ -68,7 +68,12 @@ export function revertPassAll(states: CheckStates, ids: readonly string[]): Chec
   return next;
 }
 
-export const hasPassFail =(items: CheckItemData[]): boolean => items.some((mci) => mci.checkItem.type === "PASS_FAIL");
+/** Whether {@link revertPassAll} would change anything (else its Undo says "Nothing to undo"). */
+export function canRevertPassAll(states: CheckStates, ids: readonly string[]): boolean {
+  return ids.some((id) => states[id]?.result === "PASS");
+}
+
+export const hasPassFail = (items: CheckItemData[]): boolean => items.some((mci) => mci.checkItem.type === "PASS_FAIL");
 
 /** A measurement against its limits; `null` until the value is a number. */
 export function measurementAutoResult(value: string, min: number | null, max: number | null): "PASS" | "FAIL" | null {

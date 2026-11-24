@@ -249,6 +249,23 @@ describe("ScanPage — Test & tag mode", () => {
     expect(screen.getByRole("spinbutton", { name: "Earth Continuity" })).toHaveProperty("value", "0.2");
   });
 
+  it("Pass all with nothing left to revert says 'Nothing to undo'; with everything ticked it writes nothing", async () => {
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    render(<ScanPage />);
+    const visual = screen.getByRole("region", { name: /Visual inspection/ });
+    await userEvent.click(within(visual).getByRole("button", { name: "Pass all" }));
+    expect(h.toasts.filter((t) => t.title === "Every visual check ticked")).toHaveLength(1);
+    // Pass all again: already all ticked, so no second toast or Undo.
+    await userEvent.click(within(visual).getByRole("button", { name: "Pass all" }));
+    expect(h.toasts.filter((t) => t.title === "Every visual check ticked")).toHaveLength(1);
+    await userEvent.click(within(visual).getByRole("button", { name: "Cord: failed" }));
+    await userEvent.click(within(visual).getByRole("button", { name: "Plug: failed" }));
+    const toast = h.toasts.find((t) => t.title === "Every visual check ticked");
+    await act(async () => toast!.action!.onClick());
+    expect(h.toasts.map((t) => t.title)).toContain("Nothing to undo");
+    expect(h.toasts.map((t) => t.title)).not.toContain("Visual ticks restored");
+  });
+
   it("save AWAITS recordTest with per-reading verdicts; ONE undo closure for toast and row", async () => {
     setUrl("/scan?mode=tt&tag=TT-0412");
     let resolve!: (v: unknown) => void;

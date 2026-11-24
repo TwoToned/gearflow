@@ -338,6 +338,37 @@ describe("ScanPage — Check mode", () => {
     expect(within(row("Yoke")).getByPlaceholderText("Describe the failure...")).toHaveProperty("value", "Slips");
   });
 
+  it("Pass all with nothing left to revert says 'Nothing to undo', never 'undone'; with nothing to answer it offers no Undo", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    const row = (label: string) => screen.getByText(label).closest("[data-check-item]") as HTMLElement;
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    // Every item Pass all answered is answered again by hand.
+    await userEvent.click(within(row("Power on")).getByRole("button", { name: "Fail" }));
+    await userEvent.click(within(row("Yoke")).getByRole("button", { name: "Fail" }));
+    const toast = h.toasts.find((t) => t.title === "All pass/fail items marked Pass");
+    await act(async () => toast!.action!.onClick());
+    expect(h.toasts.map((t) => t.title)).toContain("Nothing to undo");
+    expect(h.toasts.map((t) => t.title)).not.toContain("Pass all undone");
+    expect(within(row("Yoke")).getByRole("button", { name: "Fail" }).getAttribute("aria-pressed")).toBe("true");
+    // Now nothing is unanswered: Pass all writes nothing and offers nothing.
+    h.toasts.length = 0;
+    await userEvent.click(screen.getByRole("button", { name: "Scan actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Pass all" })).toBeNull();
+  });
+
+  it("Pass all's Undo after the draft was discarded says 'Nothing to undo'", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    render(<ScanPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    const toast = h.toasts.find((t) => t.title === "All pass/fail items marked Pass");
+    await userEvent.type(screen.getByLabelText("Scan input"), "AURA-02{Enter}");
+    const dialog = await screen.findByRole("dialog", { name: "Discard this check?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
+    await act(async () => toast!.action!.onClick());
+    expect(h.toasts.map((t) => t.title)).toContain("Nothing to undo");
+  });
+
   it("a failed save keeps the card and its answers", async () => {
     setUrl("/scan?mode=check&tag=AURA-01");
     h.save.mockRejectedValueOnce(new Error("Network down"));

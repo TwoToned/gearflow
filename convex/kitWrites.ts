@@ -13,6 +13,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { stampLocationMovement } from "./lib/locationMovement";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -149,6 +150,7 @@ export const createNative = mutation({
     if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
 
     await ctx.db.insert("kits", fields);
+    await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     // Advance the asset-tag counter (parity — createKit reserved 1 after insert).
     await reserveAssetTagCounter(ctx, fields.organizationId, 1, fields.createdAt ?? fields.updatedAt ?? 0);
 
@@ -212,6 +214,7 @@ export const updateNative = mutation({
     if (patch.locationId) await assertRefInOrg(ctx, "locations", patch.locationId, orgId);
 
     await ctx.db.patch(doc._id, sanitizeClientSet(patch)); // strip organizationId/id — no cross-tenant reassign
+    await stampLocationMovement(ctx, orgId, doc.locationId, patch.locationId, now);
 
     const finalTag = patch.assetTag ?? doc.assetTag;
     await writeActivityLog(ctx, {

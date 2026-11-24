@@ -11,6 +11,7 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { retireAssetCore } from "./lib/assetRetire";
 import { assertRefInOrg } from "./lib/orgRef";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -290,6 +291,9 @@ const assetSet = v.object({
 });
 const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"]);
 
+/** A `clear` list that removes the location (a clear wins over a `set` of the same key). */
+const clearsLocation = (clear: readonly string[]): boolean => clear.includes("locationId");
+
 /**
  * createNative — insert an asset with the dup-tag guard + CREATE audit in ONE
  * transaction. RBAC(asset,create). The dup guard (by_organizationId_assetTag) and
@@ -374,6 +378,7 @@ export const createNative = mutation({
     if (fields.kitId) await assertRefInOrg(ctx, "kits", fields.kitId, fields.organizationId);
 
     await ctx.db.insert("assets", fields);
+    await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     await bumpAssetCounters(ctx, fields.organizationId, null, fields);
     const createNow = fields.createdAt ?? fields.updatedAt ?? 0;
     // Advance the asset-tag counter + auto-register T&T (parity with createAsset).
@@ -460,6 +465,8 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
     // mutation `now` (the client `set` omits it; parity with the old updateAsset).
     const setWithTs = { ...set, updatedAt: now };
+    // `lastMovementAt`: a set locationId moves it; clearing it (unless that key is protected) removes it.
+    await stampLocationMovement(ctx, orgId, doc.locationId, clearsLocation(clear) ? null : set.locationId, now);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setWithTs);
       await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...setWithTs });
@@ -571,6 +578,7 @@ export const createManyNative = mutation({
       const { auditId: _auditId, ...assetFields } = a;
       const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
       await ctx.db.insert("assets", fields);
+      await stampLocationMovement(ctx, orgId, null, fields.locationId ?? null, now);
       await bumpCountersForTable(ctx, "assets", null, fields);
       await registerAssetTestTag(ctx, { organizationId: orgId, assetId: a.id, assetTag: a.assetTag, serialNumber: a.serialNumber, modelId: a.modelId }, now);
       await actorLog(ctx, { orgId, actor, auditId: a.auditId, now, id: a.id, assetTag: a.assetTag, modelId: a.modelId });
@@ -611,9 +619,11 @@ export const bulkUpdateNative = mutation({
 
     const patch = { ...set, updatedAt: now };
     let count = 0;
+    const moves = new LocationMovements();
     for (const id of ids) {
       const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
+      moves.record(doc.locationId, clearsLocation(clear) ? null : set.locationId);
       if (clear.length === 0) {
         await ctx.db.patch(doc._id, patch);
         await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
@@ -626,6 +636,7 @@ export const bulkUpdateNative = mutation({
       }
       count++;
     }
+    await moves.flush(ctx, orgId, now);
     return { count };
   },
 });

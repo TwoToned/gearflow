@@ -44,6 +44,7 @@ import { removeLineItemCascadeCore } from "./projectLineItems";
 import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
 import { deleteAllForProjectCore } from "./projectCategories";
 import { liveRows, versionRows } from "./lib/versionScope";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { listProjectVersions, createLiveVersionForProject } from "./lib/projectVersionState";
 
 /**
@@ -1033,6 +1034,7 @@ export const deleteNative = mutation({
         ...(safeLocationId != null ? { locationId: safeLocationId } : {}),
         updatedAt: now,
       });
+      await stampLocationMovement(ctx, orgId, kit.locationId, safeLocationId ?? undefined, now);
     }
 
     // Step 3 — free those kits' serialized member assets (org-scoped, counter-safe path).

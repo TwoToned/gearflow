@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
@@ -130,6 +131,7 @@ async function checkOutSerializedItem(
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+  await stampLocationMovement(ctx, asset.organizationId, asset.locationId, p.projectLocationId || undefined, p.now);
   await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
   await scanLog(ctx, { organizationId: p.organizationId, assetId: p.targetAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes ?? undefined });
   return "done";
@@ -219,6 +221,7 @@ async function deployAccessoryUnitRows(
     if (u.assetId) {
       if (accAsset) {
         await ctx.db.patch(accAsset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+        await stampLocationMovement(ctx, accAsset.organizationId, accAsset.locationId, p.projectLocationId || undefined, p.now);
         await bumpAssetCounters(ctx, accAsset.organizationId, accAsset, { isActive: accAsset.isActive, status: "CHECKED_OUT" });
       }
       assetsTouched.push(u.assetId);
@@ -549,9 +552,13 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
   }
 }
 export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
+  const moves = new LocationMovements();
+  let orgIdOfMoves: string | undefined;
   for (const id of assetIds) {
     const a = await assetByCuid(ctx, id);
     if (!a) continue;
+    // `lastMovementAt`: a set location moves it; a clear removes it; neither leaves it alone.
+    moves.record(a.locationId, locationId != null ? locationId : clearLocIfNull ? null : undefined);
     if (locationId != null) {
       await ctx.db.patch(a._id, { status: status as typeof a.status, locationId, updatedAt: now });
     } else if (clearLocIfNull) {
@@ -563,7 +570,29 @@ export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: stri
     // §3.6 dashboard counter: this is the choke point for warehouse status churn
     // (nearly every check-out/-in/force-return funnels here). isActive is untouched.
     await bumpAssetCounters(ctx, a.organizationId, a, { isActive: a.isActive, status });
+    orgIdOfMoves ??= a.organizationId;
   }
+  if (orgIdOfMoves) await moves.flush(ctx, orgIdOfMoves, now);
+}
+
+/**
+ * Patch a kit's status and, when `loc` is given, move it there (a falsy `loc` leaves its location
+ * alone). The ONE kit status+location patch for the check-out / check-in / de-prep paths, so
+ * `lastMovementAt` is stamped on both ends (convex/lib/locationMovement.ts).
+ */
+async function patchKitStatusAt(ctx: Ctx, kit: Doc<"kits">, status: Doc<"kits">["status"], loc: string | null | undefined, now: number) {
+  await ctx.db.patch(kit._id, { status, ...(loc ? { locationId: loc } : {}), updatedAt: now });
+  await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc || undefined, now);
+}
+
+/** Force-return a kit to AVAILABLE: at `loc` when there is one, otherwise with its location cleared. */
+async function releaseKitToLocation(ctx: Ctx, kit: Doc<"kits">, loc: string | null, now: number) {
+  if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
+  else {
+    const { _id, _creationTime, locationId: _l, ...rest } = kit;
+    await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now });
+  }
+  await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc ?? null, now);
 }
 
 // ── Kit per-unit fulfillment (Phase 1) ───────────────────────────────────────
@@ -726,7 +755,7 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     for (const nestedChild of nestedKitChildren) {
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, deployLine(gc));
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "CHECKED_OUT", loc, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", loc, false, a.now);
@@ -736,7 +765,7 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     }
 
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "CHECKED_OUT", loc, a.now);
 
 
     // Kit per-unit: flip member units CONFIRMED → CHECKED_OUT (unit rows only;
@@ -839,7 +868,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     for (const nestedChild of nestedKitChildren) {
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "CHECKED_OUT")) await ctx.db.patch(gc._id, ret);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, newKitStatus, defaultLocationId, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), assetStatus, defaultLocationId, true, a.now);
@@ -849,7 +878,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     }
 
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, newKitStatus, defaultLocationId, a.now);
 
 
     // Kit per-unit: flip member units CHECKED_OUT → RETURNED (unit rows only),
@@ -1511,7 +1540,7 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
     for (const nestedChild of nestedKitChildren) {
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, prepped);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "AVAILABLE", defLoc, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", defLoc, true, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -1519,7 +1548,7 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
       await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "AVAILABLE", defLoc, true, a.now);
     }
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "AVAILABLE", defLoc, a.now);
 
 
     // Kit per-unit: member units CHECKED_OUT → CONFIRMED (re-packed), and reverse
@@ -1599,7 +1628,7 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
     for (const nestedChild of nestedKitChildren) {
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "RETURNED")) await ctx.db.patch(gc._id, deployed);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "CHECKED_OUT", projLoc, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", projLoc, false, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -1607,7 +1636,7 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
       await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "CHECKED_OUT", projLoc, false, a.now);
     }
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "CHECKED_OUT", projLoc, a.now);
 
 
     // Kit per-unit: member units RETURNED → CHECKED_OUT. Clear the return stamps
@@ -1772,8 +1801,7 @@ async function restoreKitParentLine(
     kitsToRestore.add(nk);
     const k = await kitByCuid(ctx, nk);
     if (k) {
-      if (loc != null) await ctx.db.patch(k._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
-      else { const { _id, _creationTime, locationId: _l, ...rest } = k; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+      await releaseKitToLocation(ctx, k, loc, now);
     }
   }
   for (const c of children) if (c.status === "CHECKED_OUT") await ctx.db.patch(c._id, FORCE_RET(now));
@@ -1809,8 +1837,7 @@ export async function forceReturnKitCore(
     await cascadeKitAccessoriesIn(ctx, p.id, organizationId, { projectId: p.projectId, userId, defaultLocationId: loc, returnCondition: "GOOD" });
   }
 
-  if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
-  else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+  await releaseKitToLocation(ctx, kit, loc, now);
 
   return [...kitsToRestore];
 }

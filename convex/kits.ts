@@ -4,6 +4,7 @@ import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { collectCapped } from "./lib/pagination";
@@ -305,7 +306,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("kits", args);
+    const _id = await ctx.db.insert("kits", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
+    return _id;
   },
 });
 
@@ -343,6 +346,7 @@ export const createIfMissing = mutation({
     const existing = await getKitByCuid(ctx, args.id);
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("kits", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     return { _id, created: true };
   },
 });
@@ -385,6 +389,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, safePatch.locationId, safePatch.updatedAt ?? Date.now());
     return doc._id;
   },
 });
@@ -435,6 +440,7 @@ export async function assignAssetToKit(
     const { _id, _creationTime, locationId: _l, ...rest } = asset;
     await ctx.db.replace(_id, { ...rest, kitId, updatedAt: now });
   }
+  await stampLocationMovement(ctx, asset.organizationId, asset.locationId, kitLocationId ?? null, now);
 }
 
 /** Release an asset back to inventory (kitId cleared, status AVAILABLE). */

@@ -18,6 +18,7 @@ import {
   type ProjectFormValues,
   type ProjectSchedulePatch,
 } from "@/lib/validations/project";
+import { buildProjectUpdate } from "@/lib/project-edit-patch";
 import { datePartsInTimezone } from "@/lib/project-number";
 import {
   getProjectNumberConfig,
@@ -385,11 +386,15 @@ export function useProjectWrites(orgId: string | undefined) {
     id: string,
     data: ProjectFormValues,
     isTemplate = false,
+    /** The form values as loaded. When given, only the fields that changed are
+     *  written (never `status`, never an untouched locked money field). */
+    before?: ProjectFormValues,
   ): Promise<{ id: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchema.parse(data);
+    const parsedBefore = before ? projectSchema.parse(before) : undefined;
 
-    if (parsed.projectNumber) {
+    if (parsed.projectNumber && (!parsedBefore || parsed.projectNumber !== parsedBefore.projectNumber)) {
       const { available } = await checkProjectNumberAvailable(parsed.projectNumber, id);
       if (!available) {
         throw new UserFacingError({
@@ -401,50 +406,10 @@ export function useProjectWrites(orgId: string | undefined) {
       }
     }
 
-    const set: Record<string, unknown> = {
-      projectNumber: parsed.projectNumber,
-      name: parsed.name,
-      status: parsed.status,
-      type: parsed.type,
-      tags: parsed.tags,
-      updatedAt: Date.now(),
-    };
-    const clear: string[] = [];
-    const setOrClear = (key: string, value: unknown) => {
-      if (value === null || value === undefined || value === "") clear.push(key);
-      else set[key] = value;
-    };
-    setOrClear("clientId", parsed.clientId || null);
-    setOrClear("clientContactId", parsed.clientContactId || null);
-    setOrClear("description", parsed.description || null);
-    setOrClear("locationId", parsed.locationId || null);
-    setOrClear("siteContactName", parsed.siteContactName || null);
-    setOrClear("siteContactPhone", parsed.siteContactPhone || null);
-    setOrClear("siteContactEmail", parsed.siteContactEmail || null);
-    setOrClear("loadInDate", parsed.loadInDate?.getTime() ?? null);
-    setOrClear("loadInTime", parsed.loadInTime || null);
-    setOrClear("eventStartDate", parsed.eventStartDate?.getTime() ?? null);
-    setOrClear("eventStartTime", parsed.eventStartTime || null);
-    setOrClear("eventEndDate", parsed.eventEndDate?.getTime() ?? null);
-    setOrClear("eventEndTime", parsed.eventEndTime || null);
-    setOrClear("loadOutDate", parsed.loadOutDate?.getTime() ?? null);
-    setOrClear("loadOutTime", parsed.loadOutTime || null);
-    setOrClear("projectStartDate", parsed.projectStartDate?.getTime() ?? null);
-    setOrClear("projectStartTime", parsed.projectStartTime || null);
-    setOrClear("projectEndDate", parsed.projectEndDate?.getTime() ?? null);
-    setOrClear("projectEndTime", parsed.projectEndTime || null);
-    setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
-    setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
-    // #943: absent = derived billing summary; a set value is the manual override
-    // (0 is a legitimate override — e.g. "0 weeks" — so use `!= null`, not `||`,
-    // unlike the retired defaultRentalPeriod/Quantity fields this replaces).
-    setOrClear("billingWeeksOverride", parsed.billingWeeksOverride ?? null);
-    setOrClear("billingDaysOverride", parsed.billingDaysOverride ?? null);
-    setOrClear("taxRate", parsed.taxRate ?? null);
-    setOrClear("crewNotes", parsed.crewNotes || null);
-    setOrClear("internalNotes", parsed.internalNotes || null);
-    setOrClear("clientNotes", parsed.clientNotes || null);
-    setOrClear("discountPercent", parsed.discountPercent ?? null);
+    // ONE builder (src/lib/project-edit-patch.ts). #943: 0 is a legitimate
+    // billing override and discount, so only blank (never 0) clears a field.
+    const { set, clear } = buildProjectUpdate(parsed, { before: parsedBefore, now: Date.now() });
+    if (parsedBefore && clear.length === 0 && Object.keys(set).length === 0) return { id };
 
     try {
       await updateM({
@@ -463,7 +428,10 @@ export function useProjectWrites(orgId: string | undefined) {
     // Recalculate totals if tax rate changed. Best-effort: the project patch already
     // committed, so a transient recalc failure must not reject an otherwise-successful
     // update. Totals are derived and self-heal on the next line-item write / recalc.
-    if (parsed.taxRate !== undefined) {
+    const taxTouched = parsedBefore
+      ? "taxRate" in set || clear.includes("taxRate")
+      : parsed.taxRate !== undefined;
+    if (taxTouched) {
       try {
         await recalcM({ projectId: id, orgId, now: Date.now() });
       } catch (e) {

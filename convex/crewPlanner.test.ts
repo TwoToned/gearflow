@@ -125,6 +125,19 @@ describe("crewPlanner.openCalls (Needs crew)", () => {
     expect(res.truncated).toBe(false);
   });
 
+  test("S4: more live open calls than the service cap — `truncated` is true and the list stops at the cap", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false, liveVersionId: "v2" });
+      for (let i = 0; i < 501; i++) {
+        await ctx.db.insert("projectServices", { id: `s${i}`, organizationId: ORG, projectId: "p1", versionId: "v2", type: "LABOUR", title: `S${i}`, date: D0 + DAY + i, crewCountRequired: 1 } as never);
+      }
+    });
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.truncated).toBe(true);
+    expect(res.calls).toHaveLength(500);
+  });
+
   test("each open call carries the phase a call on it staffs (Offer a call creates with it)", async () => {
     const t = makeT(); await seedBase(t); await seedServices(t);
     const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });

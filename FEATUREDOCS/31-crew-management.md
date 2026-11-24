@@ -526,7 +526,9 @@ legend are gone (every block prints its own word).
   up to three people with that role free on EVERY day Offer to suggested would
   book (preferred first). A row opens Offer a call with the first suggestion picked;
   row ⋯ = Offer to…, Offer to suggested, Open job. When `openCalls` stopped at
-  its cap (`truncated`), the list says `n+ open slots` and asks for a filter.
+  its cap (`truncated`), the list says `n+ open slots` and states that some calls
+  are not listed. It suggests no filter: Role / Job narrow the list on the
+  client, not the server's read.
 - **Offer a call** (sheet): Person (each with their day state), Day, Job service
   (every open service RUNNING that day, a multi-day run on each day it covers,
   `needs n`), Role, Start, End, the role's cost rate (only when the server sent

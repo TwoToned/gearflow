@@ -37,12 +37,17 @@ export interface NeedsCrewProps {
   truncated?: boolean;
 }
 
-/** `12+ open slots · the list stops at its cap; narrow it with a filter` — said once, above the list. */
+/**
+ * `12+ open slots · …` — said once, above the list, when the server stopped
+ * reading at its cap. It only states the cap: the Role / Job filters narrow
+ * the list on the client, not the server's read, so suggesting them would be
+ * advice that can't bring the missing calls back (review S4).
+ */
 export function TruncatedNote({ open }: { open: OpenCall[] }) {
   const n = open.reduce((s, o) => s + o.shortfall, 0);
   return (
     <p className="pb-2 text-caption text-warn" data-testid="needs-truncated">
-      {n}+ open slots · the list stops at its cap; narrow it with a Role or Job filter to see the rest.
+      {n}+ open slots · this week has more open calls than the planner reads at once, so some are not listed here.
     </p>
   );
 }

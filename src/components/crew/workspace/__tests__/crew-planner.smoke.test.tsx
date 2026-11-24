@@ -493,7 +493,10 @@ describe("CrewPlanner (smoke)", () => {
     queried.truncated = true;
     nav.search = "seg=needs";
     const { unmount } = render(<CrewPlanner />);
-    expect(screen.getByTestId("needs-truncated").textContent).toMatch(/^2\+ open slots/);
+    const note = screen.getByTestId("needs-truncated").textContent ?? "";
+    expect(note).toMatch(/^2\+ open slots/);
+    // S4: it states the cap; a client-side filter can't narrow the server read, so it never suggests one.
+    expect(note).not.toMatch(/filter|Role|Job/);
     unmount();
     mobile.value = true;
     render(<CrewPlanner />);

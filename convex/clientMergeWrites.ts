@@ -203,7 +203,7 @@ export const undoClientMergeNative = mutation({
     let restored = 0;
     const back = async <T extends "projects" | "projectVersions" | "invoices" | "clientMedia">(table: T, ids: string[], extra: (row: Doc<T>) => object = () => ({})) => {
       for (const row of await byCuid(ctx, table, ids, a.orgId)) {
-        if ((row as { clientId?: string }).clientId !== d.survivorId) { left.push({ table, id: (row as { id: string }).id }); continue; }
+        if ((row as { clientId?: string }).clientId !== d.survivorId) { left.push({ table, id: (row as unknown as { id: string }).id }); continue; }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await ctx.db.patch(row._id as any, { clientId: d.loserId, ...extra(row) } as any);
         restored++;

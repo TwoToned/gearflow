@@ -1,524 +1,244 @@
 "use client";
-// use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
+// use-client: reads the route param and drives tab / dialog state (R-8.1.1)
 
 import { use, useState } from "react";
-import Link from "next/link";
-import { PageMeta } from "@/components/layout/page-meta";
-import { useAuthedQuery } from "@/hooks/use-authed-query";
-import { useServerMutation } from "@/hooks/use-server-mutation";
-import {
-  Pencil,
-  Archive,
-  MapPin,
-  FileText,
-  ChevronRight,
-  MoreHorizontal,
-} from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
-import { AddressDisplay } from "@/components/ui/address-display";
 import { useRouter } from "next/navigation";
+import { useMutation } from "convex/react";
+import { createId } from "@paralleldrive/cuid2";
+import { Archive, FilePlus, GitMerge, Link2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "../../../../../convex/_generated/api";
-import { useClientWrites } from "@/hooks/use-native-client-writes";
-import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
-import { getPrimaryContact } from "@/lib/client-contact-helpers";
-import { projectStatusLabels, clientTypeLabels, formatLabel } from "@/lib/status-labels";
-import { formatCurrency } from "@/lib/formatters";
-import { useActiveOrganization } from "@/lib/auth-client";
-import { CanDo } from "@/components/auth/permission-gate";
-import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
-import { RequirePermission } from "@/components/auth/require-permission";
-import { NotesEditor } from "@/components/ui/notes-editor";
-import { useMediaWrites } from "@/hooks/use-media-writes";
-import { DetailPageSkeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { StatusIndicator } from "@/components/ui/status-indicator";
-import { Panel } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { FadeIn } from "@/components/ui/motion";
-import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
-import { cn, focusRing } from "@/lib/utils";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { CanDo } from "@/components/auth/permission-gate";
+import { RequirePermission } from "@/components/auth/require-permission";
+import { ClientMergeDialog } from "@/components/clients/client-merge-dialog";
+import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
+import { XeroContactCard } from "@/components/clients/xero-contact-card";
+import { EntityCommentsButton } from "@/components/collaboration/entity-comments-button";
 import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
-import { MobileCardList, type ColumnDef } from "@/components/ui/data-table";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Facts, HealthRows, Headline, Overline, RecordRows, RecordShell, type HealthItem, type RecordTab } from "@/components/people/record-shell";
+import { AddressDisplay } from "@/components/ui/address-display";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FadeIn } from "@/components/ui/motion";
+import { NotesEditor } from "@/components/ui/notes-editor";
+import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useMediaWrites } from "@/hooks/use-media-writes";
+import { useClientWrites } from "@/hooks/use-native-client-writes";
+import { useStableNow } from "@/hooks/use-stable-now";
+import { useActiveOrganization, useSession } from "@/lib/auth-client";
+import { getPrimaryContact } from "@/lib/client-contact-helpers";
+import { formatCurrency } from "@/lib/formatters";
+import { dayLabel } from "@/lib/list-views/people";
+import type { ActionMenuSpec, StatusValue } from "@/lib/primitives/types";
+import { clientTypeLabels, projectStatusLabels } from "@/lib/status-labels";
+import { getStatusIntent } from "@/lib/status-colors";
+import { useCanDo } from "@/lib/use-permissions";
+
+const DAY_MS = 86_400_000;
+const day = (ms: number) => dayLabel(Math.floor(ms / DAY_MS));
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
     <RequirePermission resource="client" action="read">
-      <ClientDetailContent params={params} />
+      <FadeIn>
+        <ClientRecord params={params} />
+      </FadeIn>
     </RequirePermission>
   );
 }
 
-function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
+type Account = NonNullable<ReturnType<typeof useAccount>>;
+function useAccount(orgId: string | undefined, id: string, now: number) {
+  return useAuthedQuery(api.clientRecord.clientAccount, orgId ? { orgId, clientId: id, now } : "skip");
+}
+
+/** Health rows (derived on read): invoices past due and quotes about to lapse, each with its one action. */
+function healthOf(account: Account | null | undefined, open: (tab: string) => void, now: number): HealthItem[] {
+  if (!account) return [];
+  const items: HealthItem[] = [];
+  for (const i of account.invoices.filter((x) => x.status === "ISSUED" && x.paymentStatus !== "PAID")) {
+    const late = i.dueDate != null && i.dueDate < now;
+    const due = i.dueDate == null ? "" : late ? ` · ${Math.max(1, Math.floor((now - i.dueDate) / DAY_MS))}d overdue` : ` · due ${day(i.dueDate)}`;
+    items.push({ key: i.id, tone: late ? "error" : "neutral", text: `${i.invoiceNumber ?? "Invoice"} ${formatCurrency(i.total - i.amountPaid)}${due}`, action: { label: "Invoices", onSelect: () => open("money") } });
+  }
+  for (const q of account.quotes.filter((x) => x.status === "SENT" && x.validUntil != null && x.validUntil - now < 14 * DAY_MS)) {
+    items.push({ key: q.id, tone: "warning", text: `${q.projectNumber} v${q.version} expires ${day(q.validUntil as number)}`, action: { label: "Quotes", onSelect: () => open("money") } });
+  }
+  return items;
+}
+
+const sumUnpaid = (a: Account | null | undefined) => (a ? a.invoices.filter((i) => i.status === "ISSUED" && i.paymentStatus !== "PAID").reduce((s, i) => s + i.total - i.amountPaid, 0) : 0);
+
+function ClientRecord({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const now = useStableNow();
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
-
-  // Browser-native reactive detail bundle (replaces the getClient server action).
-  // Client writes (notes/archive) + media add/remove write to Convex, so this
-  // subscription auto-updates — no manual refetch needed.
   const client = useAuthedQuery(api.clients.detail, orgId ? { orgId, id } : "skip");
-  const isLoading = client === undefined;
-
-  const clientWrites = useClientWrites();
+  const account = useAccount(orgId, id, now);
+  const merged = useAuthedQuery(api.clientMergeWrites.mergedInto, orgId ? { orgId, id } : "skip");
+  const writes = useClientWrites();
   const media = useMediaWrites("client");
-  const archiveMutation = useServerMutation({
-    mutationFn: () => clientWrites.archive(id),
-    onSuccess: () => {
-      toast.success("Client archived");
-      router.push("/clients");
-    },
-  });
+  const updateOne = useMutation(api.clientWrites.updateNative);
+  const { data: session } = useSession();
+  const canUpdate = useCanDo("client", "update");
+  const canMerge = useCanDo("invoice", "update");
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [xeroOpen, setXeroOpen] = useState(false);
 
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  if (client === undefined) return <DetailPageSkeleton />;
+  if (!client) return <p className="py-10 text-center text-ui-text text-muted">Client not found. It may have been archived, or you don&apos;t have access to it.</p>;
 
-  if (isLoading) {
-    return <DetailPageSkeleton />;
-  }
-
-  if (!client) {
-    return (
-      <div className="mx-auto max-w-3xl rounded-[var(--r-lg)] border border-line border-l-2 border-l-t-out bg-card p-6 text-center">
-        <p className="text-ui-text text-ink-2">Client not found.</p>
-        <p className="mt-1 text-caption text-muted">It may have been archived, or you don&apos;t have access to it.</p>
-        <Button variant="line" size="sm" className="mt-4" asChild>
-          <Link href="/clients">Back to clients</Link>
-        </Button>
-      </div>
-    );
-  }
-
-  // Primary contact (WS9 #948) — resolved via the shared helper (contacts child
-  // table first, legacy embedded fields during the migration window as fallback).
+  const active = (client.isActive ?? true) === true;
   const contacts = client.contacts ?? [];
-  const resolvedPrimary = getPrimaryContact(contacts);
-  const primaryContact = resolvedPrimary
-    ? { name: resolvedPrimary.name ?? null, email: resolvedPrimary.email ?? null, phone: resolvedPrimary.phone ?? null }
-    : { name: client.contactName ?? null, email: client.contactEmail ?? null, phone: client.contactPhone ?? null };
-  const additionalContactCount = Math.max(0, contacts.length - 1);
+  const primary = getPrimaryContact(contacts);
+  const status: StatusValue = active ? { label: "Active", intent: "success" } : { label: merged ? "Merged" : "Archived", intent: "neutral", outline: true };
+  const openJobs = client.projects.filter((p) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status ?? ""));
+  const reactivate = () =>
+    void updateOne({ id, orgId: orgId!, patch: { isActive: true }, actor: { userId: session?.user.id ?? "", userName: session?.user.name ?? "" }, auditId: createId(), now: Date.now() }).then(() => toast.success("Client reactivated"));
 
-  // Compute financial / activity summary from the projects the page already loads.
-  const totalProjects = client.projects.length;
-  const activeProjects = client.projects.filter(
-    (p) => !["CANCELLED", "COMPLETED", "INVOICED"].includes(p.status ?? "")
+  const menu: ActionMenuSpec = {
+    items: [
+      { key: "new-job", label: "New job", group: "organise", icon: FilePlus, onSelect: () => router.push("/projects/new") },
+      ...(canUpdate ? [{ key: "xero", label: "Sync / Change Xero mapping…", group: "organise" as const, icon: Link2, onSelect: () => setXeroOpen(true) }] : []),
+      ...(canUpdate && canMerge && active ? [{ key: "merge", label: "Merge into another client…", group: "organise" as const, icon: GitMerge, onSelect: () => setMergeOpen(true) }] : []),
+      ...(canUpdate && !active && !merged ? [{ key: "reactivate", label: "Reactivate", group: "organise" as const, icon: RotateCcw, onSelect: reactivate }] : []),
+      ...(canUpdate && active
+        ? [{
+            key: "archive", label: "Archive…", group: "danger" as const, icon: Archive, danger: true,
+            onSelect: () => void writes.archive(id).then(() => toast.success("Client archived")),
+            confirm: { title: `Archive ${client.name}?`, body: "The client leaves pickers and the active list. Its jobs, quotes, invoices and history stay exactly as they were, and you can reactivate it.", confirmLabel: "Archive" },
+          }]
+        : []),
+    ],
+  };
+
+  const open = (tab: string) => router.replace(`/clients/${id}?tab=${tab}`, { scroll: false });
+  const unpaid = sumUnpaid(account);
+  const health = healthOf(account, open, now);
+
+  const overview = (
+    <div className="flex flex-col gap-8">
+      <Headline sub={account ? `${openJobs.length} open job${openJobs.length === 1 ? "" : "s"}` : undefined}>
+        {account && unpaid > 0 ? `${formatCurrency(unpaid)} outstanding` : `${openJobs.length} open job${openJobs.length === 1 ? "" : "s"}`}
+      </Headline>
+      <HealthRows items={health} allClear={account ? "Nothing needs a look." : "Nothing to show."} />
+      <div className="grid gap-8 md:grid-cols-3">
+        <Facts title="Contact" facts={[
+          { label: "Name", value: primary?.name ?? client.contactName },
+          { label: "Email", value: (primary?.email ?? client.contactEmail) ? <a className="hover:underline" href={`mailto:${primary?.email ?? client.contactEmail}`}>{primary?.email ?? client.contactEmail}</a> : null },
+          { label: "Phone", value: primary?.phone ?? client.contactPhone },
+          { label: "More", value: contacts.length > 1 ? `${contacts.length - 1} more contact${contacts.length === 2 ? "" : "s"}` : null },
+        ]} />
+        <Facts title="Billing" facts={[
+          { label: "Billing", value: client.billingAddress ? <AddressDisplay address={client.billingAddress} latitude={client.billingLatitude} longitude={client.billingLongitude} label={`${client.name} — Billing`} compact /> : null },
+          { label: "Shipping", value: client.shippingAddress ? <AddressDisplay address={client.shippingAddress} latitude={client.shippingLatitude} longitude={client.shippingLongitude} label={`${client.name} — Shipping`} compact /> : null },
+        ]} />
+        <Facts title="Account" facts={[
+          { label: "Type", value: client.type ? clientTypeLabels[client.type] ?? client.type : null },
+          { label: "ABN", value: client.taxId },
+          { label: "Terms", value: client.paymentTerms },
+          { label: "Discount", value: client.defaultDiscount != null ? `${Number(client.defaultDiscount)}%` : null },
+          { label: "Tax", value: client.taxExempt ? `Exempt${client.taxExemptReason ? ` · ${client.taxExemptReason}` : ""}` : null },
+          { label: "Xero", value: client.xeroContactName ?? (client.xeroContactId ? "Linked" : null) },
+        ]} />
+      </div>
+      <section aria-label="Notes">
+        <Overline>Notes</Overline>
+        <NotesEditor initialNotes={client.notes || ""} onSave={(notes) => writes.updateNotes(id, notes)} placeholder="Add notes about this client..." />
+      </section>
+      {orgId && <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />}
+    </div>
   );
-  const totalValue = client.projects.reduce(
-    (sum: number, p: { total?: number | null }) => sum + (p.total != null ? Number(p.total) : 0),
-    0,
-  );
-  // Mobile card layout for the projects sub-table (rendered below `md`).
-  const projectColumns: ColumnDef<(typeof client.projects)[number]>[] = [
+
+  const tabs: RecordTab[] = [
+    { value: "overview", label: "Overview", panel: overview },
     {
-      id: "name",
-      header: "Name",
-      mobile: "title",
-      cell: (p) => (
-        <Link href={`/projects/${p.id}`} className={cn("rounded-sm text-ink hover:underline", focusRing)}>
-          {p.name}
-        </Link>
-      ),
+      value: "jobs", label: "Jobs", count: client.projects.length,
+      panel: <RecordRows noun="job" empty="No jobs yet. Jobs for this client appear here." rows={client.projects.map((p) => ({
+        id: p.id, title: p.name, href: `/projects/${p.id}`, meta: [p.projectNumber, `${p._count.lineItems} line${p._count.lineItems === 1 ? "" : "s"}`],
+        status: { label: projectStatusLabels[p.status ?? ""] ?? p.status ?? "", intent: getStatusIntent("project", p.status ?? "") },
+      }))} />,
+    },
+    ...(account ? [{
+      value: "money", label: "Quotes & invoices", count: account.invoices.length + account.quotes.length,
+      panel: <MoneyTab account={account} now={now} />,
+    }] : []),
+    {
+      value: "contacts", label: "Contacts", count: contacts.length,
+      panel: <CanDo resource="client" action="update" fallback={<ReadOnlyContactsList contacts={contacts} legacy={client} />}><ClientContactsManager clientId={id} contacts={contacts} /></CanDo>,
     },
     {
-      id: "number",
-      header: "Job #",
-      mobile: "subtitle",
-      cell: (p) => <span className="t-mono">{p.projectNumber}</span>,
-    },
-    {
-      id: "status",
-      header: "Status",
-      mobile: "badge",
-      cell: (p) => (
-        <StatusIndicator
-          category="project"
-          value={p.status}
-          label={projectStatusLabels[p.status ?? ""] || formatLabel(p.status ?? "")}
-          variant="pill"
+      value: "files", label: "Files", count: client.media?.length ?? 0,
+      panel: (
+        <MediaUploader
+          entityType="client" entityId={id} accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
+          existingMedia={(client.media || []).map((m: MediaItem) => m)}
+          onUploadComplete={async (f) => { await media.add({ parentId: id, fileId: f.id, type: "DOCUMENT" }); }}
+          onRemove={async (mediaId) => { await media.remove(mediaId); }}
         />
       ),
     },
-    {
-      id: "lineItems",
-      header: "Line items",
-      mobile: "meta",
-      cell: (p) => <span className="t-data">{p._count.lineItems}</span>,
-    },
-    {
-      id: "created",
-      header: "Created",
-      mobile: "meta",
-      cell: (p) => new Date((p.createdAt ?? p._creationTime) as number).toLocaleDateString(),
-    },
+    { value: "history", label: "History", panel: <ActivityTimeline entityType="client" entityId={id} limit={25} /> },
   ];
+
+  const banner = !active ? (
+    <span>{merged ? `Merged into ${merged.name}. Its jobs, invoices, contacts and files moved there.` : "Archived. Hidden from pickers and new jobs; its jobs, invoices and history stay as they were."}</span>
+  ) : undefined;
 
   return (
     <>
-      <PageMeta title={client?.name} />
-      <FadeIn>
-        <div className="space-y-6">
-          {/* ── Hero card (breadcrumb + identity + compact actions) ── */}
-          <div className="space-y-4 rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] sm:p-5">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-1 text-caption text-muted">
-              <Link href="/clients" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
-                Clients
-              </Link>
-              <ChevronRight className="h-3 w-3" />
-              <span className="truncate text-ink-2">{client.name}</span>
-            </nav>
-
-            {/* Identity + actions */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate font-display text-page-title font-extrabold text-ink">
-                    {client.name}
-                  </h1>
-                  <StatusIndicator
-                    category="clientType"
-                    value={client.type ?? "COMPANY"}
-                    label={(client.type && clientTypeLabels[client.type]) || client.type || "Company"}
-                  />
-                  {!client.isActive && <Badge status="overbooked">Archived</Badge>}
-                </div>
-                {/* Meta line: primary contact · email · phone (+N more) */}
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
-                  {primaryContact?.name ? (
-                    <span className="text-ink-2">{primaryContact.name}</span>
-                  ) : (
-                    <span>No primary contact</span>
-                  )}
-                  {primaryContact?.email && (
-                    <>
-                      <span aria-hidden>&middot;</span>
-                      <a
-                        href={`mailto:${primaryContact.email}`}
-                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
-                      >
-                        {primaryContact.email}
-                      </a>
-                    </>
-                  )}
-                  {primaryContact?.phone && (
-                    <>
-                      <span aria-hidden>&middot;</span>
-                      <a
-                        href={`tel:${primaryContact.phone}`}
-                        className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}
-                      >
-                        {primaryContact.phone}
-                      </a>
-                    </>
-                  )}
-                  {additionalContactCount > 0 && (
-                    <span className="rounded-full bg-paper-2 px-2 py-0.5 text-[11px] font-medium text-muted">
-                      +{additionalContactCount} more
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Action buttons (compact) */}
-              <div className="flex flex-wrap items-center gap-2">
-                {orgId && (
-                  <EntityCommentsButton orgId={orgId} entityType="client" entityId={id} />
-                )}
-                <CanDo resource="client" action="update">
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/clients/${id}/edit`}>
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Link>
-                  </Button>
-                  {client.isActive && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="line" size="sm" aria-label="More actions">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => setArchiveOpen(true)}
-                          className="text-t-out data-[highlighted]:bg-out-soft data-[highlighted]:text-t-out"
-                        >
-                          <Archive className="mr-2 h-4 w-4" />
-                          Archive
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </CanDo>
-              </div>
-            </div>
-
-            {/* At-a-glance stats strip */}
-            <div className="grid grid-cols-2 gap-px sm:grid-cols-3 overflow-hidden rounded-[var(--r)] border border-line bg-line">
-              <HeroStat figure={String(totalProjects)} label="Total jobs" />
-              <HeroStat figure={String(activeProjects.length)} label="Active jobs" />
-              <HeroStat figure={formatCurrency(totalValue)} label="Total value" />
-            </div>
-          </div>
-
-          {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <DetailLayout>
-            {/* Main content */}
-            <DetailMain>
-              <Tabs defaultValue="projects">
-                <TabsList>
-                  <TabsTrigger value="projects">
-                    Jobs ({client.projects.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="contacts">
-                    Contacts {contacts.length > 0 ? `(${contacts.length})` : ""}
-                  </TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
-                  <TabsTrigger value="files">
-                    Files ({client.media?.length || 0})
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="contacts" className="mt-4">
-                  <Panel padding="responsive">
-                    <h3 className="t-heading mb-4 text-ink">Contacts</h3>
-                    <CanDo resource="client" action="update" fallback={<ReadOnlyContactsList contacts={contacts} legacy={client} />}>
-                      <ClientContactsManager clientId={id} contacts={contacts} />
-                    </CanDo>
-                  </Panel>
-                </TabsContent>
-
-                <TabsContent value="projects" className="mt-4">
-                  <Panel padding="responsive">
-                    <h3 className="t-heading mb-4 text-ink">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4" />
-                        All jobs
-                      </div>
-                    </h3>
-                    {client.projects.length === 0 ? (
-                      <EmptyState
-                        title="No jobs yet"
-                        description="Jobs for this client will appear here."
-                      />
-                    ) : (
-                      <div className="hidden rounded-[var(--r)] border border-line md:block">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Job #</TableHead>
-                              <TableHead>Name</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Line items</TableHead>
-                              <TableHead>Created</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {client.projects.map((project) => (
-                              <TableRow key={project.id}>
-                                <TableCell>
-                                  <Link
-                                    href={`/projects/${project.id}`}
-                                    className={cn("rounded-sm t-mono text-ink hover:underline", focusRing)}
-                                  >
-                                    {project.projectNumber}
-                                  </Link>
-                                </TableCell>
-                                <TableCell>{project.name}</TableCell>
-                                <TableCell>
-                                  <StatusIndicator
-                                    category="project"
-                                    value={project.status}
-                                    label={
-                                      projectStatusLabels[project.status ?? ""] ||
-                                      formatLabel(project.status ?? "")
-                                    }
-                                    variant="pill"
-                                  />
-                                </TableCell>
-                                <TableCell className="text-right t-data">
-                                  {project._count.lineItems}
-                                </TableCell>
-                                <TableCell className="text-muted">
-                                  {new Date((project.createdAt ?? project._creationTime) as number).toLocaleDateString()}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
-                    {client.projects.length > 0 && (
-                      <MobileCardList
-                        className="md:hidden"
-                        data={client.projects}
-                        columns={projectColumns}
-                        getRowId={(p) => p.id}
-                      />
-                    )}
-                  </Panel>
-                </TabsContent>
-
-                <TabsContent value="notes" className="mt-4">
-                  <NotesEditor
-                    initialNotes={client.notes || ""}
-                    onSave={(notes) => clientWrites.updateNotes(id, notes)}
-                    placeholder="Add notes about this client..."
-                  />
-                </TabsContent>
-
-                <TabsContent value="files" className="mt-4">
-                  <Panel padding="responsive">
-                    <h3 className="t-heading mb-4 text-ink">Files</h3>
-                    <MediaUploader
-                      entityType="client"
-                      entityId={id}
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,image/*"
-                      existingMedia={(client.media || []).map((m: MediaItem) => m)}
-                      onUploadComplete={async (fileUpload) => {
-                        await media.add({ parentId: id, fileId: fileUpload.id, type: "DOCUMENT" });
-                      }}
-                      onRemove={async (mediaId) => {
-                        await media.remove(mediaId);
-                      }}
-                    />
-                  </Panel>
-                </TabsContent>
-              </Tabs>
-            </DetailMain>
-
-            {/* ── Sidebar ──────────────────────────────────────────── */}
-            <DetailSidebar>
-                {/* Contacts (WS9 #948) live in their own tab so the sidebar
-                    isn't a second copy. */}
-
-                {/* Address & billing — merged: addresses + payment terms */}
-                <SidebarSection title="Address & billing" divider={false}>
-                  <div className="space-y-3 text-table-cell">
-                    {client.billingAddress && (
-                      <div>
-                        <div className="mb-1 flex items-center gap-1 text-caption text-muted">
-                          <MapPin className="h-3 w-3" />
-                          Billing
-                        </div>
-                        <AddressDisplay
-                          address={client.billingAddress}
-                          latitude={client.billingLatitude}
-                          longitude={client.billingLongitude}
-                          label={`${client.name} — Billing`}
-                          compact
-                        />
-                      </div>
-                    )}
-                    {client.shippingAddress && (
-                      <div>
-                        <div className="mb-1 flex items-center gap-1 text-caption text-muted">
-                          <MapPin className="h-3 w-3" />
-                          Shipping
-                        </div>
-                        <AddressDisplay
-                          address={client.shippingAddress}
-                          latitude={client.shippingLatitude}
-                          longitude={client.shippingLongitude}
-                          label={`${client.name} — Shipping`}
-                          compact
-                        />
-                      </div>
-                    )}
-                    {/* Payment terms \u2014 only render rows that carry a value (calm-by-default) */}
-                    {(client.taxId || client.paymentTerms || client.defaultDiscount != null) && (
-                      <div
-                        className={cn(
-                          "space-y-1.5",
-                          (client.billingAddress || client.shippingAddress) && "border-t border-line pt-3",
-                        )}
-                      >
-                        {client.taxId && (
-                          <div className="flex justify-between gap-2">
-                            <span className="text-muted">ABN</span>
-                            <span className="font-medium text-ink">{client.taxId}</span>
-                          </div>
-                        )}
-                        {client.paymentTerms && (
-                          <div className="flex justify-between gap-2">
-                            <span className="text-muted">Payment terms</span>
-                            <span className="font-medium text-ink">{client.paymentTerms}</span>
-                          </div>
-                        )}
-                        {client.defaultDiscount != null && (
-                          <div className="flex justify-between gap-2">
-                            <span className="text-muted">Default discount</span>
-                            <span className="font-medium text-ink t-data">
-                              {Number(client.defaultDiscount)}%
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {!client.billingAddress &&
-                      !client.shippingAddress &&
-                      !client.taxId &&
-                      !client.paymentTerms &&
-                      client.defaultDiscount == null && (
-                        <p className="text-muted">No address or billing details yet</p>
-                      )}
-                  </div>
-                </SidebarSection>
-            </DetailSidebar>
-          </DetailLayout>
-        </div>
-      </FadeIn>
-      <DeleteDialog
-        open={archiveOpen}
-        onOpenChange={setArchiveOpen}
-        title="Archive this client?"
-        description="The client is hidden from new jobs but past jobs, quotes, and invoices remain. You can restore the client later from the archived view."
-        confirmLabel="Archive client"
-        onConfirm={() => {
-          archiveMutation.mutate();
-          setArchiveOpen(false);
-        }}
-        pending={archiveMutation.isPending}
+      <RecordShell
+        crumb={{ label: "Clients", href: "/clients" }}
+        title={client.name}
+        status={status}
+        meta={[client.type ? clientTypeLabels[client.type] : null, primary?.name ?? client.contactName, `${client.projects.length} job${client.projects.length === 1 ? "" : "s"}`].filter(Boolean)}
+        banner={banner}
+        onEdit={canUpdate ? () => router.push(`/clients/${id}/edit`) : undefined}
+        menu={menu}
+        tabs={tabs}
+        rail={<Facts title="At a glance" facts={[{ label: "Contact", value: primary?.name ?? client.contactName }, { label: "Terms", value: client.paymentTerms }, { label: "Open jobs", value: String(openJobs.length) }]} />}
       />
+      <ClientMergeDialog open={mergeOpen} onOpenChange={setMergeOpen} orgId={orgId} loser={{ id, name: client.name }} />
+      <Dialog open={xeroOpen} onOpenChange={setXeroOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Xero contact</DialogTitle></DialogHeader>
+          <XeroContactCard clientId={id} xeroContactId={client.xeroContactId} xeroContactName={client.xeroContactName} />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-/** One cell in the hero's at-a-glance stats strip. */
-function HeroStat({
-  figure,
-  label,
-}: {
-  figure: React.ReactNode;
-  label: string;
-}) {
+/** The account view: Finance owns the documents; each row links into it. */
+function MoneyTab({ account, now }: { account: Account; now: number }) {
   return (
-    <div className="bg-card px-3 py-2.5">
-      <p
-        className="font-display font-extrabold leading-none tracking-tight tabular-nums text-[18px] text-ink"
-      >
-        {figure}
-      </p>
-      <p className="mt-1 text-caption text-muted">{label}</p>
+    <div className="flex flex-col gap-8">
+      <section aria-label="Invoices">
+        <Overline>Invoices</Overline>
+        <RecordRows noun="invoice" empty="No invoices yet." rows={account.invoices.map((i) => {
+          const late = i.status === "ISSUED" && i.paymentStatus !== "PAID" && i.dueDate != null && i.dueDate < now;
+          const label = i.status === "VOID" ? "Void" : i.paymentStatus === "PAID" ? "Paid" : late ? "Overdue" : "Issued";
+          return {
+            id: i.id, title: `${i.invoiceNumber ?? "Invoice"} · ${formatCurrency(i.total)}`, href: i.projectId ? `/projects/${i.projectId}?tab=finance` : undefined,
+            meta: [i.projectNumber, i.dueDate ? `due ${day(i.dueDate)}` : null],
+            status: { label, intent: late ? "error" : label === "Paid" ? "success" : "neutral" } as StatusValue,
+          };
+        })} />
+      </section>
+      <section aria-label="Quotes">
+        <Overline>Quotes</Overline>
+        <RecordRows noun="quote" empty="No quotes yet." rows={account.quotes.map((q) => ({
+          id: q.id, title: `${q.projectNumber} · v${q.version}${q.label ? ` · ${q.label}` : ""}`, href: `/projects/${q.projectId}?tab=finance`,
+          meta: [q.validUntil ? `valid to ${day(q.validUntil)}` : null],
+          status: { label: q.status.charAt(0) + q.status.slice(1).toLowerCase(), intent: q.status === "ACCEPTED" ? "success" : q.status === "EXPIRED" ? "error" : "neutral" } as StatusValue,
+        }))} />
+      </section>
+      {account.truncated && <p className="text-caption text-muted">Showing the most recent records.</p>}
     </div>
   );
 }

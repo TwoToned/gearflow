@@ -41,6 +41,14 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn, focusRing } from "@/lib/utils";
+import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { Facts, HealthRows, Headline, RecordShell, type HealthItem, type RecordTab } from "@/components/people/record-shell";
+import { HireDateDialog, type HireMode } from "@/components/suppliers/orders/hire-dialogs";
+import { useStableNow } from "@/hooks/use-stable-now";
+import { useCanDo } from "@/lib/use-permissions";
+import { dayLabel } from "@/lib/list-views/people";
+import type { ActionMenuSpec } from "@/lib/primitives/types";
+import { isOnHire, orderHireState, returnLateDays } from "../../../../../../../convex/lib/orderHireState";
 
 const ORDER_STATUS_OPTIONS = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
 type OrderStatus = (typeof ORDER_STATUS_OPTIONS)[number];
@@ -118,29 +126,7 @@ function SupplierOrderDetailContent({ params }: { params: Promise<{ id: string; 
 
   return (
     <>
-      <PageMeta title={order.orderNumber} />
-      <FadeIn>
-        <div className="space-y-6">
-          <OrderHeroCard
-            order={order}
-            supplierId={supplierId}
-            onEdit={() => setEditOpen(true)}
-            onDelete={() => setDeleteOpen(true)}
-          />
-          <DetailLayout>
-            <DetailMain>
-              <div className="space-y-6">
-                <LineItemsPanel items={order.items} />
-                <LinkedAssetsPanel assets={order.assets} />
-              </div>
-            </DetailMain>
-            <DetailSidebar>
-              <OrderInfoSection order={order} />
-              <InvoiceSection order={order} orderId={orderId} />
-            </DetailSidebar>
-          </DetailLayout>
-        </div>
-      </FadeIn>
+      <OrderRecord order={order} supplierId={supplierId} orderId={orderId} orgId={orgId} onEdit={() => setEditOpen(true)} onDelete={() => setDeleteOpen(true)} />
 
       {/* Header edit dialog (WS7 #946 — the "Not built" edit flow FEATUREDOCS/22
           previously documented as out of scope for #789). */}
@@ -162,90 +148,6 @@ function SupplierOrderDetailContent({ params }: { params: Promise<{ id: string; 
         pending={deleteMutation.isPending}
       />
     </>
-  );
-}
-
-function OrderHeroCard({
-  order, supplierId, onEdit, onDelete,
-}: { order: OrderDetail; supplierId: string; onEdit: () => void; onDelete: () => void }) {
-  const typeLabel = supplierOrderTypeLabels[order.type] ?? order.type;
-  const statusLabel = supplierOrderStatusLabels[order.status] ?? formatLabel(order.status);
-
-  return (
-    <div className="space-y-4 rounded-[var(--r-lg)] border-2 border-line bg-card p-4 shadow-[var(--sh-card)] sm:p-5">
-      <nav className="flex items-center gap-1 text-caption text-muted">
-        <Link href="/suppliers" className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
-          Suppliers
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <Link href={`/suppliers/${supplierId}`} className={cn("rounded-sm transition-colors hover:text-ink", focusRing)}>
-          {order.supplier?.name ?? "Supplier"}
-        </Link>
-        <ChevronRight className="h-3 w-3" />
-        <span className="truncate text-ink-2 t-mono">{order.orderNumber}</span>
-      </nav>
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate font-display text-page-title font-extrabold text-ink t-mono">
-              {order.orderNumber}
-            </h1>
-            <Badge status="neutral">{typeLabel}</Badge>
-            <StatusIndicator category="supplierOrder" value={order.status} label={statusLabel} variant="pill" />
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted">
-            {order.supplier ? (
-              <Link href={`/suppliers/${supplierId}`} className={cn("rounded-sm text-ink-2 hover:underline", focusRing)}>
-                {order.supplier.name}
-              </Link>
-            ) : (
-              <span>Unknown supplier</span>
-            )}
-            {order.project && (
-              <>
-                <span aria-hidden>&middot;</span>
-                <Link href={`/projects/${order.project.id}`} className={cn("rounded-sm hover:text-ink-2 hover:underline", focusRing)}>
-                  {order.project.projectNumber}
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-
-        <CanDo resource="supplier" action="update">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="line" size="sm" aria-label="More actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit order
-              </DropdownMenuItem>
-              <CanDo resource="supplier" action="delete">
-                <DropdownMenuItem
-                  onClick={onDelete}
-                  className="text-red-text data-[highlighted]:bg-primary data-[highlighted]:text-white"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete order
-                </DropdownMenuItem>
-              </CanDo>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </CanDo>
-      </div>
-
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line sm:grid-cols-4">
-        <HeroStat figure={String(order.items.length)} label="Line items" />
-        <HeroStat figure={String(order.assets.length)} label="Linked assets" />
-        <HeroStat figure={formatCurrency(order.total != null ? Number(order.total) : null)} label="Total" />
-        <HeroStat figure={formatDate(order.expectedDate ? new Date(order.expectedDate) : null)} label="Expected" muted={!order.expectedDate} />
-      </div>
-    </div>
   );
 }
 
@@ -551,12 +453,86 @@ function InvoiceFile({
   );
 }
 
-function HeroStat({ figure, label, muted }: { figure: string; label: string; muted?: boolean }) {
-  return (
-    <div className="flex flex-col gap-0.5 bg-card p-3">
-      <span className={cn("text-card-title font-bold", muted ? "text-muted" : "text-ink")}>{figure}</span>
-      <span className="t-micro text-muted">{label}</span>
+// ─── The record (UX Phase 13, spec §9m): Overview · Lines · Files · History ──────────────
+
+function OrderRecord({
+  order, supplierId, orderId, orgId, onEdit, onDelete,
+}: { order: OrderDetail; supplierId: string; orderId: string; orgId: string | undefined; onEdit: () => void; onDelete: () => void }) {
+  const canUpdate = useCanDo("supplier", "update");
+  const canDelete = useCanDo("supplier", "delete");
+  const now = useStableNow();
+  const [hire, setHire] = useState<HireMode | null>(null);
+  const hireOrder = { type: order.type, status: order.status, returnDueDate: order.returnDueDate, returnedDate: order.returnedDate };
+  const state = orderHireState(hireOrder);
+  const lateDays = returnLateDays(hireOrder, Math.floor(now / 86_400_000));
+  const units = order.items.reduce((n, i) => n + (i.quantity ?? 0), 0);
+  const day = (ms: number | null) => (ms == null ? null : dayLabel(Math.floor(ms / 86_400_000)));
+  const onHire = isOnHire(hireOrder);
+
+  const health: HealthItem[] = [
+    ...(lateDays > 0 && canUpdate ? [{ key: "late", tone: "error" as const, text: `Return ${lateDays}d overdue · was due ${day(order.returnDueDate)}`, action: { label: "Extend hire", onSelect: () => setHire("extend") } }] : []),
+    ...(!order.invoice && order.status === "RECEIVED" ? [{ key: "invoice", tone: "warning" as const, text: "Supplier invoice not attached" }] : []),
+  ];
+  const menu: ActionMenuSpec = {
+    items: [
+      ...(canUpdate && onHire ? [{ key: "extend", label: "Extend hire…", group: "edit" as const, onSelect: () => setHire("extend") }, { key: "return", label: "Mark returned…", group: "edit" as const, onSelect: () => setHire("return") }] : []),
+      ...(canDelete ? [{ key: "delete", label: "Delete…", group: "danger" as const, icon: Trash2, danger: true, onSelect: onDelete, confirm: { title: `Delete ${order.orderNumber}?`, body: "This permanently removes the order and its line items. Orders with linked assets or a linked sub-hire can't be deleted.", confirmLabel: "Delete order" } }] : []),
+    ],
+  };
+  const sub = order.type === "SUBHIRE" ? (order.returnedDate ? `Returned ${day(order.returnedDate)}` : order.returnDueDate ? `Return due ${day(order.returnDueDate)}` : undefined) : undefined;
+  const intent = state.intent === "live" ? "primary" : state.intent === "warn" ? "warning" : state.intent === "ok" ? "success" : state.intent === "info" ? "info" : "neutral";
+
+  const overview = (
+    <div className="flex flex-col gap-8">
+      <Headline sub={[sub, order.total != null ? formatCurrency(Number(order.total)) : null].filter(Boolean).join(" · ") || undefined}>
+        {state.word}{units > 0 ? ` · ${units} unit${units === 1 ? "" : "s"}` : ""}
+      </Headline>
+      <HealthRows items={health} allClear="Nothing needs a look." />
+      <div className="grid gap-8 md:grid-cols-3">
+        <Facts title="Dates" facts={[
+          { label: "Ordered", value: day(order.orderDate) },
+          { label: order.type === "SUBHIRE" ? "Picked up" : "Received", value: day(order.receivedDate) },
+          { label: "Expected", value: order.receivedDate ? null : day(order.expectedDate) },
+          { label: "Return due", value: order.type === "SUBHIRE" ? day(order.returnDueDate) : null },
+          { label: "Returned", value: order.type === "SUBHIRE" ? day(order.returnedDate) : null },
+        ]} />
+        <Facts title="Order" facts={[
+          { label: "Type", value: supplierOrderTypeLabels[order.type] ?? order.type },
+          { label: "Supplier", value: order.supplier ? <Link href={`/suppliers/${supplierId}`} className="hover:underline">{order.supplier.name}</Link> : null },
+          { label: "Job", value: order.project ? <Link href={`/projects/${order.project.id}`} className="hover:underline">{order.project.projectNumber} {order.project.name}</Link> : null },
+          { label: "Status", value: supplierOrderStatusLabels[order.status] ?? formatLabel(order.status) },
+        ]} />
+        <Facts title="Money" facts={[
+          { label: "Subtotal", value: order.subtotal != null ? formatCurrency(Number(order.subtotal)) : null },
+          { label: "Tax", value: order.taxAmount != null ? formatCurrency(Number(order.taxAmount)) : null },
+          { label: "Total", value: order.total != null ? formatCurrency(Number(order.total)) : null },
+        ]} />
+      </div>
+      {order.notes ? <p className="max-w-prose whitespace-pre-wrap text-table-cell text-ink-2">{order.notes}</p> : null}
     </div>
+  );
+
+  const tabs: RecordTab[] = [
+    { value: "overview", label: "Overview", panel: overview },
+    { value: "lines", label: "Lines", count: order.items.length, panel: <div className="space-y-6"><LineItemsPanel items={order.items} /><LinkedAssetsPanel assets={order.assets} /></div> },
+    { value: "files", label: "Files", count: order.invoice ? 1 : 0, panel: <InvoiceSection order={order} orderId={orderId} /> },
+    { value: "history", label: "History", panel: <ActivityTimeline entityType="supplierOrder" entityId={orderId} limit={25} /> },
+  ];
+
+  return (
+    <>
+      <RecordShell
+        crumb={{ label: order.supplier?.name ?? "Supplier", href: `/suppliers/${supplierId}` }}
+        title={order.orderNumber}
+        status={{ label: state.word, intent }}
+        meta={[supplierOrderTypeLabels[order.type] ?? order.type, order.project?.projectNumber, order.supplier?.name].filter(Boolean)}
+        onEdit={canUpdate ? onEdit : undefined}
+        menu={menu}
+        tabs={tabs}
+        rail={<Facts title="At a glance" facts={[{ label: "Supplier", value: order.supplier?.name }, { label: "Job", value: order.project?.projectNumber }, { label: "Lines", value: String(order.items.length) }]} />}
+      />
+      <HireDateDialog mode={hire} onOpenChange={(o) => !o && setHire(null)} orgId={orgId} order={{ id: orderId, orderNumber: order.orderNumber, returnDueDate: order.returnDueDate ?? null }} />
+    </>
   );
 }
 

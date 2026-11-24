@@ -239,6 +239,7 @@ import type * as parity from "../parity.js";
 import type * as payments from "../payments.js";
 import type * as paymentsWrites from "../paymentsWrites.js";
 import type * as clientMergeWrites from "../clientMergeWrites.js";
+import type * as clientRecord from "../clientRecord.js";
 import type * as peopleLists from "../peopleLists.js";
 import type * as pendingOrgJoinRequests from "../pendingOrgJoinRequests.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
@@ -572,6 +573,7 @@ declare const fullApi: ApiFromModules<{
   payments: typeof payments;
   paymentsWrites: typeof paymentsWrites;
   clientMergeWrites: typeof clientMergeWrites;
+  clientRecord: typeof clientRecord;
   peopleLists: typeof peopleLists;
   pendingOrgJoinRequests: typeof pendingOrgJoinRequests;
   pendingSSOApprovals: typeof pendingSSOApprovals;

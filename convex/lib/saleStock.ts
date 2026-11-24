@@ -81,7 +81,7 @@ export async function adjustModelSaleStock(
     userName: args.actor.userName,
     summary: saleStockSummary(model.name, args, from, to),
     // `serverSavedAt` (server clock) lets the exact Undo enforce its window without trusting the caller's `now`.
-    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId, reason: args.reason, serverSavedAt: Date.now() } },
+    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId, reason: args.reason, ...(args.projectId ? {} : { serverSavedAt: Date.now() }) } },
     projectId: args.projectId,
     createdAt: args.now,
   });

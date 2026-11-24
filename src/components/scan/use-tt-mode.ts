@@ -11,6 +11,7 @@ import { announceListWrite } from "@/lib/list-write-toast";
 import type { LastScan } from "@/lib/scan-page";
 import type { ScanFeedbackKind } from "@/lib/scan-feedback";
 import { showError } from "@/lib/show-error";
+import { announceLostSave } from "./lost-save-toast";
 import {
   canRevertPassAllVisual,
   emptyTtDraft,
@@ -88,6 +89,18 @@ function recordArgs(item: TtItem, profile: TtProfile | null, tester: Tester, tes
   } as Parameters<ReturnType<typeof useTestTagWrites>["recordTest"]>[0];
 }
 
+/** Everything one save needs, captured when Save was pressed (so a Retry sends the same). */
+interface TtAttempt {
+  item: TtItem;
+  snapshot: TtDraft;
+  tag: string;
+  savedTag: string | null;
+  testDate: number;
+  testerName: string;
+  reason: string;
+  args: ReturnType<typeof recordArgs>;
+}
+
 export function useTtMode(d: TtModeDeps) {
   const item = testableItem(d.card);
   const profile = (d.card?.profile ?? null) as TtProfile | null;
@@ -161,24 +174,39 @@ export function useTtMode(d: TtModeDeps) {
     d.addLastScan({ id: res.id, mode: "tt", tag, name: it.description, verdict: passed ? "clean" : "failed", at: Date.now(), assetId: it.assetId, undo, reason });
   };
 
+  /** One save of a captured draft: the first try, or a Retry after the page moved on. */
+  const commit = async (at: TtAttempt, o: { keepOpen: boolean; print?: boolean }) => {
+    const res = await writes.recordTest(at.args);
+    logSaved(at.item, res, at.tag, announce(at.item, res, at.snapshot, at.tag), at.reason);
+    if (o.print) setLabel({ testTagId: at.item.testTagId, result: res.result, testDate: at.testDate, nextDueDate: res.nextDueDate, testerName: at.testerName });
+    // Clear only what is still this item's; a scan that landed mid-save keeps its item (SF3).
+    setDraft((prev) => (prev.forTtId === at.item.id ? emptyTtDraft(null, null, null) : prev));
+    if (!o.keepOpen && tagRef.current === at.savedTag) d.finishScan();
+  };
+
+  /** Still on the item: the plain error. Moved on mid-save: name the item, offer Retry (same answers). */
+  const failed = (e: unknown, at: TtAttempt) => {
+    d.play("error");
+    if (tagRef.current === at.savedTag) return showError(e, { fallbackTitle: "Couldn't save the test" });
+    announceLostSave(at.item.testTagId, "test", e, () =>
+      commit(at, { keepOpen: true }).catch((again) => showError(again, { fallbackTitle: `Test on ${at.item.testTagId} still wasn't saved` })),
+    );
+  };
+
   /** Resolves `true` once saved (the caret's follow-ups wait for it), `false` otherwise. */
   const save = async ({ keepOpen, print }: { keepOpen: boolean; print?: boolean }): Promise<boolean> => {
     if (!item || !tester || blocker || saving) return false;
-    const snapshot = current;
     const testDate = Date.now();
-    const tag = d.tag ?? item.testTagId;
+    const at: TtAttempt = {
+      item, snapshot: current, tag: d.tag ?? item.testTagId, savedTag: d.tag, testDate, testerName: tester.name,
+      reason: ttFailureReason(current, profile), args: recordArgs(item, profile, tester, testDate, current),
+    };
     setSaving(true);
     try {
-      const res = await writes.recordTest(recordArgs(item, profile, tester, testDate, snapshot));
-      logSaved(item, res, tag, announce(item, res, snapshot, tag), ttFailureReason(snapshot, profile));
-      if (print) setLabel({ testTagId: item.testTagId, result: res.result, testDate, nextDueDate: res.nextDueDate, testerName: tester.name });
-      // Clear only what is still this item's; a scan that landed mid-save keeps its item (SF3).
-      setDraft((prev) => (prev.forTtId === item.id ? emptyTtDraft(null, null, null) : prev));
-      if (!keepOpen && tagRef.current === d.tag) d.finishScan();
+      await commit(at, { keepOpen, print });
       return true;
     } catch (e) {
-      d.play("error");
-      showError(e, { fallbackTitle: "Couldn't save the test" });
+      failed(e, at);
       return false;
     } finally {
       setSaving(false);

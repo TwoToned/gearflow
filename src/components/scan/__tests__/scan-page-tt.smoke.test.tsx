@@ -85,7 +85,7 @@ vi.mock("@/components/scanner/camera-scanner-dialog", () => ({ CameraScannerDial
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
     success: (title: string, opts?: { action?: { label: string; onClick: () => void } }) => h.toasts.push({ title, action: opts?.action }),
-    error: (title: string) => h.toasts.push({ title }),
+    error: (title: string, opts?: { action?: { label: string; onClick: () => void } }) => h.toasts.push({ title, action: opts?.action }),
     info: vi.fn(),
     warning: vi.fn(),
   }),
@@ -213,6 +213,26 @@ describe("ScanPage — Test & tag mode", () => {
     expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt&tag=TT-0413", { scroll: false });
     expect(within(screen.getByRole("region", { name: /Visual inspection/ })).getByRole("checkbox", { name: "Cord" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("Finish the visual inspection (1 left)")).toBeTruthy();
+  });
+
+  it("a test save that fails after a mid-save scan names the item and offers Retry with the same answers", async () => {
+    h.testCards["TT-0413"] = card("TT-0413", { tt: tt({ id: "tt2", testTagId: "TT-0413", description: "Drill" }) });
+    setUrl("/scan?mode=tt&tag=TT-0412");
+    let reject!: (e: unknown) => void;
+    h.record.mockReturnValueOnce(new Promise((_r, j) => (reject = j)));
+    render(<ScanPage />);
+    await answerPassing();
+    await userEvent.click(saveButton());
+    const sent = h.record.mock.calls[0][0];
+    await userEvent.type(screen.getByLabelText("Scan input"), "TT-0413{Enter}");
+    await act(async () => reject(new Error("Network down")));
+    const lost = h.toasts.find((t) => t.title === "Test on TT-0412 wasn't saved");
+    expect(lost?.action?.label).toBe("Retry");
+    h.record.mockResolvedValueOnce({ id: "recR", nextDueDate: Date.UTC(2027, 1, 22), result: "PASS" });
+    await act(async () => lost!.action!.onClick());
+    expect(h.record).toHaveBeenCalledTimes(2);
+    expect(h.record.mock.calls[1][0]).toEqual(sent);
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=tt&tag=TT-0413", { scroll: false });
   });
 
   it("one scroll, no steps: blank readings block (D51), N/A unblocks, next due is derived (D52)", async () => {

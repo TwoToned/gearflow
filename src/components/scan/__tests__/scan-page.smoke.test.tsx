@@ -97,7 +97,7 @@ vi.mock("@/components/ui/photo-grid-input", () => ({
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), {
     success: (title: string, opts?: { action?: { label: string; onClick: () => void } }) => h.toasts.push({ title, action: opts?.action }),
-    error: (title: string) => h.toasts.push({ title }),
+    error: (title: string, opts?: { action?: { label: string; onClick: () => void } }) => h.toasts.push({ title, action: opts?.action }),
     info: (title: string) => h.info(title),
     warning: vi.fn(),
   }),
@@ -367,6 +367,27 @@ describe("ScanPage — Check mode", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Discard" }));
     await act(async () => toast!.action!.onClick());
     expect(h.toasts.map((t) => t.title)).toContain("Nothing to undo");
+  });
+
+  it("a save that fails after a mid-save scan names whose answers were lost, and Retry sends them again once", async () => {
+    setUrl("/scan?mode=check&tag=AURA-01");
+    const pending = deferred<{ success: true; recordIds: string[]; auditId: string; condition: string }>();
+    h.save.mockReturnValueOnce(pending.promise);
+    render(<ScanPage />);
+    await userEvent.click(screen.getAllByRole("button", { name: "Pass all" })[0]);
+    await userEvent.click(saveButton());
+    const sent = h.save.mock.calls[0][0];
+    await userEvent.type(screen.getByLabelText("Scan input"), "AURA-02{Enter}");
+    await act(async () => pending.reject(new Error("Network down")));
+    const lost = h.toasts.find((t) => t.title === "Check on AURA-01 wasn't saved");
+    expect(lost?.action?.label).toBe("Retry");
+    h.save.mockResolvedValueOnce({ success: true, recordIds: ["r1"], auditId: "aud7", condition: "GOOD" });
+    await act(async () => lost!.action!.onClick());
+    await act(async () => lost!.action!.onClick()); // once only
+    expect(h.save).toHaveBeenCalledTimes(2);
+    expect(h.save.mock.calls[1][0]).toEqual(sent); // exactly the captured answers
+    expect(h.toasts.map((t) => t.title)).toContain("Saved check on AURA-01");
+    expect(replace).toHaveBeenLastCalledWith("/scan?mode=check&tag=AURA-02", { scroll: false }); // B stays
   });
 
   it("a failed save keeps the card and its answers", async () => {

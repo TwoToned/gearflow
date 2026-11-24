@@ -89,7 +89,8 @@ is a server redirect into it (old links, the item page's "Test now", the palette
   - Visual inspection: an always-on tick per enabled check (shift-click ticks a range),
     `Fail` per check, `Pass all` with Undo, notes, `n/m` + a dot-word in the head. Pass
     all's Undo (`revertPassAllVisual`) puts back only the ticks it made that still read
-    ticked; later fails, readings and notes survive.
+    ticked; later fails, readings and notes survive. With nothing left to revert it says
+    `Nothing to undo`; with every check already ticked Pass all writes nothing.
   - Electrical: one row per enabled profile test with its threshold, the reading's own
     dot-word verdict, and `N/A`; pass / fail / N/A words for polarity and the RCD
     push-button; an optional insulation test voltage.
@@ -121,7 +122,12 @@ is a server redirect into it (old links, the item page's "Test now", the palette
   `Ctrl/⌘+Enter` saves (also from inside a reading or note), `Esc` goes back (clears the
   scan, asking first over answers), `Ctrl/⌘+Shift+P` passes all visual checks. Only while
   a test card is open and no dialog or menu is open; inside a text field only
-  `Ctrl/⌘+Enter` is taken.
+  `Ctrl/⌘+Enter` is taken. Known limit: in Firefox, `Ctrl+Shift+P` is the browser's own
+  "New private window" and never reaches the page, so there it does nothing (use the
+  `Pass all` button); left as is by decision.
+- **A save that fails after a mid-save scan** names the item (`Test on TT-0412 wasn't
+  saved`) and offers Retry with exactly the captured answers, once; the item now on screen
+  is left alone (same as Check mode, FEATUREDOCS/37).
 - Last scans (`n pass · n fail`) replaces the session log; the page ⋯ holds `Scan sounds`.
 
 ## Audio / Scan Feedback

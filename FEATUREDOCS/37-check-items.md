@@ -177,7 +177,11 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   digits, space and `- _ . : /`), typed, scanned or from an old `/check/<tag>` link, is
   never silently dropped: `Can't read tag X`, the exception sound and a Last scans row. While
   a save is in flight its answers no longer count as unsaved, so a scan loads the next item
-  at once, and the landing save clears only what is still the saved asset's.
+  at once, and the landing save clears only what is still the saved asset's. If that save
+  then FAILS, the error names the asset whose answers weren't saved (`Check on AURA-01
+  wasn't saved`) and offers Retry, which sends exactly the answers captured when Save was
+  pressed, once (`src/components/scan/lost-save-toast.ts`); the item now on screen is left
+  alone.
 - **The card** (`scanLookup.checkCard`): tag + status + flags (`T&T overdue 38d`, `Damaged`),
   the model linking to the asset, Where / On job / Last check / Last T&T, and for an asset
   out on a job `A check here is recorded on the asset, not the job.` Kit, bulk, T&T-only,
@@ -185,7 +189,9 @@ still server actions in `src/server/check-records.ts`. The five `completeCheckAn
   scans; none blocks the dock.
 - **The form** renders `CheckItemFields` inline: Pass all in the section head (its Undo,
   `revertPassAll`, un-answers only the items Pass all answered that still read Pass; later
-  answers, notes and photos survive), the
+  answers, notes and photos survive; with nothing left to revert — the draft cleared, or
+  every item answered again — it says `Nothing to undo`, and a Pass all with nothing to
+  answer writes nothing and offers no Undo), the
   FAIL reason + photo block, Condition `Good Worn Damaged` (preselected from the stored
   value, forced and locked to Damaged by any fail), Notes. `Save and scan next` (caret:
   `Save and keep this asset open`) is disabled with the reason in plain words.

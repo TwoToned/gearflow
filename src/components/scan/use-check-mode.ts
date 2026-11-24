@@ -24,6 +24,7 @@ import { announceListWrite } from "@/lib/list-write-toast";
 import type { LastScan, ScanCardData } from "@/lib/scan-page";
 import { showError } from "@/lib/show-error";
 import type { ScanFeedbackKind } from "@/lib/scan-feedback";
+import { announceLostSave } from "./lost-save-toast";
 
 const BLANK: CheckState = { result: null, value: "", notes: "", photos: [] };
 
@@ -172,6 +173,16 @@ function useCheckDraft(assetId: string | null) {
 
 type Draft = ReturnType<typeof useCheckDraft>;
 
+/** Everything one save needs, captured when Save was pressed (so a Retry sends the same). */
+interface SaveAttempt {
+  asset: ScanAsset;
+  snapshot: CheckDraft;
+  savedTag: string | null;
+  failed: boolean;
+  reason: string;
+  args: Parameters<ReturnType<typeof useCheckRecordWrites>["saveAdHocCheck"]>[0];
+}
+
 /**
  * The awaited save. It makes ONE undo closure (`announceListWrite`), handed unchanged
  * to the toast and to the Last scans row; it reverses the save on the server (deleting
@@ -217,29 +228,48 @@ function useCheckSave(s: CheckModeDeps & {
     });
   };
 
+  /** One save of a captured draft: the first try, or a Retry after the page moved on. */
+  const commit = async (at: SaveAttempt, keepOpen: boolean) => {
+    const res = await writes.saveAdHocCheck(at.args);
+    s.play("success");
+    const undo = announce(at.asset, res.auditId, at.snapshot);
+    s.addLastScan({
+      id: res.auditId, mode: "check", tag: at.asset.assetTag, name: at.asset.modelName, verdict: at.failed ? "failed" : "clean",
+      at: Date.now(), assetId: at.asset.id, undo, reason: at.reason,
+    });
+    s.draft.resetIfFor(at.asset.id);
+    // A scan that landed mid-save already loaded the next item: leave it be.
+    if (!keepOpen && tagRef.current === at.savedTag) s.finishScan();
+  };
+
+  /**
+   * A failed save. Still on that asset: the plain error (the answers are on screen). Moved
+   * on mid-save: say THAT asset's answers weren't saved, and offer Retry with the same
+   * captured answers (they are still in memory), so nothing is lost silently.
+   */
+  const failed = (e: unknown, at: SaveAttempt) => {
+    s.play("error");
+    if (tagRef.current === at.savedTag) return showError(e, { fallbackTitle: "Couldn't save the check" });
+    announceLostSave(at.asset.assetTag, "check", e, () =>
+      commit(at, true).catch((again) => showError(again, { fallbackTitle: `Check on ${at.asset.assetTag} still wasn't saved` })),
+    );
+  };
+
   /** Resolves `true` once saved (the caret's follow-ups wait for it), `false` otherwise. */
   const save = async ({ keepOpen }: { keepOpen: boolean }): Promise<boolean> => {
     const { asset, items } = s;
     if (!asset || !items || s.blocker || saving) return false;
     const snapshot = s.draft.current;
-    const savedTag = s.tag;
-    const checks = checksPayload(items, snapshot.states);
+    const at: SaveAttempt = {
+      asset, snapshot, savedTag: s.tag, failed: s.failCount > 0, reason: checkFailureReason(items, snapshot.states),
+      args: { assetId: asset.id, checks: checksPayload(items, snapshot.states), condition: s.condition, notes: snapshot.notes.trim() || undefined },
+    };
     setSaving(true);
     try {
-      const res = await writes.saveAdHocCheck({ assetId: asset.id, checks, condition: s.condition, notes: snapshot.notes.trim() || undefined });
-      s.play("success");
-      const undo = announce(asset, res.auditId, snapshot);
-      s.addLastScan({
-        id: res.auditId, mode: "check", tag: asset.assetTag, name: asset.modelName, verdict: s.failCount > 0 ? "failed" : "clean",
-        at: Date.now(), assetId: asset.id, undo, reason: checkFailureReason(items, snapshot.states),
-      });
-      s.draft.resetIfFor(asset.id);
-      // A scan that landed mid-save already loaded the next item: leave it be.
-      if (!keepOpen && tagRef.current === savedTag) s.finishScan();
+      await commit(at, keepOpen);
       return true;
     } catch (e) {
-      s.play("error");
-      showError(e, { fallbackTitle: "Couldn't save the check" });
+      failed(e, at);
       return false;
     } finally {
       setSaving(false);

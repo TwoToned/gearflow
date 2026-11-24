@@ -292,7 +292,7 @@ export const archiveNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
     const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
-    if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be archived" });
+    if (kit.status !== "AVAILABLE" && kit.status !== "INCOMPLETE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be archived" });
     await releaseKitMembers(ctx, id, orgId, now);
     await ctx.db.patch(kit._id, { isActive: false, status: "RETIRED", updatedAt: now });
     await writeActivityLog(ctx, {
@@ -314,7 +314,7 @@ export const deleteNative = mutation({
     const actor = await resolveActor(ctx, suppliedActor);
     const kit = await getKitByCuid(ctx, id);
     if (!kit || kit.organizationId !== orgId) throw new ConvexError({ code: "NOT_FOUND", message: "Kit not found" });
-    if (kit.status !== "AVAILABLE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });
+    if (kit.status !== "AVAILABLE" && kit.status !== "INCOMPLETE") throw new ConvexError({ code: "KIT_NOT_AVAILABLE", message: "Only AVAILABLE kits can be deleted" });
 
     // Referencing-line-item guard (org-filtered — by_kitId is GLOBAL). Blocks hard
     // delete if any project line item references the kit (preserve historical data).

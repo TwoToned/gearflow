@@ -422,7 +422,8 @@ export const remove = mutation({
 export async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: string) {
   const kit = await getKitByCuid(ctx, kitId);
   if (!kit || kit.organizationId !== organizationId) throw new ConvexError("Kit not found");
-  if (kit.status !== "AVAILABLE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
+  // A stored INCOMPLETE is ignored (D75: incompleteness is derived), so a kit can still be completed.
+  if (kit.status !== "AVAILABLE" && kit.status !== "INCOMPLETE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
   return kit;
 }
 

@@ -855,7 +855,9 @@ export const checkoutKitsBatch = mutation({
 /** Core of checkinKit for ONE validated kit. `defaultLocationId` (org default) is
  *  passed so a batch resolves it once. Returns [kitId, ...nestedKitIds]. */
 async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLine, defaultLocationId: string | null): Promise<string[]> {
-    const newKitStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "INCOMPLETE" : "AVAILABLE";
+    // D75: a MISSING return no longer writes the stored INCOMPLETE. Its serialised members go LOST
+    // just below, which is what `convex/lib/kitState.ts` derives Incomplete from.
+    const newKitStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : "AVAILABLE";
     const assetStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
     const ret = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: a.returnCondition, updatedAt: a.now };
 

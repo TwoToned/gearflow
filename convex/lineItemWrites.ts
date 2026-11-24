@@ -19,6 +19,7 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
+import { loadKitBookingGate } from "./lib/kitState";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -2196,12 +2197,13 @@ export const addKitNative = mutation({
     const kit = await getKitByCuid(ctx, kitId);
     if (kit && kit.organizationId === organizationId) {
       // (a) Block truly unavailable kits (allow checked-out — the date check handles those).
-      if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
+      const kitGate = await loadKitBookingGate(ctx, organizationId, kit);
+      if (kitGate.blocksBooking) {
         throw new ConvexError({
           code: "KIT_UNAVAILABLE",
           title: "Kit cannot be added",
-          message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
-          hint: kit.status === "IN_MAINTENANCE"
+          message: `Kit ${kit.assetTag} is ${kitGate.key.replace("_", " ").toLowerCase()}.`,
+          hint: kitGate.key === "IN_MAINTENANCE"
             ? "Wait for maintenance to finish, or pick a different kit."
             : "Complete the kit's missing items before booking it.",
         });

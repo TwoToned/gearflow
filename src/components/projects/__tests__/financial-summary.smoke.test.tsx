@@ -10,11 +10,13 @@ import React from "react";
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { FinancialSummary } from "@/components/projects/financial-summary";
+import { mapProject } from "@/lib/project-detail-reconstruct";
 
+// recalcProjectTotals always writes the cost buckets as numbers: 0 = "no cost", never null.
 const BASE_PROPS = {
   equipmentRevenue: 1000,
-  serviceCostTotal: null,
-  labourCostTotal: null,
+  serviceCostTotal: 0,
+  labourCostTotal: 0,
   subtotal: 1000,
   discountPercent: null,
   discountAmount: null,
@@ -43,6 +45,22 @@ describe("FinancialSummary smoke", () => {
     expect(screen.queryByText("No costs recorded")).toBeNull();
     expect(screen.getByText("Equipment")).toBeTruthy(); // revenue stays
     expect(screen.getByText("$1,100.00")).toBeTruthy(); // the total stays
+  });
+
+  it("the RECONSTRUCTED shape (mapProject turns an absent field into null) prints no margin, never $0.00", () => {
+    // A project doc as a below-the-pay-line read returns it: the crew-cost totals and margin left out.
+    const doc = { id: "p1", organizationId: "o1", projectNumber: "1", name: "Gig", status: "CONFIRMED", total: 1100, subtotal: 1000, taxAmount: 100, taxRate: 10, equipmentRevenue: 1000, subHireCostTotal: 0 };
+    const p = mapProject(doc as unknown as Parameters<typeof mapProject>[0]);
+    expect(p.margin).toBeNull(); // the trap: absent became null
+    const { container } = render(
+      <FinancialSummary
+        equipmentRevenue={p.equipmentRevenue} serviceCostTotal={p.serviceCostTotal} labourCostTotal={p.labourCostTotal}
+        subHireCostTotal={p.subHireCostTotal} subtotal={p.subtotal} discountPercent={p.discountPercent} discountAmount={p.discountAmount}
+        taxRate={p.taxRate} taxAmount={p.taxAmount} total={p.total} margin={p.margin} depositPaid={p.depositPaid} invoicedTotal={p.invoicedTotal}
+      />,
+    );
+    expect(container.textContent).not.toMatch(/Margin/);
+    expect(container.textContent).not.toMatch(/Costs|No costs recorded/);
   });
 
   it("with crew pay visible the margin and costs render", () => {

@@ -144,7 +144,10 @@ export function FinancialSummary({
   // the crew-pay line (UX Phase 15 ruling): then neither the margin nor the
   // costs render — a $0 there would be a false number, and a partial one would
   // let the crew cost be back-solved.
-  const costsShown = margin !== undefined && serviceCostTotal !== undefined && labourCostTotal !== undefined;
+  // Absent and null are the SAME here: a reconstructed project row maps an
+  // absent field to null (`mapProject`), so testing only `!== undefined` would
+  // print a redacted margin as "$0.00".
+  const costsShown = margin != null && serviceCostTotal != null && labourCostTotal != null;
 
   const allGroupsPriced =
     totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;

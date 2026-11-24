@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatDate } from "@/lib/formatters";
+import { shortDaysText } from "@/lib/crew-short-days";
 import { cn, focusRing } from "@/lib/utils";
 import {
   useNativeOverbookingBoard,
@@ -317,7 +318,7 @@ function SaleStockSection({ rows }: { rows: OverbookingSaleStockRow[] }) {
 function MissingCrewSection({ rows }: { rows: OverbookingMissingCrewRow[] }) {
   return (
     <div className={TILE}>
-      <SectionHeader icon={HardHat} title="Services missing crew" subtitle="Assigned crew (excluding declined) below the required count" count={rows.length} pillClass={HARD_PILL} />
+      <SectionHeader icon={HardHat} title="Services missing crew" subtitle="Assigned crew (excluding declined) below the required count on any day of the run" count={rows.length} pillClass={HARD_PILL} />
       {rows.length === 0 ? (
         <p className="t-micro text-muted">Every service in range is fully staffed.</p>
       ) : (
@@ -326,7 +327,10 @@ function MissingCrewSection({ rows }: { rows: OverbookingMissingCrewRow[] }) {
             <Link key={row.serviceId} href={`/projects/${row.projectId}`} className={cn("flex items-center justify-between rounded-[var(--r)] border border-line p-3 hover:bg-elev", focusRing)}>
               <div className="min-w-0">
                 <p className="truncate text-[14px] font-medium text-ink">{row.title} — {row.projectNumber} {row.projectName}</p>
-                <p className="t-micro text-muted">{row.date ? formatDate(new Date(row.date)) : "No date"}</p>
+                <p className="t-micro text-muted">
+                  {row.date ? formatDate(new Date(row.date)) : "No date"}
+                  {shortDaysText(row) ? ` · ${shortDaysText(row)}` : ""}
+                </p>
               </div>
               <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-badge font-medium", HARD_PILL)}>{row.assignedCount}/{row.crewCountRequired}</span>
             </Link>

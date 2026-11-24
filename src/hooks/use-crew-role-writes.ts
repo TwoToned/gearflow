@@ -22,6 +22,7 @@ export function useCrewRoleWrites() {
   const createM = useMutation(api.crewRolesWrites.createNative);
   const updateM = useMutation(api.crewRolesWrites.updateNative);
   const archiveM = useMutation(api.crewRolesWrites.archiveNative);
+  const moveM = useMutation(api.crewRolesWrites.moveNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -52,12 +53,23 @@ export function useCrewRoleWrites() {
         auditId: createId(),
       });
     },
-    update: async (id: string, data: CrewRoleFormValues): Promise<{ id: string }> => {
+    /**
+     * `ratesShown: false` (the editor hid the rates) sends no rate fields at
+     * all: the caller never saw them, so it must not be read as clearing them.
+     * The server keeps them regardless for a caller who can't see pay.
+     */
+    update: async (id: string, data: CrewRoleFormValues, opts: { ratesShown: boolean } = { ratesShown: true }): Promise<{ id: string }> => {
       const parsed = crewRoleSchema.parse(data);
-      return await updateM({ id, orgId: requireOrg(), ...fields(parsed), now: Date.now(), actor: actor(), auditId: createId() });
+      const f = fields(parsed);
+      const sent = opts.ratesShown ? f : { ...f, defaultRate: undefined, chargeRate: undefined };
+      return await updateM({ id, orgId: requireOrg(), ...sent, now: Date.now(), actor: actor(), auditId: createId() });
     },
     archive: async (id: string, isActive: boolean): Promise<{ id: string; isActive: boolean; usage: { crewMembers: number; crewAssignments: number; projectServices: number } }> => {
       return await archiveM({ id, orgId: requireOrg(), isActive, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** One atomic Move up / Move down (UX Phase 15). Its Undo is the opposite move. */
+    move: async (id: string, direction: "up" | "down"): Promise<{ id: string; moved: boolean }> => {
+      return await moveM({ id, orgId: requireOrg(), direction, now: Date.now(), actor: actor(), auditId: createId() });
     },
   };
 }

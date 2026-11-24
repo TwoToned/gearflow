@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QUERY_REASON_MAX } from "../../../convex/lib/timeEntryQuery";
 
 export const crewMemberSchema = z.object({
   firstName: z.string().min(1, "First name is required").max(200),
@@ -137,10 +138,70 @@ export const crewTimeEntrySchema = z.object({
 
 export type CrewTimeEntryFormValues = z.input<typeof crewTimeEntrySchema>;
 
-/** Most offers one "Send N offers" click may fan out (each is an email). */
-const MAX_OFFER_BATCH = 100;
+/**
+ * Query… on timesheet entries (UX Phase 15, D47): what the crew member should
+ * check. Required; the bound is shared with `crewTimeEntriesWrites.queryNative`
+ * (convex/lib/timeEntryQuery.ts) so client and server can't disagree.
+ */
+export const timeEntryQuerySchema = z.object({
+  reason: z.string().trim().min(1, "Say what needs checking").max(QUERY_REASON_MAX),
+});
 
-/** `sendCrewOffers` input: the assignments ticked on the Logistics tab. */
-export const sendCrewOffersSchema = z.object({
-  assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_OFFER_BATCH),
+export type TimeEntryQueryFormValues = z.input<typeof timeEntryQuerySchema>;
+
+/** Most entries one bulk Export may name (the list's bulk cap for a human caller). */
+const MAX_EXPORT_IDS = 500;
+
+/**
+ * `exportTimesheetCSV` filters (the `/api/crew/timesheet` query and the list's
+ * bulk Export). Every field optional; `ids` narrows the export to the ticked
+ * rows (UX Phase 15). A trust boundary, so parsed before use (R-8.2.3).
+ */
+export const timesheetExportFiltersSchema = z.object({
+  dateFrom: z.string().max(40).optional(),
+  dateTo: z.string().max(40).optional(),
+  crewMemberId: z.string().max(100).optional(),
+  projectId: z.string().max(100).optional(),
+  status: z.string().max(20).optional(),
+  ids: z.array(z.string().min(1).max(100)).min(1).max(MAX_EXPORT_IDS).optional(),
+});
+
+export type TimesheetExportFilters = z.input<typeof timesheetExportFiltersSchema>;
+
+const clockTime = z.union([z.literal(""), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM")]);
+
+/**
+ * The planner's Offer a call sheet (UX Phase 15, §9h.3): who, which day, which
+ * open service, the role and times, and whether the offer goes out now. The
+ * call itself is then written through `crewAssignmentSchema` (the same write
+ * Logistics uses), so these are the sheet's own bounds only.
+ */
+export const plannerOfferSchema = z.object({
+  memberId: z.string().min(1, "Choose a person"),
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  serviceId: z.string().min(1, "Pick a job service — there is none open this day"),
+  crewRoleId: z.string().max(100),
+  startTime: clockTime,
+  endTime: clockTime,
+  sendNow: z.boolean(),
+  /** A multi-day service: the picked day only, or the whole run. One-day services ignore it. */
+  span: z.enum(["day", "run"]),
+});
+
+export type PlannerOfferValues = z.input<typeof plannerOfferSchema>;
+
+/**
+ * Most crew emails ONE server-action call may fan out. A bulk write may change
+ * up to 500 calls (`assertBulkSizeOk`), so a caller with more ids sends them in
+ * batches of this size (the planner's `mailInBatches`).
+ */
+export const MAX_CREW_MAIL_BATCH = 100;
+
+/**
+ * The input of a crew-mail batch: `sendCrewOffers` (the assignments ticked on
+ * the Logistics tab or the planner) and `sendCancellationEmails`
+ * (`cancelManyNative`'s `toTell`). One shape, one cap — each id is one email.
+ */
+export const crewMailBatchSchema = z.object({
+  assignmentIds: z.array(z.string().min(1)).min(1).max(MAX_CREW_MAIL_BATCH),
 });

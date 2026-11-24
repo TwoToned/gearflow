@@ -2,22 +2,23 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { jobCostRedactor } from "./lib/crewPayVisibility";
 import { getKitByCuid } from "./lib/kits";
 import { liveRows } from "./lib/versionScope";
 
 
 /**
  * BROWSER-facing composite for the WAREHOUSE detail page (Phase 2 native reads).
- * Returns everything getProjectForWarehouse needs as RAW docs so the client
- * reconstructs `{ ...project, lineItems, client, location }` from ONE live
- * subscription (replacing the version-vector doorbell → getProjectForWarehouse
- * refetch). Gated on requireOrgPermission(project, read).
+ * Returns the warehouse page's data as RAW docs so the client reconstructs
+ * `{ ...project, lineItems, client, location }` from ONE live subscription
+ * (replacing the version-vector doorbell → the old getProjectForWarehouse
+ * refetch; that action is deleted). Gated on requireOrgPermission(project, read).
  *
  * Referenced-only: assets/bulks point-read by the ids the lines AND units
  * reference; kits/models/suppliers by line refs; categories by referenced models;
  * model/kit check-item counts computed for referenced models/kits only. Returns
  * `null` when the project is missing / not in the org / a template (the page shows
- * its not-found state — getProjectForWarehouse throws on those).
+ * its not-found state).
  */
 async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: string) {
   const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).unique();
@@ -88,7 +89,9 @@ async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: stri
     : null;
 
   return {
-    project,
+    // Job-level cost and margin follow the job-cost rule (owner ruling
+    // 2026-11-24): absent for a caller without invoice:read and for a noFinancials key.
+    project: (await jobCostRedactor(ctx, orgId))(project),
     lineItems,
     units,
     assets: inOrg(assetDocs),

@@ -16,11 +16,8 @@ import {
   Plus,
   Briefcase,
   CalendarOff,
-  CalendarSync,
   CalendarDays,
   DollarSign,
-  Copy,
-  RefreshCw,
   Clock,
   MoreHorizontal,
   Send,
@@ -40,13 +37,7 @@ import { sendCrewOffer } from "@/server/crew-communication";
 import { useConvex, useConvexAuth } from "convex/react";
 import { useCrewAvailabilityWrites } from "@/hooks/use-crew-availability-writes";
 import { api as crewAvailApi } from "../../../../../convex/_generated/api";
-import {
-  getIcalSettings,
-  enableIcalFeed,
-  disableIcalFeed,
-  regenerateIcalToken,
-  setIcalIncludeTentative,
-} from "@/server/crew-calendar";
+import { CrewIcalFeedCard } from "@/components/crew/crew-ical-feed-card";
 import { useCrewTimeWrites } from "@/hooks/use-crew-time-writes";
 import {
   crewMemberStatusLabels,
@@ -75,7 +66,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -185,7 +175,6 @@ export default function CrewMemberDetailPage({
   const [addTimeOpen, setAddTimeOpen] = useState(false);
   const [editingTimeEntry, setEditingTimeEntry] = useState<string | null>(null);
   const [deleteCrewOpen, setDeleteCrewOpen] = useState(false);
-  const [regenerateTokenOpen, setRegenerateTokenOpen] = useState(false);
   const [removeAvailId, setRemoveAvailId] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -234,52 +223,11 @@ export default function CrewMemberDetailPage({
     enabled: !!orgId && caAuthed,
   });
 
-  const { data: icalSettings, refetch: refetchIcal } = useServerQuery({
-    queryKey: ["crew-ical", orgId, id],
-    queryFn: () => getIcalSettings(id),
-  });
-
   const timeWrites = useCrewTimeWrites();
   const { data: timeEntries, refetch: refetchTimeEntries } = useServerQuery({
     queryKey: ["crew-time-entries", orgId, id, caAuthed],
     queryFn: () => caConvex.query(crewAvailApi.crewTimeEntries.forMember, { crewMemberId: id, orgId: orgId as string }),
     enabled: !!orgId && caAuthed,
-  });
-
-  const enableIcalMutation = useServerMutation({
-    mutationFn: () => enableIcalFeed(id),
-    onSuccess: () => {
-      toast.success("iCal feed enabled");
-      refetchIcal();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const disableIcalMutation = useServerMutation({
-    mutationFn: () => disableIcalFeed(id),
-    onSuccess: () => {
-      toast.success("iCal feed disabled");
-      refetchIcal();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const regenerateTokenMutation = useServerMutation({
-    mutationFn: () => regenerateIcalToken(id),
-    onSuccess: () => {
-      toast.success("iCal token regenerated — old URL is now invalid");
-      refetchIcal();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const includeTentativeMutation = useServerMutation({
-    mutationFn: (include: boolean) => setIcalIncludeTentative(id, include),
-    onSuccess: (_data, include) => {
-      toast.success(include ? "Pending assignments will now show on the feed" : "Pending assignments hidden from the feed");
-      refetchIcal();
-    },
-    onError: (e) => toast.error(e.message),
   });
 
   const removeAvailMutation = useServerMutation({
@@ -1607,103 +1555,8 @@ export default function CrewMemberDetailPage({
 
                 {/* Calendar Tab */}
                 <TabsContent value="calendar" className="mt-4">
-                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-                    <h3 className="text-card-title font-bold text-ink flex items-center gap-2 mb-4">
-                      <CalendarSync className="h-4 w-4" />
-                      iCal feed
-                    </h3>
-                    <div className="space-y-4">
-                      <p className="text-ui-text text-muted">
-                        Enable an iCal feed URL that can be subscribed to from Google
-                        Calendar, Apple Calendar, Outlook, or any calendar app. The
-                        feed includes all confirmed assignments.
-                      </p>
-
-                      {icalSettings?.icalEnabled && icalSettings?.icalToken ? (
-                        <div className="space-y-3">
-                          <div className="space-y-1.5">
-                            <Label className="text-caption text-muted">
-                              Feed URL
-                            </Label>
-                            <div className="flex gap-2">
-                              <Input
-                                readOnly
-                                value={`${typeof window !== "undefined" ? window.location.origin : ""}/api/crew/calendar/${icalSettings.icalToken}`}
-                                className="font-mono text-caption"
-                              />
-                              <Button
-                                variant="line"
-                                size="icon"
-                                aria-label="Copy feed URL"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(
-                                    `${window.location.origin}/api/crew/calendar/${icalSettings.icalToken}`
-                                  );
-                                  toast.success("Feed URL copied to clipboard");
-                                }}
-                              >
-                                <Copy className="size-5" />
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="flex items-start justify-between gap-4 rounded-[var(--r)] border border-line p-3">
-                            <div className="space-y-1">
-                              <Label htmlFor="icalIncludeTentative" className="text-ui-text">
-                                Include pending assignments
-                              </Label>
-                              <p className="text-caption text-muted">
-                                Off: feed shows confirmed/accepted assignments only. On: assignments still
-                                awaiting an offer or response also appear, marked tentative.
-                              </p>
-                            </div>
-                            <CanDo resource="crew" action="update">
-                              <Switch
-                                id="icalIncludeTentative"
-                                checked={icalSettings?.icalIncludeTentative ?? false}
-                                onCheckedChange={(checked) => includeTentativeMutation.mutate(checked)}
-                                disabled={includeTentativeMutation.isPending}
-                              />
-                            </CanDo>
-                          </div>
-
-                          <CanDo resource="crew" action="update">
-                            <div className="flex gap-2">
-                              <Button
-                                variant="line"
-                                size="sm"
-                                onClick={() => setRegenerateTokenOpen(true)}
-                                loading={regenerateTokenMutation.isPending}
-                              >
-                                <RefreshCw className="size-5" />
-                                Regenerate URL
-                              </Button>
-                              <Button
-                                variant="line"
-                                size="sm"
-                                className="text-warn hover:bg-warn-soft"
-                                onClick={() => disableIcalMutation.mutate()}
-                                loading={disableIcalMutation.isPending}
-                              >
-                                Disable feed
-                              </Button>
-                            </div>
-                          </CanDo>
-                        </div>
-                      ) : (
-                        <CanDo resource="crew" action="update">
-                          <Button
-                            variant="line"
-                            onClick={() => enableIcalMutation.mutate()}
-                            loading={enableIcalMutation.isPending}
-                          >
-                            <CalendarSync className="size-5" />
-                            Enable iCal feed
-                          </Button>
-                        </CanDo>
-                      )}
-                    </div>
-                  </div>
+                  {/* The feed URL's token comes only from memberDetail's redacted row (self or crew:update). */}
+                  <CrewIcalFeedCard memberId={id} feedToken={(member as { icalToken?: string | null }).icalToken ?? undefined} onTokenChanged={() => void refetchMember()} />
                 </TabsContent>
               </Tabs>
             </DetailMain>
@@ -1906,18 +1759,6 @@ export default function CrewMemberDetailPage({
           setDeleteCrewOpen(false);
         }}
         pending={deleteMutation.isPending}
-      />
-      <DeleteDialog
-        open={regenerateTokenOpen}
-        onOpenChange={setRegenerateTokenOpen}
-        title="Regenerate self-service token?"
-        description="The current self-service URL stops working immediately. You'll need to send the new URL to this crew member."
-        confirmLabel="Regenerate token"
-        onConfirm={() => {
-          regenerateTokenMutation.mutate();
-          setRegenerateTokenOpen(false);
-        }}
-        pending={regenerateTokenMutation.isPending}
       />
       <DeleteDialog
         open={!!removeAvailId}

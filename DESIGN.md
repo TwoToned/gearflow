@@ -318,6 +318,10 @@ All live in `src/components/ui/`; types in `src/lib/primitives/types.ts`.
   "none yet" (with the next action) or "nothing matches" (`Clear filters`). Bulk replaces the
   sticky primary on phone (`BulkBar`, above the bottom nav). Phone shows cards with a 40px ⋯ and
   `Show 25 more`. The URL is the state.
+- **Page-level view words (`headWords`, Crew `Planner  Timesheets`):** when one page has two
+  views that are separate ROUTES, the words sit in the head before ⋯ and the primary (their own
+  44px row on a phone), each a link, the current one ink with the ink underline the segment
+  strip uses. They are not list params: `Table · Board` stays in the toolbar.
 
 > _Corrected 2026-07-28 (#985 design review): this section previously read
 > "`t-overline` (10px/700/uppercase)" and "`t-mono` (JetBrains Mono)" — both stale.

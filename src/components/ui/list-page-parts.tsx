@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, ChevronDown, Search, X } from "lucide-react";
 
 import { ActionMenu } from "@/components/ui/action-menu";
@@ -51,25 +52,75 @@ export interface ListPrimary {
 
 // ─── Head ────────────────────────────────────────────────────────────────
 
+/** One page-level view word in the head (`Planner  Timesheets`, §9h.2): a route, not a list param. */
+interface HeadWord {
+  key: string;
+  label: string;
+  href: string;
+}
+
+/** The head's view words and which one this page is. */
+export interface HeadWords {
+  words: HeadWord[];
+  value: string;
+}
+
+/**
+ * Page-level view words (Jobs' `Table  Board` position, §9h.2). Each word is a
+ * link to its own route, so a deep link and Back keep working; the current one
+ * is ink with an ink underline (`border-ink`). Desktop: in the head before ⋯ and the primary.
+ * Phone: its own row under the title (44 px targets).
+ */
+function HeadWordLinks({ headWords }: { headWords: HeadWords }) {
+  return (
+    <nav aria-label="Views" className="flex items-center gap-4">
+      {headWords.words.map((w) => {
+        const on = w.key === headWords.value;
+        return (
+          <Link
+            key={w.key}
+            href={w.href}
+            aria-current={on ? "page" : undefined}
+            className={cn(
+              "inline-flex min-h-11 items-center border-b-2 text-ui-text font-medium md:min-h-9",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red",
+              on ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink",
+            )}
+          >
+            {w.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function ListHead({
   title,
   primary,
   pageMenu,
+  headWords,
 }: {
   title: string;
   primary?: ListPrimary;
   pageMenu?: ActionMenuSpec;
+  /** Additive (UX Phase 15, Q-I2): page-level view words, each its own route. */
+  headWords?: HeadWords;
 }) {
   const isMobile = useIsMobile();
   return (
-    <div className="flex min-h-11 items-center gap-2">
-      <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>
-      {pageMenu && pageMenu.items.length > 0 && <ActionMenu spec={pageMenu} label={`${title} options`} />}
-      {primary && !isMobile && (
-        <Button size="sm" onClick={primary.onSelect}>
-          {primary.label}
-        </Button>
-      )}
+    <div className="flex flex-col gap-1">
+      <div className="flex min-h-11 items-center gap-2">
+        <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>
+        {headWords && !isMobile && <HeadWordLinks headWords={headWords} />}
+        {pageMenu && pageMenu.items.length > 0 && <ActionMenu spec={pageMenu} label={`${title} options`} />}
+        {primary && !isMobile && (
+          <Button size="sm" onClick={primary.onSelect}>
+            {primary.label}
+          </Button>
+        )}
+      </div>
+      {headWords && isMobile && <HeadWordLinks headWords={headWords} />}
     </div>
   );
 }

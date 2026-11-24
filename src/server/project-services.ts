@@ -11,7 +11,9 @@ import {
   getProjectServiceByIdFromConvex,
   getServiceTemplatesFromConvex,
   getProjectServicesSummaryFromConvex,
+  redactServiceCrewPay,
 } from "@/lib/project-service-read";
+import { callerSeesCrewPay, callerSeesJobCost } from "@/lib/crew-pay-caller";
 import { getProjectById } from "@/lib/projects-read";
 import { getLocationById } from "@/lib/locations-read";
 import { getCrewRoleMap, getCrewMemberMap, getCrewMemberById } from "@/lib/crew-read";
@@ -38,23 +40,33 @@ import { sendCrewOffer } from "@/server/crew-communication";
 
 export async function getProjectServices(projectId: string) {
   const { organizationId } = await getOrgContext();
-  const services = await getProjectServicesFromConvex(organizationId, projectId);
-  return serialize(services);
+  // Read with the service identity (which always sees pay), so the crew pay on
+  // each service's calls is stripped HERE for a caller below the pay line — the
+  // ONE crew-pay rule, decided for the real caller (B-2).
+  const [services, payVisible] = await Promise.all([getProjectServicesFromConvex(organizationId, projectId), callerSeesCrewPay()]);
+  return serialize(redactServiceCrewPay(services, payVisible));
 }
 
 export async function getProjectServicesSummary(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const { chargeTotal, costTotal, serviceCount } =
-    await getProjectServicesSummaryFromConvex(organizationId, projectId);
+  const [{ chargeTotal, costTotal, serviceCount }, jobCostShown] = await Promise.all([
+    getProjectServicesSummaryFromConvex(organizationId, projectId),
+    callerSeesJobCost(),
+  ]);
 
+  // The summed cost is a JOB-LEVEL figure (it is the project's service cost), so
+  // it — and its two legacy aliases — follow the job-cost rule (owner ruling
+  // 2026-11-24): ABSENT, not reduced, for a caller who fails it. Each service's
+  // own `costTotal` stays behind the pay line (`getProjectServices`).
+  const cost = jobCostShown
+    ? { costTotal: roundCurrency(costTotal), totalCost: roundCurrency(costTotal), internalTotal: roundCurrency(costTotal) }
+    : {};
   return serialize({
     chargeTotal: roundCurrency(chargeTotal),
-    costTotal: roundCurrency(costTotal),
+    ...cost,
     // Legacy compatibility
-    totalCost: roundCurrency(costTotal),
     onDocumentsTotal: roundCurrency(chargeTotal),
-    internalTotal: roundCurrency(costTotal),
     serviceCount,
   });
 }

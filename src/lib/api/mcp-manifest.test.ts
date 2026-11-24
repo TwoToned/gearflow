@@ -81,4 +81,12 @@ describe("MCP manifest — shape invariants", () => {
     const nullOps = MCP_CURATED_TOOLS.filter((t) => t.operation === null).map((t) => t.name);
     expect(nullOps).toEqual([`${MCP_NAMESPACE}.whoami`, `${MCP_NAMESPACE}.get_project_document`]);
   });
+
+  test("get_project_financials tells an agent its visibility: the role AND the key's invoice scope, and no_financials (owner ruling 2026-11-24)", () => {
+    const d = MCP_TOOLS_BY_NAME.get(`${MCP_NAMESPACE}.get_project_financials`)!.description;
+    expect(d).toMatch(/role/);
+    expect(d).toMatch(/`invoice` scope/);
+    expect(d).toMatch(/invoice:read/);
+    expect(d).toMatch(/no_financials/);
+  });
 });

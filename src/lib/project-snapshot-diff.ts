@@ -108,7 +108,8 @@ export function diffSnapshotEntries(before: SnapshotEntryLike[], after: Snapshot
 export interface FinancialTotals {
   subtotal: number;
   total: number;
-  margin: number;
+  /** Null when the read left it out: the margin is JOB cost, absent for a caller who fails the job-cost rule (`canSeeJobCost`: invoice:read, not a noFinancials key) — never a $0. */
+  margin: number | null;
 }
 
 export function projectTotalsFromEntry(entry: SnapshotEntryLike | undefined): FinancialTotals | null {
@@ -116,6 +117,6 @@ export function projectTotalsFromEntry(entry: SnapshotEntryLike | undefined): Fi
   return {
     subtotal: Number(entry.data.subtotal ?? 0),
     total: Number(entry.data.total ?? 0),
-    margin: Number(entry.data.margin ?? 0),
+    margin: entry.data.margin == null ? null : Number(entry.data.margin),
   };
 }

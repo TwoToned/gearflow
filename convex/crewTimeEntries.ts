@@ -3,6 +3,9 @@ import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import type { Doc } from "./_generated/dataModel";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { deriveEntryMoney, sumTotals, type EntryMoney, type MoneyLookups } from "./lib/timeEntryMoney";
 import * as enums from "./lib/validators";
 
 // ── Time-entry read helpers ported from src/lib/crew-scheduling-read.ts (epoch-ms). ──
@@ -18,21 +21,72 @@ function descNF<T>(a: T | null | undefined, b: T | null | undefined): number {
 }
 
 export const agentOps: AgentOpsAnnotations = {
-  allEntries: { summary: "Paginated/searchable/sortable timesheet (crew time entry) list.", danger: "low", mcpTier: 1 },
+  allEntries: { summary: "Paginated/searchable/sortable timesheet (crew time entry) list, with per-status counts and hours totals; pay rate/total per row only for manager+ callers (never for a noFinancials key).", danger: "low", mcpTier: 1 },
   forMember: { summary: "A crew member's time entries, newest first.", danger: "low", mcpTier: 2 },
   list: { summary: "List crew time entries for the org.", danger: "low", mcpTier: 2 },
   getById: { summary: "Get a single crew time entry by id.", danger: "low", mcpTier: 2 },
   approvedHoursByMember: { summary: "Approved logged hours per crew member over a date range (planner 'planned vs actual').", danger: "low", mcpTier: 3 },
   loggedMinutesForWorkItems: { summary: "Approved logged minutes per work item (crewTimeEntries.workItemId).", danger: "low", mcpTier: 3 },
 };
-type TE = { id: string; assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; totalHours?: number; status?: string; approvedById?: string; approvedAt?: number; notes?: string; createdAt?: number; updatedAt?: number };
+type TE = { id: string; assignmentId?: string; crewMemberId: string; description?: string; date: number; startTime: string; endTime: string; breakMinutes?: number; totalHours?: number; status?: string; approvedById?: string; approvedAt?: number; notes?: string; queryReason?: string; createdAt?: number; updatedAt?: number };
 function teWire(e: TE) {
   return {
     id: e.id, assignmentId: e.assignmentId ?? null, crewMemberId: e.crewMemberId, description: e.description ?? null,
     date: new Date(e.date).toISOString(), startTime: e.startTime, endTime: e.endTime, breakMinutes: e.breakMinutes ?? 0,
     totalHours: e.totalHours ?? null, status: e.status ?? "DRAFT", approvedById: e.approvedById ?? null,
-    approvedAt: iso(e.approvedAt), notes: e.notes ?? null, createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt),
+    approvedAt: iso(e.approvedAt), notes: e.notes ?? null, queryReason: e.queryReason ?? null,
+    // The raw ms stamp the next transition's Undo must match (`revertNative`'s `stamp`).
+    updatedAtMs: e.updatedAt ?? null,
+    createdAt: iso(e.createdAt), updatedAt: iso(e.updatedAt),
   };
+}
+
+/** Per-status counts for the timesheets strip (`Submitted · Approved · Queried · All`). */
+type TeStatus = "DRAFT" | "SUBMITTED" | "APPROVED" | "DISPUTED" | "EXPORTED";
+function statusCounts(entries: TE[]): Record<TeStatus | "all", number> {
+  const out = { DRAFT: 0, SUBMITTED: 0, APPROVED: 0, DISPUTED: 0, EXPORTED: 0, all: entries.length };
+  for (const e of entries) {
+    const s = (e.status ?? "DRAFT") as TeStatus;
+    if (s in out) out[s]++;
+  }
+  return out;
+}
+
+/** The pay lookups `deriveEntryMoney` needs, over maps the caller already loaded. */
+function payLookups(
+  asgById: Map<string, Doc<"crewAssignments">>,
+  memberById: Map<string, Doc<"crewMembers">>,
+  roleById: Map<string, Doc<"crewRoles">>,
+): MoneyLookups {
+  return { assignment: (id) => asgById.get(id), member: (id) => memberById.get(id), role: (id) => roleById.get(id) };
+}
+
+/** A row's pay fields, present ONLY for a caller allowed to see pay (D49): `money` is null otherwise. */
+function payFields(money: Map<string, EntryMoney> | null, id: string) {
+  if (!money) return {};
+  const m = money.get(id);
+  return { rate: m?.rate ?? null, rateType: m?.rateType ?? null, total: m?.total ?? null, rateIncluded: m?.included ?? false };
+}
+
+/** Search + crew-member filter (everything except status, which the strip counts across). */
+function applyNonStatusFilters(
+  all: TE[],
+  needle: string | undefined,
+  crewMemberIds: string[] | undefined,
+  memberById: Map<string, Doc<"crewMembers">>,
+  projectOf: (e: TE) => Doc<"projects"> | null,
+): TE[] {
+  let out = all;
+  if (needle) {
+    const haystack = (e: TE): (string | undefined)[] => {
+      const m = memberById.get(e.crewMemberId);
+      const p = projectOf(e);
+      return [m?.firstName, m?.lastName, e.description, p?.name, p?.projectNumber];
+    };
+    out = out.filter((e) => haystack(e).some((s) => (s ?? "").toLowerCase().includes(needle)));
+  }
+  if (crewMemberIds?.length) { const set = new Set(crewMemberIds); out = out.filter((e) => set.has(e.crewMemberId)); }
+  return out;
 }
 /** Membership-gated approver-name map (users mirror). */
 async function approverNames(ctx: QueryCtx, orgId: string, entries: TE[]): Promise<Map<string, string | null>> {
@@ -77,12 +131,20 @@ export const allEntries = query({
     const projById = new Map(projects.map((p) => [p.id, p]));
     const projectOf = (e: TE) => { const asg = e.assignmentId ? asgById.get(e.assignmentId) : null; return asg ? projById.get(asg.projectId) ?? null : null; };
 
-    let filtered = allE as TE[];
-    const needle = a.search?.trim().toLowerCase();
-    if (needle) filtered = filtered.filter((e) => { const m = memberById.get(e.crewMemberId); const p = projectOf(e); return (m?.firstName ?? "").toLowerCase().includes(needle) || (m?.lastName ?? "").toLowerCase().includes(needle) || (e.description ?? "").toLowerCase().includes(needle) || (p?.name ?? "").toLowerCase().includes(needle) || (p?.projectNumber ?? "").toLowerCase().includes(needle); });
     const f = (a.filters ?? {}) as Record<string, string[]>;
-    if (f.status?.length) { const set = new Set(f.status); filtered = filtered.filter((e) => set.has(e.status ?? "DRAFT")); }
-    if (f.crewMemberId?.length) { const set = new Set(f.crewMemberId); filtered = filtered.filter((e) => set.has(e.crewMemberId)); }
+    const scoped = applyNonStatusFilters(allE as TE[], a.search?.trim().toLowerCase(), f.crewMemberId, memberById, projectOf);
+    const statusSet = f.status?.length ? new Set(f.status) : null;
+    const filtered = statusSet ? scoped.filter((e) => statusSet.has(e.status ?? "DRAFT")) : scoped;
+
+    // D49 — pay is derived over EVERY org entry (so which entry carries a day
+    // rate never depends on the page or the filters) and returned only to a
+    // caller allowed to see it. Never stored.
+    const payVisible = await canSeeCrewPay(ctx, a.orgId);
+    const money = payVisible ? deriveEntryMoney(allE as TE[], payLookups(asgById, memberById, roleById)) : null;
+    const totals = {
+      hours: Math.round(filtered.reduce((s, e) => s + (e.totalHours ?? 0), 0) * 100) / 100,
+      ...(money ? { pay: sumTotals(filtered.map((e) => money.get(e.id))) } : {}),
+    };
 
     const cmp = order === "asc" ? ascNL : descNF;
     const valueOf = (e: TE): string | number | null | undefined => sortBy === "crewMember" ? memberById.get(e.crewMemberId)?.lastName : sortBy === "startTime" ? e.startTime : sortBy === "totalHours" ? (e.totalHours ?? null) : sortBy === "status" ? (e.status ?? "DRAFT") : e.date;
@@ -98,12 +160,13 @@ export const allEntries = query({
       const role = asg?.crewRoleId ? roleById.get(asg.crewRoleId) ?? null : null;
       return {
         ...teWire(e),
+        ...payFields(money, e.id),
         crewMember: member ? { id: member.id, firstName: member.firstName, lastName: member.lastName } : null,
         assignment: asg ? { id: asg.id, phase: asg.phase ?? null, status: asg.status ?? null, project: project ? { id: project.id, name: project.name, projectNumber: project.projectNumber } : null, crewRole: role ? { name: role.name } : null } : null,
         approvedBy: e.approvedById ? { name: approvers.get(e.approvedById) ?? null } : null,
       };
     });
-    return { entries, total };
+    return { entries, total, counts: statusCounts(scoped), totals, payVisible };
   },
 });
 

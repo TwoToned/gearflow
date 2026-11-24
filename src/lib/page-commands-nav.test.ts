@@ -19,7 +19,9 @@ describe("palette @ pages come from NAV", () => {
 
   it("keeps palette-only extras and finds the NAV-only pages by name", () => {
     const crew = PAGE_COMMANDS.find((c) => c.href === "/crew")!;
-    expect(crew.children!.some((c) => c.label === "Roles & Skills")).toBe(true);
+    // UX Phase 15: the roles admin is the Crew roles & rates sheet; Timesheets stays findable.
+    expect(crew.children!.find((c) => c.label === "Crew roles & rates")?.href).toBe("/crew/planner?sheet=roles");
+    expect(matchPageCommands("timesheets").some((m) => m.command.href === "/crew/timesheets")).toBe(true);
     expect(matchPageCommands("finance").some((m) => m.command.href === "/finance")).toBe(true);
     expect(matchPageCommands("overbookings").some((m) => m.command.href === "/overbookings")).toBe(true);
     expect(matchPageCommands("returns").some((m) => m.command.href === "/warehouse?mode=returning")).toBe(true);

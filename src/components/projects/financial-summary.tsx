@@ -20,8 +20,11 @@ interface FinancialSummaryProps {
   /** WS11 (#950) — resolved COGS for non-cancelled, non-optional SALE lines. */
   saleCostTotal?: number | null;
   serviceChargeTotal?: number | null;
-  serviceCostTotal: number | null;
-  labourCostTotal: number | null;
+  /** ABSENT (undefined), with `labourCostTotal` and `margin`, for a caller without
+   *  job cost (invoice:read, not a noFinancials key — owner ruling 2026-11-24).
+   *  Then no margin and no costs render — never a $0. */
+  serviceCostTotal?: number | null;
+  labourCostTotal?: number | null;
   subHireCostTotal?: number | null;
   subtotal: number | null;
   discountPercent: number | null;
@@ -29,7 +32,7 @@ interface FinancialSummaryProps {
   taxRate: number | null;
   taxAmount: number | null;
   total: number | null;
-  margin: number | null;
+  margin?: number | null;
   /** WS1 (#940) — both DERIVED from the project's real Invoice rows
    *  (convex/lib/recalc.ts), never a hand-typed deposit-percent-of-total
    *  guess. `invoicedTotal` is the sum of every ISSUED invoice; `depositPaid`
@@ -93,6 +96,20 @@ function Row({
   );
 }
 
+function CostsSection({ service, labour, subHire, sale }: { service: number; labour: number; subHire: number; sale: number }) {
+  const costs = service + labour + subHire + sale;
+  return (
+    <div className="space-y-1.5">
+      <div className="t-overline text-fg-4">Costs</div>
+      {service > 0 && <Row label="Services" value={formatCurrency(service)} />}
+      {labour > 0 && <Row label="Labour" value={formatCurrency(labour)} />}
+      {subHire > 0 && <Row label="Sub-Hires" value={formatCurrency(subHire)} />}
+      {sale > 0 && <Row label="Sale cost of goods" value={formatCurrency(sale)} />}
+      {costs > 0 ? <Row label="Total costs" value={formatCurrency(costs)} bold /> : <Row label="No costs recorded" value="—" muted />}
+    </div>
+  );
+}
+
 export function FinancialSummary({
   equipmentRevenue,
   saleRevenue,
@@ -124,7 +141,14 @@ export function FinancialSummary({
   const serviceCostVal = serviceCostTotal != null ? Number(serviceCostTotal) : 0;
   const labourCostVal = labourCostTotal != null ? Number(labourCostTotal) : 0;
   const subHireCostVal = subHireCostTotal != null ? Number(subHireCostTotal) : 0;
-  const costs = serviceCostVal + labourCostVal + subHireCostVal + saleCostVal;
+  // The server leaves the job-cost totals and the margin OUT for a caller
+  // without job cost (`canSeeJobCost`, owner ruling 2026-11-24): then neither
+  // the margin nor the costs render — a $0 there would be a false number, and a
+  // partial one would let the missing totals be back-solved.
+  // Absent and null are the SAME here: a reconstructed project row maps an
+  // absent field to null (`mapProject`), so testing only `!== undefined` would
+  // print a redacted margin as "$0.00".
+  const costsShown = margin != null && serviceCostTotal != null && labourCostTotal != null;
 
   const allGroupsPriced =
     totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
@@ -144,11 +168,15 @@ export function FinancialSummary({
             {formatCurrency(totalVal)}
           </span>
         </div>
-        <MarginBar margin={marginVal} total={totalVal} />
+        {costsShown && <MarginBar margin={marginVal} total={totalVal} />}
         <div className="flex items-baseline justify-between">
-          <span className="text-right text-[11px] text-fg-4">
-            Margin: {formatCurrency(marginVal)}
-          </span>
+          {costsShown ? (
+            <span className="text-right text-[11px] text-fg-4">
+              Margin: {formatCurrency(marginVal)}
+            </span>
+          ) : (
+            <span />
+          )}
           {/* Pricing progress indicator */}
           {totalGroupCount != null && totalGroupCount > 0 && (
             <span
@@ -192,31 +220,13 @@ export function FinancialSummary({
         />
       </div>
 
-      <div className="h-px bg-border" />
-
-      {/* Business costs */}
-      <div className="space-y-1.5">
-        <div className="t-overline text-fg-4">
-          Costs
-        </div>
-        {serviceCostVal > 0 && (
-          <Row label="Services" value={formatCurrency(serviceCostVal)} />
-        )}
-        {labourCostVal > 0 && (
-          <Row label="Labour" value={formatCurrency(labourCostVal)} />
-        )}
-        {subHireCostVal > 0 && (
-          <Row label="Sub-Hires" value={formatCurrency(subHireCostVal)} />
-        )}
-        {saleCostVal > 0 && (
-          <Row label="Sale cost of goods" value={formatCurrency(saleCostVal)} />
-        )}
-        {costs > 0 ? (
-          <Row label="Total costs" value={formatCurrency(costs)} bold />
-        ) : (
-          <Row label="No costs recorded" value="—" muted />
-        )}
-      </div>
+      {/* Business costs — absent for a caller without job cost. */}
+      {costsShown && (
+        <>
+          <div className="h-px bg-border" />
+          <CostsSection service={serviceCostVal} labour={labourCostVal} subHire={subHireCostVal} sale={saleCostVal} />
+        </>
+      )}
 
       {/* Invoicing — derived from real Invoice rows (WS1 #940), not a
           hand-typed percent-of-total guess. Only renders once something has

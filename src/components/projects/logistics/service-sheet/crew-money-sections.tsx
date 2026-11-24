@@ -19,6 +19,12 @@ import { CrewRateTable } from "../../service-dialogs";
 import { SectionHead } from "./when-where-sections";
 import type { ServiceSheetState } from "./use-service-sheet";
 
+/** The per-day rule (`crewGap`): the worst day's count and gap, never `Needed − rows`. */
+function crewCounts(s: ServiceSheetState): { short: number; filled: number } {
+  if (!s.crewGap) return { short: 0, filled: s.rows.length };
+  return { short: s.crewGap.shortfall, filled: s.crewGap.filled };
+}
+
 export function CrewSection(props: {
   s: ServiceSheetState;
   onPick: () => void;
@@ -33,10 +39,10 @@ export function CrewSection(props: {
   const roleOptions = (s.roleDocs ?? [])
     .filter((r) => r.isActive === true)
     .map((r) => ({ value: r.id, label: r.name }));
-  const short = Math.max(needed - s.rows.length, 0);
+  const { short, filled } = crewCounts(s);
   return (
     <section className="space-y-3" aria-label="Crew">
-      <SectionHead title="Crew" hint={`${s.rows.length} of ${needed || 0}`} />
+      <SectionHead title="Crew" hint={`${filled} of ${needed || 0}`} />
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Role</Label>
@@ -147,12 +153,22 @@ function ChargeFields({ s }: { s: ServiceSheetState }) {
           <Input id="service-charge-rate" type="number" step="0.01" placeholder="0.00" {...form.register("chargeRateOverride")} />
           <p className="text-caption text-muted">
             Overrides the role&apos;s charge rate for this service&apos;s crew. Blank uses the role default
-            {s.role?.chargeRate ? ` ($${s.role.chargeRate})` : " (none set, so no auto-pricing)"}.
+            <RoleRateHint s={s} />.
           </p>
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * ` ($400)` / ` (none set, so no auto-pricing)` — said only to a caller who sees
+ * crew pay. Below the pay line the role's rate is absent from the read, so any
+ * claim about it ("none set") would be false: the hint is absent too.
+ */
+function RoleRateHint({ s }: { s: ServiceSheetState }) {
+  if (!s.payVisible) return null;
+  return <>{s.role?.chargeRate ? ` ($${s.role.chargeRate})` : " (none set, so no auto-pricing)"}</>;
 }
 
 function CostMargin({ s }: { s: ServiceSheetState }) {

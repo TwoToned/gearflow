@@ -5,6 +5,8 @@ import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { canSeeJobCost, jobCostRedactor } from "./lib/crewPayVisibility";
+import { JOB_COST_FIELDS } from "./lib/crewPayFields";
 import { createLiveVersionForProject } from "./lib/projectVersionState";
 import {
   JOB_SEGMENT_KEYS,
@@ -43,10 +45,11 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "project"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const rows = await ctx.db
       .query("projects")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getProjectsByOrg) + the clients dashboard's org-wide rollup — see docs/exceptions.md R-8.3.3
       .collect();
+    return rows.map(await jobCostRedactor(ctx, orgId));
   },
 });
 
@@ -55,7 +58,10 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "project"); // Phase 2 read bootstrap (#998)
-    return doc;
+    if (!doc) return doc;
+    // Job-level cost and margin are absent for a caller who fails the job-cost
+    // rule (owner ruling 2026-11-24, lib/crewPayFields.ts JOB_COST_FIELDS).
+    return (await jobCostRedactor(ctx, doc.organizationId))(doc);
   },
 });
 
@@ -69,6 +75,13 @@ export const getById = query({
  * is only used to widen the search match (no location column exists), so it
  * isn't attached to the row.
  */
+/** The list's sort key: default `rentalStartDate`, and never a job-cost field for a caller who can't see it (its order would leak it). */
+async function listSortKey(ctx: QueryCtx, orgId: string, sortBy: string | undefined): Promise<string> {
+  if (!sortBy) return "rentalStartDate";
+  if (!(JOB_COST_FIELDS as readonly string[]).includes(sortBy)) return sortBy;
+  return (await canSeeJobCost(ctx, orgId)) ? sortBy : "rentalStartDate";
+}
+
 export const listPage = query({
   args: {
     orgId: v.string(),
@@ -95,7 +108,10 @@ export const listPage = query({
     await requireOrgReadFor(ctx, a.orgId, "project"); // Phase 2 read bootstrap (#998)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    const sortBy = a.sortBy ?? "rentalStartDate";
+    // Without job cost a job-cost field is absent from every row — and can't be
+    // used as a sort key either, or its ORDER would leak what the rows hide.
+    const redact = await jobCostRedactor(ctx, a.orgId);
+    const sortBy = await listSortKey(ctx, a.orgId, a.sortBy);
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
     const segment = parseSegment(a.segment);
 
@@ -132,7 +148,7 @@ export const listPage = query({
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
     const items = pageRows.map((p) => ({
-      ...p,
+      ...redact(p),
       client: p.clientId ? { name: clientNameFor(p.clientId) ?? null } : null,
     }));
 
@@ -206,8 +222,9 @@ export const listBoard = query({
       return true;
     });
 
+    const redact = await jobCostRedactor(ctx, orgId);
     return filtered.map((p) => ({
-      ...p,
+      ...redact(p),
       client: p.clientId ? { name: clientNameFor(p.clientId) ?? null } : null,
     }));
   },
@@ -228,7 +245,8 @@ export const listByIds = query({
     const docs = await Promise.all(
       unique.map((id) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
     );
-    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+    const redact = await jobCostRedactor(ctx, orgId);
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId).map(redact);
   },
 });
 
@@ -516,12 +534,13 @@ export const getByOrgAndNumber = query({
     // up any org's project by number. Fixed here rather than left — R-8.4.3
     // treats an unguarded cross-tenant read as a Critical, not a style nit.
     await requireOrgReadFor(ctx, organizationId, "project");
-    return await ctx.db
+    const doc = await ctx.db
       .query("projects")
       .withIndex("by_organizationId_projectNumber", (q) =>
         q.eq("organizationId", organizationId).eq("projectNumber", projectNumber),
       )
       .unique();
+    return doc && (await jobCostRedactor(ctx, organizationId))(doc);
   },
 });
 

@@ -68,7 +68,8 @@ export function crewRow(
     facts: {
       service: { kind: "text", label: a.service?.title ?? "No service" },
       when: { kind: "time", at: whenText(a) },
-      cost: { kind: "money", amount: money(a.estimatedCost) },
+      // `projectCrew` strips the cost below the pay line: then the cell is absent too.
+      ...(a.estimatedCost !== undefined ? { cost: { kind: "money" as const, amount: money(a.estimatedCost) } } : {}),
     },
     status: { label: assignmentStatusLabels[a.status] ?? a.status, intent: getStatusIntent("assignment", a.status) },
     menu: opts.menu,

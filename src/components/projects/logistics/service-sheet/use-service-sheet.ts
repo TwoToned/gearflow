@@ -7,6 +7,7 @@ import { useConvex, useConvexAuth } from "convex/react";
 import { toast } from "sonner";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useProjectServiceWrites } from "@/hooks/use-project-service-writes";
 import { useProjectPricingLock } from "@/hooks/use-project-lock";
@@ -18,7 +19,7 @@ import {
   projectServiceSchema,
   type ProjectServiceFormValues,
 } from "@/lib/validations/project-service";
-import type { LogisticsService } from "@/lib/logistics-model";
+import { crewGap, type LogisticsService } from "@/lib/logistics-model";
 import { pickConflictBadge, type CrewConflictSummary, type CrewRateTableMember, type ServiceCrewTableRow } from "../../service-dialogs";
 import { refreshLogistics } from "../use-logistics-writes";
 import { marginOf, serviceFormDefaults } from "./service-form";
@@ -92,6 +93,27 @@ function useCrewMath(
   return { previewCost, costTotal, crewChargeTotal: rows.length > 0 ? chargeTotal : 0 };
 }
 
+/** The server's own answer for crew pay (`crewRoles.ratesVisible`, the one rule). */
+function useRatesVisible(orgId: string | undefined): boolean {
+  return useAuthedQuery(api.crewRoles.ratesVisible, orgId ? { orgId } : "skip") === true;
+}
+
+/**
+ * The crew gap as the form stands (its dates and Needed, the live calls' own
+ * days; a newly picked row covers the whole run) — the ONE per-day rule
+ * (`crewGap`), never `Needed − rows`.
+ */
+function formCrewGap(form: UseFormReturn<ProjectServiceFormValues>, rows: ServiceCrewTableRow[], service: LogisticsService) {
+  const liveByMember = new Map(service.crewAssignments.map((a) => [a.crewMember.id, a]));
+  const date = (form.watch("date") as unknown as string) || null;
+  return crewGap({
+    date,
+    endDate: (form.watch("endDate") as unknown as string) || date,
+    crewCountRequired: Number(form.watch("crewCountRequired") || 0),
+    crewAssignments: rows.map((r) => liveByMember.get(r.crewMemberId) ?? { status: "PENDING" }),
+  });
+}
+
 export function useServiceSheet(args: { service: LogisticsService; projectId: string; orgId: string | undefined; onClose: () => void }) {
   const { service, projectId, orgId, onClose } = args;
   const writes = useProjectServiceWrites();
@@ -111,6 +133,8 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   const rawOverride = form.watch("chargeRateOverride");
   const override = rawOverride != null && (rawOverride as unknown) !== "" ? Number(rawOverride) : undefined;
   const math = useCrewMath(rows, members.byId, role, members, override);
+  const crewGapNow = formCrewGap(form, rows, service);
+  const payVisible = useRatesVisible(orgId);
 
   const save = useServerMutation({
     // Crew is whatever is live NOW (Pick crew writes immediately), plus the rate edits made here.
@@ -137,7 +161,7 @@ export function useServiceSheet(args: { service: LogisticsService; projectId: st
   }).length;
 
   return {
-    form, rows, role, roleDocs, members, math, save, crewStatus, clashes,
+    form, rows, role, roleDocs, members, math, save, crewStatus, clashes, crewGap: crewGapNow, payVisible,
     charge, cost, margin: marginOf(charge, cost),
     locked: lock.pricingLocked, lockReason: resolveLockCopy(lock).oneLiner,
     editRow: (id: string, patch: Partial<ServiceCrewTableRow>) => setEdits((e) => ({ ...e, [id]: { ...e[id], ...patch } })),

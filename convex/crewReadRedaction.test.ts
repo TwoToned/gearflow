@@ -113,6 +113,56 @@ describe("a manager", () => {
     for (const [name, row] of Object.entries(await memberReads(t, asUser))) {
       expect(row?.defaultDayRate, name).toBe(300);
       expect(row?.defaultHourlyRate, name).toBe(40);
+      // A manager holds crew:update — they manage feed links, so they get the token.
+      expect(row?.icalToken, name).toBe("ical-secret");
+    }
+  });
+});
+
+describe("the iCal feed token (a bearer secret) — self or crew:update, on a user session, never an agent", () => {
+  /** Every member read that can return the token, normalised to "the cm1 row". */
+  const feedReads = async (t: T, identity: Identity): Promise<Record<string, Row>> => {
+    const as = t.withIdentity(identity);
+    return {
+      ...(await memberReads(t, identity)),
+      listPage: (await as.query(api.crewMembers.listPage, { orgId: ORG })).items.find((r) => r.id === "cm1") as Row,
+      memberDetail: (await as.query(api.crew.memberDetail, { id: "cm1", orgId: ORG })) as Row,
+    };
+  };
+  const linkSelf = (t: T) =>
+    t.run(async (ctx) => {
+      const m = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "cm1")).first();
+      await ctx.db.patch(m!._id, { userId: USER });
+    });
+
+  test("a plain crew:read member who isn't the crew member: field absent on every read", async () => {
+    const t = makeT();
+    await seed(t, "member");
+    for (const [name, row] of Object.entries(await feedReads(t, asUser))) {
+      expect(row?.firstName, name).toBe("Sam");
+      expect(row, name).not.toHaveProperty("icalToken");
+    }
+  });
+
+  test("the crew member themself (their linked userId) gets it, even without crew:update", async () => {
+    const t = makeT();
+    await seed(t, "member");
+    await linkSelf(t);
+    for (const [name, row] of Object.entries(await feedReads(t, asUser))) expect(row?.icalToken, name).toBe("ical-secret");
+  });
+
+  test("crew:update (manager) gets it on every read", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    for (const [name, row] of Object.entries(await feedReads(t, asUser))) expect(row?.icalToken, name).toBe("ical-secret");
+  });
+
+  test("an API key never gets it — not as an owner, not as the crew member themself", async () => {
+    const t = makeT();
+    await seed(t, "owner", { noFinancials: false });
+    await linkSelf(t);
+    for (const [name, row] of Object.entries(await feedReads(t, asAgent))) {
+      expect(row?.firstName, name).toBe("Sam");
       expect(row, name).not.toHaveProperty("icalToken");
     }
   });

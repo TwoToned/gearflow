@@ -1,7 +1,10 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgReadFor, requireOrgPermission, getAuthContext, isMemberAuth } from "./lib/auth";
+import { requireOrgReadFor, requireOrgPermission, getAuthContext, isMemberAuth, redactFields } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { memberRowRedactor } from "./lib/crewMemberRedaction";
+import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -15,7 +18,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 const iso = (ms: number | null | undefined): string | null => (ms != null ? new Date(ms).toISOString() : null);
 
 export const agentOps: AgentOpsAnnotations = {
-  memberDetail: { summary: "A single crew member's full detail (role, skills, linked user, assignments).", danger: "low", mcpTier: 1 },
+  memberDetail: { summary: "A single crew member's full detail (role, skills, linked user, assignments); rates and call costs only for callers who see crew pay.", danger: "low", mcpTier: 1 },
   memberExtras: { summary: "Per-member linked-user name/image + skills, for enriching the reactive roster.", danger: "low", mcpTier: 3 },
   myCrewMemberId: { summary: "The caller's own linked crew-member id, if any.", danger: "low", mcpTier: 2 },
   orgUsersForCrewLink: { summary: "Org users linkable to a crew member, with alreadyLinked flag.", danger: "low", mcpTier: 3 },
@@ -68,7 +71,15 @@ export const memberDetail = query({
     await requireOrgPermission(ctx, orgId, "crew", "read");
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc || doc.organizationId !== orgId) return null;
-    const member = mapMember(doc);
+    // The ONE member-row boundary (`memberRowRedactor`): the feed token only for the
+    // member themself or crew:update on a user session (absent otherwise), the
+    // default rates only with crew pay. The role's rate and each call's cost
+    // follow the same pay rule (review S1).
+    const payVisible = await canSeeCrewPay(ctx, orgId);
+    const noRate = null as number | null;
+    const shown = (await memberRowRedactor(ctx, orgId))(doc);
+    const mapped = mapMember(shown);
+    const member = shown.icalToken === undefined ? redactFields(mapped, ["icalToken"]) : mapped;
 
     const auth = await getAuthContext(ctx);
     const [roles, skillMap, user] = await Promise.all([
@@ -76,7 +87,7 @@ export const memberDetail = query({
       orgSkillMap(ctx, orgId),
       userMirror(ctx, member.userId),
     ]);
-    const roleById = new Map(roles.map((r) => [r.id, mapRole(r)]));
+    const roleById = new Map(roles.map((r) => [r.id, payVisible ? mapRole(r) : { ...mapRole(r), defaultRate: noRate }]));
     const role = member.crewRoleId ? roleById.get(member.crewRoleId) ?? null : null;
     const skills = ((doc.skillIds as string[]) ?? []).map((sid) => skillMap.get(sid)).filter((s): s is { id: string; name: string; category: string | null } => s != null);
 
@@ -101,8 +112,9 @@ export const memberDetail = query({
       const arole = a.crewRoleId ? roleById.get(a.crewRoleId) : null;
       // Strip the Convex system fields and the single-use offer-respond bearer token
       // (never consumed here) from the wire; ISO every date incl. offer/response stamps (audit).
-      const { _id, _creationTime, responseToken, ...rest } = a;
+      const { _id, _creationTime, responseToken, ...all } = a;
       void _id; void _creationTime; void responseToken;
+      const rest = payVisible ? all : redactFields(all, ASSIGNMENT_COST_FIELDS);
       return {
         ...rest,
         startDate: iso(a.startDate), endDate: iso(a.endDate), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt),

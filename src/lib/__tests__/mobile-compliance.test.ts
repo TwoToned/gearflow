@@ -304,6 +304,61 @@ describe("UX unification §5/§13 — row primitives on a phone", () => {
   });
 });
 
+describe("UX Phase 15 — the Crew workspace on a phone (§9h.6)", () => {
+  const crew = (rel: string) => readFileSync(path.join(SRC, "components/crew/workspace", rel), "utf8");
+
+  it("the head words (Planner · Timesheets) are 44px tap targets", () => {
+    const head = readFileSync(path.join(SRC, "components/ui/list-page-parts.tsx"), "utf8");
+    const words = head.slice(head.indexOf("function HeadWordLinks"), head.indexOf("export function ListHead"));
+    expect(words).toContain("min-h-11");
+  });
+
+  it("Log time's people rows and the roles sheet's rows are at least 44px", () => {
+    expect(crew("timesheets/log-time-sheet.tsx")).toMatch(/<label[^>]*min-h-11/);
+    expect(crew("roles/crew-roles-sheet.tsx")).toContain("min-h-12");
+  });
+
+  it("sheets open from the bottom on a phone, and every field is the 16px Input/Textarea", () => {
+    for (const rel of ["timesheets/time-entry-sheet.tsx", "timesheets/log-time-sheet.tsx", "roles/crew-roles-sheet.tsx"]) {
+      expect(crew(rel)).toContain('side={isMobile ? "bottom" : "right"}');
+    }
+    const fields = crew("timesheets/time-entry-fields.tsx");
+    expect(fields).not.toMatch(/<input\b/);
+    expect(fields).not.toMatch(/text-(xs|sm)\b/);
+  });
+
+  it("planner on a phone: day mode (no 7-column grid), 64px cards with a 22px tick, 44px day chips, bottom sheets, 16px fields", () => {
+    expect(crew("planner/crew-planner.tsx")).toMatch(/if \(phone\) return "phone"/);
+    const phone = crew("planner/phone-day-list.tsx");
+    expect(phone).toContain("min-h-16");
+    expect(phone).toContain("size-[22px]");
+    expect(phone).toMatch(/role="tab"[\s\S]*min-h-11/);
+    for (const rel of ["planner/offer-call-sheet.tsx", "planner/call-sheet.tsx"]) expect(crew(rel)).toContain('side={isMobile ? "bottom" : "right"}');
+    const offer = crew("planner/offer-call-sheet.tsx");
+    expect(offer).not.toMatch(/<input\b/);
+    expect(offer).toContain("grid-cols-1 gap-3 md:grid-cols-2"); // max 2 columns, 1 on a phone
+  });
+
+  it("planner ticks: ≥ 24px on the desktop grid, 44px on the phone cards; no interactive nested in a role=button", () => {
+    const grid = crew("planner/planner-grid.tsx");
+    expect(grid).toContain("min-h-6 min-w-6"); // 24px target (the Checkbox base is 44px; never smaller than 24)
+    expect(grid).not.toContain('role="button"');
+    // The phone card keeps the Checkbox's own 44px target and only enlarges the box.
+    expect(crew("planner/phone-day-list.tsx")).toMatch(/className="\[&>span\]:size-\[22px\]"/);
+  });
+
+  it("planner on a phone: the sticky primary sits in the shared dock, replaced by the bulk bar while ticked", () => {
+    expect(crew("planner/crew-planner.tsx")).toMatch(/isMobile && p\.primary && liveCount === 0 && <StickyPrimary/);
+    expect(crew("planner/crew-planner.tsx")).toContain("<PinnedAboveBottomNav>");
+  });
+
+  it("Export all… stays in the page ⋯ on a phone (it is the only date-range export)", () => {
+    expect(crew("timesheets/timesheets-list.tsx")).toContain("pageMenu={{ items: [...ws.menuItems, exportAll] }}");
+    // Its date fields are the 16px Input, so a phone never zooms.
+    expect(crew("timesheets/export-dialog.tsx")).not.toMatch(/<input\b/);
+  });
+});
+
 describe("UX Phase 7 — the job Overview's text links are 44px tap targets on a phone", () => {
   const src = (rel: string) => readFileSync(path.join(SRC, rel), "utf8");
 

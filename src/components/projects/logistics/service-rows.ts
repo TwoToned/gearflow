@@ -7,10 +7,11 @@
 import { SERVICE_STATUS_LABELS } from "@/lib/constants/services";
 import { isClientServiceType } from "../../../../convex/lib/serviceTypes";
 import {
-  crewShort, filledOf, TYPE_WORDS, truckText, whenText,
+  crewGap, crewShort, filledOf, partialShortDays, TYPE_WORDS, truckText, whenText,
   type LogisticsAssignment, type LogisticsService,
 } from "@/lib/logistics-model";
-import type { ActionMenuSpec, Fact, FactColumn, LineRowData, StatusValue } from "@/lib/primitives/types";
+import { shortDaysText } from "@/lib/crew-short-days";
+import type { ActionMenuSpec, Fact, FactColumn, LineRowData, StatusValue, TotalLine } from "@/lib/primitives/types";
 import { getStatusIntent } from "@/lib/status-colors";
 import { assignmentStatusLabels } from "@/lib/status-labels";
 
@@ -48,14 +49,21 @@ export function whereLine(s: LogisticsService): string {
   return [s.address, truckText(s), s.vehicleDescription, trips].filter(Boolean).join(" · ");
 }
 
-/** `3 of 4`, `2 needed`, or `no crew`; the role leads when the service names one. */
+/**
+ * `3 of 4`, `2 needed`, or `no crew`; the role leads when the service names one.
+ * The count is the WORST day's (the per-day rule, `crewGap`), and a run short on
+ * only some days names them: `Rigger · 0 of 1 · Tue, Wed short`.
+ */
 export function crewText(s: LogisticsService): string {
   const filled = filledOf(s).length;
   const need = s.crewCountRequired ?? 0;
   const role = s.crewRole?.name;
   if (need <= 0 && filled === 0) return "no crew";
-  const count = need > 0 ? `${filled} of ${need}` : `${filled}`;
-  return [role, count].filter(Boolean).join(" · ");
+  const gap = crewGap(s);
+  const count = need > 0 ? `${gap ? gap.filled : filled} of ${need}` : `${filled}`;
+  const partial = partialShortDays(s);
+  const days = partial.length ? shortDaysText({ date: Date.parse(s.date!), endDate: Date.parse(s.endDate!), shortDays: partial.map((day) => ({ day })) }) : "";
+  return [role, count, days].filter(Boolean).join(" · ");
 }
 
 const margin = (s: LogisticsService): number | null =>
@@ -74,16 +82,52 @@ export function typeTag(s: LogisticsService): string[] | undefined {
   return s.title.trim().toLowerCase() === word.toLowerCase() ? undefined : [word];
 }
 
+/**
+ * A crew call under its service. Its cost cell exists only when the server sent
+ * the cost: below the pay line `estimatedCost` is ABSENT (`redactServiceCrewPay`),
+ * and so is the cell — never a blank or a $0 standing in for pay (B-2).
+ */
 function crewChild(a: LogisticsAssignment): LineRowData {
-  return {
-    id: a.id,
-    kind: "crew",
-    title: personName(a),
-    facts: {
-      status: { kind: "text", label: assignmentStatusLabels[a.status] ?? a.status },
-      charge: { kind: "money", amount: a.estimatedCost != null && a.estimatedCost > 0 ? a.estimatedCost : null },
-    },
-  };
+  const facts: Record<string, Fact> = { status: { kind: "text", label: assignmentStatusLabels[a.status] ?? a.status } };
+  if (a.estimatedCost !== undefined) facts.charge = { kind: "money", amount: a.estimatedCost != null && a.estimatedCost > 0 ? a.estimatedCost : null };
+  return { id: a.id, kind: "crew", title: personName(a), facts };
+}
+
+/**
+ * What the tab's cost view may show — decided by what the SERVER sent, never by
+ * the client's role. The footer's Cost / Margin is JOB cost (the summary's
+ * `internalTotal`, present for a caller with job cost: invoice:read, not a
+ * noFinancials key — owner ruling 2026-11-24). A row's own cost and margin is
+ * individual pay (each service's `costTotal`, present only above the pay line).
+ * `Show cost` is offered when either exists; each part shows only what came.
+ */
+export function logisticsCostView(
+  summary: { internalTotal?: number } | undefined,
+  services: readonly Pick<LogisticsService, "costTotal">[],
+  toggledOn: boolean,
+): { canSeeCost: boolean; footer: boolean; rows: boolean } {
+  const jobCost = summary?.internalTotal !== undefined;
+  const rowCost = services.some((s) => s.costTotal !== undefined);
+  return { canSeeCost: jobCost || rowCost, footer: toggledOn && jobCost, rows: toggledOn && rowCost };
+}
+
+/** The Logistics footer: On quote, then (with Show cost) Cost and Margin. */
+export function logisticsTotalLines(
+  summary: { serviceCount: number; onDocumentsTotal: number; internalTotal?: number } | undefined,
+  showCost: boolean,
+): TotalLine[] {
+  if (!summary || summary.serviceCount === 0) return [];
+  // Nothing priced is blank (`—`), never `$0` ("$0 is a PRICE", CLAUDE.md).
+  const blankIfZero = (n: number): number | null => (n > 0 ? n : null);
+  const lines: TotalLine[] = [{ label: "On quote", amount: blankIfZero(summary.onDocumentsTotal) }];
+  // The cost total is JOB cost, ABSENT for a caller without it: then no Cost and
+  // no Margin line — never a $0, or a margin that back-solves the cost.
+  if (showCost && summary.internalTotal !== undefined) {
+    const margin = summary.onDocumentsTotal - summary.internalTotal;
+    lines.push({ label: "Cost", amount: blankIfZero(summary.internalTotal) });
+    lines.push({ label: "Margin", amount: summary.onDocumentsTotal > 0 || summary.internalTotal > 0 ? margin : null });
+  }
+  return lines;
 }
 
 export function serviceRow(
@@ -96,7 +140,8 @@ export function serviceRow(
     crew: { kind: "text", label: crewText(s) },
     charge: chargeFact(s),
   };
-  if (opts.showCost) {
+  // The cost (crew pay rolled in) and the margin exist only when the server sent the cost.
+  if (opts.showCost && s.costTotal !== undefined) {
     facts.cost = { kind: "money", amount: s.costTotal != null && Number(s.costTotal) > 0 ? Number(s.costTotal) : null };
     facts.margin = { kind: "money", amount: margin(s) };
   }

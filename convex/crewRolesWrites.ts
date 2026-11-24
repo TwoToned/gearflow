@@ -8,6 +8,8 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { crewRoleUsage } from "./lib/crewRoleUsage";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { compareRoleOrder } from "./lib/crewRoleOrder";
 import * as enums from "./lib/validators";
 
 /**
@@ -157,15 +159,19 @@ export const updateNative = mutation({
     if (!a.name) throw new ConvexError("Name is required");
     assertCrewRoleFields(a);
 
+    // A caller who can't see pay (below manager, or a noFinancials key) never
+    // read the rates (`listForSettings` strips them), so the blanks it sends are
+    // not an intent to clear them: the rates stay exactly as stored (S4).
+    const payVisible = await canSeeCrewPay(ctx, a.orgId);
+    const rates = payVisible ? { defaultRate: a.defaultRate ?? undefined, chargeRate: a.chargeRate ?? undefined } : {};
     // Clears use `undefined` (Convex removes the optional; the schema rejects null).
     await ctx.db.patch(doc._id, {
       name: a.name,
       description: a.description || undefined,
       department: a.department || undefined,
       color: a.color || undefined,
-      defaultRate: a.defaultRate ?? undefined,
       rateType: a.rateType || undefined,
-      chargeRate: a.chargeRate ?? undefined,
+      ...rates,
       sortOrder: a.sortOrder ?? doc.sortOrder ?? 0,
     });
 
@@ -205,10 +211,64 @@ export const archiveNative = mutation({
   },
 });
 
+/** An org's role list is a small config set; past this a reorder refuses rather than renumbering a partial list. */
+const MOVE_ROLES_CAP = 500;
+
+/** The org's roles in display order (sortOrder, then name), as the roles admin lists them. */
+function displayOrder<T extends { sortOrder?: number; name: string }>(roles: T[]): T[] {
+  return [...roles].sort(compareRoleOrder);
+}
+
+const isArchived = (r: { isActive?: boolean }): boolean => r.isActive === false;
+
+/** The nearest role from `from` in `step` direction in the same list (active vs archived), or -1. */
+function neighbourIndex<T extends { isActive?: boolean }>(roles: T[], from: number, step: 1 | -1): number {
+  const archived = isArchived(roles[from]);
+  for (let i = from + step; i >= 0 && i < roles.length; i += step) if (isArchived(roles[i]) === archived) return i;
+  return -1;
+}
+
+/**
+ * Move one role up or down the list (UX Phase 15, the roles sheet's Move up /
+ * Move down). ONE atomic write: the roles are renumbered 0..n-1 in display
+ * order with the role swapped with its neighbour — replacing the old pair of
+ * full-patch `updateNative` calls, which could interleave and which left ties
+ * (two roles at the same `sortOrder`) unmovable. The neighbour is the nearest
+ * role in the SAME list (the sheet shows archived roles under their own head),
+ * so a move is always visible. Its Undo is the opposite move. At either end of
+ * its list it is a no-op (`moved: false`).
+ */
+export const moveNative = mutation({
+  returns: v.object({ id: v.string(), moved: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), direction: v.union(v.literal("up"), v.literal("down")), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "crewRole");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "crew", "update");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const roles = displayOrder(await ctx.db.query("crewRoles").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)).take(MOVE_ROLES_CAP));
+    if (roles.length >= MOVE_ROLES_CAP) throw new ConvexError("Too many crew roles to reorder");
+    const from = roles.findIndex((r) => r.id === a.id);
+    if (from < 0) throw new ConvexError("Crew role not found");
+    const to = neighbourIndex(roles, from, a.direction === "up" ? -1 : 1);
+    if (to < 0) return { id: a.id, moved: false };
+
+    [roles[from], roles[to]] = [roles[to], roles[from]];
+    for (const [i, r] of roles.entries()) if (r.sortOrder !== i) await ctx.db.patch(r._id, { sortOrder: i });
+
+    const moved = roles[to];
+    await logCrewRole(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: moved.name, summary: `Moved crew role ${moved.name} ${a.direction}` });
+    return { id: a.id, moved: true };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   // Toggles isActive (archive/restore) — archive/lifecycle category is high
   // by rule regardless of this particular toggle's non-destructiveness.
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
+  // Reorders the roles list (display only); its Undo is the opposite move.
+  moveNative: { danger: "low" },
   updateNative: { danger: "medium" },
 };

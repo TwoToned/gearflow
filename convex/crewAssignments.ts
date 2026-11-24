@@ -2,13 +2,16 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
+import { MEMBER_RATE_FIELDS, ROLE_RATE_FIELDS } from "./lib/crewPayFields";
+import { coveredDaysFull, crewShortfallByDay } from "./lib/crewShortfall";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { computeMemberConflictSignal, pickConflictSeverity } from "./lib/crewConflicts";
 import { liveRows } from "./lib/versionScope";
+import { canCrewCall } from "./lib/crewCallTransitions";
 
 /**
  * Thin CRUD for CrewAssignment (Convex table "crewAssignments"). GENERATED — Phase 2/5.
@@ -22,9 +25,10 @@ import { liveRows } from "./lib/versionScope";
 
 /** Phase 4 (#1000, decision 6): what the org pays this assignment/its crew
  *  member — cost data, distinct from client-facing service pricing. */
-const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
-export const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
-const ROLE_RATE_FIELDS = ["defaultRate"] as const;
+// ONE definition of the pay fields (R-3.1): the planner (`crewAvailability`)
+// and the crew dashboard redact with these too.
+export const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
+// The member and role pay field lists are ONE definition each (lib/crewPayFields.ts).
 
 /** The single-use offer-respond bearer credential (`/api/crew/respond/[token]`).
  *  Only the trusted backend ever needs it (offer + reminder emails, the respond
@@ -148,8 +152,9 @@ export const projectCrew = query({
         confirmedBy,
       });
     }
-    const auth = await getAuthContext(ctx);
-    return (await isAgentNoFinancials(ctx, auth)) ? out.map(redactAssignmentCost) : out;
+    // The one crew-pay rule (manager+ AND not a noFinancials key) — review S1:
+    // a member holding crew:read sees the crew, not their rates or the cost.
+    return (await canSeeCrewPay(ctx, orgId)) ? out : out.map(redactAssignmentCost);
   },
 });
 
@@ -158,15 +163,20 @@ export const projectLabourCost = query({
   args: { projectId: v.string(), orgId: v.string() },
   handler: async (ctx, { projectId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "crew"); // Phase 2 read bootstrap (#998)
-    // A service-linked assignment's cost is already rolled into its service's
-    // `costTotal` (convex/lib/serviceCost.ts recalcServiceCostFromCrew), which
-    // feeds `serviceCostTotal` — summing it again here would double it against
-    // that. Mirrors recalcProjectTotals's `labourCostTotal` exclusion exactly
-    // (convex/lib/recalc.ts, issue #796) so this display total and the real P&L
-    // total never disagree.
+    // The total IS the project's stored `labourCostTotal` (recalcProjectTotals,
+    // convex/lib/recalc.ts), READ, never recomputed: one number, one source
+    // (R-3.1). A recompute here with its own status filter disagreed with recalc
+    // (which counts CANCELLED/DECLINED calls — a logged follow-up), and the
+    // difference gave away the excluded person's cost. It is a JOB-LEVEL figure,
+    // so it follows the job-cost rule (owner ruling 2026-11-24); a caller who
+    // fails it gets the all-zero shape (S1). `assignmentCount` counts the live
+    // unlinked calls — a count, not money.
+    if (!(await canSeeJobCost(ctx, orgId))) return { totalLabourCost: 0, assignmentCount: 0 };
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
+    if (!project || project.organizationId !== orgId) return { totalLabourCost: 0, assignmentCount: 0 };
     const assignments = (await ctx.db.query("crewAssignments").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).collect())
       .filter((a) => a.organizationId === orgId && !EXCLUDED_STATUSES.has(a.status ?? "") && a.serviceId == null);
-    return { totalLabourCost: assignments.reduce((sum, a) => sum + (a.estimatedCost ?? 0), 0), assignmentCount: assignments.length };
+    return { totalLabourCost: project.labourCostTotal ?? 0, assignmentCount: assignments.length };
   },
 });
 
@@ -211,11 +221,16 @@ export const membersForAssignment = query({
       const list = projectAssignmentsByMember.get(a.crewMemberId) ?? [];
       list.push(a); projectAssignmentsByMember.set(a.crewMemberId, list);
     }
+    // UX Phase 15 (D49): a member's default pay is manager-only, server-side.
+    // Below manager (or for a noFinancials key) the fields stay in the shape as
+    // null — the same "no rate" the people picker already renders.
+    const payVisible = await canSeeCrewPay(ctx, orgId);
     const baseShape = (m: typeof members[number]) => {
       const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
       return {
         id: m.id, firstName: m.firstName, lastName: m.lastName, email: m.email ?? null, phone: m.phone ?? null, image: m.image ?? null,
-        department: m.department ?? null, defaultDayRate: m.defaultDayRate ?? null, defaultHourlyRate: m.defaultHourlyRate ?? null,
+        department: m.department ?? null,
+        defaultDayRate: payVisible ? m.defaultDayRate ?? null : null, defaultHourlyRate: payVisible ? m.defaultHourlyRate ?? null : null,
         crewRole: role ? { id: role.id, name: role.name } : null,
         assignments: (projectAssignmentsByMember.get(m.id) ?? []).map((a) => ({ id: a.id, phase: a.phase ?? null, status: a.status ?? null, serviceId: a.serviceId ?? null })),
       };
@@ -582,15 +597,39 @@ export const patchAssignment = mutation({
 });
 
 /**
+ * The bulk offer's write (`sendCrewOffers`): → OFFERED with a fresh single-use
+ * token, ONLY if the call is this org's and still waiting on an offer
+ * (`canCrewCall(status, "offer")` — PENDING, or OFFERED for a resend). The
+ * status check and the write are one transaction, so a call that was accepted
+ * or confirmed between the action's read and this write is refused, never
+ * knocked back to OFFERED. Service-only: the action holds the email side.
+ */
+export const markOfferedIfOfferable = mutation({
+  args: { id: v.string(), organizationId: v.string(), responseToken: v.string(), now: v.number() },
+  returns: v.object({ offered: v.boolean(), status: v.string() }),
+  handler: async (ctx, a) => {
+    await requireService(ctx);
+    const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.organizationId) throw new ConvexError("crewAssignments not found: " + a.id);
+    if (!canCrewCall(doc.status, "offer")) return { offered: false, status: doc.status ?? "PENDING" };
+    const patch = { status: "OFFERED" as const, responseToken: a.responseToken, offeredAt: a.now, updatedAt: a.now };
+    await ctx.db.patch(doc._id, patch);
+    await bumpCountersForTable(ctx, "crewAssignments", doc, { ...doc, ...patch });
+    return { offered: true, status: "OFFERED" };
+  },
+});
+
+/**
  * "First-come fill" (work-layer Phase 4, #1246, design §8.5's "Request
  * availability…") — called ONLY by the public crew-respond route right after
  * it accepts an offer (`/api/crew/respond/[token]`, service-authed, no user
  * session to check RBAC against, same posture as `getByResponseToken` /
  * `patchAssignment` above). If the just-accepted assignment is linked to a
- * `projectServices` row (`serviceId`) and enough OTHER assignments on that
- * same service are now ACCEPTED/CONFIRMED to meet `crewCountRequired`, every
- * remaining OFFERED/PENDING sibling is auto-cancelled (single-use token
- * cleared) and returned so the caller can best-effort email each one a
+ * `projectServices` row (`serviceId`), the fill is decided PER DAY
+ * (`crewShortfallByDay` over the ACCEPTED/CONFIRMED rows, UX Phase 15): an
+ * OFFERED/PENDING sibling is auto-cancelled only when every day IT covers now
+ * meets `crewCountRequired` (single-use token cleared). `filled` says the whole
+ * run is full. Each cancelled row is returned so the caller can best-effort email each one a
  * "position filled" notice (`notifyPositionFilled`, `crew-communication.ts`)
  * — this mutation only does the DB write, never sends email itself (Convex
  * mutations can't call out).
@@ -602,23 +641,26 @@ export const autoFillServiceNative = mutation({
     await requireService(ctx);
     const service = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", serviceId)).unique();
     if (!service || service.organizationId !== organizationId) return { filled: false, cancelled: [] };
-    const required = service.crewCountRequired ?? 0;
-    if (required <= 0) return { filled: false, cancelled: [] };
-
     const siblings = (await ctx.db.query("crewAssignments").withIndex("by_serviceId", (q) => q.eq("serviceId", serviceId)).collect())
       .filter((a) => a.organizationId === organizationId);
-    const filledCount = siblings.filter((a) => a.status === "ACCEPTED" || a.status === "CONFIRMED").length;
-    if (filledCount < required) return { filled: false, cancelled: [] };
+    // PER DAY (the ONE rule, lib/crewShortfall.ts): only ACCEPTED/CONFIRMED rows
+    // hold a place, each only on the days it covers. An open offer is cancelled
+    // only when EVERY day it covers is now full — a Monday-only accept never
+    // cancels a Tue–Wed offer on a Mon–Wed run.
+    const holding = siblings.filter((a) => a.status === "ACCEPTED" || a.status === "CONFIRMED");
+    const gap = crewShortfallByDay(service, holding);
+    if (!gap) return { filled: false, cancelled: [] };
 
     const cancelled: { assignmentId: string; crewMemberId: string }[] = [];
     for (const a of siblings) {
       if (a.id === acceptedAssignmentId) continue;
       if (a.status !== "OFFERED" && a.status !== "PENDING") continue;
+      if (!coveredDaysFull(service, holding, a)) continue;
       await ctx.db.patch(a._id, { status: "CANCELLED", updatedAt: now, responseToken: undefined });
       await bumpCountersForTable(ctx, "crewAssignments", a, { ...a, status: "CANCELLED" });
       cancelled.push({ assignmentId: a.id, crewMemberId: a.crewMemberId });
     }
-    return { filled: true, cancelled };
+    return { filled: gap.shortfall === 0, cancelled };
   },
 });
 

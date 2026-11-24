@@ -14,99 +14,22 @@ import {
   crewConfirmationEmail,
   crewCancellationEmail,
   crewBulkMessageEmail,
-  crewPositionFilledEmail,
 } from "@/lib/crew-emails";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getLocationById } from "@/lib/locations-read";
-import {
-  getAssignmentById,
-  getAssignmentsByProject,
-} from "@/lib/crew-scheduling-read";
-import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
+import { getAssignmentsByProject } from "@/lib/crew-scheduling-read";
+import { getCrewMemberById } from "@/lib/crew-read";
 import { getProjectByIdMapped } from "@/lib/projects-read";
-import { sendCrewOffersSchema } from "@/lib/validations/crew";
+import { buildAssignmentEmailData } from "@/lib/crew-assignment-email-data";
+import { crewMailBatchSchema } from "@/lib/validations/crew";
+import { canCrewCall } from "../../convex/lib/crewCallTransitions";
 
 function generateToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-// ─── Build email data from assignment ────────────────────────────────────────
-
-// Exported for `src/server/crew-time-nudges.ts` (the 24h offer nudge + the
-// day-before call-time reminder, both cron-invoked — no session to check
-// permissions against). This function does no authz itself; every USER-
-// FACING caller in this file still gates on `requirePermission` before it.
-export async function buildAssignmentEmailData(assignmentId: string) {
-  // crewAssignment / crewMember / crewRole and project are all dual-written /
-  // Convex-only — re-source the assignment + its crew member, role and project
-  // from Convex (the old Prisma `crewAssignment.findUnique` reads empty). The
-  // organization name stays Prisma (Better-Auth-adjacent org table, kept).
-  const assignmentRow = await getAssignmentById(assignmentId);
-  if (!assignmentRow) throw new Error("Assignment not found");
-
-  const [crewMember, project, roleMap, org] = await Promise.all([
-    getCrewMemberById(assignmentRow.crewMemberId),
-    getProjectByIdMapped(assignmentRow.projectId, assignmentRow.organizationId),
-    assignmentRow.crewRoleId ? getCrewRoleMap(assignmentRow.organizationId) : Promise.resolve(null),
-    prisma.organization.findUnique({
-      where: { id: assignmentRow.organizationId },
-      select: { name: true },
-    }),
-  ]);
-  if (!crewMember) throw new Error("Assignment not found");
-  if (!project) throw new Error("Assignment not found");
-
-  const roleName = assignmentRow.crewRoleId
-    ? roleMap?.get(assignmentRow.crewRoleId)?.name ?? null
-    : null;
-
-  // Location FK was dropped (Phase B); resolve the project's location from the
-  // Convex mirror (replaces the old nested `project.location` select).
-  const location = project.locationId
-    ? await getLocationById(project.locationId)
-    : null;
-
-  // Reconstruct the nested shape the senders consume (assignment.crewMember /
-  // .project / .organizationId).
-  const assignment = {
-    ...assignmentRow,
-    crewMember: {
-      firstName: crewMember.firstName,
-      lastName: crewMember.lastName,
-      email: crewMember.email ?? null,
-    },
-    crewRole: roleName ? { name: roleName } : null,
-    project: {
-      name: project.name,
-      projectNumber: project.projectNumber,
-      siteContactName: project.siteContactName,
-      siteContactPhone: project.siteContactPhone,
-    },
-    organization: org ? { name: org.name } : null,
-  };
-
-  return {
-    assignment,
-    emailData: {
-      crewFirstName: crewMember.firstName,
-      projectName: project.name,
-      projectNumber: project.projectNumber,
-      roleName,
-      phase: assignmentRow.phase,
-      startDate: assignmentRow.startDate?.toISOString() || null,
-      endDate: assignmentRow.endDate?.toISOString() || null,
-      startTime: assignmentRow.startTime,
-      endTime: assignmentRow.endTime,
-      locationName: location?.name || null,
-      locationAddress: location?.address || null,
-      siteContactName: project.siteContactName,
-      siteContactPhone: project.siteContactPhone,
-      notes: assignmentRow.notes,
-      orgName: org?.name || "RVLT Flow",
-    },
-  };
-}
+// Email data (the full assignment row, token and pay included) is built by a
+// PLAIN server module, never an exported action: `@/lib/crew-assignment-email-data`.
 
 // ─── Send Offer ──────────────────────────────────────────────────────────────
 
@@ -135,12 +58,24 @@ export async function sendCrewOffer(assignmentId: string) {
  * audit row: the caller has already authorised and owns the audit, so a bulk send
  * writes ONE summary row instead of N+1 (`sendCrewOffers`).
  */
-async function offerAssignment(assignmentId: string, organizationId: string) {
+async function offerAssignment(
+  assignmentId: string,
+  organizationId: string,
+  gateStatus = false,
+) {
   const { assignment, emailData } =
     await buildAssignmentEmailData(assignmentId);
 
   if (assignment.organizationId !== organizationId) {
     throw new Error("Assignment not found");
+  }
+  // A bulk send (`sendCrewOffers`) only offers calls still waiting on an offer
+  // (the planner's one transition table): re-offering an ACCEPTED/CONFIRMED
+  // call would silently knock it back to OFFERED.
+  if (gateStatus && !canCrewCall(assignment.status, "offer")) {
+    throw new Error(
+      `${assignment.crewMember.firstName} ${assignment.crewMember.lastName} is already ${(assignment.status ?? "").toLowerCase()}`
+    );
   }
 
   const crewEmail = assignment.crewMember.email;
@@ -156,15 +91,26 @@ async function offerAssignment(assignmentId: string, organizationId: string) {
   // Status-machine: → OFFERED, stamp a fresh single-use token + offeredAt.
   // Convex-only write (dates → epoch-ms).
   const convex = await getConvexClient();
-  await convex.mutation(api.crewAssignments.patchAssignment, {
-    id: assignmentId,
-    set: {
-      status: "OFFERED",
-      responseToken: token,
-      offeredAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-  });
+  if (gateStatus) {
+    // The bulk path re-checks the status INSIDE the write (one transaction), so a
+    // call accepted between the read above and now is refused, not knocked back.
+    const r = await convex.mutation(api.crewAssignments.markOfferedIfOfferable, {
+      id: assignmentId, organizationId, responseToken: token, now: Date.now(),
+    });
+    if (!r.offered) {
+      throw new Error(`${assignment.crewMember.firstName} ${assignment.crewMember.lastName} is already ${r.status.toLowerCase()}`);
+    }
+  } else {
+    await convex.mutation(api.crewAssignments.patchAssignment, {
+      id: assignmentId,
+      set: {
+        status: "OFFERED",
+        responseToken: token,
+        offeredAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    });
+  }
 
   // Build accept/decline URLs
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
@@ -227,14 +173,15 @@ export async function sendCrewOfferAll(projectId: string) {
 // ─── Send Offers to the ticked assignments ───────────────────────────────────
 
 /**
- * Offer each ticked assignment (Logistics bulk verb `Send N offers`). Same
- * per-row path as `sendCrewOffer`; a row that cannot be offered (no email, not
- * this org's) is reported in `errors`, never thrown, so one bad row does not
- * stop the rest.
+ * Offer each ticked assignment (Logistics `Send N offers`, the planner's
+ * `Offer n` / `Offer to suggested n` / Offer a call). Same per-row path as
+ * `sendCrewOffer`; a row that cannot be offered (no email, not this org's,
+ * already accepted or confirmed) is reported in `errors`, never thrown, so one
+ * bad row does not stop the rest.
  */
 export async function sendCrewOffers(input: { assignmentIds: string[] }) {
   const { organizationId, userId, userName } = await requirePermission("crew", "update");
-  const { assignmentIds } = sendCrewOffersSchema.parse(input);
+  const { assignmentIds } = crewMailBatchSchema.parse(input);
 
   // Deduped: a repeated id is one offer, and the count we report and audit says so.
   const ids = [...new Set(assignmentIds)];
@@ -242,7 +189,7 @@ export async function sendCrewOffers(input: { assignmentIds: string[] }) {
   const errors: string[] = [];
   for (const id of ids) {
     try {
-      await offerAssignment(id, organizationId);
+      await offerAssignment(id, organizationId, true);
       sent++;
     } catch (e) {
       errors.push((e as Error).message);
@@ -316,6 +263,60 @@ export async function sendCancellationEmail(assignmentId: string) {
   });
 
   return serialize({ success: true });
+}
+
+// ─── Cancellation mail for the planner's Cancel n ────────────────────────────
+
+/**
+ * Tell each crew member their call was cancelled (the planner's `Cancel n`,
+ * spec §9h.3). `assignmentIds` is `cancelManyNative`'s `toTell`. Each id is
+ * re-checked here: this org's, and actually CANCELLED, so the action can never
+ * be used to mail a cancellation for a call that still stands. A row that
+ * cannot be told (no email, not cancelled) is reported, never thrown. ONE
+ * audit row for the click.
+ */
+export async function sendCancellationEmails(input: { assignmentIds: string[] }) {
+  const { organizationId, userId, userName } = await requirePermission("crew", "update");
+  const { assignmentIds } = crewMailBatchSchema.parse(input);
+  const ids = [...new Set(assignmentIds)];
+  let sent = 0;
+  const errors: string[] = [];
+  for (const id of ids) {
+    try {
+      await mailCancellation(id, organizationId);
+      sent++;
+    } catch (e) {
+      errors.push((e as Error).message);
+    }
+  }
+  await logActivity({
+    organizationId,
+    userId,
+    userName,
+    action: "UPDATE",
+    entityType: "crew_assignment",
+    entityId: ids[0],
+    entityName: `${ids.length} crew assignments`,
+    summary: `Sent ${sent} of ${ids.length} crew cancellation emails`,
+  });
+  return serialize({ sent, errors, total: ids.length });
+}
+
+async function mailCancellation(assignmentId: string, organizationId: string) {
+  const { assignment, emailData } = await buildAssignmentEmailData(assignmentId);
+  if (assignment.organizationId !== organizationId) throw new Error("Assignment not found");
+  const name = `${assignment.crewMember.firstName} ${assignment.crewMember.lastName}`;
+  if (assignment.status !== "CANCELLED") throw new Error(`${name}'s call is not cancelled`);
+  if (!assignment.crewMember.email) throw new Error(`${name} has no email address`);
+  const email = crewCancellationEmail(emailData);
+  await deliverSideEffectEmail({
+    // The cancel write's own stamp is the nonce: a retry of this send dedupes,
+    // while a later cancel of the same (re-offered) call is a new email.
+    idempotencyKey: `crew-cancel:${assignmentId}:${assignment.updatedAt?.getTime() ?? 0}`,
+    to: assignment.crewMember.email,
+    subject: email.subject,
+    html: email.html,
+  });
 }
 
 // ─── Bulk Message ────────────────────────────────────────────────────────────
@@ -522,22 +523,6 @@ export async function requestCrewAvailability(input: RequestAvailabilityInput) {
   return serialize({ offered, eligible: eligible.length, errors });
 }
 
-/**
- * "First-come fill" notice — sent to a crew member whose still-open offer was
- * auto-cancelled once the service's required headcount was reached by others
- * who accepted first (`crewAssignments.autoFillServiceNative`, called from the
- * public respond route). Best-effort: never blocks the accept response that
- * triggers it.
- */
-export async function notifyPositionFilled(assignmentId: string): Promise<void> {
-  const { assignment, emailData } = await buildAssignmentEmailData(assignmentId);
-  const crewEmail = assignment.crewMember.email;
-  if (!crewEmail) return;
-  const email = crewPositionFilledEmail(emailData);
-  await deliverSideEffectEmail({
-    idempotencyKey: `crew-position-filled:${assignmentId}`,
-    to: crewEmail,
-    subject: email.subject,
-    html: email.html,
-  });
-}
+// The "position filled" notice (no session, no authz of its own: the public
+// respond route sends it) is a PLAIN server module, never an exported action:
+// `@/lib/crew-position-filled`.

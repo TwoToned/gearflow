@@ -497,6 +497,95 @@ price-looking $0 plus a `priceBreakdown` that makes it look auto-priced. See
 `addLineItemSmartNative` and `groupTemplatesWrites.applyNative`.
 
 
+### Timesheets: crew pay is DERIVED and manager-gated; Query… is not `notes`
+Timesheet rate/total (D49) are derived in `convex/lib/timeEntryMoney.ts` from the
+pay cascade `resolveRate` — a day rate once per person per day, a flat rate once per
+person per assignment (a job-less FLAT entry: once per person per day), nothing
+resolved = blank — and never stored. The entry that CARRIES a shared charge is the
+most advanced one (EXPORTED > APPROVED > SUBMITTED > DISPUTED/DRAFT), then the
+earliest; never "the earliest" alone, or a later draft steals it. Every read that
+returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
+`crewAssignments.{membersForAssignment,projectCrew,list,getById,listByProject,listByServiceIds}`,
+`crewDashboard.{pickerList,pendingTimeEntries,activeAssignmentsSummary,pendingOffers,upcomingShifts}`,
+`crewMembers.{list,listPage,getById}`, `crew.memberDetail`,
+`crewRoles.{list,listForSettings,getById}`) gates it on `canSeeCrewPay`
+(`convex/lib/crewPayVisibility.ts`), which decides with THE one rule,
+`crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ AND the job-cost line —
+`invoice:read` and not a `noFinancials` key; the pay line implies the job-cost
+line, so a key scoped without `invoice` can't rebuild a job's cost from the
+services' `costTotal` and the calls' `estimatedCost`). A server action reads Convex with the SERVICE identity (which always sees
+pay), so every one that returns crew pay decides for its real caller with
+`callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`, the same `crewPayVisible`; an
+API-key actor counts as noFinancials — fail closed): `exportTimesheetCSV`,
+`getProjectServices` (`redactServiceCrewPay` strips each call's `estimatedCost` /
+`rateOverride` / `resolvedRate` and the service's own `costTotal`, so Logistics
+renders no row cost/margin cell) and the timeline PDF route (`?showCost` prints
+service costs only with pay).
+
+**Two money lines, never one** (owner ruling 2026-11-24, "anyone with invoice read"):
+- **Individual pay** — a person's or role's rate, a call's cost, a service's own
+  crew-rolled `costTotal` (`MEMBER_RATE_FIELDS` / `ROLE_RATE_FIELDS` /
+  `SERVICE_CREW_COST_FIELDS`, `convex/lib/crewPayFields.ts`) — needs the PAY line
+  above (`canSeeCrewPay` / `callerSeesCrewPay` / `crewPayRedactor`).
+- **Job cost** — the project's `serviceCostTotal` / `labourCostTotal` / `margin`
+  (`JOB_COST_FIELDS`), the services summary's cost total, `projectCosts.operationalCosts`
+  and `crewAssignments.projectLabourCost` (the same number as `labourCostTotal`) —
+  needs `invoice:read` and not a `noFinancials` key: ONE rule, `jobCostVisible`
+  (`crewPayRule.ts`, next to `crewPayVisible`), decided by `canSeeJobCost` /
+  `jobCostRedactor` in Convex (via `callerMayRead`, so a key's scope counts) and
+  `callerSeesJobCost` / `withoutJobCost` / `jobCostSortAllowed` in server actions.
+  Never inline an `invoice:read` check. Every built-in role holds `invoice:read`
+  (warehouse and viewer included), so in practice only a key without the invoice
+  scope and a `noFinancials` key lose it. Sites: `projects.*`, `projectDetail.bundle`
+  (job page, MCP `get_project`, Mira), `warehouseDetail.bundle`, the project entry
+  of snapshot reads (`projectLocksRead`, which also always strips a crew call's
+  `responseToken`), `getProject(s)` / `getTemplates` / `getProjectServicesSummary`.
+
+Both are ABSENT (never zeroed) for a caller who fails them, so nothing can be
+back-solved; a hidden field is not a sort key either; a whole-payload read returns
+its all-zero shape (`operationalCosts`' EMPTY, a stable contract). The UI renders
+what the server sent: Finance's margin + Costs and the quote revision viewer's
+Margin by presence (`null` counts as absent — `mapProject` maps absent to `null`),
+Logistics' `Show cost` by `logisticsCostView` (footer = job cost, row cells = pay).
+The activity log still WRITES money in its field diffs (the audit needs them) but
+every read (`activityLog.{list,listByEntity,recentForProject,exportRows}`, and the
+CSV action for its real caller) drops each change row by its line
+(`activityMoneyRedactor`, `convex/lib/activityPay.ts`). A helper that returns a
+full assignment row with no authz of its own is a plain module, never a
+`"use server"` export (`src/lib/crew-assignment-email-data.ts`). Writes follow the
+pay line: below it a service save keeps each call's stored rate inputs
+(`crewRateInputs` in `convex/projectServicesWrites.ts`) and the service's stored
+`costTotal`, and a create ignores a supplied one. Never write a third "who sees
+money" check; add a new money-bearing read to the right list, and don't hide a
+column client-side. A crew member's `icalToken` (the
+public calendar feed's bearer secret) leaves Convex only through `memberRowRedactor`
+(`convex/lib/crewMemberRedaction.ts`): to the member themself or `crew:update`, on a
+user session, never an API key; never return it from a service-token server action
+(`getIcalSettings` deliberately doesn't). Query… (D47, enum stays `DISPUTED`) stores its reason on
+`crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /
+approve / query log one activity row per entry with the prior state, and their ONE
+Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior
+status) and reads which transition ran and the prior state back from those rows —
+never accept either from the client. Query clears the approval stamp and its
+revert restores it. Log time's Undo is ONE atomic `undoCreateManyNative({ ids,
+stamp })` that refuses if any entry moved on — never a loop of deletes.
+FEATUREDOCS/31.
+
+### The crew planner — one call-verb table, mail has no Undo
+Which planner verb a crew call offers (Offer / Confirm / Cancel) comes from ONE
+table, `convex/lib/crewCallTransitions.ts` (`canCrewCall`): the server gates
+(`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the planner menus
+read it, so add a status there, not in a menu. `sendCrewOffers` refuses a call
+that is not PENDING/OFFERED (it would knock a yes back to OFFERED). Offer and
+Cancel email the crew: confirm first, toast with no Undo; `Confirm n`'s Undo is
+`unconfirmManyNative(result)` with the forward result unchanged. A bulk offer's
+gate is atomic (`crewAssignments.markOfferedIfOfferable`); crew mail goes out in
+batches of `MAX_CREW_MAIL_BATCH`. The week starts on the ORG's week start
+(`useOrgWeekStartsOn`); a multi-day service is checked on every day it covers.
+The planner reads `plannerData` / `openCalls` as live subscriptions keyed on the URL week;
+editing a call stays on the job's Logistics tab (`updateNative` is a full
+replace). FEATUREDOCS/31 "Crew Planner".
+
 ### Discount: the AMOUNT is stored, the PERCENTAGE is derived
 `projectLineItems.discount` / `projectGroups.discount` are always the **resolved
 flat dollar amount** — recalc, allocation, invoicing and `lineTotal` read that

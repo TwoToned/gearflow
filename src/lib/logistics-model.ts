@@ -8,6 +8,7 @@
 import { isFilledAssignmentStatus } from "@/lib/crew-assignment-status";
 
 import type { ServiceTypeValue } from "../../convex/lib/serviceTypes";
+import { crewShortfallByDay, serviceDays, type CrewShortfall } from "../../convex/lib/crewShortfall";
 
 export type ServiceType = ServiceTypeValue;
 export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
@@ -15,7 +16,11 @@ export type ServiceStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED
 export interface LogisticsAssignment {
   id: string;
   status: string;
-  estimatedCost: number | null;
+  /** ABSENT when the caller can't see crew pay (the server strips it). */
+  estimatedCost?: number | null;
+  /** The call's own days (ISO), for the per-day crew gap. */
+  startDate?: string | null;
+  endDate?: string | null;
   /** The per-assignment rate inputs the service sheet's rate table edits. */
   rateOverride?: number | null;
   rateType?: string | null;
@@ -45,7 +50,8 @@ export interface LogisticsService {
   clientContactPhone?: string | null;
   clientVehicle?: string | null;
   lineTotal: number | null;
-  costTotal: number | null;
+  /** ABSENT below the crew-pay line (it rolls up the crew's pay): then no cost or margin renders. */
+  costTotal?: number | null;
   crewCountRequired: number | null;
   crewRole: { id: string; name: string; color: string | null } | null;
   crewAssignments: LogisticsAssignment[];
@@ -96,10 +102,41 @@ function laneOf(type: ServiceType): Exclude<Lane, "all" | "needs"> {
 export const filledOf = (s: LogisticsService): LogisticsAssignment[] =>
   s.crewAssignments.filter((a) => isFilledAssignmentStatus(a.status));
 
-/** How many more people the service needs. A cancelled service needs nobody. */
+const msOf = (v: string | Date | null | undefined): number | null => (v == null ? null : new Date(v).getTime());
+
+/** The minimal service shape the crew gap reads (Logistics rows and the plain service rows both fit). */
+export interface CrewGapService {
+  date: string | Date | null;
+  endDate: string | Date | null;
+  crewCountRequired: number | null;
+  crewAssignments: readonly { status: string | null; startDate?: string | Date | null; endDate?: string | Date | null }[];
+}
+
+/**
+ * The service's crew gap, PER DAY — THE one rule, `crewShortfallByDay`
+ * (`convex/lib/crewShortfall.ts`), the same the planner, the Overbookings
+ * board and the readiness check read. A call fills only the days it covers;
+ * DECLINED/CANCELLED fill nothing. Null when the service states no need.
+ */
+export function crewGap(s: CrewGapService): CrewShortfall | null {
+  return crewShortfallByDay(
+    { date: msOf(s.date), endDate: msOf(s.endDate), crewCountRequired: s.crewCountRequired },
+    s.crewAssignments.map((a) => ({ status: a.status, startDate: msOf(a.startDate), endDate: msOf(a.endDate) })),
+  );
+}
+
+/** The run's days that are short while others are filled (empty for a one-day or an evenly short run). */
+export function partialShortDays(s: CrewGapService): number[] {
+  const gap = crewGap(s);
+  if (!gap || gap.shortDays.length === 0) return [];
+  const all = serviceDays({ date: msOf(s.date), endDate: msOf(s.endDate) });
+  return gap.shortDays.length < all.length ? gap.shortDays.map((d) => d.day) : [];
+}
+
+/** How many more people the service needs on its WORST day. A cancelled service needs nobody. */
 export function crewShort(s: LogisticsService): number {
   if (s.status === "CANCELLED") return 0;
-  return Math.max((s.crewCountRequired ?? 0) - filledOf(s).length, 0);
+  return crewGap(s)?.shortfall ?? 0;
 }
 
 const countStatus = (s: LogisticsService, status: string): number =>

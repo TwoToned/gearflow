@@ -54,6 +54,7 @@ const NAV_COUNTS: Record<string, { value: number; secondary?: number; truncated:
   clients: { value: 26, truncated: false },
   suppliers: { value: 13, truncated: false },
   locations: { value: 200, truncated: true },
+  crew: { value: 31, truncated: false },
 };
 const countReads: string[] = [];
 vi.mock("@/hooks/use-authed-query", () => ({
@@ -195,7 +196,8 @@ describe("More sheet", () => {
     fireEvent.click(within(dialog).getByText("Crew"));
     expect(within(dialog).getByText("Open Crew")).toBeTruthy();
     expect(within(dialog).getByText("Planner")).toBeTruthy();
-    expect(within(dialog).getByText("Timesheets")).toBeTruthy();
+    // D48: one Crew sub; Timesheets is reached from the Crew page's head words.
+    expect(within(dialog).queryByText("Timesheets")).toBeNull();
     fireEvent.click(within(dialog).getByText("Crew")); // the back header
     expect(within(dialog).getByText("Plan")).toBeTruthy();
   });
@@ -245,7 +247,16 @@ describe("More sheet", () => {
     expect(row("Returns")).toContain("2 overdue");
     expect(row("Clients")).toContain("26");
     expect(row("Locations")).toContain("200+");
-    // Crew's row is Phase 15's to attach (Q10): no count source on it yet.
+    // Phase 15 attached the reserved `crew` source to the Crew row (Q10).
+    expect(row("Crew")).toContain("31");
+    expect(countReads).toContain("crew");
+  });
+
+  it("S4: a role without crew:read has no Crew row and so no crew count read", async () => {
+    perms = { project: ["read"], asset: ["read"], client: ["read"], invoice: ["read"], crew: [] };
+    countReads.length = 0;
+    const dialog = await open();
+    expect(within(dialog).queryByText("Crew")).toBeNull();
     expect(countReads).not.toContain("crew");
   });
 

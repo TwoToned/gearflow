@@ -27,12 +27,15 @@ redacted for non-service callers via `convex/lib/auth.ts` `redactFields()`.
 | **Client handover contact** | Convex `projectServices` (client pick up / drop off types) | `clientContactName`, `clientContactPhone`, `clientVehicle` (vehicle and rego of the person collecting) | Who comes to our counter for a client pick up / drop off. Readable by org members with `project:read`; printed on the call sheet and runsheet (internal). Redacted from the API request log. Retention: with the job (active relationship + 12 months, T-P2); removed when the service or job is deleted |
 | **iCal feed token** | Convex `crewMembers.icalToken`, `orgSettings.icalToken` | opaque token | Authenticates a personal calendar feed (set only while the feed is enabled) |
 | **Audit trail** | Postgres `ActivityLog` · Convex `activityLogs` | `entityName` (human-readable label at action time), actor id | Append-only audit log (R-8.11.4) |
-| **Free-text notes** | Convex (many tables' `notes`) | arbitrary user content, may contain PII | Operational notes |
+| **Free-text notes** | Convex (many tables' `notes`; `crewTimeEntries.queryReason`) | arbitrary user content, may contain PII | Operational notes; `queryReason` is the manager's reason for querying a timesheet entry (D47), shown to the org's `crew:read` members, also printed in the activity summary and the timesheet CSV; kept with the entry, cleared when it is resubmitted or approved |
 
 ### Sensitive fields (extra care)
 
 - `crewMembers.dateOfBirth`, `emergencyContact*`, `abnOrGst`, pay rates — most sensitive;
-  redacted from non-service reads.
+  redacted from non-service reads. Pay (member default rates, assignment rate/cost,
+  derived timesheet totals) is additionally hidden below manager and from
+  `noFinancials` keys on the planner, timesheet and people-picker reads
+  (`canSeeCrewPay`, `convex/lib/crewPayVisibility.ts`, UX Phase 15 / D49).
 - `icalToken` — capability secret; a `by_icalToken` hit means "valid + live". Redacted.
 - `Session.ipAddress` / `userAgent`.
 

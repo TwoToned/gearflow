@@ -1,4 +1,4 @@
-"use server";
+import "server-only";
 
 /**
  * Work-layer Phase 4 (#1246, design §8.5) — two cron-invoked crew email
@@ -8,12 +8,11 @@
  * instruction ("using the existing notification cron and its
  * notificationEmailLogs dedupe" — not a second mechanism).
  *
- * Deliberately a SEPARATE file from `crew-communication.ts`: every function in
- * that file is a user-invoked server action gated by `requirePermission`, but
- * these two run with no session (a cron sweep, like `sendNotificationEmails`
- * in `notification-email-sender.ts`) — mixing an unguarded, cron-only function
- * into the user-facing file would risk it later being called from a client
- * component with no RBAC check at all.
+ * A PLAIN server-only module, never a `"use server"` file (UX Phase 15
+ * ruling): these run with no session and no authz of their own (the cron
+ * route checks `CRON_SECRET`), and an exported server action is callable from
+ * any browser session — so as actions they let anyone make the app email
+ * every crew member in every org. Only the cron route imports them.
  *
  * `notificationEmailLogs.userId` is repurposed here to hold the CREW MEMBER's
  * id (not a Better Auth user id) — it's just a dedupe key column, and this is
@@ -31,7 +30,7 @@ import { env } from "@/env";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getCrewAssignmentsByOrg } from "@/lib/crew-scheduling-read";
 import { crewOfferReminderEmail, crewCallTimeReminderEmail } from "@/lib/crew-emails";
-import { buildAssignmentEmailData } from "@/server/crew-communication";
+import { buildAssignmentEmailData } from "@/lib/crew-assignment-email-data";
 import { startOfDayInTimezone, endOfDayInTimezone } from "@/lib/quote-validity";
 
 export interface CrewTimeNudgeResult {

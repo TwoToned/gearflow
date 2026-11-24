@@ -1,9 +1,36 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { query, type QueryCtx } from "./_generated/server";
+import { redactFields, requireOrgPermission } from "./lib/auth";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
+import { JOB_COST_FIELDS, SERVICE_CREW_COST_FIELDS } from "./lib/crewPayFields";
+import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 import { canUnlockPricing } from "./lib/projectLocks";
 import { getAuthContext } from "./lib/auth";
 import { collectCurrentEntries } from "./lib/projectSnapshots";
+
+type Entry = { entityType: string; entityId: string; data: Record<string, unknown> };
+type Redact = <E extends Entry>(e: E) => E;
+
+/**
+ * A snapshot entry's `data` is the whole stored row, so it carries what the live
+ * reads redact. Per entity, the same lists (lib/crewPayFields.ts): a crew call's
+ * `responseToken` (a bearer credential) ALWAYS; below the pay line
+ * (`canSeeCrewPay`) the call's cost and the service's crew-rolled `costTotal`;
+ * and without job cost (`canSeeJobCost`, owner ruling 2026-11-24) the project's
+ * job-level cost + margin.
+ */
+async function entryRedactor(ctx: QueryCtx, orgId: string): Promise<Redact> {
+  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
+  const hidden: Record<string, readonly string[]> = {
+    crewAssignment: pay ? ["responseToken"] : ["responseToken", ...ASSIGNMENT_COST_FIELDS],
+    ...(pay ? {} : { service: SERVICE_CREW_COST_FIELDS }),
+    ...(jobCost ? {} : { project: JOB_COST_FIELDS }),
+  };
+  return (e) => {
+    const fields = hidden[e.entityType];
+    return fields && e.data ? { ...e, data: redactFields(e.data, fields) } : e;
+  };
+}
 
 const ENTRY_RETURNS = v.array(
   v.object({
@@ -128,7 +155,8 @@ export const snapshotEntries = query({
     const entries = (
       await ctx.db.query("projectSnapshotEntries").withIndex("by_snapshotId", (q) => q.eq("snapshotId", snapshotId)).collect()
     ).filter((e) => e.organizationId === orgId);
-    return entries.map((e) => ({ entityType: e.entityType, entityId: e.entityId, data: e.data }));
+    const redact = await entryRedactor(ctx, orgId);
+    return entries.map((e) => redact({ entityType: e.entityType, entityId: e.entityId, data: e.data }));
   },
 });
 
@@ -142,6 +170,7 @@ export const currentEntries = query({
     await requireOrgPermission(ctx, orgId, "project", "read");
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return [];
-    return collectCurrentEntries(ctx, orgId, project);
+    const redact = await entryRedactor(ctx, orgId);
+    return (await collectCurrentEntries(ctx, orgId, project)).map((e) => redact(e));
   },
 });

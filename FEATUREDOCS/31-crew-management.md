@@ -181,12 +181,15 @@ typed price).
 revenue). `crewChargeTotal` is the per-service, pre-discount input that feeds
 `lineTotal`; conflating the two names would have been an R-3.10 violation.
 
-**Visibility:** cost (`defaultRate`, `costTotal`) and margin (charge - cost) are
-manager+ only (`useIsManagerPlus()`, `src/lib/use-permissions.ts`); the charge
-rate/total (`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role
-(members see the client-facing price, not the internal cost or margin). The
-roles admin table (below) is the one place BOTH rate columns are manager+-gated —
-server-enforced via `crewRoles.ts` `listForSettings`.
+**Visibility:** two lines, both server-enforced (see "Two money lines" below).
+A role's rates and a service's own cost (`defaultRate`, `costTotal`) and the
+row's margin are individual pay: manager+ AND the job-cost line (the pay line
+implies it, so a key without the `invoice` scope sees no pay either). The
+JOB's cost and margin (the project's totals) need `invoice:read` and not a
+`noFinancials` key (owner ruling 2026-11-24). The charge rate/total
+(`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role. The
+roles admin table (below) is the one place BOTH rate columns are pay-gated —
+`crewRoles.ts` `listForSettings`.
 
 ## Service ↔ Crew Cost Linkage (issue #796)
 A `CrewAssignment` with a `serviceId` is "owned" by that `ProjectService`: its
@@ -228,9 +231,9 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | `/crew/new` | CrewMemberForm | Create crew member |
 | `/crew/[id]` | Detail page | Profile picture (upload/remove), contact, rates, skills, assignments (with status management), availability, certifications, time entries, calendar, linked user display |
 | `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
-| `/crew/planner` | CrewPlannerPage | 14-day Gantt-style timeline of all crew |
-| `/crew/timesheets` | TimesheetsPage | All time entries with DataTable, filtering, search, edit/delete, export |
-| `/crew/settings` | `src/app/(app)/crew/settings/page.tsx` | Roles admin (WS10 #949) — name/department/colour/cost rate/charge rate/active, reorder, archive-with-usage-guard. Was a documented-but-nonexistent route until WS10 (`crewRoles.ts`'s mutations previously had zero callers) — see `crewRolesWrites.ts` + `use-crew-role-writes.ts`. Skills management is NOT on this page (out of scope for WS10 — the "& Skills" framing in nav labels is aspirational, not yet built) |
+| `/crew/planner` | CrewPlannerPage → `CrewPlanner` | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the one-week planner (see "Crew Planner") |
+| `/crew/timesheets` | `TimesheetsList` (`src/components/crew/workspace/timesheets/`) | The Crew workspace's **Timesheets** word on `ListPage` (UX Phase 15, spec §9h.4) — see "Crew workspace" below |
+| `/crew/settings` | redirect | Server redirect to `/crew/planner?sheet=roles`: the roles admin is now the **Crew roles & rates** sheet (`src/components/crew/workspace/roles/`). Old links and bookmarks keep working |
 
 **CrewTable data source (2026-07, perf fix):** server-side paginated —
 `crewMembers.listPage` (filter/sort/crewRole join done in Convex) via
@@ -240,7 +243,69 @@ subscriptions that filtered/joined/sorted client-side. See
 user (Better Auth, cross-domain) stays a separate merge applied after the paginated
 fetch — search no longer matches the linked user's display name, only this table's
 own fields (a narrow, disclosed tradeoff since Convex can't join Better Auth data).
-`icalToken` redaction for non-service callers carries over unchanged.
+Rows go through the same `memberRowRedactor` as `list`/`getById` (the feed token
+only for the member themself or `crew:update` on a user session; rates only with
+crew pay).
+
+## Crew workspace (UX Phase 15, spec §9h, D48)
+
+One page, **Crew**, with two views as head words, `Planner  Timesheets`
+(`ListHead`'s additive `headWords` prop; each word is its own route, so both
+stay deep links). `src/components/crew/workspace/crew-workspace.tsx` owns the
+words, the page ⋯ items both views share (**Crew list**, **Crew roles &
+rates…**) and the roles sheet, which is URL state: `?sheet=roles` (where
+`/crew/settings` redirects). Each view keys its list by the active org, so an
+org switch drops the selection and the seen rows.
+
+### Timesheets (`timesheets/timesheets-list.tsx`, spec §9h.4)
+- `ListPage` over `crewTimeEntries.allEntries`; the URL is the state
+  (`src/lib/list-views/timesheets.ts`): strip **Submitted · Approved · Queried ·
+  All** (Submitted is the default), `Person` and `Status ▾` filters (the strip
+  and Status intersect), sort by person / date / hours / status, the pager, and
+  saved views (old `crewMemberId` filters convert to `person` on read).
+- Columns: person (role) · job (number + name, description, query reason in
+  amber) · date (times and break under it) · hours · **Rate (pay)** · **Total**
+  · status; Approved by and Notes are opt-in under ⋯ › Columns. Rate (pay) and
+  Total are columns ONLY when the server returned them (`payVisible`) — the
+  client never decides who sees pay. A carried day rate prints `incl.`, an
+  unresolved rate is blank, never $0. Footer line: `Totals · 361h · $16,962`
+  (the money only for a pay-visible caller).
+- Row ⋯ (`src/lib/row-actions/time-entry.ts`): Edit entry, Submit, Approve,
+  Query…, Open crew member, Delete entry (confirmed). Which verb a row offers
+  comes from the ONE transition table the server gates on
+  (`convex/lib/timeEntryTransitions.ts`). Exported rows have no ⋯.
+- Bulk: `Approve n · Submit n · Query… · Export` (each count is the rows it
+  would change). Submit / Approve / Query… toast with Undo from ONE closure:
+  `revert(result)` — the forward result's own `changed` + `stamp`. Skipped rows
+  are named. Export calls the same server CSV as Export all…, narrowed to the
+  ticked ids (`exportTimesheetCSV({ ids })`, Zod-validated), so pay columns are
+  still decided server-side.
+- Edit entry and Log time (two steps: tick people, then one set of hours) are
+  sheets (bottom on a phone). Saving an edit returns the entry to Draft and
+  clears its approval (`updateNative`), so its Undo (the snapshot replayed) is
+  offered only for an entry that WAS a draft; any other says so before Save.
+  Log time's Undo is ONE atomic mutation,
+  `crewTimeEntriesWrites.undoCreateManyNative({ ids, stamp })`: it deletes
+  exactly the entries that call created and refuses the whole Undo if any was
+  edited, submitted or approved since (offered only with `crew:delete`). Like
+  `revertNative`, it is author-scoped: only the user whose Log time wrote the
+  entries' CREATE rows at that stamp may take them back.
+  Query… is a dialog whose Save stays disabled until a reason is typed.
+- Phone: cards `name` / `#2336 · Sat 7 Nov · 8.5h · Submitted` with the total
+  on the right, the sticky Log time, `Show 25 more`. Export all… stays in the
+  page ⋯ on a phone too: it is the only date-range export.
+
+### Crew roles & rates (`roles/crew-roles-sheet.tsx`, spec §9h.5)
+The old `/crew/settings` page as a sheet: active roles in display order,
+archived ones under a muted head, cost / charge only when the SERVER says the
+caller sees pay (`crewRoles.ratesVisible` = `canSeeCrewPay`, never the client's
+role; `crewRoles.listForSettings` strips the rates otherwise, and an edit then
+sends no rate fields). Row ⋯
+(`src/lib/row-actions/crew-role.ts`): Edit… · Move up / Move down (active roles
+only, absent at the ends) · Archive… (usage dialog) · Restore. A move is ONE
+atomic `moveNative`, its Undo the opposite move; archive ↔ restore and an
+edit's snapshot are the other Undos. New role has no Undo (there is no role
+delete).
 
 ## Profile Pictures
 - Upload/remove via hover overlay on avatar in crew detail page header (only for unlinked crew members)
@@ -426,18 +491,150 @@ keyed `(projectId, range)` and bounded to the project's own dated assignments.
 UNAVAILABLE→TENTATIVE→busy→available precedence lives on, ported into
 `computeMemberConflictSignal`'s `availability` field.
 
-## Crew Planner
-- 14-day Gantt-style timeline at `/crew/planner`
-- Shows all active crew with their assignments and availability blocks
-- **At-a-glance strip** above the board (single surface, vertical dividers): crew on roster, booked today, free today, off today — computed client-side from the loaded data
-- **Filter / search bar**: free-text search (name, role, department, project), plus crew-member, project, and availability-status (`Booked` / `Unavailable` / `Tentative` / `Preferred`) Selects. All filtering is **client-side** over the already-loaded planner data — no server round-trip. "N of M shown" counter + Clear button when any filter is active. Picking a project filter highlights matching assignment chips (red ring) and dims non-matching ones; a dedicated "no crew match these filters" empty state appears when filters exclude everyone.
-- Day cells render labelled status **chips** (project number / `N×` / `Off` / `Tent.` / `Pref.`) via `status-colors`, not bare dots: primary red (assignment), `t-out` (unavailable), warn (tentative), ok (preferred). Blank cell = no plans. On-fill text follows §3.7 (`text-white` on the red assignment fill).
-- Sticky crew name column with per-row `Nd` booked-days chip; circular today pill in the header; weekend columns tinted
-- Tooltip on hover showing project details or availability reason
-- Navigation: back/forward by week, "Today" button
-- Sidebar: "Planner" link under Crew
+## Crew Planner (UX Phase 15, spec §9h.3, D46)
+
+`/crew/planner` is the Crew workspace's **Planner** word
+(`src/components/crew/workspace/planner/`, pure derivations in
+`src/lib/crew-planner.ts`, URL codec in `src/lib/crew-planner-url.ts`, row and
+bulk verbs in `src/lib/row-actions/crew-call.ts`). The route is a thin server
+component; the fortnight, the today-tiles, the crew-member Select and the glyph
+legend are gone (every block prints its own word).
+
+- **One week** (D46) from the **org's week start** (`useOrgWeekStartsOn`, #1086:
+  Mon, or Sun for a Sunday-start country) with ‹ › Today; it opens on this week,
+  or the week holding the next working days on a weekend. Rows are active crew by last name; the last column
+  is **Hours** = planned (each booked call's `estimatedHours`, else its times ×
+  its days in the week; PENDING / DECLINED are not planned — the live rule) `/`
+  logged (`crewTimeEntries.approvedHoursByMember`). Derived, never stored.
+- **A call is a block**: tick (a 24px target) · job number (links to the job's
+  Logistics tab) · role · times · status word (`Offered 4d`, amber from 3 days).
+  The block is a plain container: its primary is ONE stretched button (opens the
+  **call sheet**), with the tick, the link and ⋯ as sibling controls — never
+  interactive content nested in a button. ⋯ on hover/focus (always on touch).
+- **Empty cells print the person's day**: `Unavailable` (hatched, with its
+  reason), `Pencilled` (a TENTATIVE block, Q-S5), `Preferred`. Clicking one opens
+  **Offer a call** for that person and day (needs `crew:create`).
+- **Strip** `All · Needs crew · Unconfirmed · Mine`: All = calls this week; Needs
+  crew = open slots (`crewPlanner.openCalls`); Unconfirmed = Pending + Offered +
+  Accepted; Mine = calls on jobs I am the PM of (the Jobs `My jobs` rule —
+  `plannerData` now carries each job's `projectManagerId`). Unconfirmed and Mine
+  keep only people with a matching call and dim the other blocks.
+- **Filters** read their value: `Role`, `Skill`, `Job` (also dims other jobs'
+  blocks), `Availability` (Free · Booked · Unavailable · Pencilled · Preferred).
+  Week, strip, search and filters are ALL the URL (D11); other params
+  (`sheet=roles`) are kept. The #1246 find-cover deep link
+  `?week=<epoch ms>&role=<id>&avail=AVAILABLE` still lands filtered (`AVAILABLE`
+  reads as Free; the old `TENTATIVE`/`ASSIGNED`/… values map too; the epoch-ms
+  week is read as the viewer's LOCAL day, the way it was written).
+- **Needs crew** replaces the grid with the open calls by day (a multi-day run
+  once, under its first short day in the week): job · call · times · `needs n` ·
+  up to three people with that role free on EVERY day Offer to suggested would
+  book (preferred first). A row opens Offer a call with the first suggestion picked;
+  row ⋯ = Offer to…, Offer to suggested, Open job. When `openCalls` stopped at
+  its cap (`truncated`), the list says `n+ open slots` and states that some calls
+  are not listed. It suggests no filter: Role / Job narrow the list on the
+  client, not the server's read.
+- **Offer a call** (sheet): Person (each with their day state), Day, Job service
+  (every open service RUNNING that day, a multi-day run on each day it covers,
+  `needs n`), Role, Start, End, the role's cost rate (only when the server sent
+  it), `Send the offer now`. For a multi-day run it asks **This day only / Whole
+  run** (default: the picked day). It creates a PENDING call through the same
+  `crewAssignmentsWrites.createNative` Logistics uses (with the service's
+  `phase`); with Send on it then calls `sendCrewOffers` — the button asks once
+  more in place, and the toast has no Undo (the email is out). Saved as Pending,
+  its Undo deletes the created call (only with `crew:delete`).
+- **Bulk** (tick calls, shift-click ranges, select-all in the header): `Offer n`
+  (PENDING → OFFERED, confirmed, no Undo), `Confirm n` (ACCEPTED → CONFIRMED,
+  Undo `unconfirmManyNative(result)`), `Cancel n` (red, last, confirmed;
+  `cancelManyNative` then `sendCancellationEmails(toTell)`; no Undo). Ticking
+  open calls under Needs crew offers `Offer to suggested n`: free or preferred
+  people with the role on EVERY day the call will book, up to the worst gap
+  among them, one person once per DAY across the batch (`planSuggestedOffers`;
+  a call claims each day it books), created then offered in one send. It books
+  `bookSpans` — one call per contiguous run of SHORT days inside the visible
+  week — so it never reaches a day the planner didn't check (a Thu → next-Tue
+  run offered from this week books Thu–Sun; S2) and a filled day between two
+  short ones is never over-staffed (short Mon and Wed: two calls). Select-all and shift ranges
+  skip calls **dimmed** by the Job filter or the Unconfirmed / Mine segment; a
+  confirm that reaches more than one job names them (`Jobs: #2341, #2350.`); a
+  tick whose call left the live data, or was dimmed after it was ticked, drops
+  out of every count AND every verb. Crew mail goes out in batches of
+  `MAX_CREW_MAIL_BATCH` (100, the action's own cap; ids deduped first), so a
+  500-call bulk write emails everyone; if a later batch fails, the toast says
+  `n sent, m not sent` with Retry for exactly the unsent rest.
+- **Which verb a call offers** comes from ONE table,
+  `convex/lib/crewCallTransitions.ts` (`canCrewCall`), read by the server gates
+  (`confirmManyNative`, `cancelManyNative`, `sendCrewOffers`) and the menus.
+  `sendCrewOffers` now refuses (per row, named) a call that is not PENDING or
+  OFFERED, so a bulk offer can never knock an ACCEPTED/CONFIRMED call back — and
+  the refusal is ATOMIC: the write is the service mutation
+  `crewAssignments.markOfferedIfOfferable`, which re-checks the status inside
+  the same transaction as the OFFERED patch (a yes that lands between the
+  action's read and its write wins). `cancelManyNative` also clears the call's
+  `responseToken`.
+- **The call sheet** shows role, times, status (with when it was offered) and
+  the person's day, and the block ⋯ verbs as buttons (the same spec). It holds
+  only ids and reads the call from the live data, so an Offer / Confirm shows the
+  new status and a cancelled call closes it. Editing a
+  call's role, times or rate stays on the job's Logistics tab: `updateNative`
+  replaces the whole assignment, and a planner edit below the pay line (which
+  never read `rateOverride`) would wipe it.
+- **Footer**: `10 people · 5 of 13 confirmed · 2 accepted · 2 offered · 4 pending`,
+  with `n declined` in red as the one flag.
+- **Live**: `plannerData`, `openCalls` and the logged hours are live
+  subscriptions keyed on the URL week (no `Date.now()` in the args).
+- **Phone** (§9h.6): day mode — day chips (`Tue 17 · 1 open`, red count), then one
+  day as Needs crew (every run covering that day) · Booked (64px cards, 22px tick
+  on a 44px target, ⋯; a DECLINED call doesn't book the day) · Free (tap = Offer a
+  call) · Unavailable; the Needs crew strip lists the week's open calls by day.
+  Sticky `Offer call`, replaced by the bulk bar while ticked. Sheets open from the
+  bottom.
+
+### UX Phase 15 reads and writes (spec §9h)
+- **`crewPlanner.openCalls({ orgId, startMs, endMs })`** — the `Needs crew` list:
+  services short of people via the Overbookings board's own
+  `computeServicesMissingCrew`, which reads the ONE per-day rule
+  `crewShortfallByDay` (`convex/lib/crewShortfall.ts`, B1). The shortfall is
+  **per day**: an assignment fills only the days its `[startDate, endDate]`
+  covers (no dates = the whole run), DECLINED/CANCELLED fill nothing, and a run
+  is short if ANY day is below `crewCountRequired`. So a "this day only" call
+  on a Mon–Wed run that needs 1 leaves Tue and Wed open. Each row carries
+  `shortDays` (clipped to the window, each with its own gap), and `shortfall`
+  is the worst of them; a run with no short day in the window is not listed.
+  The planner lists a run under its first short day, opens it only on its
+  short days (phone chips, Offer a call's service list) and names partial
+  runs `Wed, Thu short` (`src/lib/crew-short-days.ts`).
+  Only each job's **live-version** service rows count (`isLiveVersionRow` — every
+  version keeps its own copy of a service), on in-org, non-template, non-cancelled
+  jobs. A multi-day service counts when its `[date, endDate]` overlaps the window,
+  even if it started before it (the scan reaches back 31 days). Range ≤ 14 days,
+  bounded both ends on `by_organizationId_date`, capped with a `truncated` flag.
+  Each row also carries `phase` (what a call on it staffs) and `endDate`, which
+  the planner's Offer a call creates the assignment with.
+- **`crewAssignmentsWrites.confirmManyNative`** (`Confirm n`): ACCEPTED → CONFIRMED
+  only, the rest is `skipped`; one activity row per call recording the prior state.
+  **`unconfirmManyNative({ ids, stamp })`** is its exact Undo, reading the prior
+  state from those rows and refusing if any call changed since (same rule as the
+  timesheet `revertNative`).
+- **`crewAssignmentsWrites.cancelManyNative`** (`Cancel n`, `danger: "high"`):
+  PENDING/OFFERED/ACCEPTED/CONFIRMED → CANCELLED, one activity row per call, time
+  entries untouched; returns `toTell` (the calls whose crew member already had the
+  offer) for the caller to send cancellation mail. No Undo — the mail is sent.
+- **`crewRolesWrites.moveNative({ id, direction })`**: Move up / Move down as ONE
+  atomic renumber (replaces the two non-atomic `updateNative` calls; ties become
+  movable). It swaps with the nearest role in the SAME list — active roles past
+  archived ones and vice versa, since the roles sheet lists archived roles under
+  their own head — so a move is always visible. Its Undo is the opposite move.
+- `plannerData` also returns each member's `skillIds` (for `Skill ▾`) and redacts
+  assignment pay below manager (see Time Tracking › pay).
 
 ## Crew Planner — confirmation layer, availability requests, planned vs actual (Work-layer Phase 4, #1246)
+
+> **History.** The fortnight grid, its glyph badges and the header sentence
+> described below were replaced by UX Phase 15's one-week planner (see "Crew
+> Planner" above): status words, the footer counts and the Hours column carry
+> the same facts. The server pieces here (`PLANNER_HIDDEN_STATUSES`,
+> `approvedHoursByMember`, the offer nudges, first-come fill) are unchanged.
 
 > Design: `docs/designs/work-layer.md` §8.5/§9/§10, build plan phase 4.
 > Seam: ROADMAP §2.1 (crew & services overhaul) owns services, rates and the
@@ -483,8 +680,16 @@ when enough of those rows reach ACCEPTED/CONFIRMED to meet the service's
 (`/api/crew/respond/[token]`) calls a new service-gated mutation,
 `crewAssignments.autoFillServiceNative`, which auto-cancels the other still-open
 offers on that same service (no new table — `serviceId` is the existing
-grouping key) and the route best-effort emails each one a "position filled"
-notice (`notifyPositionFilled`). **24h auto-nudge**: `src/server/crew-time-nudges.ts`'s
+grouping key). The fill is **per day** (UX Phase 15, `crewShortfallByDay` over the
+ACCEPTED/CONFIRMED rows, `coveredDaysFull`): an open offer is cancelled only when
+every day IT covers is now full, so a Monday-only accept on a Mon–Wed run never
+cancels a Tue–Wed offer. Then the route best-effort emails each one a "position filled"
+notice (`notifyPositionFilled`, `src/lib/crew-position-filled.ts`). These
+no-session senders — the notice, both nudges and `buildAssignmentEmailData` —
+are PLAIN server-only modules, never `"use server"` exports (an exported action
+is callable from any session, and these have no authz of their own); a guard
+test (`src/server/__tests__/use-server-email-authz.test.ts`) fails on any
+ungated email/push sender in a `"use server"` file. **24h auto-nudge**: `src/lib/crew-time-nudges.ts`'s
 `sendCrewOfferNudges` rides the SAME 15-minute notification cron
 (`/api/cron/notifications`) and the SAME `notificationEmailLogs` dedupe ledger
 (`createIfMissing`, one nudge per assignment ever) — no second cron, no second
@@ -515,7 +720,7 @@ change.
 
 **Call-time reminders.** Off by default per org
 (`OrgSettings.crewTime.callReminderEnabled`, Settings → Crew & time).
-`sendCrewCallTimeReminders` (`src/server/crew-time-nudges.ts`), same cron and
+`sendCrewCallTimeReminders` (`src/lib/crew-time-nudges.ts`), same cron and
 dedupe ledger as the offer nudge above, emails each crew member on a
 CONFIRMED assignment starting "tomorrow" — resolved in the **org's stored
 timezone** (`startOfDayInTimezone`/`endOfDayInTimezone`, `src/lib/quote-validity.ts`,
@@ -535,6 +740,19 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 - Feed URL: `GET /api/crew/calendar/[token]` (or `[token].ics`)
 - Token is a 32-byte cryptographically random URL-safe base64 string
 - No authentication required — the token IS the auth
+- **Who can see the token (UX Phase 15):** `icalToken` leaves Convex only through
+  the ONE member-row boundary, `memberRowRedactor`
+  (`convex/lib/crewMemberRedaction.ts`), on every member read
+  (`crewMembers.{list,listPage,getById}`, `crew.memberDetail`). It goes to the
+  member themself (the row's linked `userId`) and to a caller with `crew:update`
+  (who enables, disables and regenerates links), and only on a USER session — an
+  API key / agent never gets it, even acting as such a user. Everyone else gets
+  the field absent. The Calendar tab (`CrewIcalFeedCard`,
+  `src/components/crew/crew-ical-feed-card.tsx`) builds the URL from
+  `memberDetail`'s token, so a plain `crew:read` viewer sees that the feed is on
+  but never its URL. The only other crew token, `crewAssignments.responseToken`,
+  is stripped for every non-service caller. Tests: `convex/crewReadRedaction.test.ts`,
+  `src/components/crew/__tests__/crew-ical-feed-card.smoke.test.tsx`.
 - Feed contains all CONFIRMED/ACCEPTED assignments as VEVENT entries by default
 - **Per-member opt-in — include pending assignments:** a `Switch` next to the feed URL
   (Calendar tab, `crewMembers.icalIncludeTentative`, default false/absent) also emits
@@ -577,7 +795,7 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 | `enableIcalFeed(crewMemberId)` | crew.update | Enable feed + generate token |
 | `disableIcalFeed(crewMemberId)` | crew.update | Disable feed (keeps token) |
 | `regenerateIcalToken(crewMemberId)` | crew.update | New token, invalidates old URL |
-| `getIcalSettings(crewMemberId)` | crew.read | Get icalEnabled + icalToken + icalIncludeTentative |
+| `getIcalSettings(crewMemberId)` | org member | Get icalEnabled + icalIncludeTentative only — never the token (it reads with the service identity, so it would bypass the member-row boundary) |
 | `setIcalIncludeTentative(crewMemberId, include)` | crew.update | Toggle whether pending/offered assignments show as tentative |
 | `getAssignmentIcsData(assignmentId)` | crew.read | Full assignment data for .ics |
 
@@ -605,13 +823,93 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   the respond route, all on the service token) — never hand the token to the
   browser to build one.
 - **Crew pay on those reads is manager+.** `estimatedCost`/`rateOverride` on the
-  four assignment reads, and `defaultDayRate`/`defaultHourlyRate` on
-  `crewMembers.{list,getById}`, reach only callers for whom
+  four assignment reads, `projectCrew` (and its nested member/role rates),
+  `crew.memberDetail` and the crew dashboard lists; `defaultDayRate`/
+  `defaultHourlyRate` on `crewMembers.{list,listPage,getById}`; the role
+  `defaultRate`/`chargeRate` on `crewRoles.{list,listForSettings,getById}`
+  (`roleRowRedactor`); and `projectLabourCost` (all-zero shape, its whole
+  payload is pay) reach only callers for whom
   `canSeeCrewPay(ctx, orgId)` (`convex/lib/crewPayVisibility.ts`) holds —
   manager+ standing (`isCallerManagerPlus`, re-read from the member row) AND not
   a `noFinancials` API key. The service identity always passes. Field lists are
-  the `ASSIGNMENT_COST_FIELDS`/`MEMBER_RATE_FIELDS` constants in
-  `convex/crewAssignments.ts`. Covered by `convex/crewReadRedaction.test.ts`.
+  ONE definition each: `ASSIGNMENT_COST_FIELDS` (`convex/crewAssignments.ts`) and
+  `MEMBER_RATE_FIELDS` (day rate, hourly rate, overtime multiplier) /
+  `ROLE_RATE_FIELDS` (cost and charge rate) in `convex/lib/crewPayFields.ts`. Covered by `convex/crewReadRedaction.test.ts` and
+  `convex/crewPayGating.test.ts` (member, manager, noFinancials key). The `/crew`
+  list's Day rate column is absent unless `crewRoles.ratesVisible` says the
+  caller sees pay, and `crewWrites.updateNative` ignores rate set/clear from a
+  caller who can't (the stored rates stand, as with role edits, S4).
+- **Below the pay line the Logistics service sheet has no role rate** (by
+  ruling): `crewRoles.list` returns no `defaultRate`/`chargeRate` to such a
+  caller, so the sheet's crew cost preview comes up empty and the charge-rate
+  override's hint drops its role-rate part entirely (`RoleRateHint`, gated on
+  `crewRoles.ratesVisible`) — never "(none set, so no auto-pricing)", which
+  would be a false claim about a rate the caller simply can't see. Pricing
+  itself is unaffected — it is computed server-side from the stored rates.
+- **Server actions decide pay for their real caller (B-2).** They read Convex
+  with the service identity, which always passes `canSeeCrewPay`, so each one
+  that returns crew pay calls `callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`,
+  the same `crewPayVisible`; an API-key actor is noFinancials):
+  `exportTimesheetCSV`, `getProjectServices` (`redactServiceCrewPay`: each call's
+  `estimatedCost`, `rateOverride` and `resolvedRate` are ABSENT, and the Logistics
+  crew row — service child and People view — then has no cost cell).
+  (`getAssignmentIcsData` had no callers and is deleted.) Below the pay line a
+  service save keeps each call's stored `rateOverride`/`rateType`
+  (`crewRateInputs`). `buildAssignmentEmailData` (the full row, token and pay)
+  moved out of the `"use server"` file to `src/lib/crew-assignment-email-data.ts`:
+  as an exported action it was callable from any session with no authz.
+- **Two money lines (owner ruling 2026-11-24, "anyone with invoice read").**
+  Each is ABSENT, never reduced, for a caller who fails it, so nothing can be
+  back-solved; a hidden field is never a sort key.
+  - **Individual pay** (the pay line above — manager+ AND the job-cost line,
+    which it implies: `crewPayVisible` calls `jobCostVisible`, so an owner key
+    scoped to `project:*` + `crew:*` with no `invoice` can't rebuild job cost
+    from pay): rates, a call's cost, and a service's own `costTotal`, which rolls up its crew's pay
+    (`SERVICE_CREW_COST_FIELDS`, `crewPayRedactor`): `projectServices.{list,getById,listByProject}`,
+    the service and crew-call entries of `projectLocksRead.{snapshotEntries,currentEntries}`
+    (a crew call entry ALWAYS loses its `responseToken`), `getProjectServices`,
+    and the timeline PDF's `?showCost` (`/api/documents/timeline/[projectId]`
+    needs `project:read`; costs print only with pay). Logistics renders no row
+    cost/margin cell without it. Below the line the form never shows Cost, so a
+    service create ignores `costTotal` and a save keeps the stored one (the
+    pricing lock's own $0 default still applies).
+  - **Job cost**: the project's `serviceCostTotal`, `labourCostTotal` and
+    `margin` (`JOB_COST_FIELDS`, `convex/lib/crewPayFields.ts`) need
+    `invoice:read` and not a `noFinancials` key — ONE rule, `jobCostVisible`
+    (`convex/lib/crewPayRule.ts`), decided by `canSeeJobCost` / `jobCostRedactor`
+    (Convex, via `callerMayRead`, so an agent key's scope counts) and
+    `callerSeesJobCost` / `withoutJobCost` / `jobCostSortAllowed` (server
+    actions). Every built-in role holds `invoice:read`, so in practice only a
+    key without the invoice scope and a `noFinancials` key lose it.
+    - Convex: `projects.{list,getById,listPage,listBoard,listByIds,getByOrgAndNumber}`
+      (`listPage` won't sort on one without it), `projectDetail.bundle` (the job
+      page, MCP `get_project`, Mira), `warehouseDetail.bundle`, the project entry
+      of the snapshot reads, and the two whole-payload reads that return their
+      all-zero shape without it: `projectCosts.operationalCosts` (EMPTY, a stable
+      MCP contract) and `crewAssignments.projectLabourCost` (the same number as
+      `labourCostTotal`).
+    - Server actions: `getProject`, `getProjects` (no sort on one either),
+      `getTemplates`, and `getProjectServicesSummary` (`costTotal`, `totalCost`
+      and `internalTotal`; `chargeTotal`, `onDocumentsTotal` and `serviceCount`
+      always stay).
+    - UI, by what the server sent: the Finance tab's margin and Costs section
+      (absent and `null` are the same — `mapProject` maps absent to `null`), the
+      Operational P&L panel (hidden on EMPTY), the quote revision viewer's Margin
+      cell, and Logistics' footer Cost/Margin (`logisticsCostView`: `Show cost`
+      is offered when the summary carries the total or a row carries its own
+      cost; the footer shows only the former, row cells only the latter).
+  Tests: `convex/crewCostTotals.test.ts` (both lines on every read; mutants of
+  the rule fail it), `convex/jobCostBundles.test.ts`,
+  `src/lib/crew-pay-caller.test.ts`, `src/server/__tests__/projects-crew-cost.test.ts`,
+  `src/server/__tests__/project-services-pay.test.ts`, the FinancialSummary smoke
+  and `service-rows.test.ts`.
+- **Money in the activity log.** A crew member edit logs its field diff, rates
+  included (`crewWrites.updateNative`'s `details.changes`) — the audit keeps
+  them. Reads redact each change row by its line (`activityMoneyRedactor`,
+  `convex/lib/activityPay.ts`): pay fields below the pay line, job-cost fields
+  without job cost, in `activityLog.{list,listByEntity,recentForProject,exportRows}`
+  and in the CSV action (`exportActivityLogCSV`, service identity) for its real
+  caller. The only write that logs a money field today is that one.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons
@@ -654,11 +952,11 @@ Resource `crew` with actions: `read, create, update, delete`
 - manager: create, read, update
 - member/staff/warehouse/viewer: read
 
-Since `crew:create`/`crew:update` are manager+-only, the `/crew/settings` roles
-admin write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
-every role can VIEW the page (`crew:read`), but the cost (`defaultRate`) and
-charge (`chargeRate`) rate columns render only for manager+
-(`useIsManagerPlus()`), server-enforced via `crewRoles.ts`'s `listForSettings`
+Since `crew:create`/`crew:update` are manager+-only, the Crew roles & rates
+sheet's write surface (`crewRolesWrites.ts`) is already manager+-only in practice —
+every role can VIEW the sheet (`crew:read`), but the cost (`defaultRate`) and
+charge (`chargeRate`) rate columns render only when `crewRoles.ratesVisible`
+(`canSeeCrewPay`) says so, server-enforced via `crewRoles.ts`'s `listForSettings`
 query (field-stripped for non-manager+ callers — the plain `list` query, used by
 cost-preview call sites elsewhere, is unchanged).
 
@@ -685,9 +983,9 @@ read permission.
 - **Crew List**: embedded crew table at the bottom
 
 ## Integration Points
-- **Sidebar**: "Crew" with HardHat icon, sub-items: Planner, Timesheets, Roles & Skills. Gated by `crew` resource
+- **Sidebar**: "Crew" with HardHat icon and ONE sub-item, Planner (`moreLabel` "Planner & timesheets"); Timesheets is the Crew page's head word and `/crew/timesheets` a `NOT_IN_NAV` deep link (D48). Gated by `crew` resource
 - **Top bar**: `crew`, `timesheets`, `planner` segment labels
-- **Page commands**: searchable crew page with children (Planner, Timesheets, Roles & Skills)
+- **Page commands**: searchable crew page with children (Planner, Timesheets, Crew roles & rates → `/crew/planner?sheet=roles`)
 - **Global search**: searches first/last name, email, phone, department, role name, tags
 - **Slash commands**:
   - `/crew` list page: `/new`, `/planner`, `/timesheets`, `/roles`, `/log-time`, `/export`
@@ -747,6 +1045,64 @@ DRAFT → SUBMITTED → APPROVED → EXPORTED
 - **Crew detail page**: "Time" tab with table of all entries, add/edit dialog, bulk submit/approve buttons, CSV export
 - **Log Time dialog**: Toggle between "Project" (linked to assignment) and "General" (standalone shift with description)
 - **Actions per entry**: Edit (DRAFT/DISPUTED), Submit (DRAFT), Approve (SUBMITTED), Dispute (SUBMITTED), Delete (DRAFT)
+
+### Query…, exact Undo, and pay (UX Phase 15 — D47, D49)
+
+**Query (D47).** The UI word for `DISPUTED` is **Queried** (status) / **Query…**
+(verb); the enum and API values are unchanged (`docs/glossary.md`). A query
+carries its reason on **`crewTimeEntries.queryReason`** — never on `notes`, which
+is the crew member's own text. `crewTimeEntriesWrites.queryNative({ ids, reason })`
+moves SUBMITTED/APPROVED entries to DISPUTED; the reason is required and bounded
+(`QUERY_REASON_MAX` = 500, `convex/lib/timeEntryQuery.ts`, shared with
+`timeEntryQuerySchema`). A queried entry is no longer approved: Query clears
+`approvedById` / `approvedAt` (the dialog says "an approved entry loses its
+approval"), and `revertNative` of a query restores that stamp exactly from the
+recorded prior state. `submitNative` and `approveNative` clear `queryReason`.
+The legacy single-entry `disputeNative` (crew dashboard, crew record) is
+unchanged until Phase 13 moves those surfaces to Query….
+
+**One activity row per entry, one exact Undo.** Submit, Approve and Query write
+an activity row PER changed entry (`${auditId}:${entryId}`) whose `metadata`
+records the entry's prior state (`kind: "time_entry_transition"`, `transition`,
+`prevStatus`, and any prior `queryReason` / approver stamp). Each returns
+`{ count, changed }`; the hook adds the call's `stamp` (its `now`).
+`revertNative({ ids, stamp })` is the ONE Undo for all three: it takes ONLY
+the ids and the stamp — no transition, no prior status. For each entry it reads
+which transition ran and the prior state back from the forward write's own row
+(same entry, same stamp, same user, the row whose transition produced the
+entry's current status), and refuses the whole Undo (`ConvexError`) if any
+entry's `updatedAt` no longer equals the stamp, so a second Undo of the same
+write refuses too. Never pass prior state from the client.
+
+**Pay (D49).** `crewTimeEntries.allEntries` adds, per row, `rate` / `rateType` /
+`total` / `rateIncluded`, plus `totals.pay` over the filtered set — **only when
+`canSeeCrewPay`** (`convex/lib/crewPayVisibility.ts`: manager+ and not a
+`noFinancials` key); otherwise those keys are absent and `payVisible: false`.
+Everyone gets `counts` (per status, for the strip), `totals.hours`,
+`queryReason` and `updatedAtMs` (the next Undo's stamp). The money is DERIVED
+in `convex/lib/timeEntryMoney.ts`, never stored:
+- **Rate** = the PAY (cost) cascade `resolveRate` — assignment override →
+  member day → member hourly → role default (a general entry uses the member's
+  own role). Nothing resolved ⇒ blank, never `$0`. The UI labels it "Rate (pay)".
+- **Total** = `HOURLY` rate × hours; `DAILY` the day rate **once per person per
+  calendar day**, however many entries that day has (the earliest carries it,
+  the rest are `rateIncluded`); `FLAT` once per person per assignment.
+- The carrier is computed over every org entry, so paging and filters never
+  move it.
+
+The same gate redacts pay elsewhere: `crewAvailability.plannerData` drops
+`rateOverride` / `estimatedCost` below manager, and
+`crewAssignments.membersForAssignment` returns `defaultDayRate` /
+`defaultHourlyRate` as `null` below manager, and `crewDashboard.pickerList` (the
+Log time picker) drops each call's `rateOverride` / `estimatedCost` below manager.
+Every `crewDashboard` read also strips the single-use offer `responseToken` (a
+bearer credential) in its one `isoAssignment` helper.
+
+**CSV.** `exportTimesheetCSV` builds through `src/lib/timesheet-csv.ts` →
+`toCsv` (`src/lib/csv.ts`, formula-injection guard). The twelve original
+columns keep their order and the raw status enum; `Query reason` is appended,
+and `Rate (pay)` / `Total` only for a signed-in manager+ (never an API-key
+actor), from the same `deriveEntryMoney`.
 
 ## Future Phases (not yet implemented)
 - Phase 7: Crew portal

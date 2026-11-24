@@ -13,8 +13,11 @@ const h = vi.hoisted(() => ({
   mobile: false,
   locked: false,
   manager: true,
+  pay: true,
   update: vi.fn().mockResolvedValue({ id: "s1" }),
 }));
+// crewRoles.ratesVisible — the server's own crew-pay answer.
+vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => h.pay }));
 
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => h.mobile }));
 vi.mock("@/hooks/use-project-service-writes", () => ({ useProjectServiceWrites: () => ({ update: h.update }) }));
@@ -55,6 +58,7 @@ beforeEach(() => {
   h.mobile = false;
   h.locked = false;
   h.manager = true;
+  h.pay = true;
   vi.clearAllMocks();
 });
 
@@ -148,6 +152,18 @@ describe("pricing lock", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(h.update).toHaveBeenCalled());
     expect(h.update.mock.calls[0][1].crew.map((c: { crewMemberId: string }) => c.crewMemberId)).toEqual(["m9"]);
+  });
+
+  it("the role charge-rate hint speaks only to a caller who sees crew pay (absent below the pay line, never 'none set')", () => {
+    const withCrew = base({ crewAssignments: [{ id: "a1", status: "PENDING", crewMember: { id: "m1", firstName: "Ann", lastName: "Lee", image: null } }] });
+    const { unmount } = render(<ServiceSheet {...props(withCrew)} />);
+    expect(screen.getByText(/Blank uses the role default/).textContent).toMatch(/none set, so no auto-pricing/);
+    unmount();
+    h.pay = false;
+    render(<ServiceSheet {...props(withCrew)} />);
+    const hint = screen.getByText(/Blank uses the role default/).textContent ?? "";
+    expect(hint).not.toMatch(/none set|\$/);
+    expect(hint).toMatch(/Blank uses the role default\.$/);
   });
 
   it("cost and margin are manager-only", () => {

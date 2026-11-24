@@ -5,7 +5,7 @@ import {
   pruneStaleNotificationEmailLogs,
   sendNotificationEmails,
 } from "@/server/notification-email-sender";
-import { sendCrewOfferNudges, sendCrewCallTimeReminders } from "@/server/crew-time-nudges";
+import { sendCrewOfferNudges, sendCrewCallTimeReminders } from "@/lib/crew-time-nudges";
 import { syncXeroPayments } from "@/server/xero-payment-sync";
 
 /**

@@ -202,9 +202,15 @@ describe("crewAssignments reads", () => {
     expect(crew.find((a) => a.id === "a1")?.crewMember.lastName).toBe("Ryan");
     expect(crew.find((a) => a.id === "a1")?.crewRole?.name).toBe("Rigger");
     expect(crew.find((a) => a.id === "a1")?.shifts).toHaveLength(1);
+    // The total is the project's STORED labourCostTotal (one number, one source) —
+    // what recalc wrote, here a1+a2+a3 (recalc still counts CANCELLED: a logged follow-up).
+    await t.run(async (ctx) => {
+      const p1 = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p1!._id, { labourCostTotal: 2499 });
+    });
     const labour = await t.withIdentity(asUser).query(api.crewAssignments.projectLabourCost, { projectId: "p1", orgId: ORG });
-    expect(labour.totalLabourCost).toBe(1500); // a1+a2, excludes CANCELLED a3, foreign aX, and service-linked a4
-    expect(labour.assignmentCount).toBe(2);
+    expect(labour.totalLabourCost).toBe(2499);
+    expect(labour.assignmentCount).toBe(2); // a1+a2: excludes CANCELLED a3, foreign aX, and service-linked a4
   });
 
   test("membersForAssignment: active members + this-project assignments + conflicts/unavailability", async () => {

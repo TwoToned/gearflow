@@ -162,6 +162,16 @@ describe("computeProjectCrewReadiness", () => {
     expect(r.servicesMissingCrew[0].shortfall).toBe(1);
   });
 
+  test("B1: a Mon-only call on a Mon–Wed run that needs 1 does not pass the check — Tue and Wed are short", () => {
+    const services: BoardService[] = [{ id: "s1", projectId: "p1", title: "Show run", date: DAY, endDate: 3 * DAY, crewCountRequired: 1 }];
+    const monOnly = computeProjectCrewReadiness("p1", [assignment({ id: "1", serviceId: "s1", startDate: DAY, endDate: DAY })], services, ME);
+    expect(monOnly.servicesMissingCrew).toHaveLength(1);
+    expect(monOnly.servicesMissingCrew[0].shortDays.map((d) => d.day)).toEqual([2 * DAY, 3 * DAY]);
+    expect(monOnly.crewShortfall).toBe(1);
+    const wholeRun = computeProjectCrewReadiness("p1", [assignment({ id: "1", serviceId: "s1", startDate: DAY, endDate: 3 * DAY })], services, ME);
+    expect(wholeRun.servicesMissingCrew).toHaveLength(0);
+  });
+
   test("a service with no stated requirement is never flagged", () => {
     const services: BoardService[] = [
       { id: "s1", projectId: "p1", title: "Ad-hoc", date: DAY, crewCountRequired: null },

@@ -12731,7 +12731,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "a4467f3b7f553dc9",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "A single crew member's full detail (role, skills, linked user, assignments).",
+    "summary": "A single crew member's full detail (role, skills, linked user, assignments); rates and call costs only for callers who see crew pay.",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,
@@ -13610,6 +13610,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewAssignments.markOfferedIfOfferable",
+    "module": "crewAssignments",
+    "fn": "markOfferedIfOfferable",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "organizationId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "responseToken",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "348062265df12603",
+    "returnsSha": "af619ceb87d317d4",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewAssignments.membersForAssignment",
     "module": "crewAssignments",
     "fn": "membersForAssignment",
@@ -13993,6 +14035,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewAssignmentsWrites.cancelManyNative",
+    "module": "crewAssignmentsWrites",
+    "fn": "cancelManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6c012673b4cd07b8",
+    "returnsSha": "79491c33df782566",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewAssignmentsWrites.confirmManyNative",
+    "module": "crewAssignmentsWrites",
+    "fn": "confirmManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6c012673b4cd07b8",
+    "returnsSha": "fe4b6de69b246d37",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewAssignmentsWrites.createNative",
     "module": "crewAssignmentsWrites",
     "fn": "createNative",
@@ -14217,6 +14363,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "56f39965728b3fac",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewAssignmentsWrites.unconfirmManyNative",
+    "module": "crewAssignmentsWrites",
+    "fn": "unconfirmManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b153d65c770a3fcf",
     "returnsSha": "ca20c8538a3cc095",
     "stability": "tracks-app",
     "summary": null,
@@ -15718,7 +15921,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "stable",
-    "summary": "List crew members for the org (icalToken redacted for non-service callers; rates manager+ only).",
+    "summary": "List crew members for the org (icalToken never to an API key; rates manager+ only).",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,
@@ -15920,6 +16123,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewPlanner.openCalls",
+    "module": "crewPlanner",
+    "fn": "openCalls",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "endMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1810374176adf92f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Crew calls still short of people over a date range (the planner's Needs crew list): live-version services whose filled crew is below crewCountRequired.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewRoles.create",
     "module": "crewRoles",
     "fn": "create",
@@ -16089,7 +16334,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8b114161049d5d20",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Get a single crew role by id.",
+    "summary": "Get a single crew role by id (rate fields only for callers who see crew pay).",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -16121,7 +16366,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "List crew roles for the org (includes rate fields).",
+    "summary": "List crew roles for the org (rate fields only for callers who see crew pay: manager+ and not a noFinancials key).",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -16153,9 +16398,41 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Crew roles for the settings admin table, rate fields redacted below manager+.",
+    "summary": "Crew roles for the roles sheet, rate fields only for callers who see crew pay.",
     "danger": "low",
     "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewRoles.ratesVisible",
+    "module": "crewRoles",
+    "fn": "ratesVisible",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Whether the caller may see crew pay (role cost/charge rates): manager+ and not a noFinancials key.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -16405,6 +16682,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewRolesWrites.moveNative",
+    "module": "crewRolesWrites",
+    "fn": "moveNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "direction",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e0e6079186773a2d",
+    "returnsSha": "abbebdabe459cb32",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -17102,7 +17436,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "8916a3ab1362a387",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Paginated/searchable/sortable timesheet (crew time entry) list.",
+    "summary": "Paginated/searchable/sortable timesheet (crew time entry) list, with per-status counts and hours totals; pay rate/total per row only for manager+ callers (never for a noFinancials key).",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,
@@ -17738,7 +18072,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c012673b4cd07b8",
-    "returnsSha": "ca20c8538a3cc095",
+    "returnsSha": "aca961b745011c86",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -18005,6 +18339,120 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewTimeEntriesWrites.queryNative",
+    "module": "crewTimeEntriesWrites",
+    "fn": "queryNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b371525f4976742",
+    "returnsSha": "aca961b745011c86",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewTimeEntriesWrites.revertNative",
+    "module": "crewTimeEntriesWrites",
+    "fn": "revertNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d6d4e157c4444c03",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewTimeEntriesWrites.submitNative",
     "module": "crewTimeEntriesWrites",
     "fn": "submitNative",
@@ -18048,10 +18496,67 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "6c012673b4cd07b8",
-    "returnsSha": "ca20c8538a3cc095",
+    "returnsSha": "aca961b745011c86",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "crewTimeEntriesWrites.undoCreateManyNative",
+    "module": "crewTimeEntriesWrites",
+    "fn": "undoCreateManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "stamp",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d6d4e157c4444c03",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -65312,10 +65817,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1265,
-  agentReachable: 634,
-  queries: 453,
-  mutations: 812,
-  agentReachableQueries: 317,
-  agentReachableMutations: 317,
+  total: 1275,
+  agentReachable: 643,
+  queries: 455,
+  mutations: 820,
+  agentReachableQueries: 319,
+  agentReachableMutations: 324,
 } as const;

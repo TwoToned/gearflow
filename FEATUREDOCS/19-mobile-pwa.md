@@ -119,7 +119,9 @@ model", "Export CSV") went missing until the DataTable toolbar was made to wrap.
     `src/lib/nav-counts.ts`), so a role holding only `invoice:create` sees Finance
     with no count and never fires the finance read. `formatNavCount` words them:
     totals muted (shown at 0), exceptions as a dot-word and absent at 0.
-  - Crew's rows carry no source yet: Phase 15 owns them and attaches `crew`.
+  - Crew (UX Phase 15) carries the `crew` source on its ONE row: the org's crew
+    members that are not archived, a muted total like Clients, read only with
+    `crew:read`. The Planner sub-row carries no count.
 
 ## Card lists, not data tables (§15)
 

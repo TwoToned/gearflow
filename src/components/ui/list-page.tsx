@@ -12,6 +12,7 @@ import {
   ListSegments,
   ListSkeleton,
   ListToolbar,
+  type HeadWords,
   type ListEmptyCopy,
   type ListFilterDef,
   type ListPrimary,
@@ -79,6 +80,8 @@ export interface ListPageProps {
   toolbarExtra?: React.ReactNode;
   /** A non-table view (`board`): rendered instead of the table; chrome stays. */
   renderView?: (view: string) => React.ReactNode | null;
+  /** Additive (UX Phase 15, Q-I2): page-level view words in the head, each its own route. */
+  headWords?: HeadWords;
 }
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -221,7 +224,12 @@ export function ListPage(props: ListPageProps) {
   const view = props.renderView?.(state.view) ?? null;
   return (
     <div className="flex flex-col gap-3">
-      <ListHead title={props.title} primary={props.primary} pageMenu={withColumnsItem(props.pageMenu, cols.item)} />
+      <ListHead
+        title={props.title}
+        primary={props.primary}
+        pageMenu={withColumnsItem(props.pageMenu, cols.item)}
+        headWords={props.headWords}
+      />
       {props.segments.length > 0 && (
         <ListSegments segments={props.segments} value={state.seg} onChange={(seg) => setState(withPatch(state, { seg }))} />
       )}

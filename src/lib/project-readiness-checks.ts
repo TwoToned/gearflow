@@ -1,4 +1,5 @@
 import { isPastPrep } from "@/lib/job-lifecycle";
+import { shortDaysText, type ShortDaysRun } from "@/lib/crew-short-days";
 
 /**
  * Turns the readiness data sources into the ordered list of checks the
@@ -75,7 +76,8 @@ export interface ReadinessGearInput {
 export interface ReadinessCrewInput {
   unconfirmedCount: number;
   activeCount: number;
-  servicesMissingCrew: { title: string; shortfall: number }[];
+  /** Short on ANY day of the run (per day, B1); `shortDays` names those days. */
+  servicesMissingCrew: ({ title: string; shortfall: number } & ShortDaysRun)[];
   crewShortfall: number;
   unconfirmedServices: { title: string }[];
   activeServiceCount: number;
@@ -304,6 +306,11 @@ function servicesCheck(crew: ReadinessCrewInput): ReadinessCheck | null {
     parts.push(
       `${understaffed.length} short ${crew.crewShortfall} ${plural(crew.crewShortfall, "person", "people")} between ${plural(understaffed.length, "it", "them")}`,
     );
+    // A run short on only some days says which (`Show run: Tue, Wed short`).
+    for (const s of understaffed.slice(0, 2)) {
+      const days = shortDaysText(s);
+      if (days) parts.push(`${s.title}: ${days}`);
+    }
   }
 
   if (parts.length === 0) {

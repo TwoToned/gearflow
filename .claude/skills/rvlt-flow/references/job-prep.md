@@ -104,7 +104,9 @@ Every assignment should be `ACCEPTED` before the day. Specifically:
 - `DECLINED` → needs a replacement now. Name who declined and what the role was.
 - `OFFERED` for more than 48 hours → treat as a probable no. Chase it.
 - Services below `crewCountRequired` → understaffed, regardless of what the
-  assignments say.
+  assignments say. The count is per day: a call fills only the days it covers,
+  so a multi-day service with a one-day call is still short on its other days
+  (Flow names them, e.g. "Tue, Wed short").
 - Services still `PLANNED` → the work itself hasn't been confirmed, which is a
   different problem from nobody having accepted it.
 

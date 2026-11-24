@@ -137,7 +137,8 @@ describe("AppSidebar tablet rail (D67)", () => {
     expect(within(full()).queryByText("Planner")).toBeNull(); // Crew is not
     fireEvent.click(within(full()).getByRole("button", { name: "Show Crew pages" }));
     expect(within(full()).getByText("Planner")).toBeTruthy();
-    expect(within(full()).getByText("Timesheets")).toBeTruthy();
+    // D48: Timesheets is the Crew page's head word, not a second sub-row.
+    expect(within(full()).queryByText("Timesheets")).toBeNull();
   });
 
   it("renders three hairline groups from NAV and no My tasks", () => {

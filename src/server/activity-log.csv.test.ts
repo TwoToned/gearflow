@@ -11,7 +11,10 @@ vi.mock("@/lib/convex-client", () => ({
 }));
 vi.mock("@/lib/org-context", () => ({
   getOrgContext: vi.fn(async () => ({ organizationId: "org_1" })),
+  // The export now redacts crew pay in field diffs for its real caller.
+  getCurrentRole: vi.fn(async () => "manager"),
 }));
+vi.mock("@/lib/request-actor", () => ({ getAmbientActor: vi.fn(() => null) }));
 
 import { exportActivityLogCSV } from "./activity-log";
 

@@ -17,6 +17,7 @@ import {
 } from "./availabilityCore";
 import { EXCLUDED_ASSIGNMENT_STATUSES, overlaps as timeOverlaps, classifyAvailabilityBlock } from "./crewConflicts";
 import { stockBackedQty } from "./stockBackedQty";
+import { crewShortfallByDay, type ShortDay } from "./crewShortfall";
 
 /** Mirrors `src/lib/overbooking-core.ts`'s EXCLUDED_PROJECT_STATUSES. */
 const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
@@ -518,17 +519,24 @@ export interface MissingCrewRow {
   projectNumber: string;
   title: string;
   date: number | null;
+  /** The run's last day (null for a one-day service). */
+  endDate: number | null;
   crewCountRequired: number;
+  /** The WORST day's filled count. */
   assignedCount: number;
+  /** The WORST day's gap. */
   shortfall: number;
+  /** Each short day of the run (UTC midnight) with its own gap; empty for a dateless service. */
+  shortDays: ShortDay[];
 }
 
 /**
- * Services within `range` (by `date`, falling back to `endDate`) whose FILLED
- * crew count (excluding DECLINED/CANCELLED assignments — the same predicate
- * `src/lib/crew-assignment-status.ts` fixed in the per-project UI) is below
- * `crewCountRequired`. A `crewCountRequired` of `null`/`0` is explicitly
- * skipped, never flagged (spec decision) — an unstated requirement is not a gap.
+ * Services within `range` (by `date`, falling back to `endDate`) short of crew
+ * on ANY day of their run, by the ONE per-day rule (`crewShortfallByDay`,
+ * `lib/crewShortfall.ts`): an assignment fills only the days it covers, and
+ * DECLINED/CANCELLED fill nothing. A `crewCountRequired` of `null`/`0` is
+ * explicitly skipped, never flagged (spec decision) — an unstated requirement
+ * is not a gap.
  */
 function serviceInRange(s: BoardService, range: DateRange): boolean {
   const d = s.date ?? s.endDate;
@@ -540,11 +548,8 @@ function missingCrewRowFor(
   assignmentsByServiceId: Map<string, BoardAssignment[]>,
   projectsById: Map<string, { id: string; name: string; projectNumber: string }>,
 ): MissingCrewRow | null {
-  const required = s.crewCountRequired;
-  if (required == null || required <= 0) return null;
-  const assignments = assignmentsByServiceId.get(s.id) ?? [];
-  const filled = assignments.filter((a) => !EXCLUDED_ASSIGNMENT_STATUSES.has(a.status ?? "")).length;
-  if (filled >= required) return null;
+  const gap = crewShortfallByDay(s, assignmentsByServiceId.get(s.id) ?? []);
+  if (!gap || gap.shortfall === 0) return null;
 
   const p = projectsById.get(s.projectId);
   return {
@@ -554,9 +559,11 @@ function missingCrewRowFor(
     projectNumber: p?.projectNumber ?? "",
     title: s.title,
     date: s.date ?? null,
-    crewCountRequired: required,
-    assignedCount: filled,
-    shortfall: required - filled,
+    endDate: s.endDate ?? null,
+    crewCountRequired: gap.required,
+    assignedCount: gap.filled,
+    shortfall: gap.shortfall,
+    shortDays: gap.shortDays,
   };
 }
 

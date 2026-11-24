@@ -1,6 +1,8 @@
 "use server";
 
 import { getOrgContext } from "@/lib/org-context";
+import { callerSeesCrewPay, callerSeesJobCost } from "@/lib/crew-pay-caller";
+import { activityMoneyRedactor } from "../../convex/lib/activityPay";
 import { getConvexClient } from "@/lib/convex-client";
 import { toCsv } from "@/lib/csv";
 import { api } from "../../convex/_generated/api";
@@ -37,8 +39,13 @@ export async function exportActivityLogCSV(filters: ActivityLogFilters = {}) {
     agentAuthored,
   });
 
+  // Read with the service identity (which always sees money): pay and job cost in
+  // a field diff are redacted here for the REAL caller, by the same two rules
+  // (lib/activityPay.ts).
+  const [pay, jobCost] = await Promise.all([callerSeesCrewPay(), callerSeesJobCost()]);
+  const shown = items.map(activityMoneyRedactor({ pay, jobCost }));
   const headers = ["Timestamp", "User", "Action", "Entity Type", "Entity Name", "Summary", "Details"];
-  const rows = items.map((item) => [
+  const rows = shown.map((item) => [
     new Date(item.createdAt).toISOString(),
     item.userName,
     item.action,

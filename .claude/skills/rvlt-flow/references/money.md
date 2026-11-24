@@ -175,6 +175,20 @@ quote. A read whose entire payload is financial returns an all-zero shape rather
 than a partial redaction. If figures come back as zeros across the board,
 suspect the flag before you suspect the data.
 
+Two lines decide who sees what:
+
+- **A job's cost and margin** — its service cost, labour cost, margin and
+  operational P&L — are for anyone who can read invoices (every built-in role
+  can) on a key without the no-financials flag.
+- **Individual pay** — crew rates, crew call costs, and a single service's own
+  cost (it rolls up that service's crew pay) — is manager-only, and only for
+  someone who can also see the job's cost (so never on a no-financials key, or
+  a key that can't read invoices).
+
+Past either line the figures are simply absent (and the P&L comes back all
+zeros). Absent is not $0: say "not visible to this role", never "this job made
+no margin".
+
 ## The Xero boundary
 
 **Flow owns quote and invoice generation. Xero owns the ledger, payment

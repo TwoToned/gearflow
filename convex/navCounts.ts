@@ -38,8 +38,7 @@ export const NAV_COUNT_SOURCES = [
   "clients",
   "suppliers",
   "locations",
-  // No NAV row names `crew` yet: UX Phase 15 owns the Crew rows (Q10) and attaches it.
-  // Kept (and tested) so that is a one-line `count: "crew"` on its row.
+  // The Crew row (UX Phase 15 owns it, Q10) carries `count: "crew"`.
   "crew",
 ] as const;
 export type NavCountServerSource = (typeof NAV_COUNT_SOURCES)[number];

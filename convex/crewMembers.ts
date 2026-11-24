@@ -1,10 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
-import type { QueryCtx } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
-import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
-import { MEMBER_RATE_FIELDS } from "./crewAssignments";
+import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+// The ONE member-row read boundary (icalToken: self or crew:update, never an agent; rates: canSeeCrewPay).
+import { memberRowRedactor } from "./lib/crewMemberRedaction";
 import { bumpCountersForTable } from "./lib/counters";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
@@ -21,28 +19,10 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 export const agentOps: AgentOpsAnnotations = {
-  list: { summary: "List crew members for the org (icalToken redacted for non-service callers; rates manager+ only).", danger: "low", mcpTier: 1 },
+  list: { summary: "List crew members for the org (icalToken never to an API key; rates manager+ only).", danger: "low", mcpTier: 1 },
   listPage: { summary: "Paginated/searchable/sortable crew member list.", danger: "low", mcpTier: 1 },
   getById: { summary: "Get a single crew member by id (rates manager+ only).", danger: "low", mcpTier: 1 },
 };
-
-/**
- * Field-level read boundary for `list`/`getById`: the service identity gets the
- * full row; everyone else loses `icalToken` (the public calendar-feed bearer),
- * and the default rates unless `canSeeCrewPay` (manager+ AND not a
- * `noFinancials` key). Resolved once per call, applied per row.
- */
-async function memberRowRedactor(
-  ctx: QueryCtx,
-  orgId: string,
-): Promise<<R extends Doc<"crewMembers">>(row: R) => R> {
-  const auth = await getAuthContext(ctx);
-  if (auth?.kind === "service") return (row) => row;
-  const fields: readonly string[] = (await canSeeCrewPay(ctx, orgId))
-    ? ["icalToken"]
-    : ["icalToken", ...MEMBER_RATE_FIELDS];
-  return (row) => redactFields(row, fields);
-}
 
 export const list = query({
   args: { orgId: v.string() },
@@ -67,7 +47,7 @@ export const list = query({
  * department/tags) — NOT the linked user's display name, a narrow, disclosed
  * behavior change from the old client-side search (see ProjectTable's git
  * history for the equivalent tradeoff notes elsewhere in this rollout).
- * icalToken is redacted for non-service callers, matching `list`.
+ * Rows go through `memberRowRedactor`, matching `list`.
  */
 export const listPage = query({
   args: {
@@ -114,10 +94,12 @@ export const listPage = query({
     );
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
-    const auth = await getAuthContext(ctx);
+    // The same row boundary as list/getById (`memberRowRedactor`): icalToken only
+    // for the member themself or crew:update on a user session, rates only with crew pay.
+    const redact = await memberRowRedactor(ctx, a.orgId);
     const items = pageRows.map((m) => {
       const role = m.crewRoleId ? roleMap.get(m.crewRoleId) ?? null : null;
-      const redacted = auth?.kind === "service" ? m : redactFields(m, ["icalToken"]);
+      const redacted = redact(m);
       return {
         ...redacted,
         crewRole: role ? { id: role.id, name: role.name, color: role.color } : null,

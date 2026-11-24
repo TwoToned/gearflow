@@ -455,8 +455,18 @@ export async function callerMayRead(
   orgId: string,
   resource: Resource,
 ): Promise<boolean> {
+  return callerMay(ctx, orgId, resource, "read");
+}
+
+/** `callerMayRead` for any action: the non-throwing form of `requireOrgPermission`. */
+export async function callerMay(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  resource: Resource,
+  action: string,
+): Promise<boolean> {
   try {
-    await requireOrgPermission(ctx, orgId, resource, "read");
+    await requireOrgPermission(ctx, orgId, resource, action);
     return true;
   } catch (e) {
     if (e instanceof ConvexError) return false;

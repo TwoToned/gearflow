@@ -3,6 +3,8 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
+import { activityMoneyRedactor, type ActivityRedactor } from "./lib/activityPay";
 
 /**
  * Native reads for the activity-log SCREENS (Phase 5c audit-read migration). Parity
@@ -21,6 +23,12 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  */
 
 const SCAN_CAP = 10000;
+
+/** Money in a field diff (`details.changes`) only for a caller who sees it: pay by the pay line, job cost by the job-cost rule (lib/activityPay.ts). */
+async function payRedactor(ctx: QueryCtx, orgId: string): Promise<ActivityRedactor> {
+  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
+  return activityMoneyRedactor({ pay, jobCost });
+}
 
 type LogDoc = {
   id: string;
@@ -166,7 +174,7 @@ export const list = query({
 
     const total = filtered.length;
     const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
-    const items = await attachUsers(ctx, pageRows);
+    const items = await attachUsers(ctx, pageRows.map(await payRedactor(ctx, args.orgId)));
 
     return {
       items,
@@ -196,7 +204,7 @@ export const listByEntity = query({
       .collect()) as unknown as LogDoc[];
     rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     const total = rows.length;
-    const items = await attachUsers(ctx, rows.slice(0, limit ?? 5));
+    const items = await attachUsers(ctx, rows.slice(0, limit ?? 5).map(await payRedactor(ctx, orgId)));
     return { items, total };
   },
 });
@@ -219,7 +227,7 @@ export const recentForProject = query({
       .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
       .order("desc")
       .take(take)) as unknown as LogDoc[];
-    return { items: await attachUsers(ctx, rows) };
+    return { items: await attachUsers(ctx, rows.map(await payRedactor(ctx, orgId))) };
   },
 });
 
@@ -230,8 +238,11 @@ export const exportRows = query({
     await requireOrgReadFor(ctx, args.orgId, "project"); // Phase 5 domain slice (#1001)
     const window = await scanWindow(ctx, args.orgId);
     const filtered = applyFilters(window, args);
+    // The CSV export calls this with the service identity, which always passes:
+    // `exportActivityLogCSV` redacts for its real caller (`callerSeesCrewPay`).
+    const redact = await payRedactor(ctx, args.orgId);
     return filtered.map((r) => ({
-      ...r,
+      ...redact(r),
       createdAt: new Date(r.createdAt ?? 0).toISOString(),
     }));
   },

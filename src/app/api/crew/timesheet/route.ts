@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { exportTimesheetCSV } from "@/server/crew-time";
 
 /**
  * GET /api/crew/timesheet?dateFrom=...&dateTo=...&crewMemberId=...&projectId=...&status=...
  *
  * Download timesheet data as CSV. Requires authentication (session-based).
+ * The filters are Zod-validated inside `exportTimesheetCSV`
+ * (`timesheetExportFiltersSchema`): a bad filter is a 400, not a 401.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +29,8 @@ export async function GET(request: NextRequest) {
         "Content-Disposition": `attachment; filename="timesheet-${date}.csv"`,
       },
     });
-  } catch {
+  } catch (e) {
+    if (e instanceof ZodError) return NextResponse.json({ error: "Invalid filters" }, { status: 400 });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 }

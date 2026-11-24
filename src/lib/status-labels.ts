@@ -271,7 +271,9 @@ export const timeEntryStatusLabels: Record<string, string> = {
   DRAFT: "Draft",
   SUBMITTED: "Submitted",
   APPROVED: "Approved",
-  DISPUTED: "Disputed",
+  // UX Phase 15 (D47): the UI word is "Queried"; the enum stays DISPUTED
+  // (alias in docs/glossary.md).
+  DISPUTED: "Queried",
   EXPORTED: "Exported",
 };
 

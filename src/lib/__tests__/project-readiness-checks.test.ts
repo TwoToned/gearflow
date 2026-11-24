@@ -209,6 +209,27 @@ describe("services check", () => {
     expect(c.detail).toContain("2 people");
   });
 
+  test("B1: a run short on some days names them (`Show run: Tue, Wed short`)", () => {
+    const MON = Date.UTC(2026, 10, 16), DAY = 86_400_000;
+    const c = byId(
+      buildReadinessChecks(
+        input({
+          crew: {
+            unconfirmedCount: 1,
+            activeCount: 1,
+            servicesMissingCrew: [{ title: "Show run", shortfall: 1, date: MON, endDate: MON + 2 * DAY, shortDays: [{ day: MON + DAY }, { day: MON + 2 * DAY }] }],
+            crewShortfall: 1,
+            unconfirmedServices: [],
+            activeServiceCount: 1,
+          },
+        }),
+      ),
+      "services",
+    );
+    expect(c.severity).toBe("warning");
+    expect(c.detail).toContain("Show run: Tue, Wed short");
+  });
+
   test("reports both problems on one row when a service is unconfirmed AND short", () => {
     const c = byId(
       buildReadinessChecks(

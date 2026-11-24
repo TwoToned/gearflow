@@ -1,7 +1,9 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgReadFor } from "./lib/auth";
+import { redactFields, requireOrgReadFor } from "./lib/auth";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 import { EXCLUDED_ASSIGNMENT_STATUSES as EXCLUDED, overlaps, iso, classifyAvailabilityBlock, classifyAssignmentConflict } from "./lib/crewConflicts";
 
 /**
@@ -128,6 +130,9 @@ export const plannerData = query({
     const projById = new Map(
       projectDocs.filter((p): p is NonNullable<typeof p> => p != null && p.organizationId === orgId).map((p) => [p.id, p]),
     );
+    // UX Phase 15 (D49): an assignment's pay (rate override, estimated cost) is
+    // manager-only, server-side — the planner's call sheet shows the cost rate.
+    const payVisible = await canSeeCrewPay(ctx, orgId);
 
     return members.map((m) => {
       const role = m.crewRoleId ? roleById.get(m.crewRoleId) ?? null : null;
@@ -140,14 +145,15 @@ export const plannerData = query({
           // token before it reaches any crew:read caller (parity with
           // `projectCrew`'s same redaction, above) — never spread it into a
           // browser-readable payload.
-          const { _id, _creationTime, responseToken, ...arest } = a;
+          const { _id, _creationTime, responseToken, ...withPay } = a;
           void _id; void _creationTime; void responseToken;
-          return { ...arest, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
+          const arest = payVisible ? withPay : redactFields(withPay, ASSIGNMENT_COST_FIELDS);
+          return { ...arest, startDate: iso(a.startDate), endDate: iso(a.endDate), offeredAt: iso(a.offeredAt), respondedAt: iso(a.respondedAt), confirmedAt: iso(a.confirmedAt), createdAt: iso(a.createdAt), updatedAt: iso(a.updatedAt), project: p ? { id: p.id, name: p.name, projectNumber: p.projectNumber, status: p.status ?? null, projectManagerId: p.projectManagerId ?? null } : null, crewRole: aRole ? { name: aRole.name, color: aRole.color ?? null } : null };
         });
       const availability = (availByMember.get(m.id) ?? [])
         .filter((r) => overlaps(r.startDate, r.endDate, startMs, endMs))
         .map((r) => ({ ...r, startDate: iso(r.startDate), endDate: iso(r.endDate), createdAt: iso(r.createdAt), updatedAt: iso(r.updatedAt) }));
-      return { id: m.id, firstName: m.firstName, lastName: m.lastName, department: m.department ?? null, crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null } : null, assignments, availability };
+      return { id: m.id, firstName: m.firstName, lastName: m.lastName, department: m.department ?? null, crewRole: role ? { id: role.id, name: role.name, color: role.color ?? null } : null, skillIds: m.skillIds ?? [], assignments, availability };
     });
   },
 });

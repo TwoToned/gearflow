@@ -84,9 +84,11 @@ export const NAV: readonly NavItem[] = [
   // Group 1
   {
     key: "crew", label: "Crew", url: "/crew", icon: "crew", hue: "purple", group: 1, moreGroup: "gear", resource: "crew",
+    // Phase 11's reserved `crew` count source (NAV_COUNT_SOURCES), read-gated on crew:read (NAV_COUNT_RESOURCE).
+    count: "crew",
     subs: [
-      { key: "crew-planner", label: "Planner", url: "/crew/planner", icon: "planner", resource: "crew" },
-      { key: "crew-timesheets", label: "Timesheets", url: "/crew/timesheets", icon: "timesheets", resource: "crew" },
+      // D48: one sub; Timesheets is its head word (/crew/timesheets stays a deep link, NOT_IN_NAV).
+      { key: "crew-planner", label: "Planner", url: "/crew/planner", icon: "planner", resource: "crew", moreLabel: "Planner & timesheets" },
     ],
   },
   {
@@ -150,7 +152,8 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/my-tasks": "removed from the rail (6d.9); still a valid route",
   "/warehouse/returns": "redirect to the floor's Returning mode (`/warehouse?mode=returning`, Phase 4)",
   "/test-and-tag/quick-test": "redirect to the Scan page's Test & tag mode (`/scan?mode=tt`, Phase 16)",
-  "/crew/settings": "Settings sub-page for crew; reached from /settings",
+  "/crew/settings": "redirect to the Crew roles & rates sheet (`/crew/planner?sheet=roles`, Phase 15)",
+  "/crew/timesheets": "the Crew page's Timesheets head word (D48); a deep link, not a sub-row",
   "/maintenance/due": "a filter view reached from Maintenance",
   "/maintenance/new": "create flow",
   "/assets/models/new": "create flow",

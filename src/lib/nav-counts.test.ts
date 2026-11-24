@@ -35,11 +35,12 @@ describe("NAV count sources", () => {
     for (const r of rows.filter((x) => x.count)) expect(r.resource, r.key).toBeDefined();
   });
 
-  it("the §6d.6 rows carry their sources; Crew's is Phase 15's to attach (Q10)", () => {
+  it("the §6d.6 rows carry their sources, Crew's included (attached by Phase 15, Q10)", () => {
     const by = Object.fromEntries(rows.filter((r) => r.count).map((r) => [r.key, r.count]));
     expect(by).toEqual({
       overbookings: "overbookings",
       finance: "invoicesOverdue",
+      crew: "crew",
       assets: "assets",
       "warehouse-returns": "returnsOverdue",
       "test-and-tag": "testTagOverdue",

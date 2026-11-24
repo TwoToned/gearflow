@@ -89,7 +89,8 @@ export function useLogisticsData(projectId: string) {
     stops,
     crew,
     conflicts: conflicts ?? {},
-    summary: summary as { serviceCount: number; onDocumentsTotal: number; internalTotal: number } | undefined,
+    // `internalTotal` (the cost, crew pay rolled in) is ABSENT below the pay line.
+    summary: summary as { serviceCount: number; onDocumentsTotal: number; internalTotal?: number } | undefined,
     templates: ((templates ?? []) as unknown as (ServiceTemplateLite & Record<string, unknown>)[]),
     isLoading: servicesLoading || crewLoading,
   };

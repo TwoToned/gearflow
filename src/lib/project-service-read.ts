@@ -3,6 +3,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
 import { resolveRate } from "../../convex/lib/crewRate";
+import { SERVICE_CREW_COST_FIELDS } from "../../convex/lib/crewPayFields";
 
 /**
  * Server-side read helpers for the project-services domain (Phase A read-rewiring
@@ -23,6 +24,7 @@ type RawAssignment = Doc<"crewAssignments">;
 
 const toDate = (v: number | undefined): Date | null => (typeof v === "number" ? new Date(v) : null);
 const orNull = <T>(v: T | undefined): T | null => (v === undefined ? null : v);
+const isoOrNull = (ms: number | undefined): string | null => (ms == null ? null : new Date(ms).toISOString());
 const req = <T>(v: T | undefined): T => v as T;
 
 // ─── Row shapes (mirror the Prisma include shapes the UI consumes) ───────────
@@ -43,18 +45,50 @@ export interface ServiceCrewMember {
 export interface ServiceCrewAssignment {
   id: string;
   status: string | null;
-  /** Present in getProjectServices, absent (always null) in getProjectServiceById. */
-  estimatedCost: number | null;
+  /** Present in getProjectServices, absent (always null) in getProjectServiceById.
+   *  ABSENT (no key) when the caller can't see crew pay — `redactServiceCrewPay`. */
+  estimatedCost?: number | null;
   crewMember: ServiceCrewMember | null;
+  /** The call's own days (UTC midnight ISO), for the per-day crew gap. */
+  startDate: string | null;
+  endDate: string | null;
   /** Rate-cascade inputs (issue #796 per-crew rate table) — the row's own override,
    *  if set, plus the resolved rate/type the SAME cascade (convex/lib/crewRate.ts)
    *  would produce, so the UI can show "$X/day (from role default)" without
-   *  re-implementing the cascade. */
-  rateOverride: number | null;
+   *  re-implementing the cascade. ABSENT below the pay line (`SERVICE_CREW_PAY_FIELDS`). */
+  rateOverride?: number | null;
   rateType: string | null;
   estimatedHours: number | null;
-  resolvedRate: number;
+  resolvedRate?: number;
   resolvedRateType: string;
+}
+
+function withoutFields<R extends object>(row: R, fields: readonly string[]): R {
+  const out = { ...row } as Record<string, unknown>;
+  for (const f of fields) delete out[f];
+  return out as R;
+}
+
+/** The pay fields a service's crew row carries (stripped below the pay line). */
+const SERVICE_CREW_PAY_FIELDS = ["estimatedCost", "rateOverride", "resolvedRate"] as const;
+
+/**
+ * Strip crew pay from service rows for a caller who can't see it (the ONE
+ * crew-pay rule, decided by the server action for its real caller —
+ * `callerSeesCrewPay`). These rows are read with the service identity, which
+ * always passes `canSeeCrewPay`, so the redaction must happen here (B-2).
+ */
+export function redactServiceCrewPay<R extends { crewAssignments: ServiceCrewAssignment[]; costTotal?: number | null }>(rows: R[], payVisible: boolean): R[] {
+  if (payVisible) return rows;
+  return rows.map((s) => ({
+    // The service's own cost rolls up its crew's pay: absent too (SERVICE_CREW_COST_FIELDS).
+    ...withoutFields(s, SERVICE_CREW_COST_FIELDS),
+    crewAssignments: s.crewAssignments.map((a) => {
+      const out: ServiceCrewAssignment = { ...a };
+      for (const f of SERVICE_CREW_PAY_FIELDS) delete out[f];
+      return out;
+    }),
+  }));
 }
 
 export interface ProjectServiceRow {
@@ -83,7 +117,8 @@ export interface ProjectServiceRow {
   duration: number | null;
   discount: number | null;
   lineTotal: number | null;
-  costTotal: number | null;
+  /** ABSENT below the pay line: it rolls up the crew's pay (`redactServiceCrewPay`). */
+  costTotal?: number | null;
   /** Per-service override of the crew charge-rate cascade (WS10 #949) — see
    *  convex/schema.ts's projectServices.chargeRateOverride comment. */
   chargeRateOverride: number | null;
@@ -258,6 +293,8 @@ export function attachServiceCrew(
       id: a.id,
       status: orNull(a.status),
       estimatedCost: withEstimatedCost ? orNull(a.estimatedCost) : null,
+      startDate: isoOrNull(a.startDate),
+      endDate: isoOrNull(a.endDate),
       crewMember: member
         ? {
             id: member.id,

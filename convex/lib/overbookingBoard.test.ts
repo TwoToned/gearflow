@@ -282,6 +282,21 @@ describe("computeServicesMissingCrew", () => {
     const services: BoardService[] = [{ id: "s1", projectId: "p1", title: "Bump-in", date: 100 * DAY, crewCountRequired: 2 }];
     expect(computeServicesMissingCrew(RANGE, services, new Map(), projectsById)).toHaveLength(0);
   });
+
+  // B1: a "this day only" call fills only its day — the run is short on the others.
+  const run: BoardService[] = [{ id: "s1", projectId: "p1", title: "Show run", date: 5 * DAY, endDate: 7 * DAY, crewCountRequired: 1 }];
+  const call = (startDate: number, endDate: number) =>
+    new Map<string, BoardAssignment[]>([["s1", [{ id: "a1", projectId: "p1", crewMemberId: "c1", status: "OFFERED", startDate, endDate }]]]);
+
+  test("a Mon-only call on a Mon–Wed run stays on the board, short Tue and Wed", () => {
+    const rows = computeServicesMissingCrew(RANGE, run, call(5 * DAY, 5 * DAY), projectsById);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ assignedCount: 0, shortfall: 1, shortDays: [{ day: 6 * DAY, shortfall: 1 }, { day: 7 * DAY, shortfall: 1 }] });
+  });
+
+  test("a whole-run call fills every day of it", () => {
+    expect(computeServicesMissingCrew(RANGE, run, call(5 * DAY, 7 * DAY), projectsById)).toHaveLength(0);
+  });
 });
 
 describe("computeUnconfirmedCrew", () => {

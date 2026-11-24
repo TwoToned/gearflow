@@ -243,6 +243,12 @@ export function CrewTable() {
     [pagedMembers, extras],
   );
 
+  // The Day rate column exists only when the server says this caller sees crew
+  // pay (the one rule, `crewRoles.ratesVisible`); otherwise it is absent, not
+  // an empty column of dashes (review S1). listPage strips the rates either way.
+  const payVisible = useAuthedQuery(api.crewRoles.ratesVisible, orgId ? { orgId } : "skip") === true;
+  const shownColumns = useMemo(() => (payVisible ? columns : columns.filter((c) => c.id !== "dayRate")), [payVisible]);
+
   const toolbarActions = (
     <CanDo resource="crew" action="create">
       <Button asChild>
@@ -257,7 +263,7 @@ export function CrewTable() {
   return (
     <DataTable
       data={crewMembers}
-      columns={columns}
+      columns={shownColumns}
       totalRows={total}
       page={page}
       pageSize={pageSize}

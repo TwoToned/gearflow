@@ -6,13 +6,7 @@ import { serialize } from "@/lib/serialize";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
-import { getProjectById } from "@/lib/projects-read";
-import { getLocationById } from "@/lib/locations-read";
-import {
-  getAssignmentById,
-  getShiftsByAssignmentIds,
-} from "@/lib/crew-scheduling-read";
+import { getCrewMemberById } from "@/lib/crew-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -109,6 +103,14 @@ export async function regenerateIcalToken(crewMemberId: string) {
   return serialize({ icalEnabled: true, icalToken: token });
 }
 
+/**
+ * The feed's switches only. The `icalToken` is a bearer secret for the public
+ * calendar route and is NOT returned here: this action reads with the service
+ * identity for any org member, so it would bypass the one member-row boundary.
+ * The browser gets the token only from `crew.memberDetail`, through
+ * `memberRowRedactor` (the member themself, or `crew:update`, on a user
+ * session). The enable/regenerate actions above already require `crew:update`.
+ */
 export async function getIcalSettings(crewMemberId: string) {
   const { organizationId } = await getOrgContext();
 
@@ -117,7 +119,6 @@ export async function getIcalSettings(crewMemberId: string) {
 
   return serialize({
     icalEnabled: member.icalEnabled ?? false,
-    icalToken: member.icalToken ?? null,
     icalIncludeTentative: member.icalIncludeTentative ?? false,
   });
 }
@@ -153,47 +154,4 @@ export async function setIcalIncludeTentative(crewMemberId: string, includeTenta
   });
 
   return { success: true };
-}
-
-// ─── Assignment .ics Download ────────────────────────────────────────────────
-
-export async function getAssignmentIcsData(assignmentId: string) {
-  const { organizationId } = await getOrgContext();
-
-  const assignment = await getAssignmentById(assignmentId);
-  if (!assignment || assignment.organizationId !== organizationId) {
-    throw new Error("Assignment not found");
-  }
-
-  const [member, roleMap, project, shifts] = await Promise.all([
-    getCrewMemberById(assignment.crewMemberId),
-    getCrewRoleMap(organizationId),
-    getProjectById(assignment.projectId),
-    getShiftsByAssignmentIds([assignmentId]),
-  ]);
-
-  const role = assignment.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
-  const location = project?.locationId ? await getLocationById(project.locationId) : null;
-
-  const filteredShifts = shifts
-    .filter((s) => s.status !== "CANCELLED")
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  return serialize({
-    ...assignment,
-    crewMember: member
-      ? { firstName: member.firstName, lastName: member.lastName, email: member.email ?? null }
-      : null,
-    crewRole: role ? { name: role.name } : null,
-    project: project
-      ? {
-          name: project.name,
-          projectNumber: project.projectNumber,
-          location: location ? { name: location.name, address: location.address ?? null } : null,
-          siteContactName: project.siteContactName ?? null,
-          siteContactPhone: project.siteContactPhone ?? null,
-        }
-      : null,
-    shifts: filteredShifts,
-  });
 }

@@ -29,16 +29,16 @@ export function useCrewMember(id: string | undefined): CrewMemberDoc | null | un
   return useAuthedQuery(api.crewMembers.getById, id ? { id } : "skip");
 }
 
+/**
+ * Every crew role. `defaultRate`/`chargeRate` are absent unless the caller sees
+ * crew pay (server-enforced: `convex/crewRoles.ts` `roleRowRedactor`, the one
+ * pay rule), so a cost preview below the pay line has no rate to show.
+ */
 export function useCrewRoles(orgId: string | undefined): CrewRoleDoc[] | undefined {
   return useAuthedQuery(api.crewRoles.list, orgId ? { orgId } : "skip");
 }
 
-/**
- * Roles-admin variant (WS10 #949, `/crew/settings`) — same rows, but `defaultRate`/
- * `chargeRate` come back stripped for non-manager+ viewers (server-enforced, see
- * `convex/crewRoles.ts` `listForSettings`). Use `useCrewRoles` instead for cost-
- * preview call sites that need `defaultRate` regardless of viewer role.
- */
+/** The roles sheet's read: the same rows and the same rate redaction as `useCrewRoles`. */
 export function useCrewRolesForSettings(orgId: string | undefined): CrewRoleDoc[] | undefined {
   return useAuthedQuery(api.crewRoles.listForSettings, orgId ? { orgId } : "skip");
 }

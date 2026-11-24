@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  crewPickRank, crewShort, daysBetween, defaultServiceDay, groupByDay, inLane, needsLine, planShift,
+  crewPickRank, crewShort, partialShortDays, daysBetween, defaultServiceDay, groupByDay, inLane, needsLine, planShift,
   reverseMoves, totalsOf, whenText, type LogisticsService,
 } from "../logistics-model";
 
@@ -17,6 +17,16 @@ describe("crew state", () => {
   test("a declined assignment does not fill the slot", () => {
     const s = svc({ id: "a", crewCountRequired: 2, crewAssignments: [asg("1", "CONFIRMED"), asg("2", "DECLINED")] });
     expect(crewShort(s)).toBe(1);
+  });
+  test("the gap is per day: a Monday-only call on a Mon–Wed run leaves it short (and a whole-run call fills it)", () => {
+    const run = { date: "2026-11-16T00:00:00.000Z", endDate: "2026-11-18T00:00:00.000Z", crewCountRequired: 1 };
+    const mon = { ...asg("1", "CONFIRMED"), startDate: "2026-11-16T00:00:00.000Z", endDate: "2026-11-16T00:00:00.000Z" };
+    const s = svc({ id: "a", ...run, crewAssignments: [mon] });
+    expect(crewShort(s)).toBe(1);
+    expect(partialShortDays(s)).toEqual([Date.UTC(2026, 10, 17), Date.UTC(2026, 10, 18)]);
+    expect(crewShort(svc({ id: "b", ...run, crewAssignments: [{ ...mon, endDate: "2026-11-18T00:00:00.000Z" }] }))).toBe(0);
+    // A call with no dates (the old shape) covers the whole run.
+    expect(crewShort(svc({ id: "c", ...run, crewAssignments: [asg("2", "CONFIRMED")] }))).toBe(0);
   });
   test("a cancelled service needs nobody", () => {
     expect(crewShort(svc({ id: "a", status: "CANCELLED", crewCountRequired: 3 }))).toBe(0);

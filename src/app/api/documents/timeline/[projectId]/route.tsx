@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { requireOrganization } from "@/lib/auth-server";
+import { requirePermission } from "@/lib/org-context";
+import { callerSeesCrewPay } from "@/lib/crew-pay-caller";
+import { getProjectByIdMapped } from "@/lib/projects-read";
 import { getProjectServicesFromConvex } from "@/lib/project-service-read";
 import { buildDocumentData } from "@/lib/pdfme/build-document-data";
 import {
@@ -17,14 +20,27 @@ export async function GET(
   const { projectId } = await params;
   const url = new URL(request.url);
 
-  let session;
   try {
-    session = await requireOrganization();
+    await requireOrganization();
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { organizationId } = session;
+  // The timeline prints a project's services and crew: `project:read` in the
+  // caller's org, and the project must be in that org.
+  let organizationId: string;
+  try {
+    ({ organizationId } = await requirePermission("project", "read"));
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const project = await getProjectByIdMapped(projectId, organizationId).catch(() => null);
+  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // A service's cost rolls up its crew's pay: `showCost` prints only for a caller
+  // who sees crew pay (the ONE rule); for anyone else it is ignored and no cost
+  // reaches the template at all (UX Phase 15).
+  const payVisible = await callerSeesCrewPay();
 
   // Parse settings from query params (all default to DEFAULT_TIMELINE_SETTINGS)
   const parseBool = (key: keyof TimelineSettings): boolean => {
@@ -38,7 +54,7 @@ export async function GET(
     showLocation: parseBool("showLocation"),
     showNotes: parseBool("showNotes"),
     showCharge: parseBool("showCharge"),
-    showCost: parseBool("showCost"),
+    showCost: payVisible && parseBool("showCost"),
     showStatus: parseBool("showStatus"),
   };
 
@@ -74,7 +90,7 @@ export async function GET(
           status: ca.status ?? "",
         })),
       lineTotal: s.lineTotal ? Number(s.lineTotal) : null,
-      costTotal: s.costTotal ? Number(s.costTotal) : null,
+      costTotal: payVisible && s.costTotal ? Number(s.costTotal) : null,
     }));
 
     const { inputs, template } = buildTimelineInputs(data, timelineServices, settings);

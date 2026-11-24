@@ -88,8 +88,9 @@ Two lines decide the rest of the money:
   `noFinancials`. Every built-in role holds `invoice:read`, so in practice the
   key's own scope and flag decide.
 - **Individual pay** — crew rates, crew call costs and a single service's own
-  `costTotal` (it rolls up that service's crew pay) — is stricter: the acting
-  user must be a manager or above AND the key not `noFinancials`.
+  `costTotal` (it rolls up that service's crew pay) — is stricter: everything
+  job cost needs (the `invoice:read` scope, not `noFinancials`) AND an acting
+  user who is a manager or above.
 
 A caller who fails a line gets those fields ABSENT from the row (not zero), and
 can't sort by them; `get_project_financials` and the labour-cost total return

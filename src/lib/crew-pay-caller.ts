@@ -9,9 +9,10 @@ import { JOB_COST_FIELDS } from "../../convex/lib/crewPayFields";
  * Convex with the service identity, which always passes `canSeeCrewPay`, so it
  * must decide for its caller itself — with THE one rule, `crewPayVisible`
  * (`convex/lib/crewPayRule.ts`, the function `canSeeCrewPay` decides with):
- * manager+ and not a `noFinancials` key. The ambient API-key actor carries no
- * `noFinancials` flag here, so a key counts as noFinancials (fail closed) —
- * keys read pay through the Convex reads, where the flag is known.
+ * manager+ AND the job-cost line (`invoice:read`, not a `noFinancials` key).
+ * The ambient API-key actor carries no `noFinancials` flag here, so a key
+ * counts as noFinancials (fail closed) — keys read pay through the Convex
+ * reads, where the flag and the key's scopes are known.
  *
  * Every server action that returns crew pay (rates, `estimatedCost`,
  * `rateOverride`, a resolved rate, a service's own `costTotal`) gates it on
@@ -19,7 +20,12 @@ import { JOB_COST_FIELDS } from "../../convex/lib/crewPayFields";
  */
 export async function callerSeesCrewPay(): Promise<boolean> {
   const actor = getAmbientActor();
-  return crewPayVisible({ managerPlus: isManagerPlusRole(await getCurrentRole()), noFinancials: actor?.actorType === "apiKey" });
+  const role = await getCurrentRole();
+  return crewPayVisible({
+    managerPlus: isManagerPlusRole(role),
+    invoiceRead: role != null && hasPermission(role, "invoice", "read"),
+    noFinancials: actor?.actorType === "apiKey",
+  });
 }
 
 /**

@@ -120,6 +120,18 @@ describe("job cost follows invoice:read; individual pay follows the pay line", (
     expect(await labour(t, asAgent)).toEqual({ totalLabourCost: 0, assignmentCount: 0 });
   });
 
+  test("the pay line implies the job-cost line: an owner key with project:* + crew:* but no invoice gets no individual pay and no service costTotal", async () => {
+    const t = makeT(); await seed(t, "owner", { noFinancials: false, scopes: ["project:*", "crew:*"] });
+    const r = await reads(t, asAgent);
+    expectNoJobCost(r);
+    expectNoIndividualPay(r); // else job cost could be rebuilt from the services' costTotal and the calls' estimatedCost
+    const crew = await t.withIdentity(asAgent).query(api.crewAssignments.projectCrew, { projectId: "p1", orgId: ORG });
+    for (const a of crew) for (const f of ["estimatedCost", "rateOverride"]) expect(a, f).not.toHaveProperty(f);
+    // The same owner key with the invoice scope too sees pay.
+    const ti = makeT(); await seed(ti, "owner", { noFinancials: false, scopes: ["project:*", "crew:*", "invoice:read"] });
+    expect((await reads(ti, asAgent)).service).toMatchObject({ costTotal: 650 });
+  });
+
   test("the same key WITH invoice:read sees job cost (the scope is the only difference)", async () => {
     const t = makeT(); await seed(t, "owner", { noFinancials: false, scopes: ["project:read", "crew:read", "invoice:read"] });
     expectJobCost(await reads(t, asAgent));

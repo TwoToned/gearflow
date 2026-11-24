@@ -1,9 +1,18 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const role = vi.hoisted(() => ({ value: "member" as string | null, actor: null as null | { actorType: string } }));
+const role = vi.hoisted(() => ({ value: "member" as string | null, actor: null as null | { actorType: string }, denyInvoiceRead: false }));
 vi.mock("@/lib/org-context", () => ({ getCurrentRole: vi.fn(async () => role.value) }));
 vi.mock("@/lib/request-actor", () => ({ getAmbientActor: vi.fn(() => role.actor) }));
+// The real permission table, with a switch to withhold invoice:read from a role (no built-in role lacks it).
+vi.mock("@/lib/permissions", async (orig) => {
+  const real = await orig<typeof import("@/lib/permissions")>();
+  return {
+    ...real,
+    hasPermission: (r: string, resource: Parameters<typeof real.hasPermission>[1], action: string) =>
+      role.denyInvoiceRead && resource === "invoice" ? false : real.hasPermission(r, resource, action),
+  };
+});
 
 import { callerSeesCrewPay, callerSeesJobCost, jobCostSortAllowed, withoutJobCost } from "./crew-pay-caller";
 import { crewPayVisible, jobCostVisible } from "../../convex/lib/crewPayRule";
@@ -11,6 +20,7 @@ import { crewPayVisible, jobCostVisible } from "../../convex/lib/crewPayRule";
 beforeEach(() => {
   role.value = "member";
   role.actor = null;
+  role.denyInvoiceRead = false;
 });
 
 describe("jobCostVisible — the ONE job-cost rule (owner ruling 2026-11-24)", () => {
@@ -23,7 +33,30 @@ describe("jobCostVisible — the ONE job-cost rule (owner ruling 2026-11-24)", (
 
   it("is a different line from crew pay: a member passes job cost and fails pay", () => {
     expect(jobCostVisible({ invoiceRead: true, noFinancials: false })).toBe(true);
-    expect(crewPayVisible({ managerPlus: false, noFinancials: false })).toBe(false);
+    expect(crewPayVisible({ managerPlus: false, invoiceRead: true, noFinancials: false })).toBe(false);
+  });
+});
+
+describe("crewPayVisible — the pay line IMPLIES the job-cost line", () => {
+  it("is manager+ AND invoice:read AND not noFinancials, over every input", () => {
+    for (const managerPlus of [true, false]) {
+      for (const invoiceRead of [true, false]) {
+        for (const noFinancials of [true, false]) {
+          const input = { managerPlus, invoiceRead, noFinancials };
+          expect(crewPayVisible(input), JSON.stringify(input)).toBe(managerPlus && invoiceRead && !noFinancials);
+          // Implication: pay never shows where job cost doesn't.
+          if (crewPayVisible(input)) expect(jobCostVisible(input)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("callerSeesCrewPay: a manager passes; the same manager with invoice:read withheld does not (the twin feeds the rule's invoice input)", async () => {
+    role.value = "manager";
+    expect(await callerSeesCrewPay()).toBe(true);
+    role.denyInvoiceRead = true;
+    expect(await callerSeesCrewPay()).toBe(false);
+    expect(await callerSeesJobCost()).toBe(false);
   });
 });
 

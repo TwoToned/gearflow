@@ -181,8 +181,9 @@ Two lines decide who sees what:
   operational P&L — are for anyone who can read invoices (every built-in role
   can) on a key without the no-financials flag.
 - **Individual pay** — crew rates, crew call costs, and a single service's own
-  cost (it rolls up that service's crew pay) — is manager-only, and never on a
-  no-financials key.
+  cost (it rolls up that service's crew pay) — is manager-only, and only for
+  someone who can also see the job's cost (so never on a no-financials key, or
+  a key that can't read invoices).
 
 Past either line the figures are simply absent (and the P&L comes back all
 zeros). Absent is not $0: say "not visible to this role", never "this job made

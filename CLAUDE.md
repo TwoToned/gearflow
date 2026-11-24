@@ -510,8 +510,10 @@ returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
 `crewMembers.{list,listPage,getById}`, `crew.memberDetail`,
 `crewRoles.{list,listForSettings,getById}`) gates it on `canSeeCrewPay`
 (`convex/lib/crewPayVisibility.ts`), which decides with THE one rule,
-`crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ and not a `noFinancials`
-key). A server action reads Convex with the SERVICE identity (which always sees
+`crewPayVisible` (`convex/lib/crewPayRule.ts`: manager+ AND the job-cost line —
+`invoice:read` and not a `noFinancials` key; the pay line implies the job-cost
+line, so a key scoped without `invoice` can't rebuild a job's cost from the
+services' `costTotal` and the calls' `estimatedCost`). A server action reads Convex with the SERVICE identity (which always sees
 pay), so every one that returns crew pay decides for its real caller with
 `callerSeesCrewPay()` (`src/lib/crew-pay-caller.ts`, the same `crewPayVisible`; an
 API-key actor counts as noFinancials — fail closed): `exportTimesheetCSV`,

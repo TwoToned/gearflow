@@ -183,7 +183,8 @@ revenue). `crewChargeTotal` is the per-service, pre-discount input that feeds
 
 **Visibility:** two lines, both server-enforced (see "Two money lines" below).
 A role's rates and a service's own cost (`defaultRate`, `costTotal`) and the
-row's margin are individual pay: manager+ and not a `noFinancials` key. The
+row's margin are individual pay: manager+ AND the job-cost line (the pay line
+implies it, so a key without the `invoice` scope sees no pay either). The
 JOB's cost and margin (the project's totals) need `invoice:read` and not a
 `noFinancials` key (owner ruling 2026-11-24). The charge rate/total
 (`chargeRate`, `crewChargeTotal`/`lineTotal`) is visible to every role. The
@@ -860,8 +861,10 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 - **Two money lines (owner ruling 2026-11-24, "anyone with invoice read").**
   Each is ABSENT, never reduced, for a caller who fails it, so nothing can be
   back-solved; a hidden field is never a sort key.
-  - **Individual pay** (the pay line above): rates, a call's cost, and a
-    service's own `costTotal`, which rolls up its crew's pay
+  - **Individual pay** (the pay line above — manager+ AND the job-cost line,
+    which it implies: `crewPayVisible` calls `jobCostVisible`, so an owner key
+    scoped to `project:*` + `crew:*` with no `invoice` can't rebuild job cost
+    from pay): rates, a call's cost, and a service's own `costTotal`, which rolls up its crew's pay
     (`SERVICE_CREW_COST_FIELDS`, `crewPayRedactor`): `projectServices.{list,getById,listByProject}`,
     the service and crew-call entries of `projectLocksRead.{snapshotEntries,currentEntries}`
     (a crew call entry ALWAYS loses its `responseToken`), `getProjectServices`,

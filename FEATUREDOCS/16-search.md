@@ -88,7 +88,9 @@ decoder). Everything inside lives in `src/components/layout/palette/`:
   Bulk stock → `/assets/registry?kind=bulk&q=`, Jobs → `/projects?show=cancelled&q=`
   (search matches every status), each with its own `groups` total (`n+` when
   truncated). A group with no list that reads `?q=` (Kits, Models, Clients, …) expands
-  in place, and its `n` is the rows it will show. A listed group whose matches are all
+  in place, and its `n` is the rows it will show, with a `+` when the server stopped
+  short (`Show all 6+ in Clients ›`: it matched more than it returned, or its scan
+  was truncated). A listed group whose matches are all
   children of another group's row (assets under their model) still gets its `Show
   all`. Rows: mono number, name, muted sub, a job's dot-word status. Children (assets
   under a model, jobs under a client) sit indented under their parent.
@@ -97,10 +99,12 @@ decoder). Everything inside lives in `src/components/layout/palette/`:
   words; a yearless one (`14/11` — a slash only — `14 nov`, `nov 14`) counts only as
   the WHOLE input. `2.4`, `1.5 m XLR` and `1/4 inch jack` are searches, never dates.
   A date shows **Jobs on 14 Nov · n** — the first four through the EXISTING Jobs list
-  query (`projects.listPage` with the day as `dateFrom`/`dateTo`), gated on `project`
-  — then any gear matching words after a dated prefix (opening on that date), then
+  query (`projects.listPage` with the day as `dateFrom`/`dateTo`), gated on
+  `project:read` (`canReadResource`) — then any gear matching words after a dated prefix (opening on that date), then
   `Schedule at 14 Nov ›` (`/availability?date=`), **and the plain search for the whole
-  string still runs, its groups below** (a date never switches search off). Also after `@`.
+  string still runs, its groups below** (a date never switches search off). A row the
+  day's groups already show is not repeated below (`appendDistinct`, deduped by row
+  id). Also after `@`.
 - **Nothing matches “…”** with the next step: "Try a job number, an asset tag or a
   client name · @ pages · / actions".
 - **@ mode** (kept): Page navigation via `PAGE_COMMANDS` (`src/lib/page-commands.ts`)

@@ -160,15 +160,18 @@ function showAllRow(f: Family, n: string, query: string): PaletteRow {
 /**
  * Four rows, then `Show all n in X ›` when there is more to see. `n` counts
  * exactly what the target shows: the server's match total for a list link,
- * the rows the palette holds for an in-place expand.
+ * the rows the palette holds for an in-place expand. When the server stopped
+ * short (its scan was truncated, or it matched more than it returned) `n` gets
+ * a `+`: `Show all 200+ in Assets ›`, `Show all 6+ in Clients ›`.
  */
 function familySection(f: Family, rows: PaletteRow[], groups: readonly SearchGroupTotal[], query: string, expanded: boolean): PaletteSection {
   const shown = expanded ? rows : rows.slice(0, ROWS_PER_GROUP);
+  const { total, truncated } = familyTotal(f, groups, rows.length);
   if (!f.listHref) {
     const more = rows.length > shown.length;
-    return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, String(rows.length), query)] : shown };
+    const plus = truncated || total > rows.length ? "+" : "";
+    return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, `${rows.length}${plus}`, query)] : shown };
   }
-  const { total, truncated } = familyTotal(f, groups, rows.length);
   const more = total > shown.length;
   return { key: f.key, label: f.label, rows: more ? [...shown, showAllRow(f, `${total}${truncated ? "+" : ""}`, query)] : shown };
 }

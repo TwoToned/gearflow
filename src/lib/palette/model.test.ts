@@ -55,12 +55,22 @@ describe("searchSections (§6d.3: grouped, best group first, four rows each)", (
 
   it("a group without a list expands in place instead, counting exactly the rows it will show", () => {
     const many = Array.from({ length: 6 }, (_, i) => res("client", `c${i}`, `Client ${i}`));
-    // The server matched 40, but only 6 came back: expanding shows 6, so it says 6.
-    const s = searchSections(many, [{ type: "client", total: 40, truncated: true }], "cli", new Set());
+    // Exactly the 6 the server matched: expanding shows 6, so it says 6.
+    const s = searchSections(many, [{ type: "client", total: 6, truncated: false }], "cli", new Set());
     const more = s[0].rows[4];
     expect(more.title).toBe("Show all 6 in Clients ›");
     expect(more.action).toEqual({ kind: "expand", family: "clients" });
     expect(searchSections(many, [], "cli", new Set(["clients"]))[0].rows).toHaveLength(6);
+  });
+
+  it("when the server stopped short, the count says n+ (list link and in-place expand)", () => {
+    const many = Array.from({ length: 6 }, (_, i) => res("client", `c${i}`, `Client ${i}`));
+    // Matched 40, only 6 came back: expanding shows 6 of more.
+    expect(searchSections(many, [{ type: "client", total: 40, truncated: false }], "cli", new Set())[0].rows[4].title).toBe("Show all 6+ in Clients ›");
+    // The scan itself was truncated.
+    expect(searchSections(many, [{ type: "client", total: 6, truncated: true }], "cli", new Set())[0].rows[4].title).toBe("Show all 6+ in Clients ›");
+    const assets = Array.from({ length: 5 }, (_, i) => res("asset", `a${i}`, `AURA-0${i}`));
+    expect(searchSections(assets, [{ type: "asset", total: 200, truncated: true }], "aura", new Set())[0].rows[4].title).toBe("Show all 200+ in Assets ›");
   });
 
   it("each list link counts ONE type, the one its list holds: assets, bulk stock, jobs incl. cancelled; kits expand", () => {
@@ -80,7 +90,8 @@ describe("searchSections (§6d.3: grouped, best group first, four rows each)", (
     expect(by["Assets"]).toMatchObject({ title: "Show all 9 in Assets ›", href: "/assets/registry?q=x%20y" });
     expect(by["Bulk stock"]).toMatchObject({ title: "Show all 6 in Bulk stock ›", href: "/assets/registry?kind=bulk&q=x%20y" });
     expect(by["Jobs"]).toMatchObject({ title: "Show all 8 in Jobs ›", href: "/projects?show=cancelled&q=x%20y" });
-    expect(by["Kits"]).toMatchObject({ title: "Show all 5 in Kits ›", action: { kind: "expand", family: "kits" } });
+    // Kits expand in place: 5 held, the server matched 12, so `5+`.
+    expect(by["Kits"]).toMatchObject({ title: "Show all 5+ in Kits ›", action: { kind: "expand", family: "kits" } });
   });
 
   it("every list link survives its list's own URL parser (nothing dropped as junk)", () => {

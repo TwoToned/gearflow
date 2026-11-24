@@ -20,34 +20,50 @@ interface InvoiceMenuRow {
   kind: string;
 }
 
+interface Perms {
+  canDelete: boolean;
+  canVoid: boolean;
+  canIssue: boolean;
+  canCreate: boolean;
+}
+interface Handlers {
+  onIssue: () => void;
+  onCreditRequest: () => void;
+  onDeleteDraft: () => void;
+  onVoidRequest: () => void;
+  onDeleteVoidRequest: () => void;
+}
+
+const when = (cond: boolean, item: ActionItem): ActionItem[] => (cond ? [item] : []);
+
+function draftActions(perms: Perms, h: Handlers): ActionItem[] {
+  return [
+    ...when(perms.canIssue, { key: "issue", label: "Issue…", group: "organise", icon: Send, onSelect: h.onIssue }),
+    ...when(perms.canDelete, { key: "delete-draft", label: "Delete draft", group: "danger", icon: Trash2, onSelect: h.onDeleteDraft, danger: true }),
+  ];
+}
+
+function issuedActions(inv: InvoiceMenuRow, perms: Perms, h: Handlers, hasCreditNote: boolean): ActionItem[] {
+  const canCredit = inv.kind !== "CREDIT" && perms.canCreate && !hasCreditNote;
+  return [
+    ...when(canCredit, { key: "credit-note", label: "Credit note…", group: "organise", icon: FileMinus, onSelect: h.onCreditRequest }),
+    ...when(perms.canVoid, { key: "void", label: "Void invoice", group: "danger", icon: Ban, onSelect: h.onVoidRequest, danger: true }),
+  ];
+}
+
+function voidActions(perms: Perms, h: Handlers): ActionItem[] {
+  return when(perms.canDelete, { key: "delete-void", label: "Delete permanently", group: "danger", icon: Trash2, onSelect: h.onDeleteVoidRequest, danger: true });
+}
+
 export function invoiceRowMenuActions(
   inv: InvoiceMenuRow,
-  perms: { canDelete: boolean; canVoid: boolean; canIssue: boolean; canCreate: boolean },
-  handlers: {
-    onIssue: () => void;
-    onCreditRequest: () => void;
-    onDeleteDraft: () => void;
-    onVoidRequest: () => void;
-    onDeleteVoidRequest: () => void;
-  },
+  perms: Perms,
+  handlers: Handlers,
   /** An un-voided credit note already exists against this invoice. */
   hasCreditNote = false,
 ): ActionItem[] {
-  const actions: ActionItem[] = [];
-  if (inv.status === "DRAFT" && perms.canIssue) {
-    actions.push({ key: "issue", label: "Issue…", group: "organise", icon: Send, onSelect: handlers.onIssue });
-  }
-  if (inv.status === "ISSUED" && inv.kind !== "CREDIT" && perms.canCreate && !hasCreditNote) {
-    actions.push({ key: "credit-note", label: "Credit note…", group: "organise", icon: FileMinus, onSelect: handlers.onCreditRequest });
-  }
-  if (inv.status === "DRAFT" && perms.canDelete) {
-    actions.push({ key: "delete-draft", label: "Delete draft", group: "danger", icon: Trash2, onSelect: handlers.onDeleteDraft, danger: true });
-  }
-  if (inv.status === "ISSUED" && perms.canVoid) {
-    actions.push({ key: "void", label: "Void invoice", group: "danger", icon: Ban, onSelect: handlers.onVoidRequest, danger: true });
-  }
-  if (inv.status === "VOID" && perms.canDelete) {
-    actions.push({ key: "delete-void", label: "Delete permanently", group: "danger", icon: Trash2, onSelect: handlers.onDeleteVoidRequest, danger: true });
-  }
-  return actions;
+  if (inv.status === "DRAFT") return draftActions(perms, handlers);
+  if (inv.status === "ISSUED") return issuedActions(inv, perms, handlers, hasCreditNote);
+  if (inv.status === "VOID") return voidActions(perms, handlers);
+  return [];
 }

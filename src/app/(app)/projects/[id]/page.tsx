@@ -245,8 +245,6 @@ export default function ProjectDetailPage({
           discountAmount={project.discountAmount as number | null}
           taxRate={project.taxRate as number | null}
           margin={project.margin as number | null}
-          depositPaid={project.depositPaid as number | null}
-          invoicedTotal={project.invoicedTotal as number | null}
         />
       </div>
     ),

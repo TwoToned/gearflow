@@ -115,16 +115,8 @@ export function InvoiceRow({
   return (
     <li className="rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-          <StatusWord status={invoiceStatusWord(inv, now)} />
-          <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
-          <span className="tabular-nums text-fg-4">{formatCurrency(inv.total)}</span>
-          {inv.status !== "DRAFT" && amountPaid > 0 && balanceRemaining > 0.005 && (
-            <span className="text-caption text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>
-          )}
-          <InvoiceXeroSyncBadge status={inv.xeroSyncStatus} error={inv.lastSyncError} />
-          {datesLine && <span className="text-caption text-muted">{datesLine}</span>}
-        </div>
+        <InvoiceRowFacts inv={inv} now={now} datesLine={datesLine} balanceRemaining={balanceRemaining} />
+
         <div className="flex shrink-0 items-center gap-1.5">
           <InvoiceDocumentAction invoice={inv} projectId={projectId} />
           <InvoiceRowLinks
@@ -139,6 +131,21 @@ export function InvoiceRow({
       </div>
       <InvoicePaymentsList payments={livePayments} canVoidPayment={canVoidPayment} onVoidPaymentRequest={onVoidPaymentRequest} />
     </li>
+  );
+}
+
+/** The left side of the row: one status word, number, total, balance, Xero chip, dates. */
+function InvoiceRowFacts({ inv, now, datesLine, balanceRemaining }: { inv: InvoiceRowDoc; now: number; datesLine: string; balanceRemaining: number }) {
+  const showBalance = inv.status !== "DRAFT" && (inv.amountPaid ?? 0) > 0 && balanceRemaining > 0.005;
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+      <StatusWord status={invoiceStatusWord(inv, now)} />
+      <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
+      <span className="tabular-nums text-fg-4">{formatCurrency(inv.total)}</span>
+      {showBalance && <span className="text-caption text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>}
+      <InvoiceXeroSyncBadge status={inv.xeroSyncStatus} error={inv.lastSyncError} />
+      {datesLine && <span className="text-caption text-muted">{datesLine}</span>}
+    </div>
   );
 }
 

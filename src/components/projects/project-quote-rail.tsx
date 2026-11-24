@@ -10,6 +10,8 @@ import {
   History,
   Send,
 } from "lucide-react";
+import { quoteStatusLabel } from "@/lib/quote-status-label";
+import { StatusWord } from "@/components/ui/status-word";
 import { ownerOnlyQuoteRowActions, quoteRowFlags, standardQuoteRowActions } from "@/lib/row-actions/quote-row";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -21,7 +23,7 @@ import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent, intentToBadgeStatus, intentStyles, intentBorderClass } from "@/lib/status-colors";
+import { quoteStatusIntent, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
 import { cn } from "@/lib/utils";
@@ -307,11 +309,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
           onSeeWhatChanged={setViewerTarget}
         />
       )}
-
-      <p className="t-micro text-fg-4">
-        Sending freezes pricing at that revision — to change prices afterwards, create the next version.
-        Flow doesn&rsquo;t email clients; sending records the send and generates the document for you.
-      </p>
 
       <QuoteRevisionList
         quotes={quotes}
@@ -947,13 +944,11 @@ function RevisionMeta({
   const projectVersionNumber = projectVersionNumberFor(quote, allProjectVersions);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {/* SUPERSEDED earns no pill — a dead revision doesn't earn a filled shape
-          (finance-workflow-ux.md §3.5). */}
-      {isSuperseded ? (
-        <span className="t-micro text-fg-4">Superseded</span>
-      ) : (
-        <Badge status={intentToBadgeStatus(quoteStatusIntent(quote.effectiveStatus))}>{quote.effectiveStatus}</Badge>
-      )}
+      {/* A dot and a human word (D91), never the raw enum. A SUPERSEDED revision is
+          an outline dot: a dead revision doesn't earn a filled shape. */}
+      <StatusWord
+        status={{ label: quoteStatusLabel(quote.effectiveStatus), intent: quoteStatusIntent(quote.effectiveStatus), outline: isSuperseded }}
+      />
       <span className="font-medium text-fg">v{quote.version}</span>
       {/* "Live" (decision 13, design doc) — never "Latest": a promoted older
           version can sit above a newer one, so a recency word would fight

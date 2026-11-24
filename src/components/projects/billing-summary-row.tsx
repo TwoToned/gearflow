@@ -10,7 +10,7 @@
  */
 
 import { useState } from "react";
-import { Pencil, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,9 +124,9 @@ export function BillingSummaryRow({
               type="button"
               onClick={openDialog}
               aria-label="Edit billing period"
-              className="text-fg-4 hover:text-fg-2 transition-colors"
+              className="text-xs text-fg-4 underline-offset-2 transition-colors hover:text-fg-2 hover:underline"
             >
-              <Pencil className="h-3 w-3" />
+              change
             </button>
           </DialogTrigger>
           <DialogContent>

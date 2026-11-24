@@ -1,11 +1,10 @@
 "use client";
 
 import { NotesEditor } from "@/components/ui/notes-editor";
-import { FinancialSummary } from "@/components/projects/financial-summary";
-import { ProjectFinancePanel } from "@/components/projects/project-finance-panel";
-import { BillingSummaryRow } from "@/components/projects/billing-summary-row";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
-import { ProjectCostsPanel } from "@/components/projects/project-costs-panel";
+import { PositionTiles } from "@/components/projects/finance/position-tiles";
+import { FinanceStrip, FinanceWordsSwitch, FinancialsCard } from "@/components/projects/finance/finance-tab-parts";
+import { useFinanceView } from "@/hooks/use-finance-view";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import { useProjectVersion } from "@/components/projects/project-version-context";
 
@@ -41,12 +40,17 @@ interface FinanceTabSlotProps {
   discountAmount: number | null;
   taxRate: number | null;
   margin: number | null;
-  depositPaid: number | null;
-  invoicedTotal: number | null;
 }
 
+/**
+ * The Finance tab (UX Phase 10, spec §8b): four position tiles, the stale-pricing
+ * notice, a Quotes / Invoices words-switch (D55; `?fin=`) with one strip each,
+ * then the Financials card. Margin, costs and the P&L render by PRESENCE: a
+ * caller without job cost gets none of them from the server (`null` = absent).
+ */
 export function FinanceTabSlot(props: FinanceTabSlotProps) {
   const { isViewingVersion } = useProjectVersion();
+  const [view, setView] = useFinanceView();
   const allGroups = props.categories?.flatMap((c) => c.groups) ?? [];
   const totalGroupCount = allGroups.length;
   const pricedGroupCount = allGroups.filter((g) => g.price != null && Number(g.price) > 0).length;
@@ -55,39 +59,44 @@ export function FinanceTabSlot(props: FinanceTabSlotProps) {
     .map((g) => ({ title: g.title, quantity: g.quantity, price: Number(g.price) }));
 
   return (
-    <>
+    <div className="space-y-6">
+      <PositionTiles
+        projectId={props.projectId}
+        orgId={props.orgId}
+        total={props.total}
+        taxAmount={props.taxAmount}
+        margin={props.margin}
+      />
       {/* Recalculate is a live-data write action — not meaningful while
           viewing a read-only historical version. */}
       {!isViewingVersion && <StalePricingBanner projectId={props.projectId} orgId={props.orgId} />}
-      {/* The invoice ledger is project-level, never per-version (design doc
-          decision 3 — invoices are lineage-labelled, not per-version
-          ledgers), so it stays live regardless of the viewed version. */}
-      <ProjectFinancePanel
-        projectId={props.projectId}
-        projectNumber={props.projectNumber}
-        clientId={props.clientId}
-        projectStatus={props.projectStatus}
-        subtotal={props.subtotal}
-        taxAmount={props.taxAmount}
-        total={props.total}
-      />
+      <div className="space-y-4">
+        <FinanceWordsSwitch value={view} onValueChange={setView} />
+        <FinanceStrip
+          view={view}
+          projectId={props.projectId}
+          projectNumber={props.projectNumber}
+          clientId={props.clientId}
+          projectStatus={props.projectStatus}
+          subtotal={props.subtotal}
+          taxAmount={props.taxAmount}
+          total={props.total}
+        />
+      </div>
       <div className="h-px bg-line" />
-      {/* The money breakdown below is always the LIVE project's — Phase 5
-          didn't extend this tab's read hooks with a `versionId` arg (scoped
-          to Equipment, the mockups' one worked example). A viewed version's
-          OWN figures aren't computable without recalculating totals against
-          that version's own line items (`recalcVersionTotals`, a Convex-side
-          job), which is out of scope here — flagged, not silently dropped. */}
+      {/* The money breakdown is always the LIVE project's — a viewed version's OWN
+          figures aren't computable without recalculating totals against that
+          version's line items (`recalcVersionTotals`, a Convex-side job). */}
       {isViewingVersion && <VersionNotTrackedNote what="This financial breakdown" />}
-      <BillingSummaryRow
+      <FinancialsCard
         projectId={props.projectId}
         orgId={props.orgId}
-        rentalStartDate={props.rentalStartDate}
-        rentalEndDate={props.rentalEndDate}
-        billingWeeksOverride={props.billingWeeksOverride}
-        billingDaysOverride={props.billingDaysOverride}
-      />
-      <FinancialSummary
+        billing={{
+          rentalStartDate: props.rentalStartDate,
+          rentalEndDate: props.rentalEndDate,
+          billingWeeksOverride: props.billingWeeksOverride,
+          billingDaysOverride: props.billingDaysOverride,
+        }}
         equipmentRevenue={props.equipmentRevenue}
         saleRevenue={props.saleRevenue}
         saleCostTotal={props.saleCostTotal}
@@ -106,15 +115,11 @@ export function FinanceTabSlot(props: FinanceTabSlotProps) {
         taxAmount={props.taxAmount}
         total={props.total}
         margin={props.margin}
-        depositPaid={props.depositPaid}
-        invoicedTotal={props.invoicedTotal}
         pricedGroupCount={pricedGroupCount}
         totalGroupCount={totalGroupCount}
         groupBreakdown={groupBreakdown}
       />
-      <div className="h-px bg-line" />
-      <ProjectCostsPanel projectId={props.projectId} />
-    </>
+    </div>
   );
 }
 

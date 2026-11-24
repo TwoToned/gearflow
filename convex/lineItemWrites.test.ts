@@ -747,6 +747,33 @@ describe("lineItemWrites.addKitNative", () => {
     ).rejects.toThrow(/KIT-1 is in maintenance/i);
   });
 
+  // D75 (UX Phase 14): the gate reads the DERIVED kit state (convex/lib/kitState.ts), never the stored
+  // INCOMPLETE. A kit with a LOST member blocks even though its stored status is AVAILABLE; a legacy
+  // stored INCOMPLETE with every member present no longer blocks.
+  async function seedKitWithMember(t: ReturnType<typeof makeT>, kitStatus: "AVAILABLE" | "INCOMPLETE", memberStatus: "AVAILABLE" | "LOST") {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: kitStatus, condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "PAR-1", status: memberStatus, isActive: true });
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: "u1" });
+    });
+  }
+
+  test("D75: a kit with a LOST member is Incomplete and cannot be added, though its stored status is AVAILABLE", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedKitWithMember(t, "AVAILABLE", "LOST");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/KIT-1 is incomplete/i);
+  });
+
+  test("D75: a legacy stored INCOMPLETE kit whose members are all present is accepted (the stored value is not read)", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await seedKitWithMember(t, "INCOMPLETE", "AVAILABLE");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).resolves.toBeDefined();
+  });
+
   test("throws KIT_DOUBLE_BOOKED on a dated overlap with another project", async () => {
     const t = makeT();
     await member(t, "member");

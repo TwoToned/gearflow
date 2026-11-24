@@ -64,6 +64,7 @@ const EXPECTED_DISCOVERED: Record<string, number> = {
   "kitWrites.ts": 1, // createNative insert
   "kits.ts": 4, // create + createIfMissing inserts, assignAssetToKit patch + replace
   "lib/fulfillment.ts": 2, // setAssetStatus patch + replace
+  "lib/locationMove.ts": 2, // Move contents: applyMove patch, undoMove patch
   "projectWrites.ts": 1, // free-after-cancel kit patch
   "warehouseOps.ts": 7, // asset + accessory check-out patches, setAssetsStatus (patch + clear), patchKitStatusAt, releaseKitToLocation (patch + clear)
 };

@@ -690,6 +690,14 @@ export default defineSchema({
     // multi-file/primary-photo machinery in convex/mediaWrites.ts would be
     // over-engineering for this shape (R-3.1 — model the actual cardinality).
     invoiceFileId: v.optional(v.string()),
+    // UX Phase 13 (D71, owner-approved 2026-11-24). SUBHIRE orders only (the write layer
+    // refuses other types). Optional, no backfill, no index. `returnDueDate`: the date the
+    // supplier expects the gear back, moved by `extendHireNative` (never the sub-hire's
+    // `hireEnd`). `returnedDate`: the date it actually went back, set only by
+    // `markReturnedNative`. `On hire` / `Returned` are DERIVED from these
+    // (`convex/lib/orderHireState.ts`); the stored `status` vocabulary is untouched.
+    returnDueDate: v.optional(v.number()),
+    returnedDate: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])

@@ -697,6 +697,19 @@ async function planHoldRestore(
   return docs.filter((d) => !stillHeld.has(d.doc.id));
 }
 
+/** Link rows an Undo will read for one record; more than this refuses (a create never makes that many). */
+const MAX_UNDO_LINK_ROWS = 200;
+
+/** All the record's `maintenanceRecordAssets` rows (both kinds), bounded: over the cap refuses. */
+async function recordAssetRowsForUndo(ctx: MutationCtx, recordId: string): Promise<Doc<"maintenanceRecordAssets">[]> {
+  const rows = await ctx.db
+    .query("maintenanceRecordAssets")
+    .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", recordId))
+    .take(MAX_UNDO_LINK_ROWS + 1);
+  if (rows.length > MAX_UNDO_LINK_ROWS) throw new ConvexError("This maintenance job has too many linked assets to undo: edit it instead");
+  return rows;
+}
+
 // ─── undoCreateNative ─── maintenance:create (Phase 16 final review SF3)
 //
 // The EXACT reverse of one `createNative`, for the Scan page's "Create maintenance job"
@@ -719,7 +732,7 @@ export const undoCreateNative = mutation({
 
     const { forward, details } = await loadUndoableMaintenanceCreate(ctx, { orgId: a.orgId, id: a.id, actorUserId: actor.userId, serverNow: Date.now() });
     const record = await requireUntouchedMaintenanceRecord(ctx, a.orgId, a.id, forward, details);
-    const rows = await allRecordAssetRows(ctx, a.id);
+    const rows = await recordAssetRowsForUndo(ctx, a.id);
     requireOwnLinksOnly(rows, details);
     const restore = await planHoldRestore(ctx, a.orgId, a.id, details, record.updatedAt ?? -1);
 

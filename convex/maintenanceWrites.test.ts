@@ -574,6 +574,16 @@ describe("maintenanceWrites.undoCreateNative (exact undo)", () => {
     }
   });
 
+  test("the link-row read is bounded: over 200 rows refuses with a clear message, changing nothing", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 201; i++) await ctx.db.insert("maintenanceRecordAssets", { id: `ck${i}`, maintenanceRecordId: "rec1", assetId: "as1", kind: "CHECKOFF" });
+    });
+    await expect(undo(t)).rejects.toThrow(/too many linked assets to undo/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+  });
+
   test("refuses when a held asset changed since", async () => {
     const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
     await create(t, { status: "IN_PROGRESS" });

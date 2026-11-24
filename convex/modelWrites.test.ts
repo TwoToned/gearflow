@@ -60,7 +60,7 @@ describe("modelWrites", () => {
     await expect(t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, name: "X", dailyRate: -5 })).rejects.toThrow(/positive/i);
   });
 
-  test("archive deletes assets + bulk (org-filtered) then soft-archives", async () => {
+  test("archive is a TRUE soft archive: the model's assets and bulk assets stay; Restore and exact Undo work", async () => {
     const t = makeT(); await seedMember(t);
     await t.withIdentity(asUser).mutation(api.modelWrites.createNative, base);
     await t.run(async (ctx) => {
@@ -71,9 +71,27 @@ describe("modelWrites", () => {
     await t.withIdentity(asUser).mutation(api.modelWrites.archiveNative, { id: "mdl1", orgId: ORG, now: NOW + 5, actor, auditId: "a3" });
     expect((await model(t, "mdl1"))?.isActive).toBe(false);
     const assets = await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", "mdl1")).collect());
-    expect(assets.map((a) => a.id)).toEqual(["aX"]); // own-org deleted, foreign untouched
+    expect(assets.map((a) => a.id).sort()).toEqual(["a1", "aX"]); // nothing deleted, nothing changed
+    expect(assets.every((a) => a.isActive === true)).toBe(true);
     const bulk = await t.run(async (ctx) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", "mdl1")).collect());
-    expect(bulk).toHaveLength(0);
+    expect(bulk.map((b) => b.id)).toEqual(["b1"]);
+
+    // Undo (exact, from its own audit row), then Restore + Undo of the restore.
+    await t.withIdentity(asUser).mutation(api.modelWrites.undoArchiveNative, { id: "mdl1", orgId: ORG, auditId: "a3", now: NOW + 6, actor });
+    expect((await model(t, "mdl1"))?.isActive).toBe(true);
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.undoArchiveNative, { id: "mdl1", orgId: ORG, auditId: "a3", now: NOW + 7, actor }),
+    ).rejects.toThrow(/already undone/);
+    await t.withIdentity(asUser).mutation(api.modelWrites.archiveNative, { id: "mdl1", orgId: ORG, now: NOW + 8, actor, auditId: "a4" });
+    const r = await t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 9, actor, auditId: "a5" });
+    expect(r.undoable).toBe(true);
+    expect((await model(t, "mdl1"))?.isActive).toBe(true);
+    await t.withIdentity(asUser).mutation(api.modelWrites.undoArchiveNative, { id: "mdl1", orgId: ORG, auditId: "a5", now: NOW + 10, actor });
+    expect((await model(t, "mdl1"))?.isActive).toBe(false);
+    // restoring an already-active model changes nothing and offers no Undo
+    await t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 11, actor, auditId: "a6" });
+    const again = await t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 12, actor, auditId: "a7" });
+    expect(again.undoable).toBe(false);
   });
 
   test("update: assetType flip rejected while conflicting active stock exists (own-org only)", async () => {

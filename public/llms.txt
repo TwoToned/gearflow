@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (643 agent-reachable)
+## Operations (649 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -70,6 +70,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `assetWrites.createManyNative` (mutation, scope: asset:create)
 - `assetWrites.createNative` (mutation, scope: asset:create)
 - `assetWrites.deleteNative` (mutation, scope: asset:delete)
+- `assetWrites.reinstateNative` (mutation, scope: asset:update)
+- `assetWrites.undoRetireNative` (mutation, scope: asset:update)
 - `assetWrites.updateNative` (mutation, scope: asset:update)
 - `assetWrites.updateNotesNative` (mutation, scope: asset:update)
 
@@ -86,6 +88,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `bulkAssetsWrites.archiveNative` (mutation, scope: bulkAsset:update)
 - `bulkAssetsWrites.createNative` (mutation, scope: bulkAsset:create)
 - `bulkAssetsWrites.deleteNative` (mutation, scope: bulkAsset:delete)
+- `bulkAssetsWrites.reinstateNative` (mutation, scope: bulkAsset:update)
+- `bulkAssetsWrites.undoRetireNative` (mutation, scope: bulkAsset:update)
 - `bulkAssetsWrites.updateNative` (mutation, scope: bulkAsset:update)
 
 ### checkItem
@@ -339,6 +343,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelWrites.archiveNative` (mutation, scope: model:delete)
 - `modelWrites.bulkUpdateRatesNative` (mutation, scope: model:update)
 - `modelWrites.createNative` (mutation, scope: model:create)
+- `modelWrites.restoreNative` (mutation, scope: model:update)
+- `modelWrites.undoArchiveNative` (mutation, scope: model:update)
 - `modelWrites.updateNative` (mutation, scope: model:update)
 - `search.models` (query, scope: model:read)
 

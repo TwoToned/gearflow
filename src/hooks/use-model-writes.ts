@@ -23,6 +23,8 @@ export function useModelWrites() {
   const createM = useMutation(api.modelWrites.createNative);
   const updateM = useMutation(api.modelWrites.updateNative);
   const archiveM = useMutation(api.modelWrites.archiveNative);
+  const restoreM = useMutation(api.modelWrites.restoreNative);
+  const undoArchiveM = useMutation(api.modelWrites.undoArchiveNative);
   const bulkRatesM = useMutation(api.modelWrites.bulkUpdateRatesNative);
   const adjustSaleStockM = useMutation(api.modelWrites.adjustSaleStockNative);
 
@@ -47,9 +49,23 @@ export function useModelWrites() {
       await updateM({ id, orgId: org, ...parsed, now: Date.now(), actor: actor(), auditId: createId() });
       return { id };
     },
-    archive: async (id: string): Promise<{ id: string }> => {
+    /** Soft archive (assets stay). `auditId` is the handle `undoArchive` takes. */
+    archive: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
       const org = requireOrg();
-      return await archiveM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      const r = await archiveM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    restore: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
+      const org = requireOrg();
+      const auditId = createId();
+      const r = await restoreM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    /** The exact reverse of one archive / restore, from its own audit row (ids only). */
+    undoArchive: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
+      const org = requireOrg();
+      return await undoArchiveM({ id, orgId: org, auditId, now: Date.now(), actor: actor() });
     },
     bulkUpdateRates: async (
       modelIds: string[],

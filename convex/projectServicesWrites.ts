@@ -743,6 +743,9 @@ export const updateServiceNative = mutation({
 
     if (!a.title) throw new ConvexError("Title is required");
     const existing = await requireServiceInOrg(ctx, a.id, a.orgId);
+    // Below the crew-pay line the form read no `costTotal` (it rolls up crew pay,
+    // so the read leaves it out): the stored cost stands, never a blind clear.
+    if (!(await canSeeCrewPay(ctx, a.orgId))) a.costTotal = existing.costTotal;
 
     // #1230: this mutation resends the WHOLE service form (incl. unchanged
     // pricing) on every save, so "touches money" means the incoming price

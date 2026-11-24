@@ -20,7 +20,6 @@ import { counterLocation, groupByDay, inLane, needsLine, totalsOf, warehouseRole
 import { useCrewRoles } from "@/hooks/use-crew";
 import { useLocations } from "@/hooks/use-locations";
 import { mergeStops } from "@/lib/logistics-transport";
-import type { TotalLine } from "@/lib/primitives/types";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 import { useCanDo, useIsManagerPlus } from "@/lib/use-permissions";
 import { AddServiceBar } from "./add-service-bar";
@@ -33,7 +32,7 @@ import { useLogisticsState } from "./logistics-state";
 import { crewRow } from "./people-view";
 import { PrintRunsheet } from "./print-runsheet";
 import { scheduleFromProject, siteFromProject } from "./schedule-from-project";
-import { logisticsColumns, serviceRow } from "./service-rows";
+import { logisticsColumns, logisticsTotalLines, serviceRow } from "./service-rows";
 import { useLogisticsData } from "./use-logistics-data";
 import { useLogisticsWrites } from "./use-logistics-writes";
 import { useQuickAdd } from "./use-quick-add";
@@ -51,21 +50,6 @@ function StickyAdd({ children }: { children: React.ReactNode }) {
   );
 }
 
-function totalLines(
-  summary: { serviceCount: number; onDocumentsTotal: number; internalTotal: number } | undefined,
-  showCost: boolean,
-): TotalLine[] {
-  if (!summary || summary.serviceCount === 0) return [];
-  // Nothing priced is blank (`—`), never `$0` ("$0 is a PRICE", CLAUDE.md).
-  const blankIfZero = (n: number): number | null => (n > 0 ? n : null);
-  const lines: TotalLine[] = [{ label: "On quote", amount: blankIfZero(summary.onDocumentsTotal) }];
-  if (showCost) {
-    const margin = summary.onDocumentsTotal - summary.internalTotal;
-    lines.push({ label: "Cost", amount: blankIfZero(summary.internalTotal) });
-    lines.push({ label: "Margin", amount: summary.onDocumentsTotal > 0 || summary.internalTotal > 0 ? margin : null });
-  }
-  return lines;
-}
 
 /** `?print=1` (the old runsheet link, redirected here) opens the print dialog once, when data is in. */
 function usePrintOnArrival(ready: boolean) {
@@ -152,7 +136,7 @@ function ListFooter({ m, data }: { m: ReturnType<typeof useBodyModel>; data: Dat
     <>
       {!isMobile && <CanDo resource="project" action="update">{add}</CanDo>}
       {!isMobile && m.selection.count > 0 && <BulkBar noun={noun} selection={m.selection} actions={buildBulk(m.actions)} />}
-      <FooterTotals lines={totalLines(data.summary, m.showCost)} />
+      <FooterTotals lines={logisticsTotalLines(data.summary, m.showCost)} />
     </>
   );
 }

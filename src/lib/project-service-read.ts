@@ -3,6 +3,7 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { getCrewRoleMap, getCrewMemberMap } from "@/lib/crew-read";
 import { resolveRate } from "../../convex/lib/crewRate";
+import { SERVICE_CREW_COST_FIELDS } from "../../convex/lib/crewPayFields";
 
 /**
  * Server-side read helpers for the project-services domain (Phase A read-rewiring
@@ -62,6 +63,12 @@ export interface ServiceCrewAssignment {
   resolvedRateType: string;
 }
 
+function withoutFields<R extends object>(row: R, fields: readonly string[]): R {
+  const out = { ...row } as Record<string, unknown>;
+  for (const f of fields) delete out[f];
+  return out as R;
+}
+
 /** The pay fields a service's crew row carries (stripped below the pay line). */
 const SERVICE_CREW_PAY_FIELDS = ["estimatedCost", "rateOverride", "resolvedRate"] as const;
 
@@ -71,10 +78,11 @@ const SERVICE_CREW_PAY_FIELDS = ["estimatedCost", "rateOverride", "resolvedRate"
  * `callerSeesCrewPay`). These rows are read with the service identity, which
  * always passes `canSeeCrewPay`, so the redaction must happen here (B-2).
  */
-export function redactServiceCrewPay<R extends { crewAssignments: ServiceCrewAssignment[] }>(rows: R[], payVisible: boolean): R[] {
+export function redactServiceCrewPay<R extends { crewAssignments: ServiceCrewAssignment[]; costTotal?: number | null }>(rows: R[], payVisible: boolean): R[] {
   if (payVisible) return rows;
   return rows.map((s) => ({
-    ...s,
+    // The service's own cost rolls up its crew's pay: absent too (SERVICE_CREW_COST_FIELDS).
+    ...withoutFields(s, SERVICE_CREW_COST_FIELDS),
     crewAssignments: s.crewAssignments.map((a) => {
       const out: ServiceCrewAssignment = { ...a };
       for (const f of SERVICE_CREW_PAY_FIELDS) delete out[f];
@@ -109,7 +117,8 @@ export interface ProjectServiceRow {
   duration: number | null;
   discount: number | null;
   lineTotal: number | null;
-  costTotal: number | null;
+  /** ABSENT below the pay line: it rolls up the crew's pay (`redactServiceCrewPay`). */
+  costTotal?: number | null;
   /** Per-service override of the crew charge-rate cascade (WS10 #949) — see
    *  convex/schema.ts's projectServices.chargeRateOverride comment. */
   chargeRateOverride: number | null;

@@ -855,6 +855,29 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
   (`crewRateInputs`). `buildAssignmentEmailData` (the full row, token and pay)
   moved out of the `"use server"` file to `src/lib/crew-assignment-email-data.ts`:
   as an exported action it was callable from any session with no authz.
+- **Totals that include crew cost are pay too (ruling).** A service's `costTotal`
+  rolls up its crew's pay, and the project's `serviceCostTotal`,
+  `labourCostTotal` and `margin` include (or back-solve) it. Below the pay line
+  each is ABSENT, never reduced — `SERVICE_CREW_COST_FIELDS` /
+  `PROJECT_CREW_COST_FIELDS` (`convex/lib/crewPayFields.ts`) through
+  `crewPayRedactor` (`convex/lib/crewPayVisibility.ts`):
+  - Convex: `projects.{list,getById,listPage,listBoard,listByIds,getByOrgAndNumber}`
+    (and `listPage` won't sort on one), `projectServices.{list,getById,listByProject}`,
+    `projectLocksRead.{snapshotEntries,currentEntries}` (project and service
+    entries; a crew call entry also loses its cost, and ALWAYS its
+    `responseToken`), and `projectCosts.operationalCosts`, which returns its
+    all-zero EMPTY shape (its fields are a stable MCP contract).
+  - Server actions (`callerSeesCrewPay`): `getProject`, `getProjects` (no sort on
+    one either), `getTemplates`, `getProjectServices` (each service's `costTotal`)
+    and `getProjectServicesSummary` (`costTotal`, `totalCost` and `internalTotal`
+    absent; `chargeTotal`, `onDocumentsTotal` and `serviceCount` stay).
+  - UI: the Finance tab's summary shows no margin and no Costs section, the
+    Operational P&L panel hides (EMPTY has no total), Logistics shows no service
+    cost or margin cell and no footer Cost/Margin, and the quote revision viewer
+    drops its Margin cell. A service save below the line keeps the stored
+    `costTotal` (the form read none).
+  Tests: `convex/crewCostTotals.test.ts`, `src/server/__tests__/project-services-pay.test.ts`,
+  the FinancialSummary smoke and `service-rows.test.ts`.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

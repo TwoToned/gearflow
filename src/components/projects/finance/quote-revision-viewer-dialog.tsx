@@ -235,10 +235,18 @@ function DiffTotalsSummary({ diff }: { diff: Diff }) {
         <p className="text-xs text-fg-4">Total</p>
         <p className="tabular-nums">{money(diff.before?.total)} → {money(diff.after?.total)}</p>
       </div>
-      <div>
-        <p className="text-xs text-fg-4">Margin</p>
-        <p className="tabular-nums">{money(diff.before?.margin)} → {money(diff.after?.margin)}</p>
-      </div>
+      <MarginCell before={diff.before?.margin} after={diff.after?.margin} />
+    </div>
+  );
+}
+
+/** Absent below the crew-pay line (the margin back-solves crew cost): so is the cell. */
+function MarginCell({ before, after }: { before: number | null | undefined; after: number | null | undefined }) {
+  if (before == null && after == null) return null;
+  return (
+    <div>
+      <p className="text-xs text-fg-4">Margin</p>
+      <p className="tabular-nums">{money(before)} → {money(after)}</p>
     </div>
   );
 }

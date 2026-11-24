@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { LogisticsService } from "@/lib/logistics-model";
-import { crewText, logisticsColumns, serviceRow, whereLine } from "../service-rows";
+import { crewText, logisticsColumns, logisticsTotalLines, serviceRow, whereLine } from "../service-rows";
 
 const svc = (o: Partial<LogisticsService> = {}): LogisticsService => ({
   id: "s1", type: "DELIVERY", title: "Delivery", date: "2026-11-11T00:00:00.000Z", endDate: null, startTime: "06:00",
@@ -40,6 +40,16 @@ describe("serviceRow", () => {
     const child = serviceRow(redacted, { showCost: false }).children?.[0];
     expect(child?.facts).not.toHaveProperty("charge");
     expect(child?.facts.status).toBeDefined();
+  });
+
+  test("below the crew-pay line the service cost (crew pay rolled in) is absent: no cost or margin cell, no footer Cost/Margin", () => {
+    const { costTotal: _c, ...noCost } = svc({ lineTotal: 900, costTotal: 400 });
+    void _c;
+    const r = serviceRow(noCost as LogisticsService, { showCost: true });
+    expect(r.facts).not.toHaveProperty("cost");
+    expect(r.facts).not.toHaveProperty("margin");
+    expect(logisticsTotalLines({ serviceCount: 1, onDocumentsTotal: 900 }, true).map((l) => l.label)).toEqual(["On quote"]);
+    expect(logisticsTotalLines({ serviceCount: 1, onDocumentsTotal: 900, internalTotal: 400 }, true).map((l) => l.label)).toEqual(["On quote", "Cost", "Margin"]);
   });
 
   test("cost and margin facts exist only when asked for", () => {

@@ -175,6 +175,12 @@ quote. A read whose entire payload is financial returns an all-zero shape rather
 than a partial redaction. If figures come back as zeros across the board,
 suspect the flag before you suspect the data.
 
+Crew pay is manager-only. Below manager (or on a no-financials key), crew
+rates, crew call costs and every total that includes crew cost — a service's
+cost, a job's service and labour cost, and its margin — are simply absent, and
+the job's operational P&L comes back all zeros. Absent is not $0: say "not
+visible to this role", never "this job made no margin".
+
 ## The Xero boundary
 
 **Flow owns quote and invoice generation. Xero owns the ledger, payment

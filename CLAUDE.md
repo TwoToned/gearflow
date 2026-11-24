@@ -517,7 +517,16 @@ pay), so every one that returns crew pay decides for its real caller with
 API-key actor counts as noFinancials — fail closed): `exportTimesheetCSV`,
 `getProjectServices` (`redactServiceCrewPay` strips each call's `estimatedCost` /
 `rateOverride` / `resolvedRate`, and Logistics then renders no cost cell) and
-`getAssignmentIcsData` (which also never returns `responseToken`). A helper that
+`getAssignmentIcsData` (which also never returns `responseToken`). A TOTAL that
+includes crew cost is pay too, ABSENT (never zeroed) below the line so nothing can
+be back-solved: a service's `costTotal` and the project's `serviceCostTotal` /
+`labourCostTotal` / `margin` (`SERVICE_CREW_COST_FIELDS` / `PROJECT_CREW_COST_FIELDS`
+in `convex/lib/crewPayFields.ts`, `crewPayRedactor`) on `projects.*`,
+`projectServices.*`, snapshot entries (`projectLocksRead`, which also always strips
+a crew call's `responseToken`), `getProject(s)` / `getTemplates` /
+`getProjectServices(Summary)` — a crew-cost column is not a sort key there either —
+and `projectCosts.operationalCosts` returns its all-zero EMPTY shape (a stable
+contract). Every UI then renders no margin and no cost. A helper that
 returns a full assignment row with no authz of its own is a plain module, never a
 `"use server"` export (`src/lib/crew-assignment-email-data.ts`). Writes follow the
 same line: below it a service save keeps each call's stored rate inputs

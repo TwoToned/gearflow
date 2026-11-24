@@ -50,16 +50,22 @@ export async function getProjectServices(projectId: string) {
 export async function getProjectServicesSummary(projectId: string) {
   const { organizationId } = await getOrgContext();
 
-  const { chargeTotal, costTotal, serviceCount } =
-    await getProjectServicesSummaryFromConvex(organizationId, projectId);
+  const [{ chargeTotal, costTotal, serviceCount }, payVisible] = await Promise.all([
+    getProjectServicesSummaryFromConvex(organizationId, projectId),
+    callerSeesCrewPay(),
+  ]);
 
+  // The cost total rolls up the crew's pay, so below the pay line it — and its
+  // two legacy aliases — are ABSENT, not reduced: no crew number can be
+  // back-solved (UX Phase 15 ruling). Every other field stays.
+  const cost = payVisible
+    ? { costTotal: roundCurrency(costTotal), totalCost: roundCurrency(costTotal), internalTotal: roundCurrency(costTotal) }
+    : {};
   return serialize({
     chargeTotal: roundCurrency(chargeTotal),
-    costTotal: roundCurrency(costTotal),
+    ...cost,
     // Legacy compatibility
-    totalCost: roundCurrency(costTotal),
     onDocumentsTotal: roundCurrency(chargeTotal),
-    internalTotal: roundCurrency(costTotal),
     serviceCount,
   });
 }

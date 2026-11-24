@@ -33,6 +33,24 @@ describe("FinancialSummary smoke", () => {
     expect(screen.queryByText("Sale cost of goods")).toBeNull();
   });
 
+  it("below the crew-pay line (crew-cost totals and margin ABSENT): no margin and no costs render, revenue does", () => {
+    const { serviceCostTotal: _s, labourCostTotal: _l, margin: _m, ...redacted } = BASE_PROPS;
+    void _s; void _l; void _m;
+    const { container } = render(<FinancialSummary {...redacted} subHireCostTotal={200} />);
+    expect(container.textContent).not.toMatch(/Margin/);
+    expect(screen.queryByText("Costs")).toBeNull();
+    expect(screen.queryByText("Total costs")).toBeNull();
+    expect(screen.queryByText("No costs recorded")).toBeNull();
+    expect(screen.getByText("Equipment")).toBeTruthy(); // revenue stays
+    expect(screen.getByText("$1,100.00")).toBeTruthy(); // the total stays
+  });
+
+  it("with crew pay visible the margin and costs render", () => {
+    render(<FinancialSummary {...BASE_PROPS} labourCostTotal={300} />);
+    expect(screen.getByText(/Margin:/)).toBeTruthy();
+    expect(screen.getByText("Labour")).toBeTruthy();
+  });
+
   it("renders a 'Sale items' revenue row and a 'Sale cost of goods' cost row", () => {
     render(<FinancialSummary {...BASE_PROPS} saleRevenue={250} saleCostTotal={90} />);
     expect(screen.getByText("Sale items")).toBeTruthy();

@@ -359,7 +359,9 @@ describe("updateServiceNative", () => {
 
   test("a crew-less service keeps its manually-entered costTotal untouched", async () => {
     const t = makeT();
-    await member(t, "member");
+    // Edits the cost: needs crew pay (below the pay line a save keeps the stored
+    // cost — convex/crewCostTotals.test.ts).
+    await member(t, "manager");
     await seedProject(t);
     await t.withIdentity(asUser(ORG)).mutation(api.projectServicesWrites.createServiceNative, {
       id: "s1", orgId: ORG, projectId: "p1", ...baseInput, costTotal: 60, now: NOW, actor: ACTOR, auditId: "logc",

@@ -11,7 +11,7 @@ import {
   type LogisticsAssignment, type LogisticsService,
 } from "@/lib/logistics-model";
 import { shortDaysText } from "@/lib/crew-short-days";
-import type { ActionMenuSpec, Fact, FactColumn, LineRowData, StatusValue } from "@/lib/primitives/types";
+import type { ActionMenuSpec, Fact, FactColumn, LineRowData, StatusValue, TotalLine } from "@/lib/primitives/types";
 import { getStatusIntent } from "@/lib/status-colors";
 import { assignmentStatusLabels } from "@/lib/status-labels";
 
@@ -93,6 +93,25 @@ function crewChild(a: LogisticsAssignment): LineRowData {
   return { id: a.id, kind: "crew", title: personName(a), facts };
 }
 
+/** The Logistics footer: On quote, then (with Show cost) Cost and Margin. */
+export function logisticsTotalLines(
+  summary: { serviceCount: number; onDocumentsTotal: number; internalTotal?: number } | undefined,
+  showCost: boolean,
+): TotalLine[] {
+  if (!summary || summary.serviceCount === 0) return [];
+  // Nothing priced is blank (`—`), never `$0` ("$0 is a PRICE", CLAUDE.md).
+  const blankIfZero = (n: number): number | null => (n > 0 ? n : null);
+  const lines: TotalLine[] = [{ label: "On quote", amount: blankIfZero(summary.onDocumentsTotal) }];
+  // The cost total (crew pay rolled in) is ABSENT below the pay line: then no Cost
+  // and no Margin line — never a $0, or a margin that back-solves the crew cost.
+  if (showCost && summary.internalTotal !== undefined) {
+    const margin = summary.onDocumentsTotal - summary.internalTotal;
+    lines.push({ label: "Cost", amount: blankIfZero(summary.internalTotal) });
+    lines.push({ label: "Margin", amount: summary.onDocumentsTotal > 0 || summary.internalTotal > 0 ? margin : null });
+  }
+  return lines;
+}
+
 export function serviceRow(
   s: LogisticsService,
   opts: { menu?: ActionMenuSpec; showCost: boolean; onOpen?: () => void },
@@ -103,7 +122,8 @@ export function serviceRow(
     crew: { kind: "text", label: crewText(s) },
     charge: chargeFact(s),
   };
-  if (opts.showCost) {
+  // The cost (crew pay rolled in) and the margin exist only when the server sent the cost.
+  if (opts.showCost && s.costTotal !== undefined) {
     facts.cost = { kind: "money", amount: s.costTotal != null && Number(s.costTotal) > 0 ? Number(s.costTotal) : null };
     facts.margin = { kind: "money", amount: margin(s) };
   }

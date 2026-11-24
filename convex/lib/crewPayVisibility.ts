@@ -1,5 +1,5 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { getAuthContext, isAgentNoFinancials, isCallerManagerPlus } from "./auth";
+import { getAuthContext, isAgentNoFinancials, isCallerManagerPlus, redactFields } from "./auth";
 import { crewPayVisible } from "./crewPayRule";
 
 /**
@@ -11,6 +11,21 @@ import { crewPayVisible } from "./crewPayRule";
  * (R-9.3, R-8.4.2). One helper so the planner, the timesheets list and the
  * offer sheet's people list cannot disagree.
  */
+/**
+ * Strip `fields` from each row unless the caller sees crew pay — the ONE rule,
+ * resolved once per call. Used for the totals that include crew cost
+ * (`SERVICE_CREW_COST_FIELDS`, `PROJECT_CREW_COST_FIELDS`, lib/crewPayFields.ts):
+ * the keys are ABSENT, never zeroed, so nothing can be back-solved.
+ */
+export async function crewPayRedactor(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  fields: readonly string[],
+): Promise<<R extends Record<string, unknown>>(row: R) => R> {
+  if (await canSeeCrewPay(ctx, orgId)) return (row) => row;
+  return (row) => redactFields(row, fields);
+}
+
 export async function canSeeCrewPay(ctx: QueryCtx | MutationCtx, orgId: string): Promise<boolean> {
   const managerPlus = await isCallerManagerPlus(ctx, orgId);
   if (!managerPlus) return false;

@@ -3,6 +3,8 @@ import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { crewPayRedactor } from "./lib/crewPayVisibility";
+import { SERVICE_CREW_COST_FIELDS } from "./lib/crewPayFields";
 import { resolveLiveVersionIdForProject, resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
@@ -19,10 +21,11 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "project");
-    return await ctx.db
+    const rows = await ctx.db
       .query("projectServices")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: bounded per-org config/catalog set — see docs/exceptions.md R-8.3.3
       .collect();
+    return rows.map(await crewPayRedactor(ctx, orgId, SERVICE_CREW_COST_FIELDS));
   },
 });
 
@@ -31,7 +34,9 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("projectServices").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "project");
-    return doc;
+    if (!doc) return doc;
+    // A service's cost rolls up its crew's pay: absent below the pay line.
+    return (await crewPayRedactor(ctx, doc.organizationId, SERVICE_CREW_COST_FIELDS))(doc);
   },
 });
 
@@ -43,9 +48,10 @@ export const listByProject = query({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
     if (!project || project.organizationId !== orgId) return [];
     // by_versionId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
-    return (await versionRows(ctx, "projectServices", resolveVersionId(project, versionId))).filter(
-      (r) => r.organizationId === orgId,
-    );
+    const redact = await crewPayRedactor(ctx, orgId, SERVICE_CREW_COST_FIELDS);
+    return (await versionRows(ctx, "projectServices", resolveVersionId(project, versionId)))
+      .filter((r) => r.organizationId === orgId)
+      .map(redact);
   },
 });
 

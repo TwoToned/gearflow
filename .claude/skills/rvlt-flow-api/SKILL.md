@@ -79,6 +79,13 @@ A key flagged `noFinancials` has cost/margin fields redacted on every read
 (model purchase/replacement cost, crew rates, `get_project_financials`
 returns all zeros). Sell rates stay visible — you need them to quote.
 
+Crew pay follows a stricter rule: crew rates, crew call costs, and any total
+that includes crew cost (a service's `costTotal`, a project's
+`serviceCostTotal` / `labourCostTotal` / `margin`) are returned only when the
+acting user is a manager or above AND the key is not `noFinancials`. Otherwise
+those fields are ABSENT from the row (not zero), and `get_project_financials`
+returns all zeros.
+
 Org is never an argument. `orgId`/`organizationId` are overwritten from the
 key on every call; `NOT_FOUND` for a valid-looking id means it belongs to
 another org.

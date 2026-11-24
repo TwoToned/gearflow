@@ -50,7 +50,8 @@ export interface LogisticsService {
   clientContactPhone?: string | null;
   clientVehicle?: string | null;
   lineTotal: number | null;
-  costTotal: number | null;
+  /** ABSENT below the crew-pay line (it rolls up the crew's pay): then no cost or margin renders. */
+  costTotal?: number | null;
   crewCountRequired: number | null;
   crewRole: { id: string; name: string; color: string | null } | null;
   crewAssignments: LogisticsAssignment[];

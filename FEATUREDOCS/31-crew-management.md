@@ -878,6 +878,15 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
     `costTotal` (the form read none).
   Tests: `convex/crewCostTotals.test.ts`, `src/server/__tests__/project-services-pay.test.ts`,
   the FinancialSummary smoke and `service-rows.test.ts`.
+- **Pay in the activity log.** A crew member edit logs its field diff, rates
+  included (`crewWrites.updateNative`'s `details.changes`) — the audit keeps
+  them. Reads redact: `activityLog.{list,listByEntity,recentForProject,exportRows}`
+  drop a change row for any field on the pay lists (`redactActivityPay`,
+  `convex/lib/activityPay.ts`) for a caller below the pay line, and the CSV
+  action (`exportActivityLogCSV`, service identity) does the same for its real
+  caller. The only write that logs a pay field today is that one; the timeline
+  PDF (`/api/documents/timeline/[projectId]`) needs `project:read` and prints
+  costs only with crew pay.
 
 ### Email Templates (`src/lib/crew-emails.ts`)
 - `crewOfferEmail` — project details + Accept/Decline buttons

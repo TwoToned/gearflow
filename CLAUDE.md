@@ -526,7 +526,11 @@ in `convex/lib/crewPayFields.ts`, `crewPayRedactor`) on `projects.*`,
 a crew call's `responseToken`), `getProject(s)` / `getTemplates` /
 `getProjectServices(Summary)` — a crew-cost column is not a sort key there either —
 and `projectCosts.operationalCosts` returns its all-zero EMPTY shape (a stable
-contract). Every UI then renders no margin and no cost. A helper that
+contract). Every UI then renders no margin and no cost. The activity log still
+WRITES pay in its field diffs (the audit needs them) but every read
+(`activityLog.{list,listByEntity,recentForProject,exportRows}`, and the CSV action
+for its real caller) drops those change rows below the line (`redactActivityPay`,
+`convex/lib/activityPay.ts`, the same field lists). A helper that
 returns a full assignment row with no authz of its own is a plain module, never a
 `"use server"` export (`src/lib/crew-assignment-email-data.ts`). Writes follow the
 same line: below it a service save keeps each call's stored rate inputs

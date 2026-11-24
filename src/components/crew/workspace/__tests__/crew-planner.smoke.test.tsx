@@ -262,6 +262,43 @@ describe("CrewPlanner (smoke)", () => {
     await waitFor(() => expect(mail.sendCancellationEmails).toHaveBeenCalledWith({ assignmentIds: ["a1", "a2", "a3"] }));
   });
 
+  describe("S5: bulk Offer and Cancel over 150 calls email every recipient exactly once", () => {
+    const many = Array.from({ length: 150 }, (_, i) => call(`b${i}`, "2026-11-17", "PENDING"));
+    // The server action refuses more than 100 ids, exactly as the real one does.
+    const strict = async (i: { assignmentIds: string[] }) => {
+      if (i.assignmentIds.length > 100) throw new Error("Too many");
+      return { sent: i.assignmentIds.length, errors: [], total: i.assignmentIds.length };
+    };
+    const sentIds = (fn: typeof mail.sendCrewOffers) => fn.mock.calls.flatMap(([i]) => i.assignmentIds);
+    const ids = many.map((c) => c.id);
+
+    it("Offer 150 → sendCrewOffers in batches of ≤ 100, each id once", async () => {
+      queried.members = [{ ...members[1], assignments: many }];
+      mail.sendCrewOffers.mockImplementation(strict);
+      const user = userEvent.setup();
+      render(<CrewPlanner />);
+      await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+      await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Offer 150" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Send 150 offers" }));
+      await waitFor(() => expect(sentIds(mail.sendCrewOffers)).toHaveLength(150));
+      expect(mail.sendCrewOffers.mock.calls.every(([i]) => i.assignmentIds.length <= 100)).toBe(true);
+      expect([...sentIds(mail.sendCrewOffers)].sort()).toEqual([...ids].sort());
+    });
+
+    it("Cancel 150 → sendCancellationEmails(toTell) in batches of ≤ 100, each id once", async () => {
+      queried.members = [{ ...members[1], assignments: many }];
+      mail.sendCancellationEmails.mockImplementation(strict);
+      const user = userEvent.setup();
+      render(<CrewPlanner />);
+      await user.click(screen.getByRole("checkbox", { name: "Select every call shown" }));
+      await user.click(within(screen.getByRole("toolbar", { name: "Bulk actions" })).getByRole("button", { name: "Cancel 150" }));
+      await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel 150 calls" }));
+      await waitFor(() => expect(sentIds(mail.sendCancellationEmails)).toHaveLength(150));
+      expect(mail.sendCancellationEmails.mock.calls.every(([i]) => i.assignmentIds.length <= 100)).toBe(true);
+      expect([...sentIds(mail.sendCancellationEmails)].sort()).toEqual([...ids].sort());
+    });
+  });
+
   it("shift-click ticks a range", async () => {
     const user = userEvent.setup();
     render(<CrewPlanner />);

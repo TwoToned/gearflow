@@ -386,6 +386,24 @@ describe("projectWrites.updateNative", () => {
       expect(log?.summary).toContain("Renamed Gig");
     });
   });
+  test("pricing-locked job: a full payload (clears the locked fields) is refused, the diff payload saves", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "CONFIRMED");
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true });
+    });
+    const run = (set: Record<string, unknown>, clear: string[]) =>
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set, clear });
+    // What the old edit form sent for an unrelated change: blank locked fields as `clear`.
+    await expect(run({ name: "Renamed", updatedAt: NOW }, ["discountPercent", "taxRate"])).rejects.toThrow();
+    // What `buildProjectUpdate` sends now: only what changed.
+    await run({ name: "Renamed", updatedAt: NOW }, []);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.name).toBe("Renamed");
+    });
+  });
   test("clear removes a field", async () => {
     const t = makeT();
     await t.run(async (ctx) => {

@@ -55,16 +55,6 @@ const TYPE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ] as const;
 
-const STATUS_OPTIONS = [
-  { value: "ENQUIRY", label: "Enquiry" }, { value: "QUOTING", label: "Quoting" },
-  { value: "QUOTED", label: "Quoted" }, { value: "AWAITING_PAYMENT", label: "Awaiting payment" },
-  { value: "CONFIRMED", label: "Confirmed" },
-  { value: "PREPPING", label: "Prepping" }, { value: "CHECKED_OUT", label: "Checked out" },
-  { value: "ON_SITE", label: "On site" }, { value: "RETURNED", label: "Returned" },
-  { value: "COMPLETED", label: "Completed" }, { value: "INVOICED", label: "Invoiced" },
-  { value: "CANCELLED", label: "Cancelled" },
-] as const;
-
 /**
  * The project detail shape the wizard needs in edit mode. Loosely typed (all
  * optional, dates as `unknown`) so the page can pass its `useProjectDetail`
@@ -326,7 +316,7 @@ export function ProjectWizard({
       }
 
       const result = project
-        ? await projectWrites.update(project.id, data, isTemplate)
+        ? await projectWrites.update(project.id, data, isTemplate, form.formState.defaultValues as ProjectFormValues)
         : await projectWrites.create({ ...data, isTemplate });
 
       // Reconcile managers to the full selected set in one call — the server
@@ -532,16 +522,6 @@ export function ProjectWizard({
                   </Select>
                 )} />
               </Field>
-              {isEditing && (
-                <Field label="Status">
-                  <Controller control={form.control} name="status" render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger><SelectValue>{STATUS_OPTIONS.find((o) => o.value === field.value)?.label ?? field.value}</SelectValue></SelectTrigger>
-                      <SelectContent>{STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                    </Select>
-                  )} />
-                </Field>
-              )}
               <Field label="Description">
                 <Textarea {...form.register("description")} placeholder="Brief description of the job" rows={2} />
               </Field>

@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useConvex, useConvexAuth } from "convex/react";
-import { Clock, Download, Settings2, CalendarDays, UserPlus } from "lucide-react";
+import { CalendarDays, Clock, Download, Settings2, UserPlus } from "lucide-react";
+import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
 import { canCrewCall } from "../../../convex/lib/crewCallTransitions";
@@ -33,10 +34,9 @@ import {
   type CrewSource,
 } from "@/lib/list-views/people";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
-import { crewBulkActions, crewMemberActions } from "@/lib/row-actions/people";
+import { crewBulkActions, crewMemberActions, when } from "@/lib/row-actions/people";
 import { useCanDo } from "@/lib/use-permissions";
 import { sendCrewOffer } from "@/server/crew-communication";
-import { toast } from "sonner";
 
 /** Crew list (spec §9f.2, D38/D40): the landing page is the list; the manager dashboard is dissolved. */
 export function CrewList() {
@@ -69,14 +69,73 @@ function useCrewListData(orgId: string | undefined) {
   return { now, state, setState, page, counts, roles: (roles ?? []) as { id: string; name: string; department?: string | null }[], items };
 }
 
+/** Everything the page ⋯ offers; `Log time…` is the one verb a read-only role does not get. */
+function crewPageMenu(push: (href: string) => void, toApprove: number, canUpdate: boolean, openExport: () => void): ActionMenuSpec {
+  const timesheets = toApprove > 0 ? `Timesheets · ${toApprove} to approve` : "Timesheets";
+  return {
+    items: [
+      { key: "timesheets", label: timesheets, group: "organise", icon: Clock, onSelect: () => push("/crew/timesheets") },
+      { key: "planner", label: "Planner", group: "organise", icon: CalendarDays, onSelect: () => push("/crew/planner") },
+      { key: "roles", label: "Crew roles & rates…", group: "organise", icon: Settings2, onSelect: () => push("/crew/planner?sheet=roles") },
+      ...(canUpdate ? [{ key: "log-time", label: "Log time…", group: "reporting" as const, icon: UserPlus, onSelect: () => push("/crew/timesheets") }] : []),
+      { key: "export", label: "Export timesheets…", group: "reporting", icon: Download, onSelect: openExport },
+    ],
+  };
+}
+
+/** The dissolved dashboard's `Timesheets need approval` stat lives on as the page ⋯ count (managers only). */
+function useTimesheetsToApprove(orgId: string | undefined, canUpdate: boolean, now: number): number {
+  const stats = useAuthedQuery(api.crewDashboard.stats, orgId && canUpdate ? { orgId, nowMs: now } : "skip");
+  return stats?.submittedTime ?? 0;
+}
+
+interface CrewRowHandlers {
+  push: (href: string) => void;
+  canUpdate: boolean;
+  message: (id: string) => void;
+  assign: (id: string) => void;
+  resend: (callId: string) => void;
+  deactivate: (id: string) => void;
+  reactivate: (id: string) => void;
+}
+
+/** The row ⋯ per member: a verb the role may not do is ABSENT; `Resend offer` only for a call that can be offered. */
+function crewRows(items: CrewSource[], h: CrewRowHandlers) {
+  return items.map((m) => {
+    const resendId = m.next && canCrewCall(m.next.status, "offer") ? m.next.callId : undefined;
+    return crewRowOf(
+      m,
+      crewMemberActions(
+        { name: m.firstName, listStatus: m.listStatus, hasEmail: !!m.email },
+        {
+          onOpen: () => h.push(`/crew/${m.id}`),
+          onOpenInPlanner: () => h.push("/crew/planner"),
+          onMessage: when(h.canUpdate, () => h.message(m.id)),
+          onAssign: when(h.canUpdate, () => h.assign(m.id)),
+          onResendOffer: when(h.canUpdate && !!resendId, () => h.resend(resendId!)),
+          onLogTime: when(h.canUpdate, () => h.push("/crew/timesheets")),
+          onDeactivate: when(h.canUpdate, () => h.deactivate(m.id)),
+          onReactivate: when(h.canUpdate, () => h.reactivate(m.id)),
+        },
+      ),
+    );
+  });
+}
+
+/** What the page tells ListPage about the query: totals, loading, and the incomplete-counts note. */
+function pageFlow(page: { total: number; payVisible?: boolean } | undefined, counts: Record<string, number> | undefined) {
+  return { total: page?.total ?? 0, loading: page === undefined, subline: counts?.truncated ? "Counts may be incomplete" : undefined };
+}
+
+const departmentsOf =(roles: { department?: string | null }[], items: CrewSource[]): string[] =>
+  [...new Set([...roles.map((r) => r.department), ...items.map((m) => m.department)].filter((x): x is string => !!x))].sort();
+
 function CrewListInner({ orgId }: { orgId: string | undefined }) {
   const router = useRouter();
   const d = useCrewListData(orgId);
   const canCreate = useCanDo("crew", "create");
   const canUpdate = useCanDo("crew", "update");
-  // The dissolved dashboard's `Timesheets need approval` stat lives on as a page ⋯ count.
-  const stats = useAuthedQuery(api.crewDashboard.stats, orgId && canUpdate ? { orgId, nowMs: d.now } : "skip");
-  const toApprove = stats?.submittedTime ?? 0;
+  const toApprove = useTimesheetsToApprove(orgId, canUpdate, d.now);
 
   const seen = React.useRef(new Map<string, CrewSource>());
   React.useEffect(() => {
@@ -92,36 +151,18 @@ function CrewListInner({ orgId }: { orgId: string | undefined }) {
     onError: (e) => toast.error(e.message),
   });
 
-  const payVisible = d.page?.payVisible === true;
-  const rows = d.items.map((m) => {
-    const callId = m.next && canCrewCall(m.next.status, "offer") ? m.next.callId : undefined;
-    const menu = crewMemberActions(
-      { name: m.firstName, listStatus: m.listStatus, hasEmail: !!m.email },
-      {
-        onOpen: () => router.push(`/crew/${m.id}`),
-        onOpenInPlanner: () => router.push("/crew/planner"),
-        onMessage: canUpdate ? () => w.message([m.id]) : undefined,
-        onAssign: canUpdate ? () => setAssignIds([m.id]) : undefined,
-        onResendOffer: canUpdate && callId ? () => resend.mutate(callId) : undefined,
-        onLogTime: canUpdate ? () => router.push("/crew/timesheets") : undefined,
-        onDeactivate: canUpdate ? () => void w.bulkDeactivate([m.id]) : undefined,
-        onReactivate: canUpdate ? () => void w.reactivateOne(m.id) : undefined,
-      },
-    );
-    return crewRowOf(m, menu);
+  const rows = crewRows(d.items, {
+    push: router.push,
+    canUpdate,
+    message: (id) => w.message([id]),
+    assign: (id) => setAssignIds([id]),
+    resend: (callId) => resend.mutate(callId),
+    deactivate: (id) => void w.bulkDeactivate([id]),
+    reactivate: (id) => void w.reactivateOne(id),
   });
 
-  const departments = [...new Set([...d.roles.map((r) => r.department), ...d.items.map((m) => m.department)].filter((x): x is string => !!x))].sort();
-  const pageMenu: ActionMenuSpec = {
-    items: [
-      { key: "timesheets", label: toApprove > 0 ? `Timesheets · ${toApprove} to approve` : "Timesheets", group: "organise", icon: Clock, onSelect: () => router.push("/crew/timesheets") },
-      { key: "planner", label: "Planner", group: "organise", icon: CalendarDays, onSelect: () => router.push("/crew/planner") },
-      { key: "roles", label: "Crew roles & rates…", group: "organise", icon: Settings2, onSelect: () => router.push("/crew/planner?sheet=roles") },
-      ...(canUpdate ? [{ key: "log-time", label: "Log time…", group: "reporting" as const, icon: UserPlus, onSelect: () => router.push("/crew/timesheets") }] : []),
-      { key: "export", label: "Export timesheets…", group: "reporting", icon: Download, onSelect: () => setExportOpen(true) },
-    ],
-  };
-
+  const goNew = () => router.push("/crew/new");
+  const primary = canCreate ? { label: "New crew member", onSelect: goNew } : undefined;
   const model: PeopleListModel = {
     key: "crew",
     spec: CREW_SPEC,
@@ -130,21 +171,17 @@ function CrewListInner({ orgId }: { orgId: string | undefined }) {
     bulkNoun: "crew member",
     searchPlaceholder: "Search name, role, skill or tag",
     segments: crewSegments(d.counts),
-    filters: crewFilters(d.roles, departments),
+    filters: crewFilters(d.roles, departmentsOf(d.roles, d.items)),
     columnsKey: "crew",
-    columns: crewColumns(payVisible),
+    columns: crewColumns(d.page?.payVisible === true),
     rows,
-    total: d.page?.total ?? 0,
-    loading: d.page === undefined,
+    ...pageFlow(d.page, d.counts),
     itemHeader: CREW_ITEM_HEADER,
     itemSortKey: CREW_ITEM_SORT_KEY,
-    primary: canCreate ? { label: "New crew member", onSelect: () => router.push("/crew/new") } : undefined,
-    pageMenu,
-    subline: d.counts?.truncated ? "Counts may be incomplete" : undefined,
-    bulk: canUpdate
-      ? (ids) => crewBulkActions({ onMessage: () => w.message(ids), onAssign: () => setAssignIds(ids), onAddTag: () => setTagIds(ids), onDeactivate: () => void w.bulkDeactivate(ids) })
-      : undefined,
-    empty: { title: "No crew yet", description: "Freelancers, employees and contractors on your roster appear here.", action: canCreate ? { label: "New crew member", onSelect: () => router.push("/crew/new") } : undefined },
+    primary,
+    pageMenu: crewPageMenu(router.push, toApprove, canUpdate, () => setExportOpen(true)),
+    bulk: canUpdate ? (ids) => crewBulkActions({ onMessage: () => w.message(ids), onAssign: () => setAssignIds(ids), onAddTag: () => setTagIds(ids), onDeactivate: () => void w.bulkDeactivate(ids) }) : undefined,
+    empty: { title: "No crew yet", description: "Freelancers, employees and contractors on your roster appear here.", action: primary },
     toolbarExtra: <UrlSavedViewsMenu tableId="crew" spec={CREW_SPEC} state={d.state} setState={d.setState} builtIns={crewBuiltInViews()} />,
   };
 

@@ -31,30 +31,40 @@ export interface CrewMenuCtx {
   onReactivate?: () => void;
 }
 
+/** A handler only when the caller may do it, so the verb is ABSENT (never disabled) for a read-only role. */
+export function when<F extends () => void>(allowed: boolean, handler: F): F | undefined {
+  return allowed ? handler : undefined;
+}
+
+/** One verb: present only when its handler was given (the caller may do it) AND every condition holds. */
+function verb(handler: (() => void) | undefined, conditions: boolean[], spec: Omit<ActionItem, "onSelect">): Entry {
+  return handler && conditions.every(Boolean) ? { ...spec, onSelect: handler } : false;
+}
+
 export function crewMemberActions(row: CrewMenuRow, ctx: CrewMenuCtx): ActionMenuSpec {
-  const inactive = row.listStatus === "INACTIVE";
+  const active = row.listStatus !== "INACTIVE";
+  const unconfirmed = row.listStatus === "UNCONFIRMED";
   return {
     items: compact([
       { key: "open", label: "Open", group: "edit", icon: Pencil, onSelect: ctx.onOpen },
-      ctx.onOpenInPlanner && { key: "planner", label: "Open in planner", group: "edit", icon: CalendarDays, onSelect: ctx.onOpenInPlanner },
-      ctx.onMessage && row.hasEmail && !inactive && { key: "message", label: "Message…", group: "edit", icon: MessageSquare, onSelect: ctx.onMessage },
-      ctx.onAssign && !inactive && { key: "assign", label: "Assign to job…", group: "organise", icon: UserPlus, onSelect: ctx.onAssign },
-      ctx.onResendOffer && row.listStatus === "UNCONFIRMED" && row.hasEmail && { key: "resend", label: "Resend offer", group: "organise", icon: Send, onSelect: ctx.onResendOffer },
-      ctx.onLogTime && !inactive && { key: "log-time", label: "Log time…", group: "reporting", icon: Clock, onSelect: ctx.onLogTime },
-      ctx.onReactivate && inactive && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
-      ctx.onDeactivate && !inactive && {
+      verb(ctx.onOpenInPlanner, [true], { key: "planner", label: "Open in planner", group: "edit", icon: CalendarDays }),
+      verb(ctx.onMessage, [row.hasEmail, active], { key: "message", label: "Message…", group: "edit", icon: MessageSquare }),
+      verb(ctx.onAssign, [active], { key: "assign", label: "Assign to job…", group: "organise", icon: UserPlus }),
+      verb(ctx.onResendOffer, [unconfirmed, row.hasEmail], { key: "resend", label: "Resend offer", group: "organise", icon: Send }),
+      verb(ctx.onLogTime, [active], { key: "log-time", label: "Log time…", group: "reporting", icon: Clock }),
+      verb(ctx.onReactivate, [!active], { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw }),
+      verb(ctx.onDeactivate, [active], {
         key: "deactivate",
         label: "Deactivate…",
         group: "danger",
         icon: UserMinus,
         danger: true,
-        onSelect: ctx.onDeactivate,
         confirm: {
           title: `Deactivate ${row.name}?`,
           body: "They leave the active roster and the planner. Calls they already hold stay as they are, and their timesheets and history are kept. You can reactivate them.",
           confirmLabel: "Deactivate",
         },
-      },
+      }),
     ]),
   };
 }
@@ -102,25 +112,24 @@ export function clientActions(row: ClientMenuRow, ctx: ClientMenuCtx): ActionMen
   return {
     items: compact([
       { key: "open", label: "Open", group: "edit", icon: Pencil, onSelect: ctx.onOpen },
-      ctx.onOpenJob && row.firstOpenJob && { key: "open-job", label: `Open job ${row.firstOpenJob.projectNumber}`, group: "edit", icon: Briefcase, onSelect: ctx.onOpenJob },
-      ctx.onNewJob && row.isActive && { key: "new-job", label: "New job for client…", group: "organise", icon: FilePlus, onSelect: ctx.onNewJob },
-      ctx.onOpenInvoices && { key: "invoices", label: "Open invoices", group: "reporting", icon: Receipt, onSelect: ctx.onOpenInvoices },
-      ctx.onOpenInXero && row.xeroLinked && { key: "xero", label: "Open in Xero", group: "reporting", icon: ExternalLink, onSelect: ctx.onOpenInXero },
-      ctx.onAddTag && { key: "tag", label: "Add tag…", group: "organise", icon: Tag, onSelect: ctx.onAddTag },
-      ctx.onReactivate && !row.isActive && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
-      ctx.onArchive && row.isActive && {
+      verb(ctx.onOpenJob, [!!row.firstOpenJob], { key: "open-job", label: `Open job ${row.firstOpenJob?.projectNumber ?? ""}`.trim(), group: "edit", icon: Briefcase }),
+      verb(ctx.onNewJob, [row.isActive], { key: "new-job", label: "New job for client…", group: "organise", icon: FilePlus }),
+      verb(ctx.onOpenInvoices, [true], { key: "invoices", label: "Open invoices", group: "reporting", icon: Receipt }),
+      verb(ctx.onOpenInXero, [row.xeroLinked], { key: "xero", label: "Open in Xero", group: "reporting", icon: ExternalLink }),
+      verb(ctx.onAddTag, [true], { key: "tag", label: "Add tag…", group: "organise", icon: Tag }),
+      verb(ctx.onReactivate, [!row.isActive], { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw }),
+      verb(ctx.onArchive, [row.isActive], {
         key: "archive",
         label: "Archive…",
         group: "danger",
         icon: Archive,
         danger: true,
-        onSelect: ctx.onArchive,
         confirm: {
           title: `Archive ${row.name}?`,
           body: "The client leaves pickers and the active list. Its jobs, quotes, invoices and history stay exactly as they were, and you can reactivate it.",
           confirmLabel: "Archive",
         },
-      },
+      }),
     ]),
   };
 }
@@ -163,24 +172,23 @@ export function supplierActions(row: SupplierMenuRow, ctx: SupplierMenuCtx): Act
   return {
     items: compact([
       { key: "open", label: "Open", group: "edit", icon: Pencil, onSelect: ctx.onOpen },
-      ctx.onOrders && { key: "orders", label: "Orders…", group: "edit", icon: Package, onSelect: ctx.onOrders },
-      ctx.onNewOrder && row.isActive && { key: "new-order", label: "New order…", group: "organise", icon: FilePlus, onSelect: ctx.onNewOrder },
-      ctx.onEmail && row.email && { key: "email", label: "Email supplier…", group: "reporting", icon: Mail, onSelect: ctx.onEmail },
-      ctx.onAddTag && { key: "tag", label: "Add tag…", group: "organise", icon: Tag, onSelect: ctx.onAddTag },
-      ctx.onReactivate && !row.isActive && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
-      ctx.onArchive && row.isActive && {
+      verb(ctx.onOrders, [true], { key: "orders", label: "Orders…", group: "edit", icon: Package }),
+      verb(ctx.onNewOrder, [row.isActive], { key: "new-order", label: "New order…", group: "organise", icon: FilePlus }),
+      verb(ctx.onEmail, [!!row.email], { key: "email", label: "Email supplier…", group: "reporting", icon: Mail }),
+      verb(ctx.onAddTag, [true], { key: "tag", label: "Add tag…", group: "organise", icon: Tag }),
+      verb(ctx.onReactivate, [!row.isActive], { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw }),
+      verb(ctx.onArchive, [row.isActive], {
         key: "archive",
         label: "Archive…",
         group: "danger",
         icon: Archive,
         danger: true,
-        onSelect: ctx.onArchive,
         confirm: {
           title: `Archive ${row.name}?`,
           body: "The supplier leaves pickers and the active list. Its orders, sub-hires and history stay as they were, and you can reactivate it.",
           confirmLabel: "Archive",
         },
-      },
+      }),
     ]),
   };
 }

@@ -22,9 +22,10 @@ import {
   supplierQueryArgs,
   supplierRowOf,
   supplierSegments,
+  supplierSubline,
   type SupplierSource,
 } from "@/lib/list-views/people";
-import { supplierActions, supplierBulkActions } from "@/lib/row-actions/people";
+import { supplierActions, supplierBulkActions, when } from "@/lib/row-actions/people";
 import { useCanDo } from "@/lib/use-permissions";
 
 /** Suppliers list (spec §9f.2): the four tiles are strip counts and a sub line. `On hire` / `Due back` arrive with the order return date (slice 2). */
@@ -52,6 +53,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
   const [tagIds, setTagIds] = React.useState<string[] | null>(null);
   const moneyVisible = page?.moneyVisible === true;
 
+  const goNew = () => router.push("/suppliers/new");
   const rows = items.map((s) =>
     supplierRowOf(
       s,
@@ -60,21 +62,15 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
         {
           onOpen: () => router.push(`/suppliers/${s.id}`),
           onOrders: () => router.push(`/suppliers/${s.id}`),
-          onNewOrder: canCreate ? () => router.push(`/suppliers/${s.id}/orders/new`) : undefined,
-          onEmail: s.email ? () => { window.location.href = `mailto:${s.email}`; } : undefined,
-          onAddTag: canUpdate ? () => setTagIds([s.id]) : undefined,
-          onArchive: canUpdate ? () => void w.bulkArchive([s.id]) : undefined,
-          onReactivate: canUpdate ? () => void w.reactivateOne(s.id) : undefined,
+          onNewOrder: when(canCreate, () => router.push(`/suppliers/${s.id}/orders/new`)),
+          onEmail: () => { window.location.href = `mailto:${s.email ?? ""}`; },
+          onAddTag: when(canUpdate, () => setTagIds([s.id])),
+          onArchive: when(canUpdate, () => void w.bulkArchive([s.id])),
+          onReactivate: when(canUpdate, () => void w.reactivateOne(s.id)),
         },
       ),
     ),
   );
-
-  const sub = counts
-    ? [`${counts.open ?? 0} with open orders`, counts.openOrders != null ? `${counts.openOrders} open orders` : null, counts.spendYtd != null ? `$${Math.round(counts.spendYtd).toLocaleString("en-AU")} this year` : null, counts.truncated ? "counts may be incomplete" : null]
-        .filter(Boolean)
-        .join(" · ")
-    : undefined;
 
   const model: PeopleListModel = {
     key: "suppliers",
@@ -92,15 +88,15 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
     loading: page === undefined,
     itemHeader: SUPPLIER_ITEM_HEADER,
     itemSortKey: SUPPLIER_ITEM_SORT_KEY,
-    subline: sub,
-    primary: canCreate ? { label: "New supplier", onSelect: () => router.push("/suppliers/new") } : undefined,
+    subline: supplierSubline(counts),
+    primary: canCreate ? { label: "New supplier", onSelect: goNew } : undefined,
     bulk: (ids) =>
       supplierBulkActions({
         onExport: () => w.bulkExport(ids),
-        onAddTag: canUpdate ? () => setTagIds(ids) : undefined,
-        onArchive: canUpdate ? () => void w.bulkArchive(ids) : undefined,
+        onAddTag: when(canUpdate, () => setTagIds(ids)),
+        onArchive: when(canUpdate, () => void w.bulkArchive(ids)),
       }),
-    empty: { title: "No suppliers yet", description: "Vendors you buy from or sub-hire from appear here.", action: canCreate ? { label: "New supplier", onSelect: () => router.push("/suppliers/new") } : undefined },
+    empty: { title: "No suppliers yet", description: "Vendors you buy from or sub-hire from appear here.", action: canCreate ? { label: "New supplier", onSelect: goNew } : undefined },
     toolbarExtra: <UrlSavedViewsMenu tableId="suppliers" spec={SUPPLIERS_SPEC} state={state} setState={setState} />,
   };
 

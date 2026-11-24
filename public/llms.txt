@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (643 agent-reachable)
+## Operations (651 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -123,6 +123,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `clientWrites.createNative` (mutation, scope: client:create)
 - `clientWrites.updateNative` (mutation, scope: client:update)
 - `clientWrites.updateNotesNative` (mutation, scope: client:update)
+- `peopleLists.clientPage` (query, scope: client:read)
+- `peopleLists.clientSegmentCounts` (query, scope: client:read)
 - `search.clients` (query, scope: client:read)
 
 ### crew
@@ -142,6 +144,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `crewAssignmentsWrites.bulkStatusNative` (mutation, scope: crew:update)
 - `crewAssignmentsWrites.cancelManyNative` (mutation, scope: crew:update)
 - `crewAssignmentsWrites.confirmManyNative` (mutation, scope: crew:update)
+- `crewAssignmentsWrites.createManyNative` (mutation, scope: crew:create)
 - `crewAssignmentsWrites.createNative` (mutation, scope: crew:create)
 - `crewAssignmentsWrites.deleteNative` (mutation, scope: crew:delete)
 - `crewAssignmentsWrites.generateShiftsNative` (mutation, scope: crew:update)
@@ -194,6 +197,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `crewWrites.createNative` (mutation, scope: crew:create)
 - `crewWrites.deleteNative` (mutation, scope: crew:delete)
 - `crewWrites.updateNative` (mutation, scope: crew:update)
+- `peopleLists.crewPage` (query, scope: crew:read)
+- `peopleLists.crewSegmentCounts` (query, scope: crew:read)
 
 ### document
 - `files.getServeInfo` (query, scope: document:read)
@@ -585,6 +590,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `subHiresWrites.updateSubHireStatusNative` (mutation, scope: subHire:update)
 
 ### supplier
+- `peopleLists.supplierPage` (query, scope: supplier:read)
+- `peopleLists.supplierSegmentCounts` (query, scope: supplier:read)
 - `search.suppliers` (query, scope: supplier:read)
 - `supplierModelRates.getByComposite` (query, scope: supplier:read)
 - `supplierModelRates.getById` (query, scope: supplier:read)
@@ -609,6 +616,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `suppliers.listPage` (query, scope: supplier:read)
 - `suppliers.subhiresPage` (query, scope: supplier:read)
 - `suppliersWrites.createNative` (mutation, scope: supplier:create)
+- `suppliersWrites.patchNative` (mutation, scope: supplier:update)
 - `suppliersWrites.removeNative` (mutation, scope: supplier:delete)
 - `suppliersWrites.updateNative` (mutation, scope: supplier:update)
 

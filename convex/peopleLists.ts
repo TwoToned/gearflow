@@ -83,28 +83,21 @@ async function loadCrew(ctx: QueryCtx, orgId: string, nowArg: number | undefined
 
 const CREW_SORTS = new Set(["name", "status", "next", "week", "rate", "type", "phone", "email", "department"]);
 
-function crewSortValue(m: Doc<"crewMembers">, f: CrewMemberFacts, key: string, pay: boolean): unknown {
-  switch (key) {
-    case "status":
-      return CREW_STATUS_RANK[f.status];
-    case "next":
-      return f.next?.startDay ?? Number.POSITIVE_INFINITY;
-    case "week":
-      return f.daysThisWeek;
-    case "rate":
-      return pay ? m.defaultDayRate ?? null : null; // a hidden field is not a sort key
-    case "type":
-      return m.type ?? "";
-    case "phone":
-      return m.phone ?? "";
-    case "email":
-      return m.email ?? "";
-    case "department":
-      return m.department ?? "";
-    default:
-      return `${m.lastName} ${m.firstName}`.toLowerCase();
-  }
-}
+type CrewSortFn = (m: Doc<"crewMembers">, f: CrewMemberFacts, pay: boolean) => unknown;
+const crewByName: CrewSortFn = (m) => `${m.lastName} ${m.firstName}`.toLowerCase();
+const CREW_SORT_VALUE: Record<string, CrewSortFn> = {
+  status: (_m, f) => CREW_STATUS_RANK[f.status],
+  next: (_m, f) => f.next?.startDay ?? Number.POSITIVE_INFINITY,
+  week: (_m, f) => f.daysThisWeek,
+  // A hidden field is not a sort key: without crew pay the rate sorts as blank.
+  rate: (m, _f, pay) => (pay ? m.defaultDayRate ?? null : null),
+  type: (m) => m.type ?? "",
+  phone: (m) => m.phone ?? "",
+  email: (m) => m.email ?? "",
+  department: (m) => m.department ?? "",
+  name: crewByName,
+};
+const crewSortValue = (m: Doc<"crewMembers">, f: CrewMemberFacts, key: string, pay: boolean): unknown => (CREW_SORT_VALUE[key] ?? crewByName)(m, f, pay);
 
 export const crewPage = query({
   args: {
@@ -198,23 +191,30 @@ async function loadClients(ctx: QueryCtx, orgId: string, nowArg: number | undefi
 
 const CLIENT_SORTS = new Set(["name", "openJobs", "outstanding", "lastJob", "type", "lifetime", "quoted"]);
 
-function clientSortValue(c: Doc<"clients">, f: ClientFacts, key: string, money: boolean): unknown {
-  switch (key) {
-    case "openJobs":
-      return f.openJobCount;
-    case "lastJob":
-      return f.lastJobAt;
-    case "type":
-      return c.type ?? "";
-    case "outstanding":
-      return money ? f.outstanding ?? 0 : null;
-    case "lifetime":
-      return money ? f.lifetime ?? 0 : null;
-    case "quoted":
-      return money ? f.quoted ?? 0 : null;
-    default:
-      return c.name.toLowerCase();
+type ClientSortFn = (c: Doc<"clients">, f: ClientFacts) => unknown;
+const clientByName: ClientSortFn = (c) => c.name.toLowerCase();
+// A money field the caller can't see is ABSENT on the facts, so it sorts as blank: its order can't leak it.
+const CLIENT_SORT_VALUE: Record<string, ClientSortFn> = {
+  openJobs: (_c, f) => f.openJobCount,
+  lastJob: (_c, f) => f.lastJobAt,
+  type: (c) => c.type ?? "",
+  outstanding: (_c, f) => f.outstanding ?? null,
+  lifetime: (_c, f) => f.lifetime ?? null,
+  quoted: (_c, f) => f.quoted ?? null,
+  name: clientByName,
+};
+const clientSortValue = (c: Doc<"clients">, f: ClientFacts, key: string): unknown => (CLIENT_SORT_VALUE[key] ?? clientByName)(c, f);
+
+/** Sums for the head sub line; the money lines exist only when the facts carry money. */
+function clientTotals(clients: Doc<"clients">[], facts: Map<string, ClientFacts>) {
+  const t = { withOpenJobs: 0, quoted: 0, outstanding: 0 };
+  for (const c of clients) {
+    const f = facts.get(c.id)!;
+    if ((c.isActive ?? true) === true && f.openJobCount > 0) t.withOpenJobs++;
+    t.quoted += f.quoted ?? 0;
+    t.outstanding += f.outstanding ?? 0;
   }
+  return t;
 }
 
 export const clientPage = query({
@@ -245,7 +245,7 @@ export const clientPage = query({
     });
     const d = a.sortBy ? dir(a.sortOrder) : -1;
     const sorted = [...filtered].sort(
-      (x, y) => compareValues(clientSortValue(x, facts.get(x.id)!, sortBy, showMoney), clientSortValue(y, facts.get(y.id)!, sortBy, showMoney), d) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1),
+      (x, y) => compareValues(clientSortValue(x, facts.get(x.id)!, sortBy), clientSortValue(y, facts.get(y.id)!, sortBy), d) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1),
     );
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
     const items = pageRows.map((c) => {
@@ -267,19 +267,12 @@ export const clientSegmentCounts = query({
     await requireOrgReadFor(ctx, orgId, "client");
     const { clients, facts, showMoney, truncated } = await loadClients(ctx, orgId, now);
     const counts: Record<ClientSegmentKey | "truncated", number> = { all: 0, active: 0, quoting: 0, overdue: 0, archived: 0, truncated: truncated ? 1 : 0 };
-    let withOpen = 0;
-    let quoted = 0;
-    let outstanding = 0;
     for (const c of clients) {
-      const f = facts.get(c.id)!;
-      const active = (c.isActive ?? true) === true;
-      for (const k of CLIENT_SEGMENT_KEYS) if (inClientSegment(f, active, k)) counts[k]++;
-      if (active && f.openJobCount > 0) withOpen++;
-      quoted += f.quoted ?? 0;
-      outstanding += f.outstanding ?? 0;
+      for (const k of CLIENT_SEGMENT_KEYS) if (inClientSegment(facts.get(c.id)!, (c.isActive ?? true) === true, k)) counts[k]++;
     }
+    const { withOpenJobs, quoted, outstanding } = clientTotals(clients, facts);
     // The money lines of the head sub line: absent (not zero) without the invoice line.
-    return { ...counts, overdue: showMoney ? counts.overdue : null, withOpenJobs: withOpen, ...(showMoney ? { quoted, outstanding } : {}) };
+    return { ...counts, overdue: showMoney ? counts.overdue : null, withOpenJobs, ...(showMoney ? { quoted, outstanding } : {}) };
   },
 });
 
@@ -290,24 +283,48 @@ const COMMITTED = new Set(["ORDERED", "PARTIAL", "RECEIVED"]);
 const SUPPLIER_SEGMENTS = ["all", "open", "archived"] as const;
 type SupplierSegment = (typeof SUPPLIER_SEGMENTS)[number];
 
+type SupplierFacts = { openOrders: number; spendYtd?: number };
+
+/** One order's contribution; spend is committed orders ordered this calendar year, and exists only with money. */
+function addOrder(f: SupplierFacts, o: Doc<"supplierOrders">, yearStart: number, showMoney: boolean) {
+  const status = o.status ?? "DRAFT";
+  if (OPEN_ORDER.has(status)) f.openOrders++;
+  const thisYear = (o.orderDate ?? o.createdAt ?? 0) >= yearStart;
+  if (showMoney && COMMITTED.has(status) && thisYear) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
+}
+
+function supplierFacts(suppliers: Doc<"suppliers">[], orders: Doc<"supplierOrders">[], yearStart: number, showMoney: boolean) {
+  const facts = new Map<string, SupplierFacts>();
+  for (const s of suppliers) facts.set(s.id, showMoney ? { openOrders: 0, spendYtd: 0 } : { openOrders: 0 });
+  for (const o of orders) {
+    const f = facts.get(o.supplierId);
+    if (f) addOrder(f, o, yearStart, showMoney);
+  }
+  return facts;
+}
+
 async function loadSuppliers(ctx: QueryCtx, orgId: string, nowArg: number | undefined) {
-  const now = resolveNow(nowArg);
-  const yearStart = Date.UTC(new Date(now).getUTCFullYear(), 0, 1);
+  const yearStart = Date.UTC(new Date(resolveNow(nowArg)).getUTCFullYear(), 0, 1);
   const showMoney = await canSeeJobCost(ctx, orgId);
   const [suppliers, orders] = await Promise.all([
     collectCapped(ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
     collectCapped(ctx.db.query("supplierOrders").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
   ]);
-  const facts = new Map<string, { openOrders: number; spendYtd?: number }>();
-  for (const s of suppliers.rows) facts.set(s.id, { openOrders: 0, ...(showMoney ? { spendYtd: 0 } : {}) });
-  for (const o of orders.rows) {
-    const f = facts.get(o.supplierId);
-    if (!f) continue;
-    if (OPEN_ORDER.has(o.status ?? "DRAFT")) f.openOrders++;
-    if (showMoney && COMMITTED.has(o.status ?? "DRAFT") && (o.orderDate ?? o.createdAt ?? 0) >= yearStart) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
-  }
+  const facts = supplierFacts(suppliers.rows, orders.rows, yearStart, showMoney);
   return { suppliers: suppliers.rows, facts, showMoney, truncated: suppliers.truncated || orders.truncated };
 }
+
+type SupplierSortFn = (s: Doc<"suppliers">, f: SupplierFacts) => unknown;
+const supplierByName: SupplierSortFn = (s) => s.name.toLowerCase();
+const SUPPLIER_SORT_VALUE: Record<string, SupplierSortFn> = {
+  openOrders: (_s, f) => f.openOrders,
+  spend: (_s, f) => f.spendYtd ?? null, // absent without money, so its order can't leak it
+  phone: (s) => s.phone ?? "",
+  email: (s) => s.email ?? "",
+  accountNumber: (s) => s.accountNumber ?? "",
+  name: supplierByName,
+};
+const supplierSortValue = (s: Doc<"suppliers">, f: SupplierFacts, key: string): unknown => (SUPPLIER_SORT_VALUE[key] ?? supplierByName)(s, f);
 
 const inSupplierSegment = (active: boolean, openOrders: number, seg: SupplierSegment) =>
   seg === "archived" ? !active : seg === "open" ? active && openOrders > 0 : active;
@@ -331,19 +348,11 @@ export const supplierPage = query({
     const { suppliers, facts, showMoney, truncated } = await loadSuppliers(ctx, a.orgId, a.now);
     const seg = (SUPPLIER_SEGMENTS as readonly string[]).includes(a.segment ?? "") ? (a.segment as SupplierSegment) : "all";
     const sortBy = SUPPLIER_SORTS.has(a.sortBy ?? "") ? (a.sortBy as string) : "name";
-    const val = (s: Doc<"suppliers">): unknown => {
-      const f = facts.get(s.id)!;
-      if (sortBy === "openOrders") return f.openOrders;
-      if (sortBy === "spend") return showMoney ? f.spendYtd ?? 0 : null;
-      if (sortBy === "phone") return s.phone ?? "";
-      if (sortBy === "email") return s.email ?? "";
-      if (sortBy === "accountNumber") return s.accountNumber ?? "";
-      return s.name.toLowerCase();
-    };
-    const filtered = suppliers.filter(
-      (s) => inSupplierSegment((s.isActive ?? true) === true, facts.get(s.id)!.openOrders, seg) && (!a.search || matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search)),
+    const matches = (s: Doc<"suppliers">) => !a.search || matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search);
+    const filtered = suppliers.filter((s) => inSupplierSegment((s.isActive ?? true) === true, facts.get(s.id)!.openOrders, seg) && matches(s));
+    const sorted = [...filtered].sort(
+      (x, y) => compareValues(supplierSortValue(x, facts.get(x.id)!, sortBy), supplierSortValue(y, facts.get(y.id)!, sortBy), dir(a.sortOrder)) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1),
     );
-    const sorted = [...filtered].sort((x, y) => compareValues(val(x), val(y), dir(a.sortOrder)) || compareValues(x.name.toLowerCase(), y.name.toLowerCase(), 1));
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
     const items = pageRows.map((s) => ({
       id: s.id, name: s.name, contactName: s.contactName ?? null, email: s.email ?? null, phone: s.phone ?? null,

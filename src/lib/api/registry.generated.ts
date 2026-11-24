@@ -14139,6 +14139,73 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewAssignmentsWrites.createManyNative",
+    "module": "crewAssignmentsWrites",
+    "fn": "createManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "crew",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "endDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "items",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startDate",
+        "optional": true,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "cf93d548d87c7321",
+    "returnsSha": "c8b3fee809ffda62",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "crewAssignmentsWrites.createNative",
     "module": "crewAssignmentsWrites",
     "fn": "createNative",
@@ -35798,6 +35865,338 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "peopleLists.clientPage",
+    "module": "peopleLists",
+    "fn": "clientPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b6466739fc3f47aa",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The Clients list: a page of clients with open jobs and (with invoice access) quoted / outstanding / overdue.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleLists.clientSegmentCounts",
+    "module": "peopleLists",
+    "fn": "clientSegmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "client",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "client",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Counts for the Clients list's strip.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleLists.crewPage",
+    "module": "peopleLists",
+    "fn": "crewPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "departmentIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "roleIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "70ecd7a71b2f732c",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The Crew list: a page of members with derived status, next call and days this week (rates only for callers who see crew pay).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleLists.crewSegmentCounts",
+    "module": "peopleLists",
+    "fn": "crewSegmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "crew",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Counts for the Crew list's strip (all, available this week, on a job, unconfirmed, inactive).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleLists.supplierPage",
+    "module": "peopleLists",
+    "fn": "supplierPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9afb6f21c9b1afd3",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The Suppliers list: a page of suppliers with open orders and (with invoice access) spend this year.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleLists.supplierSegmentCounts",
+    "module": "peopleLists",
+    "fn": "supplierSegmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Counts for the Suppliers list's strip.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectCategories.create",
     "module": "projectCategories",
     "fn": "create",
@@ -54835,7 +55234,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c8570d0f01945e1f",
-    "returnsSha": "ca99ce2e2f7d8731",
+    "returnsSha": "204e701cbd2f6349",
     "stability": "tracks-app",
     "summary": "Supplier detail with counts and spend rollups.",
     "danger": "low",
@@ -55189,6 +55588,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "5b57a4e56f8ebfc5",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "suppliersWrites.patchNative",
+    "module": "suppliersWrites",
+    "fn": "patchNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "patch",
+        "optional": false,
+        "type": "object"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "41407497f0fdcf9e",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -65817,10 +66273,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1275,
-  agentReachable: 643,
-  queries: 455,
-  mutations: 820,
-  agentReachableQueries: 319,
-  agentReachableMutations: 324,
+  total: 1283,
+  agentReachable: 651,
+  queries: 461,
+  mutations: 822,
+  agentReachableQueries: 325,
+  agentReachableMutations: 326,
 } as const;

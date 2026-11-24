@@ -49,7 +49,7 @@ function summarise<R>(noun: string, done: string, out: BulkOutcome<R>, undo?: ()
 }
 
 /** The tags after adding `tag`, or why it cannot be added. Pure; the tag list is bounded (MAX_TAGS). */
-export function withTag(tags: string[] | null | undefined, tag: string): { tags: string[] } | { skip: string } {
+function withTag(tags: string[] | null | undefined, tag: string): { tags: string[] } | { skip: string } {
   const have = tags ?? [];
   if (have.includes(tag)) return { skip: `already tagged ${tag}` };
   if (have.length >= MAX_TAGS) return { skip: `already has ${MAX_TAGS} tags` };

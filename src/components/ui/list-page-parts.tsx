@@ -95,6 +95,39 @@ function HeadWordLinks({ headWords }: { headWords: HeadWords }) {
   );
 }
 
+/** The title; with a `switcher` (the phone's `People ▾`) it opens that menu as a bottom sheet. */
+function HeadTitle({ title, switcher }: { title: string; switcher?: ActionMenuSpec }) {
+  if (!switcher || switcher.items.length === 0) return <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>;
+  return (
+    <h1 className="flex-1 text-page-title font-semibold text-ink">
+      <ActionMenu
+        spec={switcher}
+        label={`Switch from ${title}`}
+        trigger={
+          <button type="button" className="inline-flex min-h-11 items-center gap-1 text-left">
+            {title}
+            <ChevronDown className="size-4 text-muted" aria-hidden="true" />
+          </button>
+        }
+      />
+    </h1>
+  );
+}
+
+/** The page ⋯ and, on desktop only, the one primary. */
+function HeadActions({ title, pageMenu, primary }: { title: string; pageMenu?: ActionMenuSpec; primary?: ListPrimary }) {
+  return (
+    <>
+      {pageMenu && pageMenu.items.length > 0 && <ActionMenu spec={pageMenu} label={`${title} options`} />}
+      {primary && (
+        <Button size="sm" onClick={primary.onSelect}>
+          {primary.label}
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function ListHead({
   title,
   primary,
@@ -117,29 +150,9 @@ export function ListHead({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex min-h-11 items-center gap-2">
-        {titleMenu && titleMenu.items.length > 0 && isMobile ? (
-          <h1 className="flex-1 text-page-title font-semibold text-ink">
-            <ActionMenu
-              spec={titleMenu}
-              label={`Switch from ${title}`}
-              trigger={
-                <button type="button" className="inline-flex min-h-11 items-center gap-1 text-left">
-                  {title}
-                  <ChevronDown className="size-4 text-muted" aria-hidden="true" />
-                </button>
-              }
-            />
-          </h1>
-        ) : (
-          <h1 className="flex-1 text-page-title font-semibold text-ink">{title}</h1>
-        )}
+        <HeadTitle title={title} switcher={isMobile ? titleMenu : undefined} />
         {headWords && !isMobile && <HeadWordLinks headWords={headWords} />}
-        {pageMenu && pageMenu.items.length > 0 && <ActionMenu spec={pageMenu} label={`${title} options`} />}
-        {primary && !isMobile && (
-          <Button size="sm" onClick={primary.onSelect}>
-            {primary.label}
-          </Button>
-        )}
+        <HeadActions title={title} pageMenu={pageMenu} primary={isMobile ? undefined : primary} />
       </div>
       {subline && <p className="text-caption text-muted">{subline}</p>}
       {headWords && isMobile && <HeadWordLinks headWords={headWords} />}

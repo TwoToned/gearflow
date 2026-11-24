@@ -11,6 +11,7 @@ import { bumpCountersForTable } from "./lib/counters";
 import { resolveRate, calculateEstimatedCost } from "./lib/crewRate";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen } from "./lib/fieldGuards";
+import { collectCapped } from "./lib/pagination";
 import { recalcProjectTotals, orgDefaultTaxRate } from "./lib/recalc";
 import { recalcServiceCostFromCrew, recalcServiceChargeFromCrew } from "./lib/serviceCost";
 import * as enums from "./lib/validators";
@@ -590,6 +591,40 @@ export const generateShiftsNative = mutation({
 
 const LIVE_CALL = new Set(["PENDING", "OFFERED", "ACCEPTED", "CONFIRMED"]);
 
+interface NewCallBatch { orgId: string; projectId: string; startDate?: number; endDate?: number; now: number }
+interface NewCallItem { id: string; crewMemberId: string; crewRoleId?: string }
+
+/** Why this member can't be given a call on the job (named in the result), or null when they can. */
+async function skipReasonForNewCall(ctx: MutationCtx, a: NewCallBatch, item: NewCallItem): Promise<string | null> {
+  const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", item.crewMemberId)).first();
+  if (!member || member.organizationId !== a.orgId) return "not found";
+  if ((member.isActive ?? true) === false || member.status === "INACTIVE" || member.status === "ARCHIVED") return "inactive";
+  // One member's own calls, bounded (a person never holds anywhere near this many live calls).
+  const { rows } = await collectCapped(ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", item.crewMemberId)), 2000);
+  const onJob = rows.some((c) => c.organizationId === a.orgId && c.projectId === a.projectId && LIVE_CALL.has(c.status ?? "PENDING"));
+  return onJob ? "already on this job" : null;
+}
+
+/** Insert one PENDING call, priced like `createNative` (member, then role); a locked job defaults to $0. */
+async function insertPendingCall(ctx: MutationCtx, a: NewCallBatch, item: NewCallItem, defaultToZero: boolean) {
+  if (item.crewRoleId) await assertRefInOrg(ctx, "crewRoles", item.crewRoleId, a.orgId);
+  const dup = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", item.id)).first();
+  if (dup) throw new ConvexError("Assignment already exists");
+  const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, item.crewMemberId, item.crewRoleId);
+  const { rate, rateType } = resolveRate(undefined, null, crewMember, crewRole);
+  const estimatedCost = defaultToZero ? undefined : calculateEstimatedCost(rate, rateType, a.startDate ?? null, a.endDate ?? null, null);
+  const doc = {
+    id: item.id, organizationId: a.orgId, projectId: a.projectId, crewMemberId: item.crewMemberId,
+    ...(item.crewRoleId ? { crewRoleId: item.crewRoleId } : {}),
+    status: "PENDING" as const, isProjectManager: false,
+    ...(a.startDate != null ? { startDate: a.startDate } : {}), ...(a.endDate != null ? { endDate: a.endDate } : {}),
+    ...(estimatedCost != null ? { estimatedCost } : {}),
+    createdAt: a.now, updatedAt: a.now,
+  };
+  await ctx.db.insert("crewAssignments", doc);
+  await bumpCountersForTable(ctx, "crewAssignments", null, doc);
+}
+
 /**
  * createManyNative (UX Phase 13, the Crew list's `Assign n to job…`): ONE transaction
  * creating a PENDING, UNSENT call per member on one job. No mail goes out here (offers
@@ -631,29 +666,12 @@ export const createManyNative = mutation({
     for (const item of a.items) {
       if (seen.has(item.crewMemberId)) continue; // a repeated member must not get two calls
       seen.add(item.crewMemberId);
-      const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", item.crewMemberId)).first();
-      if (!member || member.organizationId !== a.orgId) { skipped.push({ crewMemberId: item.crewMemberId, reason: "not found" }); continue; }
-      if ((member.isActive ?? true) === false || member.status === "INACTIVE" || member.status === "ARCHIVED") { skipped.push({ crewMemberId: item.crewMemberId, reason: "inactive" }); continue; }
-      const existing = (await ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", item.crewMemberId)).collect())
-        .some((c) => c.organizationId === a.orgId && c.projectId === a.projectId && LIVE_CALL.has(c.status ?? "PENDING"));
-      if (existing) { skipped.push({ crewMemberId: item.crewMemberId, reason: "already on this job" }); continue; }
-      if (item.crewRoleId) await assertRefInOrg(ctx, "crewRoles", item.crewRoleId, a.orgId);
-      const dup = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", item.id)).first();
-      if (dup) throw new ConvexError("Assignment already exists");
-
-      const { crewMember, crewRole } = await rateInputs(ctx, a.orgId, item.crewMemberId, item.crewRoleId);
-      const { rate, rateType } = resolveRate(undefined, null, crewMember, crewRole);
-      const estimatedCost = defaultToZero ? undefined : calculateEstimatedCost(rate, rateType, a.startDate ?? null, a.endDate ?? null, null);
-      const doc = {
-        id: item.id, organizationId: a.orgId, projectId: a.projectId, crewMemberId: item.crewMemberId,
-        ...(item.crewRoleId ? { crewRoleId: item.crewRoleId } : {}),
-        status: "PENDING" as const, isProjectManager: false,
-        ...(a.startDate != null ? { startDate: a.startDate } : {}), ...(a.endDate != null ? { endDate: a.endDate } : {}),
-        ...(estimatedCost != null ? { estimatedCost } : {}),
-        createdAt: a.now, updatedAt: a.now,
-      };
-      await ctx.db.insert("crewAssignments", doc);
-      await bumpCountersForTable(ctx, "crewAssignments", null, doc);
+      const reason = await skipReasonForNewCall(ctx, a, item);
+      if (reason) {
+        skipped.push({ crewMemberId: item.crewMemberId, reason });
+        continue;
+      }
+      await insertPendingCall(ctx, a, item, defaultToZero);
       created.push({ id: item.id, crewMemberId: item.crewMemberId });
     }
 

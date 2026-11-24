@@ -11001,6 +11001,93 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/crewAssignmentsWrites.createManyNative": {
+      "post": {
+        "operationId": "crewAssignmentsWrites.createManyNative",
+        "summary": "crewAssignmentsWrites.createManyNative (mutation)",
+        "description": "Requires scope: crew:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "endDate": {
+                        "type": "number"
+                      },
+                      "items": {
+                        "type": "array"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "startDate": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/crewAssignmentsWrites.createNative": {
       "post": {
         "operationId": "crewAssignmentsWrites.createNative",
@@ -28402,6 +28489,447 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/peopleLists.clientPage": {
+      "post": {
+        "operationId": "peopleLists.clientPage",
+        "summary": "peopleLists.clientPage (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {},
+                      "typeIn": {
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.clientSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.clientSegmentCounts",
+        "summary": "peopleLists.clientSegmentCounts (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.crewPage": {
+      "post": {
+        "operationId": "peopleLists.crewPage",
+        "summary": "peopleLists.crewPage (query)",
+        "description": "Requires scope: crew:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "departmentIn": {
+                        "type": "array"
+                      },
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "roleIn": {
+                        "type": "array"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {},
+                      "typeIn": {
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.crewSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.crewSegmentCounts",
+        "summary": "peopleLists.crewSegmentCounts (query)",
+        "description": "Requires scope: crew:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.supplierPage": {
+      "post": {
+        "operationId": "peopleLists.supplierPage",
+        "summary": "peopleLists.supplierPage (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {}
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.supplierSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.supplierSegmentCounts",
+        "summary": "peopleLists.supplierSegmentCounts (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/projectCategories.getById": {
       "post": {
         "operationId": "projectCategories.getById",
@@ -44124,6 +44652,87 @@ export const OPENAPI_DOCUMENT = {
                     },
                     "required": [
                       "name"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/suppliersWrites.patchNative": {
+      "post": {
+        "operationId": "suppliersWrites.patchNative",
+        "summary": "suppliersWrites.patchNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "patch": {
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "patch"
                     ],
                     "additionalProperties": false
                   },

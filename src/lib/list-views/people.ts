@@ -127,24 +127,43 @@ const CREW_STATUS: Record<CrewSource["listStatus"], StatusValue> = {
   INACTIVE: { label: "Inactive", intent: "neutral", outline: true },
 };
 
+// ─── Fact helpers: a blank fact is ABSENT (never "" or $0); each is one small branch ─
+
+const textFact = (label: string | null | undefined): Fact | undefined => (label ? { kind: "text", label } : undefined);
+const moneyFact = (amount: number | null | undefined): Fact | undefined => (amount == null ? undefined : { kind: "money", amount: amount > 0 ? amount : null });
+const tagsLabel = (tags: string[] | null | undefined): string | undefined => (tags?.length ? tags.join(", ") : undefined);
+const tagsOrUndefined = (tags: string[] | null | undefined): string[] | undefined => (tags?.length ? tags : undefined);
+const joinDot = (parts: (string | null | undefined)[]): string | undefined => parts.filter(Boolean).join(" · ") || undefined;
+
+function defined(facts: Record<string, Fact | undefined>): Record<string, Fact> {
+  return Object.fromEntries(Object.entries(facts).filter((e): e is [string, Fact] => e[1] != null));
+}
+
+const crewNextLabel = (m: CrewSource): string | undefined => (m.next ? joinDot([m.next.project?.projectNumber, dayLabel(m.next.startDay)]) : undefined);
+const crewWeekLabel = (days: number): string | undefined => (days > 0 ? `${days} d` : undefined);
+const crewTypeLabel = (t: string | null | undefined): string | undefined => (t ? (crewMemberTypeLabels[t] ?? t) : undefined);
+const crewFlags = (m: CrewSource): RowFlag[] => (m.clashDay != null ? [{ label: `clash ${dayLabel(m.clashDay)}`, tone: "error" }] : []);
+
 export function crewRowOf(m: CrewSource, menu?: ActionMenuSpec): LineRowData {
-  const facts: Record<string, Fact> = { status: { kind: "text", label: CREW_STATUS[m.listStatus].label } };
-  if (m.next) facts.next = { kind: "text", label: `${m.next.project?.projectNumber ? `${m.next.project.projectNumber} · ` : ""}${dayLabel(m.next.startDay)}` };
-  if (m.daysThisWeek > 0) facts.week = { kind: "text", label: `${m.daysThisWeek} d` };
-  if (m.defaultDayRate != null) facts.rate = { kind: "money", amount: m.defaultDayRate };
-  if (m.phone) facts.phone = { kind: "text", label: m.phone };
-  if (m.email) facts.email = { kind: "text", label: m.email };
-  if (m.type) facts.type = { kind: "text", label: crewMemberTypeLabels[m.type] ?? m.type };
-  if (m.department) facts.department = { kind: "text", label: m.department };
-  if (m.tags?.length) facts.tags = { kind: "text", label: m.tags.join(", ") };
-  const flags: RowFlag[] = m.clashDay != null ? [{ label: `clash ${dayLabel(m.clashDay)}`, tone: "error" }] : [];
+  const facts = defined({
+    status: textFact(CREW_STATUS[m.listStatus].label),
+    next: textFact(crewNextLabel(m)),
+    week: textFact(crewWeekLabel(m.daysThisWeek)),
+    // A rate the server did not send stays absent: never a zero, never a dash.
+    rate: m.defaultDayRate == null ? undefined : { kind: "money", amount: m.defaultDayRate },
+    phone: textFact(m.phone),
+    email: textFact(m.email),
+    type: textFact(crewTypeLabel(m.type)),
+    department: textFact(m.department),
+    tags: textFact(tagsLabel(m.tags)),
+  });
   return {
     id: m.id,
     kind: "crew",
     title: crewName(m),
-    subtitle: [m.crewRole?.name, m.department].filter(Boolean).join(" · ") || undefined,
-    tags: m.tags?.length ? m.tags : undefined,
-    flags,
+    subtitle: joinDot([m.crewRole?.name, m.department]),
+    tags: tagsOrUndefined(m.tags),
+    flags: crewFlags(m),
     facts,
     status: CREW_STATUS[m.listStatus],
     menu,
@@ -220,45 +239,53 @@ export interface ClientSource {
   lifetime?: number;
 }
 
+const clientTypeName = (t: string | null | undefined): string | undefined => (t ? (CLIENT_TYPE_LABELS[t] ?? t) : undefined);
+const clientOpenJobsLabel = (c: ClientSource): string | undefined => {
+  if (c.openJobCount === 0) return undefined;
+  const first = c.openJobs.slice(0, 2).map((j) => j.projectNumber).join(", ");
+  return c.openJobCount > 2 ? `${first} +${c.openJobCount - 2}` : first;
+};
+const clientFlags = (c: ClientSource): RowFlag[] => (c.overdueDays ? [{ label: `${c.overdueDays}d overdue`, tone: "error" }] : []);
+const ARCHIVED: StatusValue = { label: "Archived", intent: "neutral", outline: true };
+
 export function clientRowOf(c: ClientSource, menu?: ActionMenuSpec): LineRowData {
-  const facts: Record<string, Fact> = { xero: { kind: "text", label: c.xeroLinked ? "Linked" : "" } };
-  if (c.openJobCount > 0) {
-    const first = c.openJobs.slice(0, 2).map((j) => j.projectNumber).join(", ");
-    facts.openJobs = { kind: "text", label: c.openJobCount > 2 ? `${first} +${c.openJobCount - 2}` : first };
-  }
-  if (c.lastJobAt != null) facts.lastJob = { kind: "text", label: msLabel(c.lastJobAt) };
-  if (c.quoted != null) facts.quoted = { kind: "money", amount: c.quoted > 0 ? c.quoted : null };
-  if (c.outstanding != null) facts.outstanding = { kind: "money", amount: c.outstanding > 0 ? c.outstanding : null };
-  if (c.lifetime != null) facts.lifetime = { kind: "money", amount: c.lifetime > 0 ? c.lifetime : null };
-  if (c.type) facts.type = { kind: "text", label: CLIENT_TYPE_LABELS[c.type] ?? c.type };
-  if (c.contactEmail) facts.email = { kind: "text", label: c.contactEmail };
-  if (c.tags.length) facts.tags = { kind: "text", label: c.tags.join(", ") };
-  const flags: RowFlag[] = c.overdueDays ? [{ label: `${c.overdueDays}d overdue`, tone: "error" }] : [];
+  const facts = defined({
+    xero: textFact(c.xeroLinked ? "Linked" : undefined),
+    openJobs: textFact(clientOpenJobsLabel(c)),
+    lastJob: textFact(c.lastJobAt == null ? undefined : msLabel(c.lastJobAt)),
+    // Money the server did not send stays absent: no column, no zero.
+    quoted: moneyFact(c.quoted),
+    outstanding: moneyFact(c.outstanding),
+    lifetime: moneyFact(c.lifetime),
+    type: textFact(clientTypeName(c.type)),
+    email: textFact(c.contactEmail),
+    tags: textFact(tagsLabel(c.tags)),
+  });
   return {
     id: c.id,
     kind: "client",
     title: c.name,
-    subtitle: [c.contactName, c.type ? CLIENT_TYPE_LABELS[c.type] : null].filter(Boolean).join(" · ") || undefined,
-    tags: c.tags.length ? c.tags : undefined,
-    flags,
+    subtitle: joinDot([c.contactName, clientTypeName(c.type)]),
+    tags: tagsOrUndefined(c.tags),
+    flags: clientFlags(c),
     facts,
-    status: c.isActive ? undefined : { label: "Archived", intent: "neutral", outline: true },
+    status: c.isActive ? undefined : ARCHIVED,
     menu,
     href: `/clients/${c.id}`,
   };
 }
 
+const wholeDollars = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
+
 /** The head sub line: `10 with open jobs · $234,400 quoted · $76,170 outstanding` (money only when sent). */
 export function clientSubline(c: { withOpenJobs?: number; quoted?: number; outstanding?: number; truncated?: number } | undefined): string | undefined {
   if (!c) return undefined;
-  const money = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
-  const parts = [
-    c.withOpenJobs != null ? `${c.withOpenJobs} with open jobs` : null,
-    c.quoted != null ? `${money(c.quoted)} quoted` : null,
-    c.outstanding != null ? `${money(c.outstanding)} outstanding` : null,
-    c.truncated ? "counts may be incomplete" : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : undefined;
+  return joinDot([
+    c.withOpenJobs == null ? undefined : `${c.withOpenJobs} with open jobs`,
+    c.quoted == null ? undefined : `${wholeDollars(c.quoted)} quoted`,
+    c.outstanding == null ? undefined : `${wholeDollars(c.outstanding)} outstanding`,
+    c.truncated ? "counts may be incomplete" : undefined,
+  ]);
 }
 
 export function clientsBuiltInViews(moneyVisible: boolean): UrlBuiltInView[] {
@@ -266,18 +293,20 @@ export function clientsBuiltInViews(moneyVisible: boolean): UrlBuiltInView[] {
   return views.map((b) => ({ ...b, query: viewQuery({ query: b.query }, CLIENTS_SPEC) }));
 }
 
+const csvNum = (n: number | null | undefined): string => (n == null ? "" : String(n));
+const csvDay = (ms: number | null | undefined): string => (ms == null ? "" : new Date(ms).toISOString().slice(0, 10));
+
+function clientCsvRow(c: ClientSource, money: boolean): string[] {
+  return [
+    c.name, clientTypeName(c.type) ?? "", c.contactName ?? "", c.contactEmail ?? "", String(c.openJobCount), csvDay(c.lastJobAt),
+    c.isActive ? "Active" : "Archived", ...(money ? [csvNum(c.quoted), csvNum(c.outstanding), csvNum(c.lifetime)] : []), c.tags.join("; "),
+  ];
+}
+
 export function clientsCsv(rows: ClientSource[]): string {
   const money = rows.some((r) => r.outstanding != null);
   const head = ["Client", "Type", "Contact", "Email", "Open jobs", "Last job", "Status", ...(money ? ["Quoted", "Outstanding", "Lifetime"] : []), "Tags"];
-  return toCsv(
-    head,
-    rows.map((c) => [
-      c.name, c.type ? (CLIENT_TYPE_LABELS[c.type] ?? c.type) : "", c.contactName ?? "", c.contactEmail ?? "", String(c.openJobCount),
-      c.lastJobAt != null ? new Date(c.lastJobAt).toISOString().slice(0, 10) : "", c.isActive ? "Active" : "Archived",
-      ...(money ? [c.quoted == null ? "" : String(c.quoted), c.outstanding == null ? "" : String(c.outstanding), c.lifetime == null ? "" : String(c.lifetime)] : []),
-      c.tags.join("; "),
-    ]),
-  );
+  return toCsv(head, rows.map((c) => clientCsvRow(c, money)));
 }
 
 // ─── Suppliers ───────────────────────────────────────────────────────────
@@ -326,35 +355,50 @@ export interface SupplierSource {
   spendYtd?: number;
 }
 
+/** The head sub line: `3 with open orders · 5 open orders · $12,000 this year` (spend only when sent). */
+export function supplierSubline(c: { open?: number; openOrders?: number; spendYtd?: number; truncated?: number } | undefined): string | undefined {
+  if (!c) return undefined;
+  return joinDot([
+    `${c.open ?? 0} with open orders`,
+    c.openOrders == null ? undefined : `${c.openOrders} open orders`,
+    c.spendYtd == null ? undefined : `${wholeDollars(c.spendYtd)} this year`,
+    c.truncated ? "counts may be incomplete" : undefined,
+  ]);
+}
+
 export function supplierRowOf(s: SupplierSource, menu?: ActionMenuSpec): LineRowData {
-  const facts: Record<string, Fact> = { openOrders: { kind: "text", label: s.openOrders > 0 ? String(s.openOrders) : "" } };
-  if (s.spendYtd != null) facts.spend = { kind: "money", amount: s.spendYtd > 0 ? s.spendYtd : null };
-  if (s.phone) facts.phone = { kind: "text", label: s.phone };
-  if (s.accountNumber) facts.accountNumber = { kind: "text", label: s.accountNumber };
-  if (s.email) facts.email = { kind: "text", label: s.email };
-  if (s.tags.length) facts.tags = { kind: "text", label: s.tags.join(", ") };
+  const facts = defined({
+    openOrders: textFact(s.openOrders > 0 ? String(s.openOrders) : undefined),
+    spend: moneyFact(s.spendYtd), // absent without the job-cost line
+    phone: textFact(s.phone),
+    accountNumber: textFact(s.accountNumber),
+    email: textFact(s.email),
+    tags: textFact(tagsLabel(s.tags)),
+  });
   return {
     id: s.id,
     kind: "supplier",
     title: s.name,
     subtitle: s.contactName ?? undefined,
-    tags: s.tags.length ? s.tags : undefined,
+    tags: tagsOrUndefined(s.tags),
     facts,
-    status: s.isActive ? undefined : { label: "Archived", intent: "neutral", outline: true },
+    status: s.isActive ? undefined : ARCHIVED,
     menu,
     href: `/suppliers/${s.id}`,
   };
 }
 
+function supplierCsvRow(s: SupplierSource, money: boolean): string[] {
+  return [
+    s.name, s.contactName ?? "", s.email ?? "", s.phone ?? "", s.accountNumber ?? "", String(s.openOrders), s.isActive ? "Active" : "Archived",
+    ...(money ? [csvNum(s.spendYtd)] : []), s.tags.join("; "),
+  ];
+}
+
 export function suppliersCsv(rows: SupplierSource[]): string {
   const money = rows.some((r) => r.spendYtd != null);
-  return toCsv(
-    ["Supplier", "Contact", "Email", "Phone", "Account #", "Open orders", "Status", ...(money ? ["Spend YTD"] : []), "Tags"],
-    rows.map((s) => [
-      s.name, s.contactName ?? "", s.email ?? "", s.phone ?? "", s.accountNumber ?? "", String(s.openOrders), s.isActive ? "Active" : "Archived",
-      ...(money ? [s.spendYtd == null ? "" : String(s.spendYtd)] : []), s.tags.join("; "),
-    ]),
-  );
+  const head = ["Supplier", "Contact", "Email", "Phone", "Account #", "Open orders", "Status", ...(money ? ["Spend YTD"] : []), "Tags"];
+  return toCsv(head, rows.map((s) => supplierCsvRow(s, money)));
 }
 
 /** Mapping from list key to what the page shell needs (one renderer, three configs). */

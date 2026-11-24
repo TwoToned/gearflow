@@ -4,7 +4,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
-import { OPEN_MAINTENANCE_STATUSES } from "./lib/maintenanceOpen";
+import { OVERDUE_MAINTENANCE_STATUSES, isOverdueMaintenance } from "./lib/maintenanceOpen";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -21,8 +21,8 @@ import { OPEN_MAINTENANCE_STATUSES } from "./lib/maintenanceOpen";
  * Phase 5 domain slice, #1001).
  */
 
-// Open maintenance is ONE definition (lib/maintenanceOpen.ts): scheduled plus the
-// holding statuses, so AWAITING_PARTS and QA work past its date counts as due too.
+// Overdue maintenance is ONE definition (lib/maintenanceOpen.ts), the Maintenance
+// page's own Overdue tile.
 // A range `.lte`/`.lt(now)` sweeps in rows whose date field is undefined (undefined
 // sorts before all numbers in a Convex index). Pin the lower bound at the minimum
 // representable timestamp so undated rows stay OUT of the read-set entirely (matters
@@ -46,34 +46,37 @@ export const bundle = query({
     const ready = counterRow?.shardsSeededAt != null;
     const counter = ready ? await readCounterValues(ctx, orgId) : ZERO_COUNTERS;
 
-    // ── Date-derived: maintenanceDue (open + scheduledDate arrived) ──
-    // Range-scan by (org, status, MIN_TS < scheduledDate <= now) per open status so
-    // the reactive read-set is only the dated-and-due records, not the whole
-    // maintenance table (Appendix B). The lower bound keeps undated rows out.
+    // ── Date-derived: maintenanceDue = the Maintenance page's Overdue tile ──
+    // The ONE overdue rule (lib/maintenanceOpen.ts `isOverdueMaintenance`):
+    // scheduled / in progress with `scheduledDate < now`; held work (awaiting
+    // parts, QA) is not late. Like the page's tile it counts EVERY record,
+    // schedule-generated PM cycles included, so the Needs attention line and the
+    // page it opens say the same number. Range-scan by (org, status, MIN_TS <
+    // scheduledDate < now) per overdue status so the reactive read-set is only
+    // the dated-and-late records (Appendix B); the lower bound keeps undated rows out.
     //
-    // WS6 #945: schedule-generated PM cycles (serviceScheduleId set) are
-    // EXCLUDED from this count — they get their own "N models due for service"
-    // chip (modelsDueForService below) instead of double-counting into the
-    // legacy ad-hoc-maintenance tile (see FEATUREDOCS/17's chip note).
+    // WS6 #945: the schedule-generated cycles ALSO feed the model-level
+    // "N models due for service" line (modelsDueForService below), which opens
+    // Due for service — a different list, so the two lines can overlap.
     let maintenanceDue = 0;
     const dueForServiceModelIds = new Set<string>();
-    for (const status of OPEN_MAINTENANCE_STATUSES) {
+    for (const status of OVERDUE_MAINTENANCE_STATUSES) {
       const due = await ctx.db
         .query("maintenanceRecords")
         .withIndex("by_organizationId_status_scheduledDate", (q) =>
-          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lte("scheduledDate", now),
+          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
         )
         .collect();
       for (const r of due) {
-        if (!r.serviceScheduleId) {
-          maintenanceDue++;
-          continue;
-        }
+        if (!isOverdueMaintenance(r, now)) continue;
+        maintenanceDue++;
+        if (!r.serviceScheduleId) continue;
         const schedule = await ctx.db
           .query("serviceSchedules")
           .withIndex("by_cuid", (q) => q.eq("id", r.serviceScheduleId!))
           .unique();
-        if (schedule) dueForServiceModelIds.add(schedule.modelId);
+        // by_cuid is global: the schedule must be this org's.
+        if (schedule && schedule.organizationId === orgId) dueForServiceModelIds.add(schedule.modelId);
       }
     }
     const modelsDueForService = dueForServiceModelIds.size;
@@ -94,9 +97,9 @@ export const bundle = query({
       activeCrew: counter.activeCrew,
       pendingCrewOffers: counter.pendingCrewOffers,
       maintenanceDue,
-      // WS6 #945 — distinct models with an open, due (or in-progress) recurring
-      // PM cycle. Separate from `maintenanceDue` by design (see the exclusion
-      // note above) so the two chips never double-count the same work.
+      // WS6 #945 — distinct models with an overdue (scheduled or in-progress)
+      // recurring PM cycle. Model-level and opens Due for service; those cycles
+      // are ALSO in `maintenanceDue`, which mirrors the Maintenance page's tile.
       modelsDueForService,
       // D85: the tile counts JOBS; `overdueReturns` (CHECKED_OUT lines on those
       // jobs) is kept, unchanged in name, as the tile's sub-line ("67 items to chase").

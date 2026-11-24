@@ -1,13 +1,14 @@
 // @vitest-environment node
 //
-// convex/dashboardStats.ts — WS6 #945: schedule-generated PM cycles must be
-// EXCLUDED from the legacy `maintenanceDue` count (they get their own
-// `modelsDueForService` chip) so the two dashboard signals never double-count
-// the same underlying work.
+// convex/dashboardStats.ts — `maintenanceDue` is the Maintenance page's Overdue
+// tile (UX Phase 11 review: one overdue rule, every record counted, schedule
+// cycles included, as the page counts them); WS6 #945's `modelsDueForService`
+// is the separate, model-level count of overdue schedule-generated cycles.
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { maintenanceTileCounts } from "./lib/maintenanceOpen";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -26,7 +27,7 @@ async function seed(t: T) {
 }
 const bundle = (t: T) => t.withIdentity(asUser).query(api.dashboardStats.bundle, { orgId: ORG, now: NOW });
 
-describe("dashboardStats.bundle — WS6 maintenanceDue exclusion", () => {
+describe("dashboardStats.bundle — maintenanceDue (the page's Overdue tile) and WS6 modelsDueForService", () => {
   test("an ad-hoc (non-schedule) due REPAIR record counts toward maintenanceDue", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
@@ -40,19 +41,36 @@ describe("dashboardStats.bundle — WS6 maintenanceDue exclusion", () => {
     expect(res.modelsDueForService).toBe(0);
   });
 
-  test("open is the ONE definition (lib/maintenanceOpen.ts): awaiting-parts and QA work past its date is due too", async () => {
+  test("maintenanceDue IS the Maintenance page's Overdue tile (ONE rule: held work isn't late, schedule cycles count)", async () => {
     const t = makeT(); await seed(t);
+    const rows = [
+      { id: "s", status: "SCHEDULED", scheduledDate: NOW - 1000 },
+      { id: "i", status: "IN_PROGRESS", scheduledDate: NOW - 5000 },
+      { id: "now", status: "SCHEDULED", scheduledDate: NOW },
+      { id: "later", status: "SCHEDULED", scheduledDate: NOW + 1000 },
+      { id: "p", status: "AWAITING_PARTS", scheduledDate: NOW - 1000 },
+      { id: "q", status: "QA", scheduledDate: NOW - 1000 },
+      { id: "d", status: "COMPLETED", scheduledDate: NOW - 1000 },
+      { id: "x", status: undefined, scheduledDate: NOW - 1000 },
+      { id: "cyc", status: "SCHEDULED", scheduledDate: NOW - 1000, serviceScheduleId: "sched1" },
+    ] as const;
     await t.run(async (ctx) => {
-      for (const [id, status] of [["p", "AWAITING_PARTS"], ["q", "QA"], ["d", "COMPLETED"]] as const) {
+      await ctx.db.insert("models", { id: "model1", organizationId: ORG, name: "Moving Light" });
+      await ctx.db.insert("serviceSchedules", { id: "sched1", organizationId: ORG, modelId: "model1", name: "6mo", intervalMonths: 6, anchorDate: NOW });
+      for (const r of rows) {
         await ctx.db.insert("maintenanceRecords", {
-          id, organizationId: ORG, type: "REPAIR", status, title: id, scheduledDate: NOW - 1000, createdAt: NOW, updatedAt: NOW,
+          id: r.id, organizationId: ORG, type: "REPAIR", status: r.status, title: r.id, scheduledDate: r.scheduledDate,
+          ...("serviceScheduleId" in r ? { serviceScheduleId: r.serviceScheduleId } : {}), createdAt: NOW, updatedAt: NOW,
         });
       }
     });
-    expect((await bundle(t)).maintenanceDue).toBe(2);
+    // The page's tile, through the function the page renders it with.
+    const pageOverdue = maintenanceTileCounts([...rows], NOW, 0).overdue;
+    expect(pageOverdue).toBe(3);
+    expect((await bundle(t)).maintenanceDue).toBe(pageOverdue);
   });
 
-  test("a schedule-generated due PM cycle counts toward modelsDueForService, NOT maintenanceDue", async () => {
+  test("a schedule-generated overdue PM cycle counts in maintenanceDue (as the page does) AND as a model due for service", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {
       await ctx.db.insert("models", { id: "model1", organizationId: ORG, name: "Moving Light" });
@@ -63,7 +81,7 @@ describe("dashboardStats.bundle — WS6 maintenanceDue exclusion", () => {
       });
     });
     const res = await bundle(t);
-    expect(res.maintenanceDue).toBe(0);
+    expect(res.maintenanceDue).toBe(1);
     expect(res.modelsDueForService).toBe(1);
   });
 

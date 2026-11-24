@@ -84,9 +84,11 @@ The same eleven kinds, grid and per-user save, in a calmer skin:
     (`canReadResource`, the `read` action — a role holding only `invoice:create` never
     runs the finance read; `useAuthedQuery` doesn't catch errors, so hiding the line
     alone would not be enough). The line is then absent. `financeOrg.counts` itself
-    answers `null` (not a throw) to a caller without invoice read. Maintenance due counts
-    OPEN work past its date by the one definition in `convex/lib/maintenanceOpen.ts`
-    (scheduled + awaiting parts + in progress + QA):
+    answers `null` (not a throw) to a caller without invoice read. Maintenance due IS the
+    Maintenance page's Overdue tile: scheduled / in-progress work with its date passed
+    (`isOverdueMaintenance`, `convex/lib/maintenanceOpen.ts`; held work — awaiting parts,
+    QA — is not late), every record counted, schedule-generated cycles included, and
+    `dashboardStats.test.ts` holds it to the page's `maintenanceTileCounts`:
 
     | Source | Read needed |
     |---|---|

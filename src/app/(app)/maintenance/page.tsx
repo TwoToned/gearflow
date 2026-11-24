@@ -32,7 +32,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 import { getStatusColor } from "@/lib/status-colors";
-import { maintenanceTileCounts } from "../../../../convex/lib/maintenanceOpen";
+import { isOverdueMaintenance, maintenanceTileCounts } from "../../../../convex/lib/maintenanceOpen";
 import {
   maintenanceStatusLabels,
   maintenanceTypeLabels,
@@ -130,9 +130,12 @@ function useMaintenanceColumns(
         { value: "CANCELLED", label: "Cancelled", color: getStatusColor("maintenance", "CANCELLED").dot },
       ],
       cell: (row) => {
-        const isOverdue =
-          (row.status === "SCHEDULED" || row.status === "IN_PROGRESS") &&
-          row.scheduledDate && new Date(row.scheduledDate) < now;
+        // The ONE overdue rule, the Overdue tile's own. A table row's scheduledDate
+        // may arrive as a number, an ISO string or a Date.
+        const isOverdue = isOverdueMaintenance(
+          { status: row.status, scheduledDate: row.scheduledDate ? new Date(row.scheduledDate).getTime() : null },
+          now.getTime(),
+        );
         return (
           <div className="flex items-center gap-1.5">
             <StatusIndicator

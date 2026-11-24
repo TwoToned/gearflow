@@ -85,7 +85,6 @@ async function testTagOverdueCount(ctx: QueryCtx, orgId: string): Promise<NavCou
   return capped(rows, (r) => r.isActive !== false);
 }
 
-/** Open = SCHEDULED + IN_PROGRESS; overdue = open with a scheduled date already passed (both index ranges). */
 /** Open and overdue = the ONE definitions (lib/maintenanceOpen.ts), the Maintenance page's own Open and Overdue tiles. */
 async function maintenanceCount(ctx: QueryCtx, orgId: string, now: number): Promise<NavCount> {
   const open = (status: OpenMaintenanceStatus) =>

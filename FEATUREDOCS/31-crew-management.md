@@ -240,7 +240,9 @@ subscriptions that filtered/joined/sorted client-side. See
 user (Better Auth, cross-domain) stays a separate merge applied after the paginated
 fetch — search no longer matches the linked user's display name, only this table's
 own fields (a narrow, disclosed tradeoff since Convex can't join Better Auth data).
-`icalToken` redaction for non-service callers carries over unchanged.
+Rows go through the same `memberRowRedactor` as `list`/`getById` (the feed token
+only for the member themself or `crew:update` on a user session; rates only with
+crew pay).
 
 ## Crew workspace (UX Phase 15, spec §9h, D48)
 
@@ -726,6 +728,19 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 - Feed URL: `GET /api/crew/calendar/[token]` (or `[token].ics`)
 - Token is a 32-byte cryptographically random URL-safe base64 string
 - No authentication required — the token IS the auth
+- **Who can see the token (UX Phase 15):** `icalToken` leaves Convex only through
+  the ONE member-row boundary, `memberRowRedactor`
+  (`convex/lib/crewMemberRedaction.ts`), on every member read
+  (`crewMembers.{list,listPage,getById}`, `crew.memberDetail`). It goes to the
+  member themself (the row's linked `userId`) and to a caller with `crew:update`
+  (who enables, disables and regenerates links), and only on a USER session — an
+  API key / agent never gets it, even acting as such a user. Everyone else gets
+  the field absent. The Calendar tab (`CrewIcalFeedCard`,
+  `src/components/crew/crew-ical-feed-card.tsx`) builds the URL from
+  `memberDetail`'s token, so a plain `crew:read` viewer sees that the feed is on
+  but never its URL. The only other crew token, `crewAssignments.responseToken`,
+  is stripped for every non-service caller. Tests: `convex/crewReadRedaction.test.ts`,
+  `src/components/crew/__tests__/crew-ical-feed-card.smoke.test.tsx`.
 - Feed contains all CONFIRMED/ACCEPTED assignments as VEVENT entries by default
 - **Per-member opt-in — include pending assignments:** a `Switch` next to the feed URL
   (Calendar tab, `crewMembers.icalIncludeTentative`, default false/absent) also emits
@@ -768,7 +783,7 @@ rate rules ROADMAP §2.1 owns — not built, not stubbed.
 | `enableIcalFeed(crewMemberId)` | crew.update | Enable feed + generate token |
 | `disableIcalFeed(crewMemberId)` | crew.update | Disable feed (keeps token) |
 | `regenerateIcalToken(crewMemberId)` | crew.update | New token, invalidates old URL |
-| `getIcalSettings(crewMemberId)` | crew.read | Get icalEnabled + icalToken + icalIncludeTentative |
+| `getIcalSettings(crewMemberId)` | org member | Get icalEnabled + icalIncludeTentative only — never the token (it reads with the service identity, so it would bypass the member-row boundary) |
 | `setIcalIncludeTentative(crewMemberId, include)` | crew.update | Toggle whether pending/offered assignments show as tentative |
 | `getAssignmentIcsData(assignmentId)` | crew.read | Full assignment data for .ics |
 

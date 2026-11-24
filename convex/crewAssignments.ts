@@ -4,6 +4,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { MEMBER_RATE_FIELDS } from "./lib/crewMemberRedaction";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { bumpCountersForTable } from "./lib/counters";
 import * as enums from "./lib/validators";
@@ -26,7 +27,7 @@ import { canCrewCall } from "./lib/crewCallTransitions";
 // ONE definition of the pay fields (R-3.1): the planner (`crewAvailability`)
 // and the crew dashboard redact with these too.
 export const ASSIGNMENT_COST_FIELDS = ["estimatedCost", "rateOverride"] as const;
-export const MEMBER_RATE_FIELDS = ["defaultDayRate", "defaultHourlyRate"] as const;
+// The member rates live with the member-row redactor (lib/crewMemberRedaction.ts).
 const ROLE_RATE_FIELDS = ["defaultRate"] as const;
 
 /** The single-use offer-respond bearer credential (`/api/crew/respond/[token]`).

@@ -109,6 +109,14 @@ export async function regenerateIcalToken(crewMemberId: string) {
   return serialize({ icalEnabled: true, icalToken: token });
 }
 
+/**
+ * The feed's switches only. The `icalToken` is a bearer secret for the public
+ * calendar route and is NOT returned here: this action reads with the service
+ * identity for any org member, so it would bypass the one member-row boundary.
+ * The browser gets the token only from `crew.memberDetail`, through
+ * `memberRowRedactor` (the member themself, or `crew:update`, on a user
+ * session). The enable/regenerate actions above already require `crew:update`.
+ */
 export async function getIcalSettings(crewMemberId: string) {
   const { organizationId } = await getOrgContext();
 
@@ -117,7 +125,6 @@ export async function getIcalSettings(crewMemberId: string) {
 
   return serialize({
     icalEnabled: member.icalEnabled ?? false,
-    icalToken: member.icalToken ?? null,
     icalIncludeTentative: member.icalIncludeTentative ?? false,
   });
 }

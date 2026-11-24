@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgPermission, getAuthContext, isMemberAuth, redactFields } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
+import { memberRowRedactor } from "./lib/crewMemberRedaction";
 import { ASSIGNMENT_COST_FIELDS } from "./crewAssignments";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -70,11 +71,15 @@ export const memberDetail = query({
     await requireOrgPermission(ctx, orgId, "crew", "read");
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc || doc.organizationId !== orgId) return null;
-    // Crew pay (the member's default rates, the role's rate, each call's cost)
-    // only for a caller the ONE pay rule lets see it (review S1).
+    // The ONE member-row boundary (`memberRowRedactor`): the feed token only for the
+    // member themself or crew:update on a user session (absent otherwise), the
+    // default rates only with crew pay. The role's rate and each call's cost
+    // follow the same pay rule (review S1).
     const payVisible = await canSeeCrewPay(ctx, orgId);
     const noRate = null as number | null;
-    const member = payVisible ? mapMember(doc) : { ...mapMember(doc), defaultDayRate: noRate, defaultHourlyRate: noRate };
+    const shown = (await memberRowRedactor(ctx, orgId))(doc);
+    const mapped = mapMember(shown);
+    const member = shown.icalToken === undefined ? redactFields(mapped, ["icalToken"]) : mapped;
 
     const auth = await getAuthContext(ctx);
     const [roles, skillMap, user] = await Promise.all([

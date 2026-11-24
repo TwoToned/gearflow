@@ -24,9 +24,9 @@ function makeT(): T {
   return t;
 }
 
-async function seed(t: T) {
+async function seed(t: T, role = "owner") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
+    await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role });
     await ctx.db.insert("crewRoles", { id: "role1", organizationId: ORG, name: "Sound Engineer", color: "#123456" });
     await ctx.db.insert("crewMembers", {
       id: "CM1", organizationId: ORG, firstName: "Alice", lastName: "Smith",
@@ -51,9 +51,9 @@ describe("crewMembers.listPage", () => {
     expect(cm2.crewRole).toBeNull();
   });
 
-  test("redacts icalToken for a non-service (user) caller", async () => {
+  test("redacts icalToken for a caller without crew:update who isn't the member", async () => {
     const t = makeT();
-    await seed(t);
+    await seed(t, "member");
     const result = await t.withIdentity(asUser).query(api.crewMembers.listPage, { orgId: ORG });
     const cm1 = result.items.find((m) => m.id === "CM1")!;
     expect(cm1.icalToken).toBeUndefined();
@@ -66,7 +66,7 @@ describe("crewMembers.listPage", () => {
     // response. sortBy must fall back to the default ("lastName") for any value
     // outside the allowlisted, UI-exposed sortable columns.
     const t = makeT();
-    await seed(t);
+    await seed(t, "member"); // a caller the token is redacted for
     const sortedByToken = await t.withIdentity(asUser).query(api.crewMembers.listPage, { orgId: ORG, sortBy: "icalToken" });
     const sortedDefault = await t.withIdentity(asUser).query(api.crewMembers.listPage, { orgId: ORG });
     expect(sortedByToken.items.map((m) => m.id)).toEqual(sortedDefault.items.map((m) => m.id));

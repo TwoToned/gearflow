@@ -15921,7 +15921,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "549a746c6908f6ab",
     "returnsSha": "74234e98afe7498f",
     "stability": "stable",
-    "summary": "List crew members for the org (icalToken redacted for non-service callers; rates manager+ only).",
+    "summary": "List crew members for the org (icalToken never to an API key; rates manager+ only).",
     "danger": "low",
     "mcpTier": 1,
     "agentAccess": null,

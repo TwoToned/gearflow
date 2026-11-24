@@ -514,7 +514,11 @@ returns crew pay (`crewTimeEntries.allEntries`, `crewAvailability.plannerData`,
 key). The Node-side timesheet CSV has no Convex ctx, so it calls that same
 `crewPayVisible` directly (an API-key actor counts as noFinancials there — fail
 closed). Never write a second "who sees pay" check; add a new pay-bearing read to
-that list, and don't hide a column client-side. Query… (D47, enum stays `DISPUTED`) stores its reason on
+that list, and don't hide a column client-side. A crew member's `icalToken` (the
+public calendar feed's bearer secret) leaves Convex only through `memberRowRedactor`
+(`convex/lib/crewMemberRedaction.ts`): to the member themself or `crew:update`, on a
+user session, never an API key; never return it from a service-token server action
+(`getIcalSettings` deliberately doesn't). Query… (D47, enum stays `DISPUTED`) stores its reason on
 `crewTimeEntries.queryReason`, never `notes` (the crew member's own text). Submit /
 approve / query log one activity row per entry with the prior state, and their ONE
 Undo, `revertNative`, takes only ids + the forward stamp (no transition, no prior

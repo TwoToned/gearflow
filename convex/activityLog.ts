@@ -3,8 +3,8 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { canSeeCrewPay } from "./lib/crewPayVisibility";
-import { redactActivityPay } from "./lib/activityPay";
+import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
+import { activityMoneyRedactor, type ActivityRedactor } from "./lib/activityPay";
 
 /**
  * Native reads for the activity-log SCREENS (Phase 5c audit-read migration). Parity
@@ -24,9 +24,10 @@ import { redactActivityPay } from "./lib/activityPay";
 
 const SCAN_CAP = 10000;
 
-/** Crew pay in a field diff (`details.changes`) only for a caller who sees it — the ONE rule (lib/activityPay.ts). */
-async function payRedactor(ctx: QueryCtx, orgId: string): Promise<<R extends { details?: unknown }>(row: R) => R> {
-  return (await canSeeCrewPay(ctx, orgId)) ? (row) => row : redactActivityPay;
+/** Money in a field diff (`details.changes`) only for a caller who sees it: pay by the pay line, job cost by the job-cost rule (lib/activityPay.ts). */
+async function payRedactor(ctx: QueryCtx, orgId: string): Promise<ActivityRedactor> {
+  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
+  return activityMoneyRedactor({ pay, jobCost });
 }
 
 type LogDoc = {

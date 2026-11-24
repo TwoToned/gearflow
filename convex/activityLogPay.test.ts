@@ -1,15 +1,16 @@
 // @vitest-environment node
 //
-// UX Phase 15: the activity log keeps crew pay in its field diffs (the audit
+// UX Phase 15: the activity log keeps money in its field diffs (the audit
 // needs it — `crewWrites.updateNative` writes `defaultDayRate` / `defaultHourlyRate`
-// from → to), but every READ redacts those change rows for a caller below the pay
-// line (the ONE rule) by the shared field lists. The rest of the entry stays.
+// from → to), but every READ redacts those change rows by the shared field lists:
+// individual pay below the pay line, job cost for a caller without job cost
+// (owner ruling 2026-11-24). The rest of the entry stays.
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { redactActivityPay } from "./lib/activityPay";
+import { activityMoneyRedactor } from "./lib/activityPay";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -79,9 +80,36 @@ describe("activity log: crew pay in field diffs is written, and redacted on read
     for (const row of Object.values(await reads(tm))) expect(fieldsOf(row)).toEqual(["firstName", "defaultDayRate"]);
   });
 
-  test("redactActivityPay drops every listed pay field (member and role rates, crew-cost totals)", () => {
-    const changes = ["defaultDayRate", "defaultHourlyRate", "overtimeMultiplier", "defaultRate", "chargeRate", "costTotal", "margin", "status"].map((field) => ({ field, from: 1, to: 2 }));
-    expect(fieldsOf(redactActivityPay({ details: { changes } }))).toEqual(["status"]);
-    expect(redactActivityPay({ details: { deleted: { name: "x" } } })).toEqual({ details: { deleted: { name: "x" } } });
+  test("a job-cost diff follows the job-cost rule: a member with invoice:read sees a margin change, never a rate change", async () => {
+    const t = makeT(); await seed(t, "member");
+    await t.run(async (ctx) => {
+      const { _id: _i, _creationTime: _c, ...log } = (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first())!;
+      void _i; void _c;
+      const changes = [{ field: "margin", from: 1, to: 2 }, { field: "defaultDayRate", from: 1, to: 2 }, { field: "name", from: "a", to: "b" }];
+      await ctx.db.insert("activityLogs", { ...log, id: "log2", entityType: "project", entityId: "p1", details: { changes } } as never);
+    });
+    const row = (await t.withIdentity(asUser).query(api.activityLog.listByEntity, { orgId: ORG, entityType: "project", entityId: "p1" })).items[0];
+    expect(fieldsOf(row)).toEqual(["margin", "name"]);
+    const tk = makeT(); await seed(tk, "owner", { noFinancials: true });
+    await tk.run(async (ctx) => {
+      const { _id: _i, _creationTime: _c, ...log } = (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first())!;
+      void _i; void _c;
+      await ctx.db.insert("activityLogs", { ...log, id: "log2", entityType: "project", entityId: "p1", details: { changes: [{ field: "margin", from: 1, to: 2 }, { field: "name", from: "a", to: "b" }] } } as never);
+    });
+    const keyRow = (await tk.withIdentity(asAgent).query(api.activityLog.listByEntity, { orgId: ORG, entityType: "project", entityId: "p1" })).items[0];
+    expect(fieldsOf(keyRow)).toEqual(["name"]);
+  });
+
+  test("activityMoneyRedactor: pay fields by the pay line, job-cost fields by the job-cost rule, over every input", () => {
+    const all = ["defaultDayRate", "defaultHourlyRate", "overtimeMultiplier", "defaultRate", "chargeRate", "costTotal", "serviceCostTotal", "labourCostTotal", "margin", "status"];
+    const row = { details: { changes: all.map((field) => ({ field, from: 1, to: 2 })) } };
+    const pay = ["defaultDayRate", "defaultHourlyRate", "overtimeMultiplier", "defaultRate", "chargeRate", "costTotal"];
+    const job = ["serviceCostTotal", "labourCostTotal", "margin"];
+    expect(fieldsOf(activityMoneyRedactor({ pay: true, jobCost: true })(row))).toEqual(all);
+    expect(fieldsOf(activityMoneyRedactor({ pay: false, jobCost: true })(row))).toEqual(all.filter((f) => !pay.includes(f)));
+    expect(fieldsOf(activityMoneyRedactor({ pay: true, jobCost: false })(row))).toEqual(all.filter((f) => !job.includes(f)));
+    expect(fieldsOf(activityMoneyRedactor({ pay: false, jobCost: false })(row))).toEqual(["status"]);
+    const noChanges = { details: { deleted: { name: "x" } } };
+    expect(activityMoneyRedactor({ pay: false, jobCost: false })(noChanges)).toEqual(noChanges);
   });
 });

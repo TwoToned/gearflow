@@ -1743,3 +1743,42 @@ per org via `xeroIntegrations.paymentsSyncedAt`) and on demand from **Settings �
 Payments → Check now**. Token refresh is serialised by a lease on `xeroIntegrations`
 (`tokenLeaseHolder`/`tokenLeaseUntil`, `src/lib/xero-token.ts`) so the sync and an invoice push
 can't both spend the same rotating refresh token.
+
+## The job Finance tab (UX Phase 10, spec §8b)
+
+`FinanceTabSlot` (`src/components/projects/job-tab-slots.tsx`) composes, top to bottom:
+
+- **Position tiles** (`finance/position-tiles.tsx`, words in `src/lib/finance-position.ts`):
+  Quote (`v3 · Sent`, validity), Invoiced (the `deriveInvoicingState` headline:
+  Not started · Draft · Awaiting payment · **Overdue** · Partially paid · **Deposit paid** ·
+  Paid in full), Paid (`$x of $y`, outstanding, overdue in error tone) and **Margin ex GST**.
+  Read-only and DERIVED; the verbs stay in the strips. The Margin tile exists only when the
+  server sent a margin; `null` is absent, never `$0` (owner ruling 2026-11-24, `jobCostVisible`).
+- **Stale-pricing notice**, then a **Quotes / Invoices words-switch** (D55). The URL is the only
+  state: `?fin=invoices` (Quotes is the default, `src/lib/finance-view.ts`). One strip each.
+- **Quotes strip** = `ProjectQuoteRail`; **Invoices strip** = `ProjectInvoiceLedger` plus a
+  one-line **Xero line** (`finance/xero-line.tsx`: organisation, synced / to push / failed from
+  the invoices already loaded, `Check payments now`, Settings). Both components are shared
+  with Overview's manager dialogs (R-3.1), so the rows below appear there too.
+- **Row verbs live in ⋯** (`src/lib/row-actions/quote-row.ts`, `invoice-row.ts`; absent, never
+  disabled): quote ⋯ = View, Send… (the open live draft only), Rename, Mark accepted, Chase,
+  Declined, Recall, Delete permanently (owner, recalled drafts); invoice ⋯ = **Issue…** (draft),
+  **Credit note…** (issued, not already credited, `invoice:create`), Delete draft, Void,
+  Delete permanently. `Record payment` and `Push to Xero` deliberately stay on the invoice row.
+  The page-level `Send quote vN` / `Create quote vN+1` stays in the strip head.
+- **One status word per invoice** (`invoicePillState`, `convex/lib/invoiceOverdue.ts`; D56:
+  Void · Credit · Draft · Paid · **Overdue** · Part paid · Issued) as a dot and a word, with a
+  date line (`issued 6 Nov · due 20 Nov`, `3 days overdue`, `paid 8 Nov`). Quote rows say Draft ·
+  Sent · Accepted · ... (`src/lib/quote-status-label.ts`), never the raw enum.
+- **Credit note** (`finance/credit-note-dialog.tsx`) calls the existing `createCreditNative`
+  (`danger: medium`): it cuts a DRAFT credit; nothing is issued or numbered until `Issue…`. It
+  has no Undo (a financial issue or void never does); an unwanted draft is removed with the
+  confirmed `Delete draft`.
+- **Financials card**: Revenue and Costs in two columns with ONE margin, ex GST (the operational
+  P&L's net margin when loaded, else the project's), `Billed as 2 wk 1 d · change` as the
+  sub-heading, `Show group pricing`. Maintenance and labour revenue moved into the Costs column
+  (with the `Maintenance records →` link); the Invoiced / Deposit lines moved to the tiles.
+  `ProjectCostsPanel` and `ProjectFinancePanel` are gone. The P&L is read only when a margin is
+  present, so a zero-filled `operationalCosts` is never rendered as real.
+- **Stored-bytes rules are unchanged**: every PDF action is a download of the stored artifact,
+  a watermarked preview for a draft, or the explicit retry; no new live-render path.

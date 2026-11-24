@@ -1946,30 +1946,30 @@ the recommended option.
 | D19 | Versions becomes a job-page tab (chip menu + `V` stay); the Sheet goes | **Accepted 2026-11-21.** Tab | Keep the Sheet and add a phone entry that opens it |
 | D20 | Compare as a read-only sheet from the row ⋯; the page-level mode goes | **Accepted 2026-11-21.** Sheet | Keep Compare mode and link it from the row ⋯ |
 | D21 | `Seal case` stores `projectContainers.sealedAt` (blocks plan changes; print label on seal) | **Accepted 2026-11-21**, incl. the schema change (optional `projectContainers.sealedAt`). Scope (owner, 2026-11-21): a seal also blocks rename, re-nest and delete of the case, because the printed label would go stale. Warehouse prep and moves are NOT blocked. Add the field | Ship Print label only, no seal in v1 |
-| D22 | `/projects/[id]/edit` becomes a sheet (`?edit=1`) opened from the Overview `Edit`; status leaves the form | Yes — one edit surface, status keeps its gates | Keep the page |
-| D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | Yes — one way to start a job | Keep the list page |
-| D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | Yes — nothing is lost on a dropped connection | Create only on the last step |
-| D25 | Moving rental dates carries a set project window by the same offset | Yes | Leave the window alone |
+| D22 | `/projects/[id]/edit` becomes a sheet (`?edit=1`) opened from the Overview `Edit`; status leaves the form | **Accepted 2026-11-24.** Yes — one edit surface, status keeps its gates | Keep the page |
+| D23 | Templates become `Start from template ▾` on wizard step one + a `Manage templates…` dialog; `/projects/templates` redirects | **Accepted 2026-11-24.** Yes — one way to start a job | Keep the list page |
+| D24 | The wizard writes an Enquiry draft at step one (number allocated then) and `Create job` finishes it | **Accepted 2026-11-24.** Yes — nothing is lost on a dropped connection | Create only on the last step |
+| D25 | Moving rental dates carries a set project window by the same offset | **Accepted 2026-11-24.** Yes | Leave the window alone |
 | D26 | `/warehouse/returns` becomes a redirect to `/warehouse?mode=returning`; Returns is a mode of the floor | **Accepted 2026-11-17.** Yes — one scan surface, one dock, one strip, live subscription replaces Refresh | Keep a separate Returns page sharing the dock component |
 | D27 | Floor columns are derived from unit state; no drag, no stored stage; manual overrides only via card ⋯ › Admin (extends D6) | **Accepted 2026-11-17.** Yes | Allow drag between columns as a manual override |
 | D28 | Phone has no sticky Scan bar on the floor: the dock and the nav's Scan are the primary (amends playbook §5 sticky-primary rule for surfaces whose dock is the primary) | **Accepted 2026-11-17.** Yes | Add a `Scan` sticky bar that replaces itself with the bulk bar |
 | D29 | `Late` is a derived outcome (out past end, or returned after it), not a recorded one | **Accepted 2026-11-17.** Yes | Store `returnedLate` on the unit |
-| D30 | Asset detail opens on a new **Overview** tab (health checklist), tabs controlled with `?tab=` | Yes — mirrors #1061 and answers "is it fit to go out" first | Keep History as the landing tab |
-| D31 | `/assets/registry/[id]/edit` and `/new` become the sheet (redirect to `?edit=1` / open over the list) | Yes | Keep the routes as pages |
-| D32 | Delete leaves the ⋯ and lives only inside Retire, enabled only for an asset with no history | Yes — retire is reversible, delete is not | Keep Delete beside Archive |
-| D33 | Asset ⋯ item `Archive` is renamed `Retire` everywhere (matches the list's status word) | Yes | Keep "Archive" |
-| D34 | Phone: sticky primary is `Scan` on the asset page, Edit moves to the phone ⋯ | Yes | Sticky Edit |
-| D35 | Model detail lands on Overview; Details becomes the edit sheet and `/edit`, `/new` redirect to `?edit=1` | Yes | Keep a Details tab |
-| D36 | Duplicate model and Print labels for all are new model-level verbs (copy rates, specs, accessories, checks; one label sheet for every unit) | Yes | Defer until asked |
-| D37 | ROI default hides cost and payback behind `Show cost & payback` (per-user, local) | Yes | Show all four figures as today |
-| D38 | Crew landing page is the list; the manager dashboard is dissolved into strip counts, Timesheets and Planner | Yes | Keep CrewDashboard above the list |
+| D30 | Asset detail opens on a new **Overview** tab (health checklist), tabs controlled with `?tab=` | **Accepted 2026-11-24.** Yes — mirrors #1061 and answers "is it fit to go out" first | Keep History as the landing tab |
+| D31 | `/assets/registry/[id]/edit` and `/new` become the sheet (redirect to `?edit=1` / open over the list) | **Accepted 2026-11-24.** Yes | Keep the routes as pages |
+| D32 | Delete leaves the ⋯ and lives only inside Retire, enabled only for an asset with no history | **Accepted 2026-11-24.** Yes — retire is reversible, delete is not | Keep Delete beside Archive |
+| D33 | Asset ⋯ item `Archive` is renamed `Retire` everywhere (matches the list's status word) | **Accepted 2026-11-24.** Yes | Keep "Archive" |
+| D34 | Phone: sticky primary is `Scan` on the asset page, Edit moves to the phone ⋯ | **Accepted 2026-11-24.** Yes | Sticky Edit |
+| D35 | Model detail lands on Overview; Details becomes the edit sheet and `/edit`, `/new` redirect to `?edit=1` | **Accepted 2026-11-24.** Yes | Keep a Details tab |
+| D36 | Duplicate model and Print labels for all are new model-level verbs (copy rates, specs, accessories, checks; one label sheet for every unit) | **Accepted 2026-11-24.** Yes | Defer until asked |
+| D37 | ROI default hides cost and payback behind `Show cost & payback` (per-user, local) | **Accepted 2026-11-24.** Yes | Show all four figures as today |
+| D38 | Crew landing page is the list; the manager dashboard is dissolved into strip counts, Timesheets and Planner | **Accepted 2026-11-24.** Yes | Keep CrewDashboard above the list |
 | D39 | Phone cards carry an always-visible 40 px row ⋯ (retrofit Jobs and Assets) | **Accepted 2026-11-17.** Desktop: the ⋯ is always rendered, muted, and hover brightens it (principle 4 wins over playbook §3.4's "hover-only"). Yes | Whole-card tap only |
-| D40 | "This week" = the next seven days from today; Available = nothing confirmed in that window | Yes | Calendar week Mon–Sun |
-| D41 | Sales stock gains a `reorderLevel` per model; `Reserved` is derived from confirmed jobs, never stored | Yes | Keep On hand only |
-| D42 | Locations gain optional `capacity`; `Last movement` is derived from movement records | Yes | Drop both columns |
-| D43 | Cost/margin columns (Value, ROI, Cost) are opt-in from ⋯ › Columns on every list | Yes | Show Value by default on Models |
-| D44 | `/maintenance/due`, `/test-and-tag/registry` and `/reports` become segment / dialog; old URLs redirect | Yes | Keep as pages |
-| D45 | Overbookings crew and sale-stock tiles become Kind-filtered rows of the same list | Yes | Separate Crew gaps list |
+| D40 | "This week" = the next seven days from today; Available = nothing confirmed in that window | **Accepted 2026-11-24.** Yes | Calendar week Mon–Sun |
+| D41 | Sales stock gains a `reorderLevel` per model; `Reserved` is derived from confirmed jobs, never stored | **Accepted 2026-11-24.** Yes | Keep On hand only |
+| D42 | Locations gain optional `capacity`; `Last movement` is derived from movement records | **Accepted 2026-11-24.** Yes | Drop both columns |
+| D43 | Cost/margin columns (Value, ROI, Cost) are opt-in from ⋯ › Columns on every list | **Accepted 2026-11-24.** Yes | Show Value by default on Models |
+| D44 | `/maintenance/due`, `/test-and-tag/registry` and `/reports` become segment / dialog; old URLs redirect | **Accepted 2026-11-24.** Yes | Keep as pages |
+| D45 | Overbookings crew and sale-stock tiles become Kind-filtered rows of the same list | **Accepted 2026-11-24.** Yes | Separate Crew gaps list |
 | D46 | Planner shows one week (‹ ›), not a fortnight | **Accepted 2026-11-21.** Yes — blocks need room for number, role, times, status | Keep 14 days with compact chips |
 | D47 | `Dispute` is relabelled `Query` in the UI (enum unchanged); Query… stores a reason on the entry | **Accepted 2026-11-21**, incl. the schema change: the reason goes in a new optional `crewTimeEntries.queryReason` (not `notes`, which is the crew member's own text), cleared on resubmit or approve. Yes — it asks the crew member to check, and the reason was missing | Keep "Dispute", no reason |
 | D48 | Planner and Timesheets are one sidebar item `Crew` with two words; `/crew/settings` becomes ⋯ › Crew roles & rates… (route kept as a deep link) | **Accepted 2026-11-21.** Yes | Keep three routes in the sidebar |
@@ -1979,32 +1979,32 @@ the recommended option.
 | D52 | Next-due is derived from the asset interval; to change a date change the interval on the register | **Accepted 2026-11-21.** A failed test stores the same derived date, shown as "Next due after repair" (owner, 2026-11-21). Yes | Keep the typed override |
 | D53 | A T&T fail defaults the action to Removed from service (Undo available), replacing the blocking fail dialog | **Accepted 2026-11-21.** Yes | Default No action + dialog |
 | D54 | The hub's `Send reminder` is `Chase` (copy text), because Flow never emails clients | Chase = copy follow-up, no sending | Add an email-sending reminder (reverses #934 decision 7) |
-| D55 | Quotes / Invoices as a words-switch with their own strips instead of stacked sections | Words-switch | Stack both lists |
-| D56 | Overdue outranks Part paid when past due | Overdue wins | Keep the job tab's Part-paid-first order |
+| D55 | Quotes / Invoices as a words-switch with their own strips instead of stacked sections | **Accepted 2026-11-24.** Words-switch | Stack both lists |
+| D56 | Overdue outranks Part paid when past due | **Accepted 2026-11-24.** Overdue wins | Keep the job tab's Part-paid-first order |
 | D57 | Settings index replaces the settings rail and phone jump-select; `/settings` becomes the index and General moves to `/settings/general` | Yes | Keep the rail |
 | D58 | Roles editable per org (overrides of the built-in roles; Owner fixed, Admin keeps permission-fixing actions) — today roles are code constants | Read-only grid now, edit behind a flag later | Grid read-only permanently |
 | D59 | Add `Resend invite` and invite Undo (re-issue) | Yes | Revoke + re-invite only |
 | D60 | Move invoice numbering and default tax rate from General to Billing | Yes | Leave on General |
 | D61 | Kill switch moves to a Danger zone group | Yes | Stay on API keys |
-| D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | Yes | Keep full-page forms |
-| D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | Yes | Separate entry point |
-| D64 | Service schedule stays a small dialog | Yes — five fields, one decision | Make it a sheet |
+| D62 | Every `/new` and `/[id]/edit` form route becomes a sheet over its list/record (deep links kept) | **Accepted 2026-11-24.** Yes | Keep full-page forms |
+| D63 | Bulk stock is created from the asset sheet's `Serialised unit · Bulk stock` words | **Accepted 2026-11-24.** Yes | Separate entry point |
+| D64 | Service schedule stays a small dialog | **Accepted 2026-11-24.** Yes — five fields, one decision | Make it a sheet |
 | D65 | Bottom nav and More sheet exactly as 6d.6 (supersedes D1's open details: gating, raise, drill-down) | **Accepted 2026-11-17.** Yes | Five items + floating Scan (6d.7) |
 | D66 | Sidebar "Dashboard" is named **Home** everywhere | **Accepted 2026-11-17.** Yes — the bottom nav, the prototype and the page already say Home | Keep Dashboard |
 | D67 | Tablet rail is automatic at ≤ 1023 and manual at any width (⌘B, remembered); sub-pages show only under the active module | **Accepted 2026-11-17.** Yes | Always-inline sub rows |
 | D68 | One phone breakpoint constant: 859 (prototypes) replaces 768 (`use-mobile.ts`) | **Accepted 2026-11-17.** Yes — a 768 iPad portrait gets the phone layout, tables need 860+ | Keep 768 and add a tablet layout |
 | D69 | Theme moves into the user menu (reachable on phone); org switcher moves to the sidebar head | **Accepted 2026-11-17.** Yes | Keep both in the avatar menu |
 | D70 | Bell and Home › Notifications read one feed | **Accepted 2026-11-17.** Yes | Keep mentions-only bell |
-| D71 | Order gets a derived `On hire`/`Returned` state and a stored return date; Mark returned and Extend hire verbs | Yes | Keep Received as the only word |
-| D72 | Crew Documents with expiry dates drive an Overview health row | Yes | Keep licences in notes |
-| D73 | Client Merge ships with undo and a named list of what moves | Yes | Archive only |
-| D74 | Supplier and crew keep Delete but behind Archive/Inactive; supplier delete gated while orders exist | Yes | Remove Delete |
-| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | Derive; drop the status select from the kit sheet | Keep stored status |
-| D76 | Maintenance parts become rows (name, supplier, qty, price, ETA, on order/arrived); cost = parts + labour, never stored | Rows + derived cost | Keep `partsUsed` text and `cost` number |
-| D77 | Category default T&T profile (class + interval) inherited by models | Add, model can override | Keep per-model only |
-| D78 | Location capacity and bin labels (`cap`, printed state) as real fields | Add | Keep locations free of capacity |
-| D79 | Notes tabs dropped on location/kit/job/T&T; notes are History entries | Drop | Keep a Notes tab |
-| D80 | T&T record gets a real Edit sheet (live Edit is disabled) | Add | Keep read-only |
+| D71 | Order gets a derived `On hire`/`Returned` state and a stored return date; Mark returned and Extend hire verbs | **Accepted 2026-11-24.** Yes | Keep Received as the only word |
+| D72 | Crew Documents with expiry dates drive an Overview health row | **Accepted 2026-11-24.** Yes | Keep licences in notes |
+| D73 | Client Merge ships with undo and a named list of what moves | **Accepted 2026-11-24.** Yes | Archive only |
+| D74 | Supplier and crew keep Delete but behind Archive/Inactive; supplier delete gated while orders exist | **Accepted 2026-11-24.** Yes | Remove Delete |
+| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | **Accepted 2026-11-24.** Derive; drop the status select from the kit sheet | Keep stored status |
+| D76 | Maintenance parts become rows (name, supplier, qty, price, ETA, on order/arrived); cost = parts + labour, never stored | **Accepted 2026-11-24.** Rows + derived cost | Keep `partsUsed` text and `cost` number |
+| D77 | Category default T&T profile (class + interval) inherited by models | **Accepted 2026-11-24.** Add, model can override | Keep per-model only |
+| D78 | Location capacity and bin labels (`cap`, printed state) as real fields | **Accepted 2026-11-24.** Add | Keep locations free of capacity |
+| D79 | Notes tabs dropped on location/kit/job/T&T; notes are History entries | **Accepted 2026-11-24.** Drop | Keep a Notes tab |
+| D80 | T&T record gets a real Edit sheet (live Edit is disabled) | **Accepted 2026-11-24.** Add | Keep read-only |
 | D81 | Schedule gains a Gear view (free count per model per day, shortfalls as flag-words) beside Jobs | Yes — the page's own promise is "gear is committed" | Jobs only; gear stays in Overbookings |
 | D82 | Agenda is removed on desktop; phone day mode is the agenda | Yes — the day sheet and day chips cover it | Keep Agenda as a third word |
 | D83 | Month is a real calendar month (30 slim columns), not six weeks | Yes — bars stay one row each | Keep the six-week grid |

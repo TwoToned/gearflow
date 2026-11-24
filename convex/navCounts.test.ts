@@ -9,7 +9,7 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { NAV_COUNT_CAP, NAV_COUNT_SOURCES, type NavCountServerSource } from "./navCounts";
-import { isOpenMaintenance, isOverdueMaintenance } from "./lib/maintenanceOpen";
+import { maintenanceTileCounts } from "./lib/maintenanceOpen";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -66,11 +66,10 @@ describe("navCounts.get — figures", () => {
         await ctx.db.insert("maintenanceRecords", { id: r.id, organizationId: ORG, title: r.id, status: r.status as "SCHEDULED", scheduledDate: r.scheduledDate, type: "REPAIR" as never });
       }
     });
-    // The page's tiles, computed the way the page computes them.
-    const pageOpen = seeded.filter((r) => isOpenMaintenance(r.status)).length;
-    const pageOverdue = seeded.filter((r) => isOverdueMaintenance(r, NOW)).length;
-    expect([pageOpen, pageOverdue]).toEqual([6, 2]);
-    expect(await count(t, "maintenance")).toEqual({ value: pageOpen, secondary: pageOverdue, truncated: false });
+    // The page's tiles, through the very function the page renders them with.
+    const page = maintenanceTileCounts(seeded, NOW, 0);
+    expect([page.open, page.overdue]).toEqual([6, 2]);
+    expect(await count(t, "maintenance")).toEqual({ value: page.open, secondary: page.overdue, truncated: false });
   });
 
   test("Test & tag: overdue, active only", async () => {

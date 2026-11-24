@@ -32,7 +32,7 @@ import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/layout/page-header";
 import { FadeIn } from "@/components/ui/motion";
 import { getStatusColor } from "@/lib/status-colors";
-import { isOpenMaintenance, isOverdueMaintenance } from "../../../../convex/lib/maintenanceOpen";
+import { maintenanceTileCounts } from "../../../../convex/lib/maintenanceOpen";
 import {
   maintenanceStatusLabels,
   maintenanceTypeLabels,
@@ -344,17 +344,14 @@ export default function MaintenancePage() {
   const nowMs = now.getTime();
   const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
-  const docs = maintenanceDocs ?? [];
-  // Open / Overdue: the ONE definitions the More sheet's Maintenance row counts by too.
-  const openCount = docs.filter((d) => isOpenMaintenance(d.status)).length;
-  const overdueCount = docs.filter((d) => isOverdueMaintenance(d, nowMs)).length;
-  const inProgressCount = docs.filter((d) => d.status === "IN_PROGRESS").length;
-  const completedThisMonth = docs.filter(
-    (d) =>
-      d.status === "COMPLETED" &&
-      typeof d.completedDate === "number" &&
-      d.completedDate >= monthStartMs,
-  ).length;
+  // The ONE tile counter (convex/lib/maintenanceOpen.ts): the More sheet's
+  // Maintenance row and Home's maintenance-due line are tested against it.
+  const {
+    open: openCount,
+    overdue: overdueCount,
+    inProgress: inProgressCount,
+    completedSince: completedThisMonth,
+  } = maintenanceTileCounts(maintenanceDocs ?? [], nowMs, monthStartMs);
 
   // Banner reuses the same org-wide overdue count.
   const overdueMaintenance = overdueCount;

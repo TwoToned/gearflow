@@ -1,28 +1,29 @@
 "use client";
 
 import type { MutableRefObject } from "react";
-import { useConvex, useMutation } from "convex/react";
+import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
-import { MAX_TAGS, MAX_TAG_LEN, cleanTag } from "../../../convex/lib/tagLimits";
+import { MAX_TAG_LEN, cleanTag } from "../../../convex/lib/tagLimits";
 
-import { runBulk, type BulkOutcome } from "@/lib/bulk-run";
 import { useSession } from "@/lib/auth-client";
 import { announceListWrite, listWriteTitle, plural } from "@/lib/list-write-toast";
 import { clientsCsv, suppliersCsv, crewName, type ClientSource, type CrewSource, type SupplierSource } from "@/lib/list-views/people";
 import { showError } from "@/lib/show-error";
 
 /**
- * Every write behind the People lists' row and bulk menus (UX Phase 13). Each is an
- * EXISTING mutation (crew/client `updateNative`, `archiveManyNative`, supplier
- * `patchNative`) plus `createManyNative` for Assign. A reversible one toasts with
- * Undo from ONE guarded closure (`announceListWrite`); an Undo restores only rows
- * whose LIVE value (read at undo time, never the snapshot) is still what the write
- * set, and names the rest. Mail (`Message`) is a `mailto:` the user sends themselves.
+ * Every write behind the People lists' row and bulk menus (UX Phase 13). Tag / deactivate /
+ * archive / reactivate go through `convex/peopleBulkWrites.ts`: ONE transaction that records
+ * one exact audit row per changed record, with per-row gates run (and named) on the SERVER.
+ * Their Undo is `undoManyNative` with only `{ id, auditId }` pairs; the server restores a
+ * record only while it is still exactly as that write left it, as its author, inside the
+ * window, once, and names the rest. No client snapshot is ever written back. Mail
+ * (`Message`) is a `mailto:` the user sends themselves.
  */
 type Seen<R> = MutableRefObject<Map<string, R>>;
+type Kind = "crew" | "client" | "supplier";
 
 const tagOf = (raw: string) => cleanTag(raw).slice(0, MAX_TAG_LEN).toLowerCase();
 
@@ -40,89 +41,63 @@ function useActor() {
   return () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
 }
 
-function summarise<R>(noun: string, done: string, out: BulkOutcome<R>, undo?: () => Promise<string | void>) {
-  announceListWrite({
-    title: listWriteTitle(done, out.skipped),
-    undoneTitle: `Undone · ${plural(out.done.length, noun)} restored`,
-    performUndo: out.done.length > 0 ? undo : undefined,
-  });
-}
+interface Outcome { changed: { id: string; auditId: string }[]; skipped: { id: string; name: string; reason: string }[] }
 
-/** The tags after adding `tag`, or why it cannot be added. Pure; the tag list is bounded (MAX_TAGS). */
-function withTag(tags: string[] | null | undefined, tag: string): { tags: string[] } | { skip: string } {
-  const have = tags ?? [];
-  if (have.includes(tag)) return { skip: `already tagged ${tag}` };
-  if (have.length >= MAX_TAGS) return { skip: `already has ${MAX_TAGS} tags` };
-  return { tags: [...have, tag] };
+/** The one bulk-write driver for all three lists: forward write, then ONE toast whose Undo is the server's. */
+function usePeopleBulk(kind: Kind, orgId: string | undefined, noun: string) {
+  const actor = useActor();
+  const addTagM = useMutation(api.peopleBulkWrites.addTagManyNative);
+  const setActiveM = useMutation(api.peopleBulkWrites.setActiveManyNative);
+  const undoM = useMutation(api.peopleBulkWrites.undoManyNative);
+
+  const announce = (out: Outcome, done: string) => {
+    const skipped = out.skipped.filter((s) => s.reason !== "nothing to change").map((s) => ({ name: s.name, why: s.reason }));
+    announceListWrite({
+      title: listWriteTitle(done, skipped),
+      undoneTitle: `Undone · ${plural(out.changed.length, noun)} restored`,
+      performUndo: out.changed.length > 0
+        ? async () => {
+            const r = await undoM({ orgId: orgId!, kind, items: out.changed, now: Date.now(), actor: actor() });
+            return r.kept.length > 0 ? `${plural(r.restored.length, noun)} restored · ${r.kept.length} had changed since and stayed` : undefined;
+          }
+        : undefined,
+    });
+  };
+
+  const items = (ids: string[]) => ids.map((id) => ({ id, auditId: createId() }));
+  return {
+    async addTag(ids: string[], raw: string) {
+      const tag = tagOf(raw);
+      if (!tag) return;
+      try {
+        const out = await addTagM({ orgId: orgId!, kind, items: items(ids), tag, now: Date.now(), actor: actor() });
+        announce(out, `Tagged ${plural(out.changed.length, noun)} ${tag}`);
+      } catch (e) {
+        showError(e, { fallbackTitle: "Could not add the tag" });
+      }
+    },
+    async setActive(ids: string[], active: boolean) {
+      try {
+        const out = await setActiveM({ orgId: orgId!, kind, items: items(ids), active, todayMs: Date.now(), now: Date.now(), actor: actor() });
+        const verb = active ? "Reactivated" : kind === "crew" ? "Deactivated" : "Archived";
+        announce(out, `${verb} ${plural(out.changed.length, noun)}`);
+      } catch (e) {
+        showError(e, { fallbackTitle: active ? "Could not reactivate" : "Could not complete that" });
+      }
+    },
+  };
 }
 
 // ─── Crew ────────────────────────────────────────────────────────────────
 
 export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSource>) {
-  const convex = useConvex();
   const actor = useActor();
-  const update = useMutation(api.crewWrites.updateNative);
+  const bulk = usePeopleBulk("crew", orgId, "crew member");
   const createMany = useMutation(api.crewAssignmentsWrites.createManyNative);
   const undoCreateMany = useMutation(api.crewAssignmentsWrites.undoCreateManyNative);
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is CrewSource => !!r);
-  const set = (id: string, patch: Record<string, unknown>) =>
-    update({ id, orgId: orgId!, set: { ...patch, updatedAt: Date.now() }, clear: [], actor: actor(), auditId: createId(), now: Date.now() });
-  const live = async (id: string) => (await convex.query(api.crewMembers.getById, { id })) as { status?: string; tags?: string[] } | null;
 
-  async function bulkDeactivate(ids: string[]) {
-    const out = await runBulk(pick(ids), {
-      name: crewName,
-      gate: (r) => (r.listStatus === "INACTIVE" ? "already inactive" : r.next?.status === "CONFIRMED" ? "has a confirmed call" : null),
-      apply: (r) => set(r.id, { status: "INACTIVE" }).then(() => undefined),
-    });
-    summarise("crew member", `Deactivated ${plural(out.done.length, "crew member")}`, out, async () => {
-      let moved = 0;
-      for (const r of out.done) {
-        if ((await live(r.id))?.status !== "INACTIVE") { moved++; continue; }
-        await set(r.id, { status: r.status ?? "ACTIVE" });
-      }
-      return moved > 0 ? `${plural(moved, "crew member")} had changed since, left as ${moved === 1 ? "it is" : "they are"}` : undefined;
-    });
-  }
-
-  async function reactivateOne(id: string) {
-    const row = seen.current.get(id);
-    try {
-      await set(id, { status: "ACTIVE" });
-      announceListWrite({
-        title: `${row ? crewName(row) : "Crew member"} reactivated`,
-        undoneTitle: "Undone · back to inactive",
-        performUndo: async () => {
-          if ((await live(id))?.status === "ACTIVE") await set(id, { status: row?.status ?? "INACTIVE" });
-        },
-      });
-    } catch (e) {
-      showError(e, { fallbackTitle: "Could not reactivate" });
-    }
-  }
-
-  async function bulkTag(ids: string[], raw: string) {
-    const tag = tagOf(raw);
-    if (!tag) return;
-    const changed: { id: string; before: string[] }[] = [];
-    const out = await runBulk(pick(ids), {
-      name: crewName,
-      gate: (r) => ("skip" in withTag(r.tags, tag) ? (withTag(r.tags, tag) as { skip: string }).skip : null),
-      apply: async (r) => {
-        const next = withTag(r.tags, tag) as { tags: string[] };
-        await set(r.id, { tags: next.tags });
-        changed.push({ id: r.id, before: r.tags ?? [] });
-      },
-    });
-    summarise("crew member", `Tagged ${plural(out.done.length, "crew member")} ${tag}`, out, async () => {
-      for (const c of changed) {
-        const l = await live(c.id);
-        if (l?.tags?.includes(tag)) await set(c.id, { tags: (l.tags ?? []).filter((t) => t !== tag) });
-      }
-    });
-  }
-
-  /** ONE transaction; unsent PENDING calls; Undo is `bulkDeleteNative` over exactly the created ids. */
+  /** ONE transaction; unsent PENDING calls; the Undo is server-side and exact (keeps any call that moved on). */
   async function assign(ids: string[], job: { id: string; projectNumber: string; startDate?: number | null; endDate?: number | null }) {
     try {
       const auditId = createId();
@@ -133,12 +108,11 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
       });
       const names = (cid: string) => { const r = seen.current.get(cid); return r ? crewName(r) : cid; };
       const skipped = res.skipped.map((s) => ({ name: names(s.crewMemberId), why: s.reason }));
-      const createdIds = res.created.map((c) => c.id);
+      const created = res.created.length;
       announceListWrite({
-        title: listWriteTitle(`Assigned ${plural(createdIds.length, "crew member")} to ${job.projectNumber} · offers not sent yet`, skipped),
-        undoneTitle: `Undone · ${plural(createdIds.length, "call")} removed`,
-        // Server-side exact Undo: ids only, author + window + once; keeps (and names) any call that has moved on.
-        performUndo: createdIds.length > 0
+        title: listWriteTitle(`Assigned ${plural(created, "crew member")} to ${job.projectNumber} · offers not sent yet`, skipped),
+        undoneTitle: `Undone · ${plural(created, "call")} removed`,
+        performUndo: created > 0
           ? async () => {
               const r = await undoCreateMany({ orgId: orgId!, forwardAuditId: auditId, now: Date.now(), actor: actor() });
               return r.kept.length > 0 ? `${plural(r.removed, "call")} removed · ${r.kept.length} stayed (${r.kept[0].reason})` : undefined;
@@ -160,147 +134,46 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
     if (without.length) toast.message(`No email for ${without.slice(0, 4).join(", ")}${without.length > 4 ? ` +${without.length - 4} more` : ""}`);
   }
 
-  return { bulkDeactivate, reactivateOne, bulkTag, assign, message };
+  return {
+    bulkDeactivate: (ids: string[]) => bulk.setActive(ids, false),
+    reactivateOne: (id: string) => bulk.setActive([id], true),
+    bulkTag: bulk.addTag,
+    assign,
+    message,
+  };
 }
 
 // ─── Clients ─────────────────────────────────────────────────────────────
 
 export function useClientListWrites(orgId: string | undefined, seen: Seen<ClientSource>) {
-  const convex = useConvex();
-  const actor = useActor();
-  const update = useMutation(api.clientWrites.updateNative);
-  const archiveMany = useMutation(api.clientWrites.archiveManyNative);
+  const bulk = usePeopleBulk("client", orgId, "client");
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is ClientSource => !!r);
-  const patch = (id: string, p: { tags?: string[]; isActive?: boolean }) => update({ id, orgId: orgId!, patch: p, actor: actor(), auditId: createId(), now: Date.now() });
-  const live = async (id: string) => (await convex.query(api.clients.getById, { id })) as { isActive?: boolean; tags?: string[] } | null;
-
-  async function bulkArchive(ids: string[]) {
-    const out = await runBulk(pick(ids), {
-      name: (r) => r.name,
-      gate: (r) => (!r.isActive ? "already archived" : r.openJobCount > 0 ? "has open jobs" : null),
-      apply: () => Promise.resolve(),
-    });
-    if (out.done.length > 0) {
-      try {
-        await archiveMany({ orgId: orgId!, items: out.done.map((r) => ({ id: r.id, auditId: createId() })), actor: actor(), now: Date.now() });
-      } catch (e) {
-        return showError(e, { fallbackTitle: "Could not archive the clients" });
-      }
-    }
-    summarise("client", `Archived ${plural(out.done.length, "client")}`, out, async () => {
-      let moved = 0;
-      for (const r of out.done) {
-        if ((await live(r.id))?.isActive !== false) { moved++; continue; }
-        await patch(r.id, { isActive: true });
-      }
-      return moved > 0 ? `${plural(moved, "client")} had changed since, left as ${moved === 1 ? "it is" : "they are"}` : undefined;
-    });
-  }
-
-  async function archiveOne(id: string) {
-    await bulkArchive([id]);
-  }
-
-  async function reactivateOne(id: string) {
-    try {
-      await patch(id, { isActive: true });
-      announceListWrite({
-        title: `${seen.current.get(id)?.name ?? "Client"} reactivated`,
-        undoneTitle: "Undone · archived again",
-        performUndo: async () => { if ((await live(id))?.isActive !== false) await patch(id, { isActive: false }); },
-      });
-    } catch (e) {
-      showError(e, { fallbackTitle: "Could not reactivate" });
-    }
-  }
-
-  async function bulkTag(ids: string[], raw: string) {
-    const tag = tagOf(raw);
-    if (!tag) return;
-    const changed: string[] = [];
-    const out = await runBulk(pick(ids), {
-      name: (r) => r.name,
-      gate: (r) => ("skip" in withTag(r.tags, tag) ? (withTag(r.tags, tag) as { skip: string }).skip : null),
-      apply: async (r) => { await patch(r.id, { tags: (withTag(r.tags, tag) as { tags: string[] }).tags }); changed.push(r.id); },
-    });
-    summarise("client", `Tagged ${plural(out.done.length, "client")} ${tag}`, out, async () => {
-      for (const id of changed) {
-        const l = await live(id);
-        if (l?.tags?.includes(tag)) await patch(id, { tags: (l.tags ?? []).filter((t) => t !== tag) });
-      }
-    });
-  }
-
-  function bulkExport(ids: string[]) {
-    const rows = pick(ids);
-    downloadCsv(clientsCsv(rows), "clients.csv");
-    toast.success(`Exported ${plural(rows.length, "client")}`);
-  }
-
-  return { bulkArchive, archiveOne, reactivateOne, bulkTag, bulkExport };
+  return {
+    bulkArchive: (ids: string[]) => bulk.setActive(ids, false),
+    archiveOne: (id: string) => bulk.setActive([id], false),
+    reactivateOne: (id: string) => bulk.setActive([id], true),
+    bulkTag: bulk.addTag,
+    bulkExport(ids: string[]) {
+      const rows = pick(ids);
+      downloadCsv(clientsCsv(rows), "clients.csv");
+      toast.success(`Exported ${plural(rows.length, "client")}`);
+    },
+  };
 }
 
 // ─── Suppliers ───────────────────────────────────────────────────────────
 
 export function useSupplierListWrites(orgId: string | undefined, seen: Seen<SupplierSource>) {
-  const convex = useConvex();
-  const actor = useActor();
-  const patchM = useMutation(api.suppliersWrites.patchNative);
+  const bulk = usePeopleBulk("supplier", orgId, "supplier");
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is SupplierSource => !!r);
-  const patch = (id: string, p: { tags?: string[]; isActive?: boolean }) => patchM({ id, orgId: orgId!, patch: p, now: Date.now(), actor: actor(), auditId: createId() });
-  const live = async (id: string) => (await convex.query(api.suppliers.getById, { id })) as { isActive?: boolean; tags?: string[] } | null;
-
-  async function bulkArchive(ids: string[]) {
-    const out = await runBulk(pick(ids), {
-      name: (r) => r.name,
-      gate: (r) => (!r.isActive ? "already archived" : null),
-      apply: (r) => patch(r.id, { isActive: false }).then(() => undefined),
-    });
-    summarise("supplier", `Archived ${plural(out.done.length, "supplier")}`, out, async () => {
-      let moved = 0;
-      for (const r of out.done) {
-        if ((await live(r.id))?.isActive !== false) { moved++; continue; }
-        await patch(r.id, { isActive: true });
-      }
-      return moved > 0 ? `${plural(moved, "supplier")} had changed since, left as ${moved === 1 ? "it is" : "they are"}` : undefined;
-    });
-  }
-
-  async function reactivateOne(id: string) {
-    try {
-      await patch(id, { isActive: true });
-      announceListWrite({
-        title: `${seen.current.get(id)?.name ?? "Supplier"} reactivated`,
-        undoneTitle: "Undone · archived again",
-        performUndo: async () => { if ((await live(id))?.isActive !== false) await patch(id, { isActive: false }); },
-      });
-    } catch (e) {
-      showError(e, { fallbackTitle: "Could not reactivate" });
-    }
-  }
-
-  async function bulkTag(ids: string[], raw: string) {
-    const tag = tagOf(raw);
-    if (!tag) return;
-    const changed: string[] = [];
-    const out = await runBulk(pick(ids), {
-      name: (r) => r.name,
-      gate: (r) => ("skip" in withTag(r.tags, tag) ? (withTag(r.tags, tag) as { skip: string }).skip : null),
-      apply: async (r) => { await patch(r.id, { tags: (withTag(r.tags, tag) as { tags: string[] }).tags }); changed.push(r.id); },
-    });
-    summarise("supplier", `Tagged ${plural(out.done.length, "supplier")} ${tag}`, out, async () => {
-      for (const id of changed) {
-        const l = await live(id);
-        if (l?.tags?.includes(tag)) await patch(id, { tags: (l.tags ?? []).filter((t) => t !== tag) });
-      }
-    });
-  }
-
-  function bulkExport(ids: string[]) {
-    const rows = pick(ids);
-    downloadCsv(suppliersCsv(rows), "suppliers.csv");
-    toast.success(`Exported ${plural(rows.length, "supplier")}`);
-  }
-
-  return { bulkArchive, reactivateOne, bulkTag, bulkExport };
+  return {
+    bulkArchive: (ids: string[]) => bulk.setActive(ids, false),
+    reactivateOne: (id: string) => bulk.setActive([id], true),
+    bulkTag: bulk.addTag,
+    bulkExport(ids: string[]) {
+      const rows = pick(ids);
+      downloadCsv(suppliersCsv(rows), "suppliers.csv");
+      toast.success(`Exported ${plural(rows.length, "supplier")}`);
+    },
+  };
 }

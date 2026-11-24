@@ -240,6 +240,7 @@ import type * as payments from "../payments.js";
 import type * as paymentsWrites from "../paymentsWrites.js";
 import type * as clientMergeWrites from "../clientMergeWrites.js";
 import type * as clientRecord from "../clientRecord.js";
+import type * as peopleBulkWrites from "../peopleBulkWrites.js";
 import type * as peopleLists from "../peopleLists.js";
 import type * as pendingOrgJoinRequests from "../pendingOrgJoinRequests.js";
 import type * as pendingSSOApprovals from "../pendingSSOApprovals.js";
@@ -574,6 +575,7 @@ declare const fullApi: ApiFromModules<{
   paymentsWrites: typeof paymentsWrites;
   clientMergeWrites: typeof clientMergeWrites;
   clientRecord: typeof clientRecord;
+  peopleBulkWrites: typeof peopleBulkWrites;
   peopleLists: typeof peopleLists;
   pendingOrgJoinRequests: typeof pendingOrgJoinRequests;
   pendingSSOApprovals: typeof pendingSSOApprovals;

@@ -86,7 +86,7 @@ const members = [
 ];
 const open = [{
   serviceId: "svc1", projectId: "p1", projectName: "Hilton gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(day("2026-11-18")),
-  endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
+  endDate: null, crewCountRequired: 3, assignedCount: 1, shortfall: 2, shortDays: [{ day: Date.parse(day("2026-11-18")), shortfall: 2 }], startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN",
 }];
 const queried = vi.hoisted(() => ({ planner: undefined as unknown, truncated: false, open: undefined as unknown[] | undefined, members: undefined as unknown[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
@@ -425,7 +425,8 @@ describe("CrewPlanner (smoke)", () => {
   });
 
   it("a multi-day run is offerable from an empty cell on any day it covers; the call takes that day only, or the whole run", async () => {
-    queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")) }];
+    const short = ["2026-11-17", "2026-11-18", "2026-11-19"].map((d) => ({ day: Date.parse(day(d)), shortfall: 2 }));
+    queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")), shortDays: short }];
     const user = userEvent.setup();
     render(<CrewPlanner />);
     // Thursday: the run started Tuesday, and is still listed on Thursday.
@@ -444,6 +445,28 @@ describe("CrewPlanner (smoke)", () => {
     await user.click(within(sheet).getByRole("switch", { name: "Send the offer now" }));
     await user.click(within(sheet).getByRole("button", { name: "Save as pending" }));
     await waitFor(() => expect(asg.create).toHaveBeenLastCalledWith("p1", expect.objectContaining({ startDate: "2026-11-17", endDate: "2026-11-19" })));
+  });
+
+  it("B1: a run filled on Tue (a this-day-only call) is open only on Wed and Thu, and says so", async () => {
+    const short = ["2026-11-18", "2026-11-19"].map((d) => ({ day: Date.parse(day(d)), shortfall: 1 }));
+    queried.open = [{ ...open[0], serviceId: "run", title: "Install", date: Date.parse(day("2026-11-17")), endDate: Date.parse(day("2026-11-19")), shortfall: 1, shortDays: short }];
+    nav.search = "seg=needs";
+    const { unmount } = render(<CrewPlanner />);
+    const list = screen.getByRole("table", { name: "Calls that need crew" });
+    expect(within(list).getByText("Wed, 18 Nov")).toBeTruthy(); // listed under its first SHORT day, not Tue
+    expect(within(list).queryByText("Tue, 17 Nov")).toBeNull();
+    expect(within(list).getByText(/Wed, Thu short/)).toBeTruthy();
+    unmount();
+    nav.search = "";
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<CrewPlanner />);
+    const chips = screen.getByRole("tablist", { name: "Day" });
+    expect(within(chips).getByRole("tab", { name: /Tue 17/ }).textContent).not.toContain("open");
+    expect(within(chips).getByRole("tab", { name: /Thu 19/ }).textContent).toContain("1 open");
+    expect(screen.queryByRole("region", { name: "Needs crew" })).toBeNull(); // Tue (today) is filled
+    await user.click(within(chips).getByRole("tab", { name: /Wed 18/ }));
+    expect(screen.getByRole("region", { name: "Needs crew" }).textContent).toContain("needs 1");
   });
 
   it("Needs crew says `n+` when the server's read stopped at its cap (desktop and phone)", () => {

@@ -57,7 +57,14 @@ export interface OpenCall {
   title: string;
   date: number | null;
   endDate?: number | null;
+  /** The worst gap over the window's short days. */
   shortfall: number;
+  /**
+   * The run's short days in the window (UTC midnight) with each day's gap —
+   * the server's per-day rule (`convex/lib/crewShortfall.ts`): a call fills
+   * only the days it covers. Empty only for a dateless service.
+   */
+  shortDays: { day: number; shortfall: number }[];
   startTime: string | null;
   endTime: string | null;
   crewRoleId: string | null;
@@ -349,6 +356,25 @@ export function coversDay(o: Pick<OpenCall, "date" | "endDate">, day: string): b
 /** The days of `window` the service covers (a multi-day run may start before it). */
 export function daysCovered(o: Pick<OpenCall, "date" | "endDate">, window: readonly string[]): string[] {
   return window.filter((d) => coversDay(o, d));
+}
+
+/** How many people the open call still needs on `day` (0 when that day is filled or not in the run). */
+export function shortOn(o: Pick<OpenCall, "date" | "endDate" | "shortfall" | "shortDays">, day: string): number {
+  if (o.shortDays.length === 0) return coversDay(o, day) ? o.shortfall : 0;
+  return o.shortDays.find((d) => keyOfMs(d.day) === day)?.shortfall ?? 0;
+}
+
+/** The days of `window` the call is short on. */
+export function shortDaysIn(o: Pick<OpenCall, "date" | "endDate" | "shortfall" | "shortDays">, window: readonly string[]): string[] {
+  return window.filter((d) => shortOn(o, d) > 0);
+}
+
+/** The day an open call is listed under: its first short day in the week, else its own day (or the week's first). */
+export function openDay(o: OpenCall, week: string): string {
+  const first = shortDaysIn(o, weekDays(week))[0];
+  if (first) return first;
+  const d = o.date != null ? keyOfMs(o.date) : week;
+  return d < week ? week : d;
 }
 
 /** A run that covers more than one calendar day. */

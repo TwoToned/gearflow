@@ -13,7 +13,7 @@ import { StatusWord } from "@/components/ui/status-word";
 import { Switch } from "@/components/ui/switch";
 import type { CrewRoleDoc } from "@/hooks/use-crew";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { byLastName, coversDay, dayState, displayDate, DAY_KIND_INTENT, isMultiDay, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { byLastName, shortOn, dayState, displayDate, DAY_KIND_INTENT, isMultiDay, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
 import { factText } from "@/lib/primitives/facts";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import { crewRateTypeLabels } from "@/lib/status-labels";
@@ -46,8 +46,8 @@ interface Ctx {
 
 type Form = UseFormReturn<PlannerOfferValues>;
 
-/** Every open service that runs on `day` — a multi-day run is listed on each day it covers. */
-const servicesOn = (c: Ctx, day: string) => c.open.filter((o) => coversDay(o, day));
+/** Every open service short of people on `day` — a multi-day run is listed on each day it is short. */
+const servicesOn = (c: Ctx, day: string) => c.open.filter((o) => shortOn(o, day) > 0);
 
 /** The service a new offer defaults to: one with the person's role, else the first open one. */
 function defaultService(c: Ctx, memberId: string, day: string): OpenCall | undefined {
@@ -137,7 +137,7 @@ function ServiceField({ form, c, onPick }: { form: Form; c: Ctx; onPick: (id: st
       </div>
     );
   }
-  const label = (o: OpenCall) => `${o.projectNumber} ${o.title}${o.crewRoleName ? ` · ${o.crewRoleName}` : ""} · needs ${o.shortfall}`;
+  const label = (o: OpenCall) => `${o.projectNumber} ${o.title}${o.crewRoleName ? ` · ${o.crewRoleName}` : ""} · needs ${shortOn(o, day)}`;
   const picked = list.find((o) => o.serviceId === value);
   return (
     <PickSelect id="offer-service" label="Job service" value={value} display={picked ? label(picked) : ""} onChange={onPick}

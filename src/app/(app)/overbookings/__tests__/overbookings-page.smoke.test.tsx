@@ -39,7 +39,14 @@ const BOARD_DATA = {
   ],
   gearPencilled: [],
   saleStockToProcure: [{ modelId: "m2", modelName: "Gaffer Tape", shortfallQty: 3, contributingSaleLines: [] }],
-  servicesMissingCrew: [],
+  // B1: a Mon–Wed run whose only call is Monday's is short Tue and Wed.
+  servicesMissingCrew: [
+    {
+      serviceId: "s1", projectId: "p1", projectName: "Big Show", projectNumber: "PRJ-1", title: "Show run",
+      date: Date.UTC(2026, 10, 16), endDate: Date.UTC(2026, 10, 18), crewCountRequired: 1, assignedCount: 0, shortfall: 1,
+      shortDays: [{ day: Date.UTC(2026, 10, 17), shortfall: 1 }, { day: Date.UTC(2026, 10, 18), shortfall: 1 }],
+    },
+  ],
   unconfirmedCrew: [],
   crewDoubleBookings: [],
 };
@@ -66,6 +73,13 @@ describe("OverbookingsPage smoke", () => {
     expect(screen.getByText("Overbookings & Gaps")).toBeTruthy();
     expect(screen.getByText(/SM58/)).toBeTruthy();
     expect(screen.getByText(/Gaffer Tape/)).toBeTruthy();
+  });
+
+  it("a missing-crew run names its short days (B1: the shortfall is per day)", () => {
+    render(<OverbookingsPage />);
+    expect(screen.getByText(/Show run — PRJ-1 Big Show/)).toBeTruthy();
+    expect(screen.getByText(/Tue, Wed short/)).toBeTruthy();
+    expect(screen.getByText("0/1")).toBeTruthy();
   });
 
   it("opens the sub-hire shortfall dialog without crashing and lists the contributing project", () => {

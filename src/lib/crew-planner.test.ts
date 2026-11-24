@@ -38,7 +38,7 @@ const member = (id: string, last: string, over: Partial<PlannerMember> = {}): Pl
 });
 const open = (over: Partial<OpenCall> = {}): OpenCall => ({
   serviceId: "svc1", projectId: "p1", projectName: "Gala", projectNumber: "#2341", title: "Bump in", date: Date.parse(iso("2026-11-18")),
-  shortfall: 2, startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN", ...over,
+  shortfall: 2, shortDays: [], startTime: "08:00", endTime: "18:00", crewRoleId: "r1", crewRoleName: "Rigger", phase: "BUMP_IN", ...over,
 });
 const none: PlannerFilters = { seg: "all", q: "", role: [], skill: [], job: [], avail: [] };
 const ctx = { week: WEEK, userId: "me", skillName: (id: string) => (id === "k1" ? "Dante" : id) };

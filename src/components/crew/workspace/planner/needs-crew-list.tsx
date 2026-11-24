@@ -7,7 +7,8 @@ import { ActionMenu } from "@/components/ui/action-menu";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { StatusWord } from "@/components/ui/status-word";
-import { callTimes, candidatesFor, daysCovered, displayDate, keyOfMs, memberName, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { callTimes, candidatesFor, daysCovered, displayDate, memberName, openDay, type OpenCall, type PlannerMember } from "@/lib/crew-planner";
+import { shortDaysText } from "@/lib/crew-short-days";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
@@ -19,12 +20,6 @@ import { logisticsHref } from "./planner-grid";
  * with that role (preferred first). A row opens Offer a call with the first
  * suggestion picked; ⋯ is Offer to…, Offer to suggested, Open job.
  */
-
-/** The day an open call shows under: its own, or the week's first day for one that started earlier. */
-export function openDay(o: OpenCall, week: string): string {
-  const d = o.date != null ? keyOfMs(o.date) : week;
-  return d < week ? week : d;
-}
 
 export interface NeedsCrewProps {
   open: OpenCall[];
@@ -106,6 +101,7 @@ function OpenRow({ o, members, ticked, p }: { o: OpenCall; members: PlannerMembe
         <div className="truncate text-caption text-muted">
           {o.projectName}
           {o.crewRoleName ? ` · ${o.crewRoleName}` : ""}
+          {shortDaysText(o) ? ` · ${shortDaysText(o)}` : ""}
         </div>
       </td>
       <td className="w-32 align-middle font-mono text-caption text-ink-2">{callTimes(o)}</td>

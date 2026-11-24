@@ -51,9 +51,13 @@ export interface OverbookingMissingCrewRow {
   projectNumber: string;
   title: string;
   date: number | null;
+  endDate: number | null;
   crewCountRequired: number;
+  /** The worst day's filled count (an assignment fills only the days it covers). */
   assignedCount: number;
   shortfall: number;
+  /** Each short day of the run (UTC midnight), named on the row as `Tue, Wed short`. */
+  shortDays: { day: number; shortfall: number }[];
 }
 
 export interface OverbookingUnconfirmedCrewRow {

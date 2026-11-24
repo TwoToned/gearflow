@@ -4,7 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { computeServicesMissingCrew, type BoardAssignment } from "./lib/overbookingBoard";
+import { computeServicesMissingCrew, type BoardAssignment, type MissingCrewRow } from "./lib/overbookingBoard";
 import { isLiveVersionRow } from "./lib/projectLocks";
 import { serviceTypeToPhase } from "./lib/serviceSchedule";
 
@@ -15,6 +15,7 @@ import { serviceTypeToPhase } from "./lib/serviceSchedule";
  */
 
 const DAY_MS = 86_400_000;
+const utcDayOf = (ms: number) => Math.floor(ms / DAY_MS) * DAY_MS;
 /** The planner shows one week (D46); a fortnight of headroom covers the phone's week-step. */
 const OPEN_CALLS_MAX_RANGE_DAYS = 14;
 /** Services read per call — far above one org's week; past it the result says `truncated`. */
@@ -89,10 +90,26 @@ async function assignmentsByService(ctx: QueryCtx, orgId: string, services: Doc<
 }
 
 /**
+ * Per day (B1): a run is open in the window only on its short days IN the
+ * window, and its need there is the worst of those days. Null when every short
+ * day falls outside it.
+ */
+function clipToWindow(r: MissingCrewRow, startMs: number, endMs: number): MissingCrewRow | null {
+  if (r.shortDays.length === 0) return r; // dateless: nothing to clip
+  const shortDays = r.shortDays.filter((d) => d.day >= utcDayOf(startMs) && d.day <= endMs);
+  if (shortDays.length === 0) return null;
+  const shortfall = Math.max(...shortDays.map((d) => d.shortfall));
+  return { ...r, shortDays, shortfall, assignedCount: r.crewCountRequired - shortfall };
+}
+
+/**
  * Calls still short of people in [startMs, endMs]: every live-version service
- * on a live job whose filled crew (DECLINED/CANCELLED excluded) is below its
- * `crewCountRequired`. The gap rule is the Overbookings board's own
- * (`computeServicesMissingCrew`), not a second one. Bounded both ends on
+ * on a live job short of its `crewCountRequired` on a day IN the window. The
+ * gap rule is the ONE per-day rule (`crewShortfallByDay` through the
+ * Overbookings board's `computeServicesMissingCrew`), not a second one: an
+ * assignment fills only the days it covers, so a "this day only" call leaves
+ * the rest of the run open. `shortDays` (clipped to the window) names each
+ * short day and its gap; `shortfall` is the worst of them. Bounded both ends on
  * `by_organizationId_date`, capped, and `truncated` says when the cap bit.
  */
 export const openCalls = query({
@@ -118,9 +135,11 @@ export const openCalls = query({
     const roles = await Promise.all(roleIds.map((id) => ctx.db.query("crewRoles").withIndex("by_cuid", (q) => q.eq("id", id)).first()));
     const roleName = new Map(roles.filter((r) => r && r.organizationId === orgId).map((r) => [r!.id, r!.name]));
 
-    const calls = rows.map((r) => {
+    const calls = rows.flatMap((row) => {
+      const r = clipToWindow(row, startMs, endMs);
+      if (!r) return [];
       const s = serviceById.get(r.serviceId)!;
-      return {
+      return [{
         ...r,
         endDate: s.endDate ?? null,
         startTime: s.startTime ?? null,
@@ -130,7 +149,7 @@ export const openCalls = query({
         // The phase a call on this service staffs: the planner's Offer a call
         // creates the assignment with it (the service write path's own mapping).
         phase: serviceTypeToPhase(s.type),
-      };
+      }];
     });
     return { calls, truncated };
   },

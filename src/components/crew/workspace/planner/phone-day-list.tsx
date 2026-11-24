@@ -10,12 +10,13 @@ import {
   callStatusWord,
   callTimes,
   callsOn,
-  coversDay,
   dayState,
   isActiveCall,
   displayDate,
   DAY_KIND_INTENT,
   memberName,
+  openDay,
+  shortOn,
   type OpenCall,
   type PlannerCall,
   type PlannerMember,
@@ -23,7 +24,8 @@ import {
 import { formatWeekday, formatWeekdayDayMonth } from "@/lib/formatters";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { cn } from "@/lib/utils";
-import { openDay, TruncatedNote } from "./needs-crew-list";
+import { shortDaysText } from "@/lib/crew-short-days";
+import { TruncatedNote } from "./needs-crew-list";
 
 /**
  * The planner on a phone (spec §9h.6, Logistics' day mode): day chips for the
@@ -91,7 +93,9 @@ function Section({ title, count, children }: { title: string; count: number; chi
   );
 }
 
-function OpenCard({ o, p }: { o: OpenCall; p: PhonePlannerProps }) {
+/** An open call; under a day (`day`) it reads that day's own need, in the week strip its worst day's and its short days. */
+function OpenCard({ o, p, day }: { o: OpenCall; p: PhonePlannerProps; day?: string }) {
+  const need = day ? shortOn(o, day) : o.shortfall;
   return (
     <div className="flex min-h-16 items-center gap-3">
       <button type="button" onClick={() => p.onOpenOpen(o)} className="flex min-h-16 min-w-0 flex-1 flex-col justify-center text-left">
@@ -99,10 +103,10 @@ function OpenCard({ o, p }: { o: OpenCall; p: PhonePlannerProps }) {
           {o.projectNumber} {o.title}
         </span>
         <span className="truncate text-caption text-muted">
-          {[o.crewRoleName, callTimes(o)].filter(Boolean).join(" · ")}
+          {[o.crewRoleName, callTimes(o), day ? "" : shortDaysText(o)].filter(Boolean).join(" · ")}
         </span>
       </button>
-      <StatusWord status={{ label: `needs ${o.shortfall}`, intent: "error" }} className="text-caption" />
+      <StatusWord status={{ label: `needs ${need}`, intent: "error" }} className="text-caption" />
       <ActionMenu spec={p.openMenuFor(o)} label={`${o.projectNumber} ${o.title} actions`} />
     </div>
   );
@@ -151,8 +155,8 @@ function PersonCard({ m, day, p }: { m: PlannerMember; day: string; p: PhonePlan
 }
 
 function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
-  // A multi-day run is open on every day it covers.
-  const opens = p.open.filter((o) => coversDay(o, day));
+  // A multi-day run is open only on the days it is short (a call fills only its own days).
+  const opens = p.open.filter((o) => shortOn(o, day) > 0);
   // A declined call doesn't hold the person's day: they are Free, not Booked.
   const booked = p.members.flatMap((m) => callsOn(m, day).filter(isActiveCall).map((c) => ({ m, c })));
   const bookedIds = new Set(booked.map((b) => b.m.id));
@@ -162,7 +166,7 @@ function DaySections({ day, p }: { day: string; p: PhonePlannerProps }) {
   return (
     <>
       <Section title="Needs crew" count={opens.length}>
-        {opens.map((o) => <OpenCard key={o.serviceId} o={o} p={p} />)}
+        {opens.map((o) => <OpenCard key={o.serviceId} o={o} p={p} day={day} />)}
       </Section>
       <Section title="Booked" count={booked.length}>
         {booked.map(({ m, c }) => <BookedCard key={c.id} m={m} c={c} p={p} />)}
@@ -186,9 +190,9 @@ function firstDay(days: string[], open: OpenCall[], week: string, today: string)
 export function PhonePlanner(p: PhonePlannerProps & { today: string }) {
   const [day, setDay] = React.useState(() => firstDay(p.days, p.open, p.week, p.today));
   // The Needs crew strip lists each run once, under its first day in the week;
-  // the day chips count every day a run covers (it is open on each).
+  // the day chips count each day's own need (a run is open only on its short days).
   const listedOn = (d: string) => p.open.filter((o) => openDay(o, p.week) === d).reduce((n, o) => n + o.shortfall, 0);
-  const openOn = (d: string) => p.open.filter((o) => coversDay(o, d)).reduce((n, o) => n + o.shortfall, 0);
+  const openOn = (d: string) => p.open.reduce((n, o) => n + shortOn(o, d), 0);
   if (p.needsOnly) {
     const days = p.days.filter((d) => listedOn(d) > 0);
     return (

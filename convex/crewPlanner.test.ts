@@ -66,6 +66,35 @@ describe("crewPlanner.openCalls (Needs crew)", () => {
     expect(res.calls[0]).toMatchObject({ projectNumber: "2341", crewCountRequired: 2, assignedCount: 1, shortfall: 1, startTime: "08:00", crewRoleName: "Rigger" });
   });
 
+  test("B1: a Mon-only call on a Mon–Wed run that needs 1 leaves the run open on Tue and Wed only", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false });
+      await ctx.db.insert("projectServices", { id: "run", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Run", date: D0, endDate: D0 + 2 * DAY, crewCountRequired: 1 } as never);
+      await ctx.db.insert("projectServices", { id: "whole", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Whole", date: D0, endDate: D0 + 2 * DAY, crewCountRequired: 1 } as never);
+      await ctx.db.insert("crewAssignments", { id: "ana", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "run", status: "OFFERED", startDate: D0, endDate: D0 });
+      await ctx.db.insert("crewAssignments", { id: "all", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "whole", status: "OFFERED", startDate: D0, endDate: D0 + 2 * DAY });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.calls.map((c) => c.serviceId)).toEqual(["run"]);
+    expect(res.calls[0].shortDays).toEqual([{ day: D0 + DAY, shortfall: 1 }, { day: D0 + 2 * DAY, shortfall: 1 }]);
+  });
+
+  test("a run short only on days before the window is not open in it; its short days are clipped to the window", async () => {
+    const t = makeT(); await seedBase(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "2341", name: "Launch", status: "CONFIRMED", isTemplate: false });
+      const svc = (id: string) => ctx.db.insert("projectServices", { id, organizationId: ORG, projectId: "p1", type: "LABOUR", title: id, date: D0 - 2 * DAY, endDate: D0 + DAY, crewCountRequired: 1 } as never);
+      await svc("filledInWeek");
+      await svc("shortInWeek");
+      await ctx.db.insert("crewAssignments", { id: "x", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "filledInWeek", status: "CONFIRMED", startDate: D0, endDate: D0 + DAY });
+      await ctx.db.insert("crewAssignments", { id: "y", organizationId: ORG, projectId: "p1", crewMemberId: "c1", serviceId: "shortInWeek", status: "CONFIRMED", startDate: D0 - 2 * DAY, endDate: D0 });
+    });
+    const res = await t.withIdentity(asUser).query(api.crewPlanner.openCalls, { orgId: ORG, startMs: D0, endMs: D0 + 6 * DAY });
+    expect(res.calls.map((c) => c.serviceId)).toEqual(["shortInWeek"]);
+    expect(res.calls[0]).toMatchObject({ shortfall: 1, shortDays: [{ day: D0 + DAY, shortfall: 1 }] });
+  });
+
   test("a multi-day service that started before the window but runs into it is open in it; one that ended before is not", async () => {
     const t = makeT(); await seedBase(t);
     await t.run(async (ctx) => {

@@ -22,6 +22,7 @@ import {
   memberMatches,
   memberName,
   openCallMatches,
+  openDay,
   planSuggestedOffers,
   plannerFooter,
   stripCounts,
@@ -37,7 +38,7 @@ import { useCanDo } from "@/lib/use-permissions";
 import type { PlannerOfferValues } from "@/lib/validations/crew";
 import { canCrewCall } from "../../../../../convex/lib/crewCallTransitions";
 import { CallSheet, type OpenedCall } from "./call-sheet";
-import { NeedsCrewList, openDay } from "./needs-crew-list";
+import { NeedsCrewList } from "./needs-crew-list";
 import { OfferCallSheet, type OfferTarget } from "./offer-call-sheet";
 import { PhonePlanner } from "./phone-day-list";
 import { PlannerGrid, gridOrder, logisticsHref, type GridHandlers } from "./planner-grid";

@@ -59,9 +59,14 @@ org-wide. Six sections, over a user-selected date range (default 30 days):
    **Assets → Sales Stock** (2026-08, FEATUREDOCS/67) — the general-purpose
    view + restock action this section's alert points at.
 4. **Services missing crew** — a `projectService` in range whose FILLED crew
-   count (excluding `DECLINED`/`CANCELLED` assignments) is below
-   `crewCountRequired`. `crewCountRequired` of `null`/`0` is explicitly
-   skipped, never flagged.
+   (excluding `DECLINED`/`CANCELLED` assignments) is below
+   `crewCountRequired` on ANY day of its run. The count is **per day**
+   (`crewShortfallByDay`, `convex/lib/crewShortfall.ts` — the ONE rule, also
+   read by the planner's Needs crew and the project readiness check): an
+   assignment fills only the days it covers, so a Monday-only call on a
+   Mon–Wed run leaves Tue and Wed short. The row's `n/m` is the worst day's,
+   and a partial run names its short days (`Tue, Wed short`).
+   `crewCountRequired` of `null`/`0` is explicitly skipped, never flagged.
 5. **Unconfirmed crew** — an assignment that isn't `CONFIRMED` (and isn't
    already settled-no via `DECLINED`/`CANCELLED`) on a project whose window
    STARTS within the range.

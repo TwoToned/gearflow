@@ -579,8 +579,18 @@ legend are gone (every block prints its own word).
 
 ### UX Phase 15 reads and writes (spec §9h)
 - **`crewPlanner.openCalls({ orgId, startMs, endMs })`** — the `Needs crew` list:
-  services short of people (filled crew, DECLINED/CANCELLED excluded, below
-  `crewCountRequired`) via the Overbookings board's own `computeServicesMissingCrew`.
+  services short of people via the Overbookings board's own
+  `computeServicesMissingCrew`, which reads the ONE per-day rule
+  `crewShortfallByDay` (`convex/lib/crewShortfall.ts`, B1). The shortfall is
+  **per day**: an assignment fills only the days its `[startDate, endDate]`
+  covers (no dates = the whole run), DECLINED/CANCELLED fill nothing, and a run
+  is short if ANY day is below `crewCountRequired`. So a "this day only" call
+  on a Mon–Wed run that needs 1 leaves Tue and Wed open. Each row carries
+  `shortDays` (clipped to the window, each with its own gap), and `shortfall`
+  is the worst of them; a run with no short day in the window is not listed.
+  The planner lists a run under its first short day, opens it only on its
+  short days (phone chips, Offer a call's service list) and names partial
+  runs `Wed, Thu short` (`src/lib/crew-short-days.ts`).
   Only each job's **live-version** service rows count (`isLiveVersionRow` — every
   version keeps its own copy of a service), on in-org, non-template, non-cancelled
   jobs. A multi-day service counts when its `[date, endDate]` overlaps the window,

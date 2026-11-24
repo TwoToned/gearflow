@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 451 | 316 | 132 | 1 | 2 |
-| Mutations | 813 | 317 | 485 | 0 | 11 |
-| **Total** | **1264** | **633** | **617** | **1** | **13** |
+| Queries | 453 | 317 | 132 | 2 | 2 |
+| Mutations | 815 | 319 | 485 | 0 | 11 |
+| **Total** | **1268** | **636** | **617** | **2** | **13** |
 
-<!-- reachability-floor: 633 -->
+<!-- reachability-floor: 636 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -44,7 +44,7 @@ idempotency key, already required of every mutation) at the dispatcher — see
 |---|---|
 | `high` | 97 |
 | `medium` | 155 |
-| `low` | 65 |
+| `low` | 67 |
 
 ## Modules with no agent-reachable operation
 
@@ -90,6 +90,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `orgErasure` | 4 |
 | `orgExport` | 6 |
 | `orgSettings` | 8 |
+| `paletteRecents` | 1 |
 | `parity` | 1 |
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
@@ -166,6 +167,7 @@ fails the build otherwise.
 | `orgExport.scanTableFiltered` | Full unredacted org data export; bypasses per-resource redaction and has no scope model (design §4). |
 | `orgSettings.getByIcalToken` | Global secret-token lookup (no orgId argument to scope against) — structurally not an org-scoped read. |
 | `orgSettings.getByOrg` | Row/lookup exposes apiKillSwitchAt (the org's own write-kill-switch state) and/or icalToken (a bearer credential for the public iCal feed); no redacted projection exists here (contrast xeroIntegrations.getForOrg). |
+| `paletteRecents.resolve` | Resolves the browser palette's own localStorage Recent refs across several RBAC domains (same per-result-type scope gap as globalSearch.search); no agent use. |
 | `parity.countPage` | Internal migration-parity diagnostic tool, not an application read surface. |
 | `pendingOrgJoinRequests.findJoinableOrgsForDomain` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |
 | `pendingOrgJoinRequests.list` | Trusted-backend join-request queue/search; no org-scoped agent concern is defined for it yet. |

@@ -438,6 +438,33 @@ export async function requireOrgPermission(
 }
 
 /**
+ * May the caller READ `resource` in `orgId`? The non-throwing form of
+ * `requireOrgPermission(ctx, orgId, resource, "read")` (UX Phase 11, Q3), for a
+ * read that serves several resources at once (global search, palette Recents,
+ * nav counts) and must DROP what the role can't open rather than fail the whole
+ * call. It IS that guard — the same member-row lookup, `decideOrgPermission`
+ * and, for an agent, the same key-scope check — wrapped so a `ConvexError`
+ * denial becomes `false`. No second permission table; every existing guard is
+ * unchanged. Anything other than a `ConvexError` still throws.
+ *
+ * Not a substitute for the call's own org guard: a caller run against the wrong
+ * org gets `false` here, and the read must still have rejected it first.
+ */
+export async function callerMayRead(
+  ctx: QueryCtx | MutationCtx,
+  orgId: string,
+  resource: Resource,
+): Promise<boolean> {
+  try {
+    await requireOrgPermission(ctx, orgId, resource, "read");
+    return true;
+  } catch (e) {
+    if (e instanceof ConvexError) return false;
+    throw e;
+  }
+}
+
+/**
  * Manager+ (owner/admin/manager) standing for the caller within `orgId` — the
  * server-side half of the "cost + margin visible to manager+ only" gate (WS10 #949).
  * Service identity (trusted backend) always counts as manager+ — it already ran its

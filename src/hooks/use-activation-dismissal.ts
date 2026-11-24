@@ -12,18 +12,32 @@ import { api } from "../../convex/_generated/api";
  * from the org's real state (`useActivationMilestones`). Reactive: a dismiss
  * updates every mounted reader immediately, no manual refetch.
  */
-export function useActivationDismissal() {
-  const dismissedAt = useAuthedQuery(api.orgActivationDismissalsWrites.mine, {});
+export function useActivationDismissal(enabled = true) {
+  // `enabled: false` (no setup slot on the board) skips the read entirely.
+  const dismissedAt = useAuthedQuery(api.orgActivationDismissalsWrites.mine, enabled ? {} : "skip");
   const dismissM = useMutation(api.orgActivationDismissalsWrites.dismissNative);
+  const undismissM = useMutation(api.orgActivationDismissalsWrites.undismissNative);
 
-  const dismiss = useCallback(async (): Promise<void> => {
-    await dismissM({ id: createId(), now: Date.now() });
+  /** Resolves to the row id this call created, or `null` when it was already dismissed (nothing to undo). */
+  const dismiss = useCallback(async (): Promise<string | null> => {
+    const id = createId();
+    const { created } = await dismissM({ id, now: Date.now() });
+    return created ? id : null;
   }, [dismissM]);
+
+  /** The exact reverse of one `dismiss()`: pass the id it resolved to. */
+  const undismiss = useCallback(
+    async (id: string): Promise<void> => {
+      await undismissM({ id });
+    },
+    [undismissM],
+  );
 
   return {
     /** `undefined` while loading, `null` if never dismissed, else the timestamp. */
     dismissedAt: dismissedAt as number | null | undefined,
     dismissed: !!dismissedAt,
     dismiss,
+    undismiss,
   };
 }

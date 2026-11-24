@@ -18,11 +18,19 @@ export interface NativeDashboardStats {
   activeProjects: number;
   activeCrew: number;
   pendingCrewOffers: number;
+  /** The Maintenance page's Overdue tile (every record, schedule cycles included). */
   maintenanceDue: number;
-  /** WS6 #945 — distinct models with an open, due recurring-PM cycle. Separate
-   *  from `maintenanceDue` (which excludes schedule-generated records). */
+  /** A maintenance read cap was hit: print `n+`. */
+  maintenanceTruncated?: boolean;
+  /** WS6 #945 — distinct models with an overdue recurring-PM cycle (those
+   *  cycles are also in `maintenanceDue`). */
   modelsDueForService: number;
+  /** CHECKED_OUT lines on overdue-return jobs: the tile's sub-line (D85). */
   overdueReturns: number;
+  /** Overdue-return JOBS (`convex/lib/overdueReturns.ts`): the tile's number, what `?overdue=1` lists. */
+  overdueReturnJobs: number;
+  /** A read cap was hit: print `n+`. */
+  overdueTruncated: boolean;
   countersReady: boolean;
 }
 
@@ -92,6 +100,22 @@ export function useNativeUpcoming(orgId: string | undefined) {
   const enabled = !!orgId;
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
   return useAuthedQuery(api.dashboardLists.upcoming, enabled ? { orgId: orgId!, now: nowBucket } : "skip");
+}
+
+/** How many live jobs On the floor now shows; the header counts the org-wide total. */
+const FLOOR_ROWS = 4;
+
+/**
+ * On the floor now: the ORG's live jobs (the Jobs `out` segment, soonest due back
+ * first), through the existing Jobs list query — the same set the widget's
+ * `View all ›` (the org-wide floor) works from. `total` is counted before the page
+ * is cut, never after a slice.
+ */
+export function useNativeFloorJobs(orgId: string | undefined) {
+  return useAuthedQuery(
+    api.projects.listPage,
+    orgId ? { orgId, segment: "out", sortBy: "rentalEndDate", sortOrder: "asc", page: 1, pageSize: FLOOR_ROWS } : "skip",
+  );
 }
 
 export function useNativeHome(orgId: string | undefined) {
@@ -190,20 +214,28 @@ export interface NativeOrgFinanceCounts {
   neverSentCount: number;
   depositDueCount: number;
   outstandingCount: number;
+  /** D88: issued invoices past their due day and not settled. */
+  overdueCount: number;
+  /** What is still owed on them (derived remaining balance). */
+  overdueOutstanding: number;
+  /** The ISSUED scan hit its cap: the overdue figures are a lower bound. */
+  overdueTruncated: boolean;
 }
 
 /**
  * financeOrg.counts: the org-level Finance section's dashboard-chip counts
  * (#992, Phase F) — same bounded reads `financeOrg.bundle` uses, small return
- * shape, mirroring `useNativeOverbookingCounts` above.
+ * shape, mirroring `useNativeOverbookingCounts` above. `null` when the
+ * caller's role can't read invoices (the server answers null rather than
+ * throwing, so a mismatched role never crashes Home).
  */
-export function useNativeOrgFinanceCounts(orgId: string | undefined): NativeOrgFinanceCounts | undefined {
+export function useNativeOrgFinanceCounts(orgId: string | undefined): NativeOrgFinanceCounts | null | undefined {
   const enabled = !!orgId;
   const nowBucket = enabled ? Math.floor(Date.now() / MINUTE) * MINUTE : 0;
   return useAuthedQuery(
     api.financeOrg.counts,
     enabled ? { orgId: orgId!, now: nowBucket } : "skip",
-  ) as NativeOrgFinanceCounts | undefined;
+  ) as NativeOrgFinanceCounts | null | undefined;
 }
 
 export interface NativeSubHireStats {

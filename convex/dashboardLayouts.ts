@@ -40,6 +40,13 @@ export type DashboardLayoutWidget = {
 // server-side re-check of a client-facing bound, R-8.6.3).
 const MAX_WIDGETS = 40;
 
+/** A client-named org must be the token's org: a board edited under org A can never land in org B's row. */
+function assertSameOrg(clientOrgId: string | undefined, tokenOrgId: string): void {
+  if (clientOrgId !== undefined && clientOrgId !== tokenOrgId) {
+    throw new ConvexError("Forbidden: organization mismatch.");
+  }
+}
+
 /** The verified caller's saved layout for their ACTIVE org, or `null` if none
  *  has ever been saved (the client falls back to `DEFAULT_LAYOUT` — see
  *  `src/lib/dashboard-widgets.ts` — rather than this query inventing one, so
@@ -49,10 +56,14 @@ export const get = query({
     v.object({ id: v.string(), widgets: v.array(widgetValidator), updatedAt: v.number() }),
     v.null(),
   ),
-  args: {},
-  handler: async (ctx) => {
+  // `orgId` (optional, additive): the org the CLIENT believes is active. It makes
+  // the subscription key differ per org (so a switch never serves the old org's
+  // cached board) and must match the token's org.
+  args: { orgId: v.optional(v.string()) },
+  handler: async (ctx, { orgId }) => {
     const auth = await getAuthContext(ctx);
     if (!isMemberAuth(auth) || !auth.orgId) return null;
+    assertSameOrg(orgId, auth.orgId);
     await requireSelfScope(ctx, "read");
     const rows = await ctx.db
       .query("dashboardLayouts")
@@ -101,8 +112,8 @@ function assertValidWidgets(widgets: DashboardLayoutWidget[]): void {
  *  latest write always wins, there is nothing to merge. */
 export const saveNative = mutation({
   returns: v.object({ ok: v.boolean() }),
-  args: { id: v.string(), widgets: v.array(widgetValidator), now: v.number() },
-  handler: async (ctx, { id, widgets, now }) => {
+  args: { id: v.string(), widgets: v.array(widgetValidator), now: v.number(), orgId: v.optional(v.string()) },
+  handler: async (ctx, { id, widgets, now, orgId }) => {
     await assertWritesEnabled(ctx, "dashboard-layout");
     await enforceBrowserWriteLimit(ctx);
     const auth = await getAuthContext(ctx);
@@ -112,6 +123,7 @@ export const saveNative = mutation({
     if (!auth.orgId) {
       throw new ConvexError("Forbidden: no active organization.");
     }
+    assertSameOrg(orgId, auth.orgId);
     await requireSelfScope(ctx, "write");
     assertValidWidgets(widgets);
     const organizationId = auth.orgId;

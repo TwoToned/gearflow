@@ -11,6 +11,7 @@ import {
   inStatusSegment,
   matchesJobFilter,
   needsYouProjectIds,
+  overdueReturnProjectIds,
   type JobListFilter,
   type JobSegmentKey,
 } from "./lib/projectSegments";
@@ -87,6 +88,8 @@ export const listPage = query({
     dateTo: v.optional(v.number()),
     /** Stable clock for the derived `needs` segment (a caller snapshot, never a fresh Date.now()). */
     now: v.optional(v.number()),
+    /** D86: only overdue returns (`lib/overdueReturns.ts`, the Home tile's definition). Additive; absent = off. */
+    overdue: v.optional(v.boolean()),
   },
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "project"); // Phase 2 read bootstrap (#998)
@@ -113,7 +116,8 @@ export const listPage = query({
     const locationNameFor = (id: string | null | undefined) => (id ? locationMap.get(id)?.name : undefined);
 
     const needsYou = segment === "needs" ? await needsYouProjectIds(ctx, a.orgId, rows, a.now) : new Set<string>();
-    const filter: JobListFilter = { ...a, segment };
+    const overdueIds = a.overdue ? await overdueReturnProjectIds(ctx, rows, a.now) : undefined;
+    const filter: JobListFilter = { ...a, segment, overdueIds };
     const filtered = rows.filter((p) => {
       if (!matchesJobFilter(p, filter, needsYou)) return false;
       if (a.search && !matchesSearch([p.name, p.projectNumber, clientNameFor(p.clientId), locationNameFor(p.locationId)], a.search)) return false;
@@ -148,7 +152,7 @@ export const segmentCounts = query({
     await requireOrgReadFor(ctx, orgId, "project");
     const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
     const needsYou = await needsYouProjectIds(ctx, orgId, rows, now);
-    const counts: Record<JobSegmentKey, number> = { all: 0, quoting: 0, booked: 0, out: 0, done: 0, needs: needsYou.size };
+    const counts: Record<JobSegmentKey, number> = { all: 0, active: 0, quoting: 0, booked: 0, out: 0, done: 0, needs: needsYou.size };
     for (const key of JOB_SEGMENT_KEYS) {
       if (key === "needs") continue;
       counts[key] = rows.filter((p) => inStatusSegment(p, key)).length;
@@ -158,9 +162,9 @@ export const segmentCounts = query({
 });
 
 /**
- * Ids of the jobs in the derived "needs you" set (blocking discussion, out past
- * end date, quote untouched 12+ days), so a surface can highlight or open them.
- * Overbooked jobs are not part of it (that math lives in `src/lib`).
+ * Ids of the jobs in the derived "needs you" set (blocking discussion, overdue
+ * return, hard overbooking, quote untouched 12+ days), so a surface can
+ * highlight or open them.
  */
 export const needsYouIds = query({
   args: { orgId: v.string(), now: v.optional(v.number()) },
@@ -588,8 +592,8 @@ export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List all projects for an org.", danger: "low", mcpTier: 2 },
   getById: { summary: "Get one project by id.", danger: "low", mcpTier: 1 },
   listPage: { summary: "Filtered, sorted, paginated project list with client join.", danger: "low", mcpTier: 1 },
-  segmentCounts: { summary: "Counts for the Jobs list strip: all, quoting, booked, out, done and needs-you.", danger: "low", mcpTier: 3 },
-  needsYouIds: { summary: "Ids of jobs that need attention: open blocking comment, out past end date, or a stale quote.", danger: "low", mcpTier: 3 },
+  segmentCounts: { summary: "Counts for the Jobs list strip: all, active, quoting, booked, out, done and needs-you.", danger: "low", mcpTier: 3 },
+  needsYouIds: { summary: "Ids of jobs that need attention: open blocking comment, overdue return, hard overbooking, or a stale quote.", danger: "low", mcpTier: 3 },
   listBoard: { summary: "Browse an org's non-template, non-cancelled projects grouped for the kanban board.", danger: "low", mcpTier: 2 },
   listByIds: { summary: "Batch point-read projects by id, scoped to one org.", danger: "low", mcpTier: 2 },
   getByOrgAndNumber: { summary: "Look up a project by its human-facing project number.", danger: "low", mcpTier: 1 },

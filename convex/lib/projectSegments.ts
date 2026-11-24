@@ -1,6 +1,8 @@
 import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { hardOverbookedProjectIds } from "../overbookingBoard";
+import { overdueReturnsFromRows } from "./overdueReturns";
+import { BOOKED_STATUSES } from "./jobStatusGroups";
 
 /**
  * Jobs list segments (UX unification §9b.3). ONE definition of which statuses a
@@ -11,16 +13,22 @@ import { hardOverbookedProjectIds } from "../overbookingBoard";
  * `all` is every status except CANCELLED; `needs` is DERIVED on read, never a
  * stored flag (D13).
  */
+const BOOKED = BOOKED_STATUSES;
+const OUT = ["CHECKED_OUT", "ON_SITE"] as const;
+
 export const JOB_SEGMENT_STATUSES = {
+  // D86: Active = Booked + Out, derived from the two lists (the Active jobs tile's
+  // counter, `ACTIVE_PROJECT_STATUSES` in lib/counters.ts, is the same set).
+  active: [...BOOKED, ...OUT],
   quoting: ["ENQUIRY", "QUOTING", "QUOTED"],
-  booked: ["AWAITING_PAYMENT", "CONFIRMED", "PREPPING"],
-  out: ["CHECKED_OUT", "ON_SITE"],
+  booked: BOOKED,
+  out: OUT,
   done: ["RETURNED", "COMPLETED", "INVOICED"],
 } as const;
 
 export type JobSegmentKey = "all" | "needs" | keyof typeof JOB_SEGMENT_STATUSES;
 
-export const JOB_SEGMENT_KEYS: readonly JobSegmentKey[] = ["all", "quoting", "booked", "out", "done", "needs"];
+export const JOB_SEGMENT_KEYS: readonly JobSegmentKey[] = ["all", "active", "quoting", "booked", "out", "done", "needs"];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A quote sent this long ago with no movement needs a nudge. */
@@ -49,13 +57,6 @@ export function resolveNow(now: number | undefined): number {
 export function inStatusSegment(p: Pick<Project, "status">, segment: Exclude<JobSegmentKey, "needs">): boolean {
   if (segment === "all") return p.status !== "CANCELLED";
   return (JOB_SEGMENT_STATUSES[segment] as readonly string[]).includes(p.status ?? "");
-}
-
-/** Pure: a CHECKED_OUT / ON_SITE job whose end date has passed. */
-export function isOutPastEnd(p: Pick<Project, "status" | "rentalEndDate" | "projectEndDate">, now: number): boolean {
-  if (p.status !== "CHECKED_OUT" && p.status !== "ON_SITE") return false;
-  const end = p.rentalEndDate ?? p.projectEndDate;
-  return end != null && end < now;
 }
 
 /** The project a thread belongs to, or null for a thread on any other entity. */
@@ -114,7 +115,8 @@ async function staleQuotedIds(ctx: QueryCtx, orgId: string, rows: Project[], now
 
 /**
  * Ids of the org's jobs that need a human, derived on read (D13): an unresolved
- * blocking discussion, an `out` job past its end date, a quote untouched for
+ * blocking discussion, an overdue return (`lib/overdueReturns.ts`, the same
+ * definition as Home's tile and the `overdue=1` filter), a quote untouched for
  * `STALE_QUOTE_DAYS`, or a hard-overbooked job (the Overbookings board's
  * `gear.hard` over its default 30-day horizon, via `hardOverbookedProjectIds`,
  * so the math lives once). The overbooking read only runs for callers of this
@@ -134,16 +136,26 @@ export async function needsYouProjectIds(
 ): Promise<Set<string>> {
   const now = resolveNow(callerNow);
   const live = rows.filter((p) => !p.isTemplate && p.status !== "CANCELLED");
-  const [blocked, stale, overbooked] = await Promise.all([
+  const [blocked, stale, overbooked, overdue] = await Promise.all([
     blockedProjectIds(ctx, orgId),
     staleQuotedIds(ctx, orgId, live, now),
     hardOverbookedProjectIds(ctx, orgId, now),
+    overdueReturnsFromRows(ctx, live, now),
   ]);
   const ids = new Set<string>(stale);
   for (const p of live) {
-    if (blocked.has(p.id) || overbooked.has(p.id) || isOutPastEnd(p, now)) ids.add(p.id);
+    if (blocked.has(p.id) || overbooked.has(p.id) || overdue.projectIds.has(p.id)) ids.add(p.id);
   }
   return ids;
+}
+
+/**
+ * The jobs behind the Jobs list's `overdue=1` filter (D86): the shared overdue-return
+ * set over the caller's already-loaded, org-checked rows. `callerNow` is clamped by
+ * `resolveNow`, same as the Needs-you set.
+ */
+export async function overdueReturnProjectIds(ctx: QueryCtx, rows: Project[], callerNow: number | undefined): Promise<Set<string>> {
+  return (await overdueReturnsFromRows(ctx, rows, resolveNow(callerNow))).projectIds;
 }
 
 export interface JobListFilter {
@@ -155,6 +167,8 @@ export interface JobListFilter {
   dateTo?: number;
   segment?: JobSegmentKey;
   includeCancelled?: boolean;
+  /** Set only when the `overdue=1` filter is on: the overdue-return ids a row must be in. */
+  overdueIds?: ReadonlySet<string>;
 }
 
 function matchesList(values: string[] | undefined, v: string | undefined | null): boolean {
@@ -180,6 +194,7 @@ export function matchesJobFilter(p: Project, f: JobListFilter, needsYou: Readonl
   if (!matchesList(f.statusIn, p.status) || !matchesList(f.typeIn, p.type)) return false;
   if (!matchesList(f.clientIn, p.clientId) || !matchesList(f.pmIn, p.projectManagerId)) return false;
   if (!overlapsWindow(p, f.dateFrom, f.dateTo)) return false;
+  if (f.overdueIds && !f.overdueIds.has(p.id)) return false;
   return matchesSegment(p, f, needsYou);
 }
 

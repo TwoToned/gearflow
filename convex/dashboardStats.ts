@@ -3,7 +3,8 @@ import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { requireLiveVersionId } from "./lib/versionScope";
+import { overdueReturnsForOrg } from "./lib/overdueReturns";
+import { OVERDUE_MAINTENANCE_STATUSES, isOverdueMaintenance } from "./lib/maintenanceOpen";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -20,13 +21,16 @@ import { requireLiveVersionId } from "./lib/versionScope";
  * Phase 5 domain slice, #1001).
  */
 
-const RETURN_TERMINAL = new Set(["RETURNED", "COMPLETED", "INVOICED", "CANCELLED"]);
-const OPEN_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as const;
+// Overdue maintenance is ONE definition (lib/maintenanceOpen.ts), the Maintenance
+// page's own Overdue tile.
 // A range `.lte`/`.lt(now)` sweeps in rows whose date field is undefined (undefined
 // sorts before all numbers in a Convex index). Pin the lower bound at the minimum
 // representable timestamp so undated rows stay OUT of the read-set entirely (matters
 // for date-less draft/quote projects), keeping the reactive read-set minimal.
 const MIN_TS = -8_640_000_000_000_000;
+
+/** Per overdue status, the most late maintenance records Home reads (then `n+`). */
+export const MAINTENANCE_DUE_CAP = 500;
 
 export const bundle = query({
   args: { orgId: v.string(), now: v.number() },
@@ -45,76 +49,53 @@ export const bundle = query({
     const ready = counterRow?.shardsSeededAt != null;
     const counter = ready ? await readCounterValues(ctx, orgId) : ZERO_COUNTERS;
 
-    // ── Date-derived: maintenanceDue (open + scheduledDate arrived) ──
-    // Range-scan by (org, status, MIN_TS < scheduledDate <= now) per open status so
-    // the reactive read-set is only the dated-and-due records, not the whole
-    // maintenance table (Appendix B). The lower bound keeps undated rows out.
+    // ── Date-derived: maintenanceDue = the Maintenance page's Overdue tile ──
+    // The ONE overdue rule (lib/maintenanceOpen.ts `isOverdueMaintenance`):
+    // scheduled / in progress with `scheduledDate < now`; held work (awaiting
+    // parts, QA) is not late. Like the page's tile it counts EVERY record,
+    // schedule-generated PM cycles included, so the Needs attention line and the
+    // page it opens say the same number. Range-scan by (org, status, MIN_TS <
+    // scheduledDate < now) per overdue status so the reactive read-set is only
+    // the dated-and-late records (Appendix B); the lower bound keeps undated rows out.
     //
-    // WS6 #945: schedule-generated PM cycles (serviceScheduleId set) are
-    // EXCLUDED from this count — they get their own "N models due for service"
-    // chip (modelsDueForService below) instead of double-counting into the
-    // legacy ad-hoc-maintenance tile (see FEATUREDOCS/17's chip note).
+    // WS6 #945: the schedule-generated cycles ALSO feed the model-level
+    // "N models due for service" line (modelsDueForService below), which opens
+    // Due for service — a different list, so the two lines can overlap.
+    // Bounded: each status range is org-index-first, oldest first, capped at
+    // MAINTENANCE_DUE_CAP + 1; a hit sets `maintenanceTruncated` (the line prints n+).
     let maintenanceDue = 0;
+    let maintenanceTruncated = false;
     const dueForServiceModelIds = new Set<string>();
-    for (const status of OPEN_MAINTENANCE_STATUSES) {
-      const due = await ctx.db
+    for (const status of OVERDUE_MAINTENANCE_STATUSES) {
+      const read = await ctx.db
         .query("maintenanceRecords")
         .withIndex("by_organizationId_status_scheduledDate", (q) =>
-          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lte("scheduledDate", now),
+          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
         )
-        .collect();
-      for (const r of due) {
-        if (!r.serviceScheduleId) {
-          maintenanceDue++;
-          continue;
-        }
+        .take(MAINTENANCE_DUE_CAP + 1);
+      if (read.length > MAINTENANCE_DUE_CAP) maintenanceTruncated = true;
+      for (const r of read.slice(0, MAINTENANCE_DUE_CAP)) {
+        if (!isOverdueMaintenance(r, now)) continue;
+        maintenanceDue++;
+        if (!r.serviceScheduleId) continue;
         const schedule = await ctx.db
           .query("serviceSchedules")
           .withIndex("by_cuid", (q) => q.eq("id", r.serviceScheduleId!))
           .unique();
-        if (schedule) dueForServiceModelIds.add(schedule.modelId);
+        // by_cuid is global: the schedule must be this org's.
+        if (schedule && schedule.organizationId === orgId) dueForServiceModelIds.add(schedule.modelId);
       }
     }
     const modelsDueForService = dueForServiceModelIds.size;
 
-    // ── Date-derived: overdueReturns (CHECKED_OUT line items in overdue projects) ──
-    // Overdue = non-template project past its rentalEndDate, not in a terminal
-    // status. Range-scan by (org, MIN_TS < rentalEndDate < now) so the reactive
-    // read-set is only past-end-date projects, not the whole org's projects table
-    // (Appendix B); the lower bound keeps date-less draft/quote projects out. Then
-    // read CHECKED_OUT line items per overdue project via by_projectId_status
-    // (bounded), NOT the whole org's line items.
-    const overdueProjects = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId_rentalEndDate", (q) =>
-        q.eq("organizationId", orgId).gt("rentalEndDate", MIN_TS).lt("rentalEndDate", now),
-      )
-      .collect();
-    const overdueProjectIds = overdueProjects
-      .filter(
-        (p) =>
-          p.isTemplate !== true &&
-          !RETURN_TERMINAL.has(p.status ?? ""),
-      )
-      .map((p) => p.id);
-
-    // LIVE-ONLY (#1228): CHECKED_OUT status only ever applies to the live plan.
-    let overdueReturns = 0;
-    if (overdueProjectIds.length > 0) {
-      const overdueProjectById = new Map(overdueProjects.map((p) => [p.id, p]));
-      const perProject = await Promise.all(
-        overdueProjectIds.map(async (pid) => {
-          const project = overdueProjectById.get(pid);
-          if (!project) return [];
-          const versionId = requireLiveVersionId(project);
-          return ctx.db
-            .query("projectLineItems")
-            .withIndex("by_versionId_status", (q) => q.eq("versionId", versionId).eq("status", "CHECKED_OUT"))
-            .collect();
-        }),
-      );
-      overdueReturns = perProject.reduce((sum, rows) => sum + rows.length, 0);
-    }
+    // ── Date-derived: overdue returns (D85) ──
+    // The ONE definition lives in `lib/overdueReturns.ts` (shared with the Jobs
+    // list's `overdue=1` filter and its Needs-you set, so the tile's number is
+    // the list it opens). It reads the org's OPEN jobs by (org, status), then
+    // probes each past-end job's LIVE version for CHECKED_OUT lines, bounded,
+    // with a `truncated` flag.
+    // The tile's sub-line counts the lines still out, so this caller counts them.
+    const overdue = await overdueReturnsForOrg(ctx, orgId, now, { countLines: true });
 
     return {
       totalAssets: counter.activeAssets + counter.bulkQuantity,
@@ -123,11 +104,18 @@ export const bundle = query({
       activeCrew: counter.activeCrew,
       pendingCrewOffers: counter.pendingCrewOffers,
       maintenanceDue,
-      // WS6 #945 — distinct models with an open, due (or in-progress) recurring
-      // PM cycle. Separate from `maintenanceDue` by design (see the exclusion
-      // note above) so the two chips never double-count the same work.
+      // A per-status range hit MAINTENANCE_DUE_CAP: maintenanceDue (and
+      // modelsDueForService) are lower bounds.
+      maintenanceTruncated,
+      // WS6 #945 — distinct models with an overdue (scheduled or in-progress)
+      // recurring PM cycle. Model-level and opens Due for service; those cycles
+      // are ALSO in `maintenanceDue`, which mirrors the Maintenance page's tile.
       modelsDueForService,
-      overdueReturns,
+      // D85: the tile counts JOBS; `overdueReturns` (CHECKED_OUT lines on those
+      // jobs) is kept, unchanged in name, as the tile's sub-line ("67 items to chase").
+      overdueReturns: overdue.lineCount,
+      overdueReturnJobs: overdue.projectIds.size,
+      overdueTruncated: overdue.truncated,
       // False until the sharded counters are seeded, so the client shows a loading
       // state instead of wrong-zeros mid-migration (see useNativeDashboardStats).
       countersReady: ready,
@@ -137,5 +125,5 @@ export const bundle = query({
 
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
-  bundle: { summary: "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns).", danger: "low", mcpTier: 2 },
+  bundle: { summary: "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns as jobs and lines).", danger: "low", mcpTier: 2 },
 };

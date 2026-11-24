@@ -8,7 +8,9 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { useNavItems } from "@/hooks/use-nav-items";
 import { useOrgSwitch } from "@/hooks/use-org-switch";
 import { useProfile } from "@/hooks/use-profile";
-import { useSession, signOut } from "@/lib/auth-client";
+import { useSession, signOut, useActiveOrganization } from "@/lib/auth-client";
+import { useNavCount } from "@/hooks/use-nav-counts";
+import { StatusWord } from "@/components/ui/status-word";
 import { moreSheetGroups, type MoreRow } from "@/lib/nav";
 import { NAV_ICONS } from "@/components/layout/nav-icons";
 import { ThemeWords } from "@/components/layout/theme-words";
@@ -66,7 +68,17 @@ function UserHead({ onDrillOrg, showOrg }: { onDrillOrg: () => void; showOrg: bo
   );
 }
 
-function RowItem({ row, onDrill }: { row: MoreRow; onDrill: (row: MoreRow) => void }) {
+const COUNT_INTENT = { warning: "warning", error: "error" } as const;
+
+/** A row's trailing count: muted text for a total, a dot-word for something to chase. */
+function RowCount({ source, orgId }: { source: MoreRow["count"]; orgId: string | undefined }) {
+  const count = useNavCount(source, orgId);
+  if (!count) return null;
+  if (count.tone === "muted") return <span className="font-mono text-[12.5px] text-muted tabular-nums">{count.text}</span>;
+  return <StatusWord status={{ label: count.text, intent: COUNT_INTENT[count.tone] }} className="text-[12.5px]" />;
+}
+
+function RowItem({ row, orgId, onDrill }: { row: MoreRow; orgId: string | undefined; onDrill: (row: MoreRow) => void }) {
   const router = useRouter();
   const Icon = NAV_ICONS[row.icon];
   const drillable = row.subs.length > 0;
@@ -74,7 +86,12 @@ function RowItem({ row, onDrill }: { row: MoreRow; onDrill: (row: MoreRow) => vo
     <BottomSheetItem
       keepOpen={drillable}
       icon={<Icon />}
-      trailing={drillable ? <ChevronRight className="size-4 text-muted" /> : undefined}
+      trailing={
+        <span className="flex items-center gap-2">
+          {row.count && <RowCount source={row.count} orgId={orgId} />}
+          {drillable && <ChevronRight className="size-4 text-muted" />}
+        </span>
+      }
       onSelect={() => (drillable ? onDrill(row) : router.push(row.url))}
     >
       {row.label}
@@ -132,8 +149,14 @@ function OrgDrill({ onBack }: { onBack: () => void }) {
   );
 }
 
+/**
+ * The grouped rows. Mounted only while the sheet is open, and only for the rows
+ * `useNavItems` kept for this role, so each row's count is subscribed exactly
+ * while it can be seen (UX Phase 11, S4).
+ */
 function MoreGroups({ onDrill }: { onDrill: (row: MoreRow) => void }) {
   const { all } = useNavItems();
+  const { data: activeOrg } = useActiveOrganization();
   const groups = useMemo(() => moreSheetGroups(all), [all]);
   return (
     <>
@@ -142,7 +165,7 @@ function MoreGroups({ onDrill }: { onDrill: (row: MoreRow) => void }) {
           <BottomSheetSeparator />
           <h3 className="t-overline px-4 pb-1 pt-2 text-muted">{g.label}</h3>
           {g.rows.map((row) => (
-            <RowItem key={row.key} row={row} onDrill={onDrill} />
+            <RowItem key={row.key} row={row} orgId={activeOrg?.id} onDrill={onDrill} />
           ))}
         </section>
       ))}

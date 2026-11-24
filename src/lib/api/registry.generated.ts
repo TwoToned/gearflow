@@ -19667,9 +19667,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "agentReachable": true,
-    "args": [],
+    "args": [
+      {
+        "name": "orgId",
+        "optional": true,
+        "type": "string"
+      }
+    ],
     "privilegedArgs": [],
-    "argsSha": "5151b7eb8536aa97",
+    "argsSha": "c2eec38dc033e953",
     "returnsSha": "eb29fac8cd3e5a2a",
     "stability": "tracks-app",
     "summary": "Get the caller's own saved dashboard widget layout.",
@@ -19705,13 +19711,18 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "number"
       },
       {
+        "name": "orgId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "widgets",
         "optional": false,
         "type": "array"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "ed6d8afc493b8fc0",
+    "argsSha": "c3591aa900f06c24",
     "returnsSha": "efde83ecf2efd768",
     "stability": "tracks-app",
     "summary": "Save the caller's own dashboard widget layout (positions/sizes).",
@@ -19894,7 +19905,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns).",
+    "summary": "The org's dashboard stat tiles (assets, projects, crew, maintenance due, overdue returns as jobs and lines).",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -20789,7 +20800,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Cheap counts for the financeOrg.bundle sections, for a dashboard chip.",
+    "summary": "Cheap counts for the financeOrg.bundle sections, plus overdue invoices and what is still owed on them, for a dashboard chip.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -32821,6 +32832,76 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "navCounts.get",
+    "module": "navCounts",
+    "fn": "get",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "read"
+      },
+      {
+        "resource": "testTag",
+        "action": "read"
+      },
+      {
+        "resource": "maintenance",
+        "action": "read"
+      },
+      {
+        "resource": "warehouse",
+        "action": "read"
+      },
+      {
+        "resource": "client",
+        "action": "read"
+      },
+      {
+        "resource": "supplier",
+        "action": "read"
+      },
+      {
+        "resource": "location",
+        "action": "read"
+      },
+      {
+        "resource": "crew",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "source",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e559da0724d8ea60",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Count one phone-More-sheet row (assets, overdue test & tag, open/overdue maintenance, overdue returns, clients, suppliers, locations or crew), capped with a truncated flag.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "notificationDismissals.create",
     "module": "notificationDismissals",
     "fn": "create",
@@ -33877,6 +33958,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "orgActivationDismissalsWrites.undismissNative",
+    "module": "orgActivationDismissalsWrites",
+    "fn": "undismissNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "cb08e80e61dcbd4a",
+    "stability": "tracks-app",
+    "summary": "Undo the caller's own 'Get started' checklist dismissal (by the id that dismissal created).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "orgAdminStats.getBatchOrgStats",
     "module": "orgAdminStats",
     "fn": "getBatchOrgStats",
@@ -34647,6 +34760,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "orgSetupDismissalsWrites.undismissNative",
+    "module": "orgSetupDismissalsWrites",
+    "fn": "undismissNative",
+    "kind": "mutation",
+    "guard": "self",
+    "resource": "self",
+    "action": "write",
+    "scopePairs": [
+      {
+        "resource": "self",
+        "action": "write"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8b114161049d5d20",
+    "returnsSha": "cb08e80e61dcbd4a",
+    "stability": "tracks-app",
+    "summary": "Undo the caller's own 'Finish setup' checklist dismissal (by the id that dismissal created).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "overbooking.bundle",
     "module": "overbooking",
     "fn": "bundle",
@@ -34865,6 +35010,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
+  },
+  {
+    "operation": "paletteRecents.resolve",
+    "module": "paletteRecents",
+    "fn": "resolve",
+    "kind": "query",
+    "guard": "orgRead",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "refs",
+        "optional": false,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c55963142a08c186",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Resolves the browser palette's own localStorage Recent refs across several RBAC domains (same per-result-type scope gap as globalSearch.search); no agent use."
   },
   {
     "operation": "parity.countPage",
@@ -42202,6 +42379,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "overdue",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "page",
         "optional": true,
         "type": "number"
@@ -42248,7 +42430,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "832c0061f28e8e87",
+    "argsSha": "6f682d818ec46847",
     "returnsSha": "74234e98afe7498f",
     "stability": "stable",
     "summary": "Filtered, sorted, paginated project list with client join.",
@@ -42288,7 +42470,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "aa779fb8e4bbb517",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Ids of jobs that need attention: open blocking comment, out past end date, or a stale quote.",
+    "summary": "Ids of jobs that need attention: open blocking comment, overdue return, hard overbooking, or a stale quote.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -42389,7 +42571,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "aa779fb8e4bbb517",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Counts for the Jobs list strip: all, quoting, booked, out, done and needs-you.",
+    "summary": "Counts for the Jobs list strip: all, active, quoting, booked, out, done and needs-you.",
     "danger": "low",
     "mcpTier": 3,
     "agentAccess": null,
@@ -65276,10 +65458,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1264,
-  agentReachable: 633,
-  queries: 451,
-  mutations: 813,
-  agentReachableQueries: 316,
-  agentReachableMutations: 317,
+  total: 1268,
+  agentReachable: 636,
+  queries: 453,
+  mutations: 815,
+  agentReachableQueries: 317,
+  agentReachableMutations: 319,
 } as const;

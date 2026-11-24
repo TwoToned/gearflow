@@ -25,8 +25,11 @@ export interface MaintenanceCreateDetails {
   status: string;
   /** The `maintenanceRecordAssets` rows this create inserted (all LINK rows). */
   linkIds: string[];
-  /** Assets this create moved AVAILABLE → IN_MAINTENANCE, with the `updatedAt` each had. */
-  held: { assetId: string; updatedAtBefore: number | null }[];
+  /**
+   * Assets this create moved AVAILABLE (or no status, which reads as available) →
+   * IN_MAINTENANCE, with the `status` (`null` = absent) and `updatedAt` each had.
+   */
+  held: { assetId: string; statusBefore?: string | null; updatedAtBefore: number | null }[];
   /**
    * Assets this create RELEASED IN_MAINTENANCE → AVAILABLE (a COMPLETED, non-FAIL create).
    * Putting another job's hold back is not this create's to undo, so any refuses the Undo.

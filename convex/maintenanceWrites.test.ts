@@ -535,6 +535,20 @@ describe("maintenanceWrites.undoCreateNative (exact undo)", () => {
     expect(u?.details).toMatchObject({ undoOf: "a1" });
   });
 
+  test("an asset with NO status held by the create is restored with no status, not AVAILABLE", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "AS1", modelId: "m1", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await create(t, { status: "IN_PROGRESS" });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+    expect(await undo(t)).toEqual({ ok: true });
+    const a = await asset(t, "as1");
+    expect(a?.status).toBeUndefined();
+    expect("status" in (a ?? {})).toBe(false);
+    expect(a?.updatedAt).toBe(NOW);
+  });
+
   test("refuses when a colleague edited the job since (and changes nothing)", async () => {
     const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
     await create(t);

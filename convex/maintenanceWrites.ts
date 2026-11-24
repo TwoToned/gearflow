@@ -115,7 +115,7 @@ async function holdAssets(
     const a = await fetchOrgAsset(ctx, orgId, id);
     if (!a) continue;
     if ((a.status ?? "AVAILABLE") === "AVAILABLE") {
-      held.push({ assetId: id, updatedAtBefore: a.updatedAt ?? null });
+      held.push({ assetId: id, statusBefore: a.status ?? null, updatedAtBefore: a.updatedAt ?? null });
       await ctx.db.patch(a._id, { status: "IN_MAINTENANCE", updatedAt: now });
     }
   }
@@ -682,14 +682,16 @@ async function planHoldRestore(
   recordId: string,
   details: MaintenanceCreateDetails,
   stamp: number,
-): Promise<{ doc: Doc<"assets">; updatedAtBefore: number | null }[]> {
+): Promise<{ doc: Doc<"assets">; statusBefore: Doc<"assets">["status"]; updatedAtBefore: number | null }[]> {
   const docs = [];
   for (const h of details.held) {
     const doc = await fetchOrgAsset(ctx, orgId, h.assetId);
     if (!doc || doc.status !== "IN_MAINTENANCE" || doc.updatedAt !== stamp) {
       throw new ConvexError("An asset on this maintenance job changed since: it can't be undone");
     }
-    docs.push({ doc, updatedAtBefore: h.updatedAtBefore });
+    // `statusBefore` absent on the row = an older snapshot, which only ever held AVAILABLE.
+    const statusBefore = (h.statusBefore === undefined ? "AVAILABLE" : (h.statusBefore ?? undefined)) as Doc<"assets">["status"];
+    docs.push({ doc, statusBefore, updatedAtBefore: h.updatedAtBefore });
   }
   const stillHeld = await computeStillHeldIds(ctx, orgId, details.held.map((h) => h.assetId), recordId);
   return docs.filter((d) => !stillHeld.has(d.doc.id));
@@ -723,7 +725,8 @@ export const undoCreateNative = mutation({
 
     for (const l of rows) await ctx.db.delete(l._id);
     await ctx.db.delete(record._id);
-    for (const r of restore) await ctx.db.patch(r.doc._id, { status: "AVAILABLE", updatedAt: r.updatedAtBefore ?? undefined });
+    // Back exactly: an absent status is restored as absent, not as "AVAILABLE".
+    for (const r of restore) await ctx.db.patch(r.doc._id, { status: r.statusBefore, updatedAt: r.updatedAtBefore ?? undefined });
 
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UNDO", entityType: "maintenance",

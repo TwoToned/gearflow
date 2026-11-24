@@ -310,6 +310,24 @@ export function noMatchCopy(query: string): { title: string; hint: string } {
   };
 }
 
+/**
+ * `first`, then `rest` minus any row (or child) `first` already shows: a job on
+ * the typed day that the plain search also matched appears once, in the day's
+ * group. A `rest` section left with no rows is dropped.
+ */
+export function appendDistinct(first: readonly PaletteSection[], rest: readonly PaletteSection[]): PaletteSection[] {
+  const shown = new Set(flattenSections(first, true).map((r) => r.id));
+  const kept = rest
+    .map((s) => ({
+      ...s,
+      rows: s.rows
+        .filter((r) => !shown.has(r.id))
+        .map((r) => (r.children ? { ...r, children: r.children.filter((c) => !shown.has(c.id)) } : r)),
+    }))
+    .filter((s) => s.rows.length > 0);
+  return [...first, ...kept];
+}
+
 // ─── Keyboard order ──────────────────────────────────────────────────────
 
 /** Every selectable row in order: each row, then its children when they're shown. */

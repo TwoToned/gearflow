@@ -200,6 +200,28 @@ describe("⌘K palette (smoke)", () => {
     expect(groups.indexOf("Jobs on 14 Nov · 7")).toBeLessThan(groups.indexOf("Assets"));
   });
 
+  it("a job on the day that the search also matched is listed ONCE (rows deduped by id across date and search)", async () => {
+    const user = userEvent.setup();
+    m.search.mockImplementation(async (q: string) =>
+      q === "14/11"
+        ? {
+            results: [
+              res("project", "p9", "2350 — Qantas awards", { href: "/projects/p9", status: "CONFIRMED" }),
+              res("asset", "c1411", "CASE-14/11 — Road case", { href: "/assets/registry/c1411" }),
+            ],
+            groups: [{ type: "project", total: 1, truncated: false }, { type: "asset", total: 1, truncated: false }],
+          }
+        : { results: [], groups: [] },
+    );
+    render(<CommandSearch />);
+    openPalette();
+    await user.type(box(), "14/11");
+    await screen.findByRole("group", { name: "Assets" }, { timeout: 2000 });
+    const options = screen.getAllByRole("option").filter((o) => o.textContent?.includes("Qantas awards"));
+    expect(options).toHaveLength(1);
+    expect(screen.queryByRole("group", { name: "Jobs" })).toBeNull();
+  });
+
   it("a decimal or a fraction is a search, not a date: `1/4 inch jack` lists its search hits and no day", async () => {
     const user = userEvent.setup();
     m.search.mockImplementation(async (q: string) =>

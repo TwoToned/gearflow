@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actionRows,
+  appendDistinct,
   dateSections,
   emptySections,
   flattenSections,
@@ -149,6 +150,28 @@ describe("dateSections (`14/11`, `14 nov`)", () => {
   it("no jobs that day (or still loading): just the Schedule", () => {
     expect(labels(dateSections(d, { rows: [], total: 0 }, []))).toEqual(["Schedule"]);
     expect(labels(dateSections(d, undefined, []))).toEqual(["Schedule"]);
+  });
+
+  it("appendDistinct: a job on the day that the search also found shows ONCE, in the day's group", () => {
+    const day = dateSections(d, { rows: [{ id: "p1", projectNumber: "2341", name: "Hilton gala", status: "CONFIRMED" }], total: 1 }, []);
+    const found = searchSections(
+      [res("project", "p1", "2341 — Hilton gala"), res("project", "p2", "2342 — Qantas"), res("model", "m1", "Hilton lectern")],
+      [{ type: "project", total: 2, truncated: false }, { type: "model", total: 1, truncated: false }],
+      "14/11 hilton",
+      new Set(),
+    );
+    const all = appendDistinct(day, found);
+    const ids = flattenSections(all, true).map((r) => r.id);
+    expect(ids.filter((id) => id === "project-p1")).toHaveLength(1);
+    expect(ids).toContain("project-p2");
+    expect(ids).toContain("model-m1");
+    expect(labels(all)[0]).toBe("Jobs on 14 Nov · 1");
+  });
+
+  it("appendDistinct drops a section the dedupe empties", () => {
+    const day = dateSections(d, { rows: [{ id: "p1", projectNumber: "2341", name: "Hilton gala", status: "CONFIRMED" }], total: 1 }, []);
+    const found = searchSections([res("project", "p1", "2341 — Hilton gala")], [{ type: "project", total: 1, truncated: false }], "14/11", new Set());
+    expect(labels(appendDistinct(day, found))).toEqual(["Jobs on 14 Nov · 1", "Schedule"]);
   });
 });
 

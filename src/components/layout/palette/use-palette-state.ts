@@ -11,6 +11,7 @@ import { matchSlashCommands, extractEntityId } from "@/lib/slash-commands";
 import type { PageCommand } from "@/lib/page-commands";
 import {
   actionRows,
+  appendDistinct,
   emptySections,
   flattenSections,
   onPageLabel,
@@ -139,8 +140,8 @@ function modeSections(i: InputState, m: Modes, empty: PaletteSection[]): Palette
     slash: m.slash.active ? m.slash.sections : null,
     entity: i.entityPage ? m.at.sections : null,
     drill: i.drill ? [{ key: "drill", label: null, rows: filterDrill(i.drill.rows, i.drillQuery) }] : null,
-    at: m.at.active ? [...(dated ?? []), ...m.at.sections] : null,
-    date: dated ? [...dated, ...searchSections(m.found.results, m.found.groups, i.query, i.expandedFamilies)] : null,
+    at: m.at.active ? appendDistinct(dated ?? [], m.at.sections) : null,
+    date: dated ? appendDistinct(dated, searchSections(m.found.results, m.found.groups, i.query, i.expandedFamilies)) : null,
     empty: m.isEmpty ? empty : null,
     search: () => searchSections(m.found.results, m.found.groups, i.query, i.expandedFamilies),
   });

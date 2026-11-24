@@ -2,54 +2,18 @@
 
 import { emitWebhookEvent } from "@/lib/webhooks/emit";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
-import { getClientById } from "@/lib/clients-read";
 import { getModelById, getModelMap } from "@/lib/models-read";
-import { getLocationMap } from "@/lib/locations-read";
 import { serialize } from "@/lib/serialize";
 import { logActivity, logActivityMany } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import { assertNoBlockingComments } from "@/lib/blocking-comments-read";
-import { buildWarehouseLineItems } from "@/lib/project-line-item-read";
 import { projectDocumentData } from "@/lib/pdfme/generate-pdf";
 import { PULL_LIST_TABLE_CONFIG, toPullRow } from "@/lib/pdfme/pull-list";
 import { filterAndGroupItems } from "@/lib/react-pdf/line-items-table-model";
 import { getKitById, getKitByAssetTag } from "@/lib/kits-read";
 import { getActiveAssetsByModel, getAssetById, getAssetByAssetTag, getAssetsByIds, getBulkAssetsByIds, getBulkAssetByAssetTag } from "@/lib/assets-read";
 import { getProjectById, getProjectByIdMapped, getProjectsByOrg } from "@/lib/projects-read";
-
-export async function getProjectForWarehouse(projectId: string) {
-  const { organizationId } = await getOrgContext();
-
-  // The whole EQUIPMENT line-item tree (lineItems → childLineItems → units, with
-  // model/supplier/kit/asset/bulkAsset + check-item counts) is reconstructed from
-  // the dual-written Convex tables in JS — see buildWarehouseLineItems (Phase A
-  // keystone consumer 2/4). project is Convex-only too — read the scalars; even
-  // location is attached from Convex below.
-  const project = await getProjectByIdMapped(projectId, organizationId);
-
-  if (!project) {
-    throw new Error("Project not found");
-  }
-
-  if (project.isTemplate) {
-    throw new Error("Cannot perform warehouse operations on a template");
-  }
-
-  // ONE parallel wave (was 3 SEQUENTIAL round-trips: line-item tree → client →
-  // location). All independent of each other — each needs only projectId/orgId or
-  // the project scalars already read above.
-  const [lineItems, clientRaw, locationMap] = await Promise.all([
-    buildWarehouseLineItems(projectId, organizationId),
-    project.clientId ? getClientById(project.clientId) : Promise.resolve(null),
-    project.locationId ? getLocationMap(organizationId) : Promise.resolve(null),
-  ]);
-  // getClientById resolves by a GLOBAL by_cuid index — re-check org ownership (see
-  // src/server/projects.ts getProject for the full rationale).
-  const client = clientRaw && clientRaw.organizationId === organizationId ? clientRaw : null;
-  const location = project.locationId && locationMap ? locationMap.get(project.locationId) ?? null : null;
-  return serialize({ ...project, lineItems, client, location });
-}
 
 export async function lookupAssetForScan(
   projectId: string,

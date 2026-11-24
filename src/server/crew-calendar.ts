@@ -3,17 +3,10 @@
 import { randomBytes } from "crypto";
 import { getOrgContext, requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
-import { callerSeesCrewPay } from "@/lib/crew-pay-caller";
 import { logActivity } from "@/lib/activity-log";
 import { getConvexClient } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
-import { getCrewMemberById, getCrewRoleMap } from "@/lib/crew-read";
-import { getProjectById } from "@/lib/projects-read";
-import { getLocationById } from "@/lib/locations-read";
-import {
-  getAssignmentById,
-  getShiftsByAssignmentIds,
-} from "@/lib/crew-scheduling-read";
+import { getCrewMemberById } from "@/lib/crew-read";
 
 // ─── Token Management ────────────────────────────────────────────────────────
 
@@ -161,61 +154,4 @@ export async function setIcalIncludeTentative(crewMemberId: string, includeTenta
   });
 
   return { success: true };
-}
-
-// ─── Assignment .ics Download ────────────────────────────────────────────────
-
-/** The row minus the respond token, and minus pay unless the real caller sees it. */
-async function browserSafeAssignment<R extends { responseToken: unknown; estimatedCost: unknown; rateOverride: unknown }>(row: R) {
-  const { responseToken, estimatedCost, rateOverride, ...rest } = row;
-  void responseToken;
-  return (await callerSeesCrewPay()) ? { ...rest, estimatedCost, rateOverride } : rest;
-}
-
-/**
- * An assignment for an .ics download. Read with the service identity, so it
- * strips here what a browser caller may not hold (B-2 sweep): the single-use
- * `responseToken` (a bearer credential for the accept/decline route) ALWAYS,
- * and the pay fields unless the real caller sees crew pay (`callerSeesCrewPay`).
- */
-export async function getAssignmentIcsData(assignmentId: string) {
-  const { organizationId } = await requirePermission("crew", "read");
-
-  const row = await getAssignmentById(assignmentId);
-  if (!row || row.organizationId !== organizationId) {
-    throw new Error("Assignment not found");
-  }
-  const assignment = await browserSafeAssignment(row);
-
-  const [member, roleMap, project, shifts] = await Promise.all([
-    getCrewMemberById(assignment.crewMemberId),
-    getCrewRoleMap(organizationId),
-    getProjectById(assignment.projectId),
-    getShiftsByAssignmentIds([assignmentId]),
-  ]);
-
-  const role = assignment.crewRoleId ? roleMap.get(assignment.crewRoleId) ?? null : null;
-  const location = project?.locationId ? await getLocationById(project.locationId) : null;
-
-  const filteredShifts = shifts
-    .filter((s) => s.status !== "CANCELLED")
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-
-  return serialize({
-    ...assignment,
-    crewMember: member
-      ? { firstName: member.firstName, lastName: member.lastName, email: member.email ?? null }
-      : null,
-    crewRole: role ? { name: role.name } : null,
-    project: project
-      ? {
-          name: project.name,
-          projectNumber: project.projectNumber,
-          location: location ? { name: location.name, address: location.address ?? null } : null,
-          siteContactName: project.siteContactName ?? null,
-          siteContactPhone: project.siteContactPhone ?? null,
-        }
-      : null,
-    shifts: filteredShifts,
-  });
 }

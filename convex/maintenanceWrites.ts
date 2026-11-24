@@ -16,6 +16,12 @@ import { assertProjectInOrg } from "./projectLineItems";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import { retireAssetCore } from "./lib/assetRetire";
 import * as enums from "./lib/validators";
+import {
+  loadUndoableMaintenanceCreate,
+  requireOwnLinksOnly,
+  requireUntouchedMaintenanceRecord,
+  type MaintenanceCreateDetails,
+} from "./lib/maintenanceUndo";
 
 /**
  * Native MAINTENANCE write state machine (Phase 3 browser-direct — replaces
@@ -103,14 +109,17 @@ async function holdAssets(
   orgId: string,
   assetIds: string[],
   now: number,
-): Promise<void> {
+): Promise<MaintenanceCreateDetails["held"]> {
+  const held: MaintenanceCreateDetails["held"] = [];
   for (const id of assetIds) {
     const a = await fetchOrgAsset(ctx, orgId, id);
     if (!a) continue;
     if ((a.status ?? "AVAILABLE") === "AVAILABLE") {
+      held.push({ assetId: id, statusBefore: a.status ?? null, updatedAtBefore: a.updatedAt ?? null });
       await ctx.db.patch(a._id, { status: "IN_MAINTENANCE", updatedAt: now });
     }
   }
+  return held;
 }
 
 /**
@@ -158,15 +167,18 @@ async function releaseAssets(
   assetIds: string[],
   stillHeldIds: Set<string>,
   now: number,
-): Promise<void> {
+): Promise<string[]> {
+  const released: string[] = [];
   for (const id of assetIds) {
     if (stillHeldIds.has(id)) continue;
     const a = await fetchOrgAsset(ctx, orgId, id);
     if (!a) continue;
     if ((a.status ?? "AVAILABLE") === "IN_MAINTENANCE") {
+      released.push(id);
       await ctx.db.patch(a._id, { status: "AVAILABLE", updatedAt: now });
     }
   }
+  return released;
 }
 
 type AssetDisposition = "RETURN_TO_SERVICE" | "KEEP_OUT_OF_SERVICE" | "RETIRE";
@@ -391,11 +403,13 @@ export const createNative = mutation({
 
     // Asset state-machine transitions. On COMPLETED-PASS the still-held check
     // excludes THIS record (its own fresh links must not self-hold).
+    let held: MaintenanceCreateDetails["held"] = [];
+    let released: string[] = [];
     if (isHoldingStatus(status)) {
-      await holdAssets(ctx, a.orgId, assetIds, a.now);
+      held = await holdAssets(ctx, a.orgId, assetIds, a.now);
     } else if (status === "COMPLETED" && a.result !== "FAIL") {
       const stillHeld = await computeStillHeldIds(ctx, a.orgId, assetIds, a.recordId);
-      await releaseAssets(ctx, a.orgId, assetIds, stillHeld, a.now);
+      released = await releaseAssets(ctx, a.orgId, assetIds, stillHeld, a.now);
     }
 
     await writeActivityLog(ctx, {
@@ -408,7 +422,12 @@ export const createNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Created maintenance record: ${a.title}`,
-      details: { assetCount: assetIds.length },
+      // The exact Undo's snapshot (`undoCreateNative`, `./lib/maintenanceUndo`): the SERVER
+      // clock, the status created, the link rows inserted and the assets put on hold.
+      details: {
+        kind: "maintenanceCreate", assetCount: assetIds.length, serverSavedAt: Date.now(), status,
+        linkIds: (await existingLinks(ctx, a.recordId)).map((l) => l.id), held, released,
+      } satisfies MaintenanceCreateDetails,
       createdAt: a.now,
     });
 
@@ -652,9 +671,91 @@ export const deleteNative = mutation({
   },
 });
 
+/**
+ * The assets the create put on hold, each proven as the create left it (IN_MAINTENANCE,
+ * `updatedAt` its stamp); returns the patches that put each back, skipping any another
+ * holding record still holds (it stays IN_MAINTENANCE, correctly).
+ */
+async function planHoldRestore(
+  ctx: MutationCtx,
+  orgId: string,
+  recordId: string,
+  details: MaintenanceCreateDetails,
+  stamp: number,
+): Promise<{ doc: Doc<"assets">; statusBefore: Doc<"assets">["status"]; updatedAtBefore: number | null }[]> {
+  const docs = [];
+  for (const h of details.held) {
+    const doc = await fetchOrgAsset(ctx, orgId, h.assetId);
+    if (!doc || doc.status !== "IN_MAINTENANCE" || doc.updatedAt !== stamp) {
+      throw new ConvexError("An asset on this maintenance job changed since: it can't be undone");
+    }
+    // `statusBefore` absent on the row = an older snapshot, which only ever held AVAILABLE.
+    const statusBefore = (h.statusBefore === undefined ? "AVAILABLE" : (h.statusBefore ?? undefined)) as Doc<"assets">["status"];
+    docs.push({ doc, statusBefore, updatedAtBefore: h.updatedAtBefore });
+  }
+  const stillHeld = await computeStillHeldIds(ctx, orgId, details.held.map((h) => h.assetId), recordId);
+  return docs.filter((d) => !stillHeld.has(d.doc.id));
+}
+
+/** Link rows an Undo will read for one record; more than this refuses (a create never makes that many). */
+const MAX_UNDO_LINK_ROWS = 200;
+
+/** All the record's `maintenanceRecordAssets` rows (both kinds), bounded: over the cap refuses. */
+async function recordAssetRowsForUndo(ctx: MutationCtx, recordId: string): Promise<Doc<"maintenanceRecordAssets">[]> {
+  const rows = await ctx.db
+    .query("maintenanceRecordAssets")
+    .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", recordId))
+    .take(MAX_UNDO_LINK_ROWS + 1);
+  if (rows.length > MAX_UNDO_LINK_ROWS) throw new ConvexError("This maintenance job has too many linked assets to undo: edit it instead");
+  return rows;
+}
+
+// ─── undoCreateNative ─── maintenance:create (Phase 16 final review SF3)
+//
+// The EXACT reverse of one `createNative`, for the Scan page's "Create maintenance job"
+// Undo (the toast's ONE closure). Ids only: everything it restores comes from the
+// create's own server-written audit row. Refuses as a whole — changing nothing — unless
+// it is the person who created it, within 10 minutes on the server clock, the first
+// undo, the record is untouched (`updatedAt` and status as created), its link rows are
+// exactly the ones the create inserted (no CHECKOFF progress, no other link), and each
+// asset it put on hold is as the create left it. Then deletes the record and its links,
+// puts each held asset back to AVAILABLE with its old `updatedAt` (unless another record
+// now holds it), and appends an UNDO row.
+export const undoCreateNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "maintenance");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "maintenance", "create");
+    const actor = await resolveActor(ctx, a.actor);
+
+    const { forward, details } = await loadUndoableMaintenanceCreate(ctx, { orgId: a.orgId, id: a.id, actorUserId: actor.userId, serverNow: Date.now() });
+    const record = await requireUntouchedMaintenanceRecord(ctx, a.orgId, a.id, forward, details);
+    const rows = await recordAssetRowsForUndo(ctx, a.id);
+    requireOwnLinksOnly(rows, details);
+    const restore = await planHoldRestore(ctx, a.orgId, a.id, details, record.updatedAt ?? -1);
+
+    for (const l of rows) await ctx.db.delete(l._id);
+    await ctx.db.delete(record._id);
+    // Back exactly: an absent status is restored as absent, not as "AVAILABLE".
+    for (const r of restore) await ctx.db.patch(r.doc._id, { status: r.statusBefore, updatedAt: r.updatedAtBefore ?? undefined });
+
+    await writeActivityLog(ctx, {
+      id: a.auditId, organizationId: a.orgId, action: "UNDO", entityType: "maintenance",
+      entityId: a.id, entityName: record.title, userId: actor.userId, userName: actor.userName,
+      summary: `Undid creating maintenance record: ${record.title}`,
+      details: { undoOf: forward.id }, createdAt: a.now,
+    });
+    return { ok: true };
+  },
+});
+
 /** Phase 4 danger classification (docs/designs/api-mcp-reimplementation.md §9). */
 export const agentOps: AgentOpsAnnotations = {
   createNative: { danger: "medium" },
+  // An exact reverse, but it deletes a record and moves assets: confirm like a delete.
+  undoCreateNative: { danger: "high" },
   deleteNative: { danger: "high" },
   updateNative: { danger: "medium" },
 };

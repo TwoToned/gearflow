@@ -8,7 +8,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -496,5 +496,163 @@ describe("maintenanceWrites.deleteNative", () => {
     await expect(
       t.withIdentity(asUser).mutation(api.maintenanceWrites.deleteNative, { orgId: ORG, id: "recF", now: NOW, actor, auditId: "a3" }),
     ).rejects.toThrow(/not found/i);
+  });
+});
+
+// Phase 16 final review SF3: the Scan page's "Create maintenance job" Undo is a guarded,
+// exact reverse — never a bare delete.
+describe("maintenanceWrites.undoCreateNative (exact undo)", () => {
+  const BOB = { subject: "user_2", orgId: ORG, role: "admin" };
+  const bob = { userId: "user_2", userName: "Bob" };
+  async function seedBob(t: T, org = ORG) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m2", organizationId: org, userId: "user_2", role: "admin" });
+      await ctx.db.insert("users", { id: "user_2", name: "Bob", email: "b@x.com" });
+    });
+  }
+  const create = (t: T, extra: Record<string, unknown> = {}) =>
+    t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "SCHEDULED", ...extra } as never);
+  const undo = (t: T, extra: Record<string, unknown> = {}, identity = asUser) =>
+    t.withIdentity(identity).mutation(api.maintenanceWrites.undoCreateNative, { orgId: ORG, id: "rec1", auditId: "u1", now: NOW + 10, actor, ...extra });
+  const patchRec = (t: T, patch: Record<string, unknown>) =>
+    t.run(async (ctx) => {
+      const r = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "rec1")).first();
+      await ctx.db.patch(r!._id, patch as never);
+    });
+
+  test("deletes exactly the record and its link, restores a held asset exactly, and leaves an UNDO trace", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t, { status: "IN_PROGRESS" });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+    expect(await undo(t)).toEqual({ ok: true });
+    expect(await rec(t, "rec1")).toBeNull();
+    expect(await linksFor(t, "rec1")).toHaveLength(0);
+    const a = await asset(t, "as1");
+    expect(a?.status).toBe("AVAILABLE");
+    expect(a?.updatedAt).toBe(NOW); // its own old stamp, not the undo's
+    const u = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "u1")).first());
+    expect(u?.action).toBe("UNDO");
+    expect(u?.details).toMatchObject({ undoOf: "a1" });
+  });
+
+  test("an asset with NO status held by the create is restored with no status, not AVAILABLE", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "AS1", modelId: "m1", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await create(t, { status: "IN_PROGRESS" });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+    expect(await undo(t)).toEqual({ ok: true });
+    const a = await asset(t, "as1");
+    expect(a?.status).toBeUndefined();
+    expect("status" in (a ?? {})).toBe(false);
+    expect(a?.updatedAt).toBe(NOW);
+  });
+
+  test("refuses when a colleague edited the job since (and changes nothing)", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t);
+    await patchRec(t, { description: "Bob added notes", updatedAt: NOW + 5 });
+    await expect(undo(t)).rejects.toThrow(/changed since/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+  });
+
+  test("refuses when the status moved (same stamp)", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t);
+    await patchRec(t, { status: "IN_PROGRESS" });
+    await expect(undo(t)).rejects.toThrow(/changed since/);
+  });
+
+  test("refuses with a CHECKOFF row or another link on the job", async () => {
+    for (const row of [{ id: "ck1", kind: "CHECKOFF" }, { id: "lnk9", kind: "LINK" }] as const) {
+      const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+      await create(t);
+      await t.run(async (ctx) => { await ctx.db.insert("maintenanceRecordAssets", { id: row.id, maintenanceRecordId: "rec1", assetId: "as2", kind: row.kind }); });
+      await expect(undo(t)).rejects.toThrow(/assets changed since/);
+      expect(await rec(t, "rec1")).not.toBeNull();
+    }
+  });
+
+  test("the link-row read is bounded: over 200 rows refuses with a clear message, changing nothing", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 201; i++) await ctx.db.insert("maintenanceRecordAssets", { id: `ck${i}`, maintenanceRecordId: "rec1", assetId: "as1", kind: "CHECKOFF" });
+    });
+    await expect(undo(t)).rejects.toThrow(/too many linked assets to undo/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+  });
+
+  test("refuses when a held asset changed since", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t, { status: "IN_PROGRESS" });
+    await t.run(async (ctx) => {
+      const x = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "as1")).first();
+      await ctx.db.patch(x!._id, { updatedAt: NOW + 7 });
+    });
+    await expect(undo(t)).rejects.toThrow(/asset on this maintenance job changed since/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+  });
+
+  test("refuses a create that RELEASED an asset (COMPLETED/PASS probe), and changes nothing", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "IN_MAINTENANCE");
+    await create(t, { status: "COMPLETED", result: "PASS" });
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+    await expect(undo(t)).rejects.toThrow(/released its assets back to service: it can't be undone/);
+    expect(await rec(t, "rec1")).not.toBeNull();
+    expect((await asset(t, "as1"))?.status).toBe("AVAILABLE");
+  });
+
+  test("a COMPLETED create that released nothing (asset already available) is still undoable", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t, { status: "COMPLETED", result: "PASS" });
+    expect(await undo(t)).toEqual({ ok: true });
+    expect(await rec(t, "rec1")).toBeNull();
+  });
+
+  test("a held asset another job now also holds stays IN_MAINTENANCE", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    await create(t, { status: "IN_PROGRESS" });
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, recordId: "rec2", auditId: "a2", assetLinks: [{ id: "lnk2", assetId: "as1" }], status: "IN_PROGRESS" });
+    expect(await undo(t)).toEqual({ ok: true });
+    expect((await asset(t, "as1"))?.status).toBe("IN_MAINTENANCE");
+  });
+
+  test("author only, once, and org-checked", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE"); await seedBob(t);
+    await create(t);
+    await expect(undo(t, { actor: bob }, BOB)).rejects.toThrow(/Only the person who created this job/);
+    await undo(t);
+    await expect(undo(t, { auditId: "u2" })).rejects.toThrow(/already undone/);
+
+    const t2 = makeT(); await seed(t2); await seedAsset(t2, "as1", "AVAILABLE"); await seedBob(t2, OTHER);
+    await create(t2);
+    const outsider = { subject: "user_2", orgId: OTHER, role: "admin" };
+    await expect(undo(t2, { orgId: OTHER, actor: bob }, outsider)).rejects.toThrow(/can't be undone/);
+    expect(await rec(t2, "rec1")).not.toBeNull();
+  });
+
+  test("the 10-minute window is on the SERVER clock", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+    try {
+      await create(t);
+      clock.mockReturnValue(NOW + 11 * 60 * 1000);
+      await expect(undo(t)).rejects.toThrow(/within 10 minutes/);
+      clock.mockReturnValue(NOW + 9 * 60 * 1000);
+      expect(await undo(t)).toEqual({ ok: true });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("a record created before this change (no snapshot) can't be undone", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "rec1", organizationId: ORG, type: "REPAIR", status: "SCHEDULED", title: "x", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("activityLogs", { id: "old", organizationId: ORG, action: "CREATE", entityType: "maintenance", entityId: "rec1", entityName: "x", userId: USER, userName: "Alice", summary: "c", details: { assetCount: 1 }, createdAt: NOW });
+    });
+    await expect(undo(t)).rejects.toThrow(/can't be undone/);
   });
 });

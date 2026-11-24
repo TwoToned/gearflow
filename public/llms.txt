@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (627 agent-reachable)
+## Operations (634 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -287,6 +287,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `maintenanceScheduleWorklist.dueWorklist` (query, scope: maintenance:read)
 - `maintenanceWrites.createNative` (mutation, scope: maintenance:create)
 - `maintenanceWrites.deleteNative` (mutation, scope: maintenance:delete)
+- `maintenanceWrites.undoCreateNative` (mutation, scope: maintenance:create)
 - `maintenanceWrites.updateNative` (mutation, scope: maintenance:update)
 - `serviceSchedules.list` (query, scope: maintenance:read)
 - `serviceSchedulesWrites.createNative` (mutation, scope: maintenance:create)
@@ -603,6 +604,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `suppliersWrites.updateNative` (mutation, scope: supplier:update)
 
 ### testTag
+- `scanLookup.testCard` (query, scope: testTag:read)
 - `subTestRecords.getById` (query, scope: testTag:read)
 - `subTestRecords.list` (query, scope: testTag:read)
 - `testProfiles.getById` (query, scope: testTag:read)
@@ -623,10 +625,13 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `testTagAssetsWrites.deleteNative` (mutation, scope: testTag:delete)
 - `testTagAssetsWrites.reactivateNative` (mutation, scope: testTag:update)
 - `testTagAssetsWrites.retireNative` (mutation, scope: testTag:update)
+- `testTagAssetsWrites.undoCreateNative` (mutation, scope: testTag:create)
+- `testTagAssetsWrites.undoReactivateNative` (mutation, scope: testTag:update)
 - `testTagAssetsWrites.updateNative` (mutation, scope: testTag:update)
 - `testTagRecords.latestForAsset` (query, scope: testTag:read)
 - `testTagRecords.recordsPage` (query, scope: testTag:read)
 - `testTagRecordsWrites.createNative` (mutation, scope: testTag:create)
+- `testTagRecordsWrites.undoCreateNative` (mutation, scope: testTag:create)
 
 ### warehouse
 - `agentRevert.revertAgentWindow` (mutation, scope: warehouse:check_in)
@@ -635,6 +640,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `checkRecordWrites.completeCheckAndPack` (mutation, scope: warehouse:check_out)
 - `checkRecordWrites.completeCheckAndStore` (mutation, scope: warehouse:check_in)
 - `checkRecordWrites.saveAdHocCheck` (mutation, scope: warehouse:scan)
+- `checkRecordWrites.undoAdHocCheckNative` (mutation, scope: warehouse:scan)
 - `projectContainers.listForProject` (query, scope: warehouse:read)
 - `projectContainersWrites.moveUnitsNative` (mutation, scope: warehouse:check_out)
 - `projectContainersWrites.unpackNative` (mutation, scope: warehouse:check_out)
@@ -645,6 +651,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `returnsWrites.returnBulkNative` (mutation, scope: warehouse:check_in)
 - `returnsWrites.returnScanNative` (mutation, scope: warehouse:check_in)
 - `returnsWrites.unreturnBulkNative` (mutation, scope: warehouse:check_out)
+- `scanLookup.checkCard` (query, scope: warehouse:read)
 - `scanLookup.resolve` (query, scope: warehouse:read)
 - `warehouseCloses.closeOutSummary` (query, scope: warehouse:close)
 - `warehouseCloses.getById` (query, scope: warehouse:read)

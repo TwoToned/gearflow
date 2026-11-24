@@ -99,6 +99,30 @@ Overdue maintenance generates notifications. Shows first asset name + count for 
 ## Deletion
 Deleting a maintenance record releases any held assets and removes the record atomically (single transaction).
 
+## Undo a create (`undoCreateNative`, Phase 16)
+`maintenanceWrites.undoCreateNative({ orgId, id, … })` (`maintenance:create`,
+`danger: "high"`) is the exact reverse of one `createNative`. It is gated on
+`maintenance:create`, not `maintenance:delete`, ON PURPOSE: it only ever reverses the
+caller's own create, within 10 minutes, so it grants nothing a creator couldn't already
+undo by not creating. Deleting anyone else's record still needs `maintenance:delete`.
+It is used by the Scan page's "Create maintenance job" Undo (FEATUREDOCS/37). The create's
+own audit row now carries a server-written snapshot (`kind: "maintenanceCreate"`,
+`serverSavedAt`, the status created, the link row ids it inserted, each asset it moved to
+IN_MAINTENANCE with its old `status` (absent recorded as absent) and `updatedAt`, and the
+assets it released; `convex/lib/maintenanceUndo.ts`). Its link-row read is bounded (200;
+over that it refuses). The Undo takes ids only and refuses as a
+whole unless it is the creator, within 10 minutes on the server clock, the first undo, the
+record is untouched (`updatedAt` and `createdAt` as created, status unchanged), its link rows
+are exactly the ones the create inserted (no WS6 CHECKOFF row, no other link), and each held
+asset is as the create left it. A create that RELEASED any asset (created `COMPLETED`
+and not `FAIL`, moving an asset IN_MAINTENANCE → AVAILABLE) is refused outright: re-holding
+an asset another job had in the workshop is not this create's to reverse, so edit the
+record instead. It then deletes the record and its links, puts each held
+asset back exactly (its old status — absent stays absent — and `updatedAt`; one another holding record still holds
+stays IN_MAINTENANCE), and appends an `UNDO` row. The `maintenance.created` webhook, if one
+went out, is not recalled. A record created before this change has no snapshot and can't
+be undone.
+
 ## Incident-report records
 
 Records created via the "Report Issue" flow or an immediate check-item FAIL

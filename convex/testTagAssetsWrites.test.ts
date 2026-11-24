@@ -5,7 +5,7 @@
 // (records+subtests, RETIRED guard), cross-tenant + RBAC, and the read composites.
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -227,5 +227,71 @@ describe("testTagAssets reads", () => {
     // Most-recent-first: rec24 (testDate NOW+24) leads, rec5 (testDate NOW+5) is the 20th/oldest included.
     expect(res.recentTests[0].id).toBe("rec24");
     expect(res.recentTests[19].id).toBe("rec5");
+  });
+});
+
+// Review SF2: "Add to the register" and "Reactivate and test" each have an exact,
+// guarded reverse (the old Undo called deleteNative, which needs RETIRED + testTag:delete).
+describe("testTagAssetsWrites.undoCreateNative / undoReactivateNative", () => {
+  const create = (t: T, id = "tt1") =>
+    t.withIdentity(asUser).mutation(api.testTagAssetsWrites.createNative, { id, orgId: ORG, description: "Drill", now: NOW, actor, auditId: "c-" + id });
+  const undoCreate = (t: T, extra: Record<string, unknown> = {}, identity: { subject: string; orgId: string; role: string } = asUser) =>
+    t.withIdentity(identity).mutation(api.testTagAssetsWrites.undoCreateNative, { orgId: ORG, id: "tt1", auditId: "u1", now: NOW + 5, actor, ...extra });
+  const patchItem = (t: T, patch: Record<string, unknown>) =>
+    t.run(async (ctx) => { const d = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "tt1")).first(); await ctx.db.patch(d!._id, patch); });
+
+  test("undoCreate deletes the untested item, once, and leaves an UNDO trace", async () => {
+    const t = makeT(); await seedMember(t);
+    await create(t);
+    expect(await undoCreate(t)).toEqual({ ok: true });
+    expect(await tta(t, "tt1")).toBeNull();
+    const u = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "u1")).first());
+    expect(u?.details).toMatchObject({ undoOf: "c-tt1" });
+    await expect(undoCreate(t, { auditId: "u2" })).rejects.toThrow(/already undone/);
+  });
+
+  test("undoCreate refuses another user, the server-clock window, an edit and a test since", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: "admin" }); });
+    const clock = vi.spyOn(Date, "now").mockReturnValue(NOW);
+    try {
+      await create(t);
+      await expect(undoCreate(t, { actor: { userId: "user_2", userName: "Bob" } }, { subject: "user_2", orgId: ORG, role: "admin" })).rejects.toThrow(/Only the person/);
+      clock.mockReturnValue(NOW + 11 * 60 * 1000);
+      await expect(undoCreate(t)).rejects.toThrow(/within 10 minutes/);
+      clock.mockReturnValue(NOW + 60 * 1000);
+      await patchItem(t, { description: "Edited", updatedAt: NOW + 30 });
+      await expect(undoCreate(t)).rejects.toThrow(/changed since/);
+      await patchItem(t, { updatedAt: NOW });
+      await t.run(async (ctx) => {
+        await ctx.db.insert("testTagRecords", { id: "r1", organizationId: ORG, testTagAssetId: "tt1", testDate: NOW, testedById: USER, testerName: "Al", result: "PASS", nextDueDate: NOW });
+      });
+      await expect(undoCreate(t)).rejects.toThrow(/tested since/);
+      expect(await tta(t, "tt1")).not.toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("org mismatch: another org can't undo (or find) the create", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m3", organizationId: OTHER, userId: "user_3", role: "admin" }); });
+    await create(t);
+    await expect(undoCreate(t, { orgId: OTHER, actor: { userId: "user_3", userName: "Eve" } }, { subject: "user_3", orgId: OTHER, role: "admin" })).rejects.toThrow(/can't be undone/);
+    expect(await tta(t, "tt1")).not.toBeNull();
+  });
+
+  test("undoReactivate restores RETIRED, inactive and the exact updatedAt", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "TT-1", description: "Kettle", status: "RETIRED", isActive: false, createdAt: NOW - 9, updatedAt: NOW - 7 });
+    });
+    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.reactivateNative, { id: "tt1", orgId: ORG, now: NOW, actor, auditId: "r-1" });
+    expect((await tta(t, "tt1"))?.status).toBe("NOT_YET_TESTED");
+    expect(await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.undoReactivateNative, { orgId: ORG, id: "tt1", auditId: "u9", now: NOW + 5, actor })).toEqual({ ok: true });
+    const d = await tta(t, "tt1");
+    expect(d?.status).toBe("RETIRED");
+    expect(d?.isActive).toBe(false);
+    expect(d?.updatedAt).toBe(NOW - 7);
   });
 });

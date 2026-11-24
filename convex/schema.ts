@@ -2363,6 +2363,14 @@ export default defineSchema({
     polarityResult: v.optional(enums.TestResult),
     rcdTripTimeResult: v.optional(enums.TestResult),
     rcdTripTimeReading: v.optional(v.number()),
+    // Phase 16 (owner-approved 2026-11-21, Q1): three tests that were entered and
+    // decided pass/fail but were never stored. Each is stored with its OWN verdict,
+    // never the overall result. Absent on every pre-Phase-16 row = "not recorded".
+    rcdTripCurrentResult: v.optional(enums.TestResult),
+    rcdTripCurrentReading: v.optional(v.number()),
+    rcdPushButtonResult: v.optional(enums.TestResult),
+    microwaveLeakageResult: v.optional(enums.TestResult),
+    microwaveLeakageReading: v.optional(v.number()),
     functionalTestResult: v.optional(enums.TestResult),
     functionalTestNotes: v.optional(v.string()),
     failureAction: v.optional(enums.FailureAction),

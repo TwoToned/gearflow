@@ -11,6 +11,8 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import type { Doc } from "./_generated/dataModel";
+import { loadUndoableRegisterWrite, requireUntouchedNewItem, type RegisterUndoDetails } from "./lib/ttRegisterUndo";
 
 /**
  * Native TEST-TAG-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -111,7 +113,9 @@ export const createNative = mutation({
       ...(a.bulkAssetId && { bulkAssetId: a.bulkAssetId }),
       status: "NOT_YET_TESTED", isActive: true, createdAt: a.now, updatedAt: a.now,
     });
-    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: testTagId, summary: `Created test tag asset ${testTagId}` });
+    // `details` is the exact Undo's proof (`undoCreateNative`): the SERVER clock it is measured on.
+    const details: RegisterUndoDetails = { kind: "ttCreate", serverSavedAt: Date.now() };
+    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: testTagId, summary: `Created test tag asset ${testTagId}`, details });
     return { id: a.id, testTagId };
   },
 });
@@ -281,8 +285,62 @@ export const reactivateNative = mutation({
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Test tag asset not found");
     if (doc.status !== "RETIRED") throw new ConvexError("Only retired items can be reactivated");
     await ctx.db.patch(doc._id, { status: "NOT_YET_TESTED", isActive: true, updatedAt: a.now });
-    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: doc.testTagId, summary: `Reactivated test tag asset ${doc.testTagId}` });
+    // The exact Undo (`undoReactivateNative`) restores these, measured on the SERVER clock.
+    const details: RegisterUndoDetails = {
+      kind: "ttReactivate", serverSavedAt: Date.now(),
+      before: { status: doc.status ?? null, isActive: doc.isActive ?? null, updatedAt: doc.updatedAt ?? null },
+    };
+    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: doc.testTagId, summary: `Reactivated test tag asset ${doc.testTagId}`, details });
     return { id: a.id };
+  },
+});
+
+const undoArgs = { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator };
+
+/**
+ * The exact reverse of one `createNative` (review SF2: "Add to the register"'s Undo used
+ * `deleteNative`, which needs a RETIRED item and `testTag:delete`, so it always failed).
+ * Ids only; refuses unless it is the creator, within the server-clock window, the first
+ * undo, and the item is still untested and unedited (`convex/lib/ttRegisterUndo.ts`).
+ */
+export const undoCreateNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: undoArgs,
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "testTag");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "testTag", "create");
+    const actor = await resolveActor(ctx, a.actor);
+    const { forward } = await loadUndoableRegisterWrite(ctx, { orgId: a.orgId, id: a.id, kind: "ttCreate", actorUserId: actor.userId, serverNow: Date.now() });
+    const item = await requireUntouchedNewItem(ctx, a.orgId, a.id, forward);
+    await ctx.db.delete(item._id);
+    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UNDO", id: a.id, name: item.testTagId, summary: `Took ${item.testTagId} back off the register (undo)`, details: { undoOf: forward.id } });
+    return { ok: true };
+  },
+});
+
+/**
+ * The exact reverse of one `reactivateNative`: puts back the status, active flag and
+ * `updatedAt` it overwrote (nit: retiring again left a fresh `updatedAt`). Same guards.
+ */
+export const undoReactivateNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: undoArgs,
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "testTag");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "testTag", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const { forward, details } = await loadUndoableRegisterWrite(ctx, { orgId: a.orgId, id: a.id, kind: "ttReactivate", actorUserId: actor.userId, serverNow: Date.now() });
+    const item = await requireUntouchedNewItem(ctx, a.orgId, a.id, forward);
+    const b = details.before;
+    await ctx.db.patch(item._id, {
+      status: (b?.status ?? "RETIRED") as Doc<"testTagAssets">["status"],
+      isActive: b?.isActive ?? false,
+      updatedAt: b?.updatedAt ?? undefined,
+    });
+    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UNDO", id: a.id, name: item.testTagId, summary: `Retired ${item.testTagId} again (undo of reactivate)`, details: { undoOf: forward.id } });
+    return { ok: true };
   },
 });
 
@@ -312,5 +370,9 @@ export const agentOps: AgentOpsAnnotations = {
   retireNative: { danger: "high" }, // archive
   deleteNative: { danger: "high" }, // permanent delete + cascades records/subtests
   reactivateNative: { danger: "medium" },
+  // Exact reverses for the Scan page's Undo: one deletes an item (just created, untested),
+  // the other re-retires one — both "high" by the delete/archive rule.
+  undoCreateNative: { danger: "high" },
+  undoReactivateNative: { danger: "high" },
   backfillNative: { danger: "medium" },
 };

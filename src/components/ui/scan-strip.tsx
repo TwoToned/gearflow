@@ -36,6 +36,11 @@ export interface ScanStripEntry {
    * `Outcome ▾` built with ActionMenu's `trigger`. The surface owns them.
    */
   trailing?: React.ReactNode;
+  /**
+   * Tapping the row's text (e.g. the Scan page re-scans that tag, spec §9i.4).
+   * Absent = the text is plain, not a button.
+   */
+  onSelect?: () => void;
 }
 
 const TONE: Record<ScanStripEntry["tone"], { Icon: typeof CheckCircle2; className: string }> = {
@@ -70,7 +75,17 @@ export function ScanStrip({
             className="flex min-h-11 items-center gap-2 rounded-[var(--r)] border border-line px-3 text-ui-text"
           >
             <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0", tone)} />
-            <span className="min-w-0 flex-1 truncate text-ink">{e.text}</span>
+            {e.onSelect ? (
+              <button
+                type="button"
+                onClick={e.onSelect}
+                className="min-h-11 min-w-0 flex-1 truncate text-left text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red"
+              >
+                {e.text}
+              </button>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-ink">{e.text}</span>
+            )}
             {e.detail ? <span className="shrink-0 text-caption text-muted">{e.detail}</span> : null}
             {e.undo ? (
               <Button size="sm" variant="ghost" onClick={() => void e.undo?.()}>

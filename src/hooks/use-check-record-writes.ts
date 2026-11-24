@@ -7,6 +7,7 @@ import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import type { CheckRecordFormValues } from "@/lib/validations/check-item";
 import { api } from "../../convex/_generated/api";
 import { autoStatusToast } from "@/lib/project-status-automation";
+import type { CheckConditionValue } from "../../convex/lib/assetCondition";
 
 /**
  * Browser-direct CHECK-RECORD writes (Phase 3 — replaces the 7 composite writes in
@@ -71,6 +72,7 @@ export function useCheckRecordWrites() {
   const completeCheckAndFlagM = useMutation(api.checkRecordWrites.completeCheckAndFlag);
   const completeCheckAndStoreM = useMutation(api.checkRecordWrites.completeCheckAndStore);
   const saveAdHocCheckM = useMutation(api.checkRecordWrites.saveAdHocCheck);
+  const undoAdHocCheckM = useMutation(api.checkRecordWrites.undoAdHocCheckNative);
   const saveKitLevelChecksM = useMutation(api.checkRecordWrites.saveKitLevelChecks);
   const saveChildItemChecksM = useMutation(api.checkRecordWrites.saveChildItemChecks);
 
@@ -185,11 +187,19 @@ export function useCheckRecordWrites() {
       });
     },
 
+    /**
+     * Phase 16 (D50): also records the asset's condition word (`GOOD`/`FAIR`/`DAMAGED`,
+     * `convex/lib/assetCondition.ts`) — the server forces DAMAGED on any FAIL and writes
+     * only a changed word — and check-level `notes`. Returns the forward `auditId`,
+     * which is all {@link undoAdHocCheck} needs.
+     */
     saveAdHocCheck: async (data: {
       assetId: string;
       bulkAssetId?: string;
       checks: Check[];
-    }): Promise<{ success: true }> => {
+      condition?: CheckConditionValue;
+      notes?: string;
+    }): Promise<{ success: true; recordIds: string[]; auditId: string; condition: string | null }> => {
       return saveAdHocCheckM({
         orgId: requireOrg(),
         assetId: data.assetId,
@@ -197,6 +207,23 @@ export function useCheckRecordWrites() {
         checks: buildChecks(data.checks),
         maintenancePlan: buildPlan(data.checks),
         incidentPlan: buildIncidentPlan(data.checks),
+        ...(data.condition ? { condition: data.condition } : {}),
+        ...(data.notes ? { notes: data.notes } : {}),
+        auditId: createId(),
+        now: Date.now(),
+        actor: actor(),
+      });
+    },
+
+    /**
+     * The exact reverse of one {@link saveAdHocCheck} — ids only; the server restores
+     * from that save's own audit row and refuses if anything changed since. The Scan
+     * page wraps this in ONE closure shared by the toast and the Last scans row.
+     */
+    undoAdHocCheck: async (forwardAuditId: string): Promise<{ ok: boolean }> => {
+      return undoAdHocCheckM({
+        orgId: requireOrg(),
+        forwardAuditId,
         auditId: createId(),
         now: Date.now(),
         actor: actor(),

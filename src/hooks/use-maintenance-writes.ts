@@ -32,6 +32,7 @@ export function useMaintenanceWrites() {
   const createM = useMutation(api.maintenanceWrites.createNative);
   const updateM = useMutation(api.maintenanceWrites.updateNative);
   const deleteM = useMutation(api.maintenanceWrites.deleteNative);
+  const undoCreateM = useMutation(api.maintenanceWrites.undoCreateNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -104,6 +105,14 @@ export function useMaintenanceWrites() {
         actor: actor(),
         auditId: createId(),
       } as Parameters<typeof updateM>[0]);
+    },
+    /**
+     * The exact reverse of one {@link create} — ids only; the server reads the create's
+     * own audit row and refuses if the job, its links or its held assets changed since
+     * (author only, 10 minutes, once). Used by the Scan page's ONE Undo closure.
+     */
+    undoCreate: async (id: string): Promise<{ ok: boolean }> => {
+      return await undoCreateM({ orgId: requireOrg(), id, now: Date.now(), actor: actor(), auditId: createId() });
     },
     remove: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();

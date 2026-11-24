@@ -1,62 +1,59 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { invoiceRowMenuActions } from "@/components/projects/finance/project-invoice-ledger";
+import { invoiceRowMenuActions } from "@/lib/row-actions/invoice-row";
 
 /**
- * #1038 — unit coverage for the invoice row's overflow-menu logic (Delete
- * draft / Void / Delete permanently, #1055), extracted out of `InvoiceRow` so
- * the state × permission matrix is testable without mounting the full
- * Convex-wired panel.
+ * #1038 / UX Phase 10 — unit coverage for the invoice row's overflow-menu
+ * logic, so the state × permission matrix is testable without mounting the
+ * Convex-wired ledger. `Issue` lives ONLY here (never as a row button); Record
+ * payment and Push to Xero stay row links and are not in this menu.
  */
 function handlers() {
-  return { onDeleteDraft: vi.fn(), onVoidRequest: vi.fn(), onDeleteVoidRequest: vi.fn() };
+  return {
+    onIssue: vi.fn(),
+    onCreditRequest: vi.fn(),
+    onDeleteDraft: vi.fn(),
+    onVoidRequest: vi.fn(),
+    onDeleteVoidRequest: vi.fn(),
+  };
 }
+const ALL = { canDelete: true, canVoid: true, canIssue: true, canCreate: true };
+const keys = (a: { key: string }[]) => a.map((x) => x.key);
 
 describe("invoiceRowMenuActions", () => {
-  it("offers Delete draft on a DRAFT invoice when permitted", () => {
-    const actions = invoiceRowMenuActions(
-      { id: "i1", status: "DRAFT", kind: "FULL", total: 100 },
-      { canDelete: true, canVoid: true },
-      handlers(),
-    );
-    expect(actions.map((a) => a.key)).toEqual(["delete-draft"]);
+  it("a DRAFT offers Issue first, then Delete draft (danger, last)", () => {
+    const actions = invoiceRowMenuActions({ status: "DRAFT", kind: "FULL" }, ALL, handlers());
+    expect(keys(actions)).toEqual(["issue", "delete-draft"]);
+    expect(actions[1].danger).toBe(true);
+  });
+
+  it("a DRAFT hides Issue without invoice:issue and Delete draft without invoice:delete", () => {
+    expect(keys(invoiceRowMenuActions({ status: "DRAFT", kind: "FULL" }, { ...ALL, canIssue: false }, handlers()))).toEqual(["delete-draft"]);
+    expect(keys(invoiceRowMenuActions({ status: "DRAFT", kind: "FULL" }, { ...ALL, canDelete: false }, handlers()))).toEqual(["issue"]);
+    expect(invoiceRowMenuActions({ status: "DRAFT", kind: "FULL" }, { canDelete: false, canVoid: true, canIssue: false, canCreate: true }, handlers())).toEqual([]);
+  });
+
+  it("an ISSUED invoice offers Credit note then Void; Void is danger and last", () => {
+    const actions = invoiceRowMenuActions({ status: "ISSUED", kind: "FULL" }, ALL, handlers());
+    expect(keys(actions)).toEqual(["credit-note", "void"]);
+    expect(actions[1].danger).toBe(true);
+  });
+
+  it("no Credit note on a credit note, without invoice:create, or when one already exists", () => {
+    expect(keys(invoiceRowMenuActions({ status: "ISSUED", kind: "CREDIT" }, ALL, handlers()))).toEqual(["void"]);
+    expect(keys(invoiceRowMenuActions({ status: "ISSUED", kind: "FULL" }, { ...ALL, canCreate: false }, handlers()))).toEqual(["void"]);
+    expect(keys(invoiceRowMenuActions({ status: "ISSUED", kind: "FULL" }, ALL, handlers(), true))).toEqual(["void"]);
+  });
+
+  it("Issue is never offered on an ISSUED or VOID invoice", () => {
+    expect(keys(invoiceRowMenuActions({ status: "ISSUED", kind: "FULL" }, ALL, handlers()))).not.toContain("issue");
+    expect(keys(invoiceRowMenuActions({ status: "VOID", kind: "FULL" }, ALL, handlers()))).not.toContain("issue");
+  });
+
+  it("a VOID invoice offers Delete permanently when permitted (#1055), nothing otherwise", () => {
+    const actions = invoiceRowMenuActions({ status: "VOID", kind: "FULL" }, ALL, handlers());
+    expect(keys(actions)).toEqual(["delete-void"]);
     expect(actions[0].danger).toBe(true);
-  });
-
-  it("hides Delete draft on a DRAFT invoice without invoice:delete", () => {
-    const actions = invoiceRowMenuActions(
-      { id: "i1", status: "DRAFT", kind: "FULL", total: 100 },
-      { canDelete: false, canVoid: true },
-      handlers(),
-    );
-    expect(actions).toEqual([]);
-  });
-
-  it("offers Void on an ISSUED invoice when permitted", () => {
-    const actions = invoiceRowMenuActions(
-      { id: "i1", status: "ISSUED", kind: "FULL", total: 100 },
-      { canDelete: true, canVoid: true },
-      handlers(),
-    );
-    expect(actions.map((a) => a.key)).toEqual(["void"]);
-  });
-
-  it("offers Delete permanently on a VOID invoice when permitted (#1055)", () => {
-    const actions = invoiceRowMenuActions(
-      { id: "i1", status: "VOID", kind: "FULL", total: 100 },
-      { canDelete: true, canVoid: true },
-      handlers(),
-    );
-    expect(actions.map((a) => a.key)).toEqual(["delete-void"]);
-    expect(actions[0].danger).toBe(true);
-  });
-
-  it("hides Delete permanently on a VOID invoice without invoice:delete", () => {
-    const actions = invoiceRowMenuActions(
-      { id: "i1", status: "VOID", kind: "FULL", total: 100 },
-      { canDelete: false, canVoid: true },
-      handlers(),
-    );
-    expect(actions).toEqual([]);
+    expect(invoiceRowMenuActions({ status: "VOID", kind: "FULL" }, { ...ALL, canDelete: false }, handlers())).toEqual([]);
   });
 });

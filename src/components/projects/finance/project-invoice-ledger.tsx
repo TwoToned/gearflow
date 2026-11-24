@@ -2,35 +2,30 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Ban, ChevronDown, Trash2, UploadCloud, AlertCircle, AlertTriangle, Download, Eye, Send, Wallet } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { api } from "../../../../convex/_generated/api";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { usePaymentWrites } from "@/hooks/use-payment-writes";
 import { useNativeProjectStatus } from "@/hooks/use-native-project-writes";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
-import { useCanDo } from "@/lib/use-permissions";
-import { pushInvoiceToXero } from "@/server/xero";
-import { generateInvoiceArtifact } from "@/server/finance-documents";
-import { useServerMutation } from "@/hooks/use-server-mutation";
 import { convexErrorMessage } from "@/lib/errors/convex-error-message";
-import { formatCurrency, formatDate } from "@/lib/formatters";
+import { formatCurrency } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ActionMenu } from "@/components/ui/action-menu";
-import type { ActionItem } from "@/lib/primitives/types";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { CanDo } from "@/components/auth/permission-gate";
 import { IssueInvoiceDialog } from "@/components/projects/finance/issue-invoice-dialog";
 import { CreatePartialInvoiceDialog } from "@/components/projects/finance/create-partial-invoice-dialog";
 import { RecordPaymentDialog } from "@/components/projects/finance/record-payment-dialog";
 import { DeleteVoidInvoiceDialog } from "@/components/projects/finance/delete-void-invoice-dialog";
-import { PAYMENT_METHOD_LABELS } from "@/lib/payment-method-labels";
+import { CreditNoteDialog } from "@/components/projects/finance/credit-note-dialog";
+import { InvoiceRow, type InvoiceRowDoc } from "@/components/projects/finance/invoice-row";
 import { deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
 
 interface ProjectInvoiceLedgerProps {
@@ -41,55 +36,30 @@ interface ProjectInvoiceLedgerProps {
   total: number | null;
 }
 
-const INVOICE_STATUS_BADGE: Record<string, "ok" | "warn" | "neutral" | "overbooked"> = {
-  DRAFT: "neutral",
-  ISSUED: "ok",
-  VOID: "overbooked",
-};
-
-const PAYMENT_STATUS_BADGE: Record<string, "ok" | "warn"> = {
-  PARTIALLY_PAID: "warn",
-  PAID: "ok",
-};
-
-const PAYMENT_STATUS_LABEL: Record<string, string> = {
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-};
-
 /**
- * The Finance tab's INVOICE section (WS1 #940, reworked by #986). Split out of
- * `ProjectFinancePanel` into its own self-contained component (invoices manager
- * modal work) so it can be embedded standalone in the Overview tab's
- * `InvoiceManagerDialog` with zero logic duplication (POLICY.md R-3.1) — it
- * self-queries `invoices`/`client` rather than depending on a parent, matching
- * how `QuoteCard`/`InvoicingCard`/`ProjectQuoteRail` already self-query.
+ * The Finance tab's INVOICE strip (WS1 #940, reworked by #986 and UX Phase 10).
+ * Self-contained so the Overview tab's `InvoiceManagerDialog` embeds the SAME
+ * component with zero logic duplication (POLICY.md R-3.1); it self-queries
+ * `invoices`/`client` rather than depending on a parent.
  *
- * An "Invoice ▾" menu offers a partial balance (any % or $ slice, any number
- * of times) and a remaining-balance invoice whenever there's something left to
- * raise, in any order — no more forced deposit-then-balance sequence per
- * client `paymentProfile` (that only seeds the partial dialog's default %).
- * (Xero-linked orgs) push an issued invoice as a Xero draft. The menu's
- * availability is DERIVED (kind/status of existing invoices vs the project
- * total, `deriveInvoicingState`), not a stored flag — there is no
- * READY_TO_INVOICE project status.
+ * An "Invoice ▾" menu offers a partial balance (any % or $ slice, any number of
+ * times) and a remaining-balance invoice whenever there's something left to
+ * raise, in any order. Its availability is DERIVED (`deriveInvoicingState`), not
+ * a stored flag.
  *
- * Draft creation stays ungated; ISSUING an invoice requires the quote at its
- * linked `sourceRevision` to be currently ACCEPTED — enforced server-side in
- * `invoicesWrites.ts`'s `issueNative`, surfaced here only as the mutation's
- * error message (no separate client-side prediction of quote state).
- *
- * Every DOCUMENT action (#987) is the stored, immutable artifact for anything
- * issued, a watermarked preview for anything still a draft, and an explicit
- * retry when a render failed — never a fresh render of live project state.
- *
- * Issuing goes through `<IssueInvoiceDialog>` (#989) — invoice date, due date
- * (defaulting to the org's `paymentTermsDays`), notes — instead of a bare
- * click, and the "advance to INVOICED?" follow-up is a `Dialog`, never
- * `window.confirm` (CLAUDE.md convention, DESIGN.md).
+ * Draft creation stays ungated; ISSUING requires the quote at its linked
+ * `sourceRevision` to be currently ACCEPTED — enforced server-side in
+ * `issueNative`, surfaced here only as the mutation's error message. Issuing
+ * goes through `<IssueInvoiceDialog>` (#989), and the "advance to INVOICED?"
+ * follow-up is a `Dialog`, never `window.confirm`. Every DOCUMENT action (#987)
+ * is the stored, immutable artifact for anything issued, a watermarked preview
+ * for a draft, and an explicit retry when a render failed — never a fresh render
+ * of live project state (see `invoice-row.tsx`). Rows are `InvoiceRow`s: one
+ * status word (D56), `Issue…` / `Credit note…` / Void in ⋯.
  */
 export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus, total }: ProjectInvoiceLedgerProps) {
   const xeroLinked = useXeroLinked();
+  const now = useStableNow();
 
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
   const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
@@ -101,6 +71,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
   const [voidTarget, setVoidTarget] = useState<{ id: string; number: string } | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [issueTarget, setIssueTarget] = useState<{ id: string; kind: string; total: number } | null>(null);
+  const [creditTarget, setCreditTarget] = useState<{ id: string; number: string; total: number } | null>(null);
   const [advanceOffer, setAdvanceOffer] = useState<{ invoiceNumber: string } | null>(null);
   const [partialDialogOpen, setPartialDialogOpen] = useState(false);
   const [recordPaymentTarget, setRecordPaymentTarget] = useState<{ id: string; number: string; balanceRemaining: number } | null>(null);
@@ -117,10 +88,9 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
 
   const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
 
-  // One derivation, shared with the Overview tab's invoicing card (R-3.1) —
-  // these used to be five hand-rolled `.some()` predicates here and a second
-  // set of the same conditions inline in the nudge-chip JSX.
-  const invoicingState = deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total);
+  // One derivation, shared with the Overview tab's invoicing card and the
+  // tiles (R-3.1).
+  const invoicingState = deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total, now);
   const { partialStep, remainingStep } = invoicingState;
 
   async function createInvoice(kind: "FULL" | "BALANCE") {
@@ -182,13 +152,12 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
     }
   }
 
+  const rows = invoices as (InvoiceRowDoc & { projectId?: string })[];
+
   return (
     <div className="space-y-6">
       {/* Invoice menu — the SAME derivation the Overview tab's invoicing card
-          reads (`deriveInvoicingState`, R-3.1), not a second copy of the
-          old deposit-before-balance conditions. The affordance is deliberately
-          in both places: someone working in the ledger shouldn't have to
-          bounce to Overview to raise the next invoice. Both a partial and a
+          reads (`deriveInvoicingState`, R-3.1). Both a partial and a
           remaining-balance invoice can be offered at once — no forced order. */}
       {(partialStep.kind !== "NONE" || remainingStep.kind !== "NONE") && (
         <div className="flex flex-wrap gap-2">
@@ -202,21 +171,23 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
         </div>
       )}
 
-      {/* Invoices list */}
       <div className="space-y-2">
         <h3 className="t-overline text-fg-3">Invoices</h3>
-        {invoices.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="t-micro text-fg-4">No invoices yet.</p>
         ) : (
           <ul className="space-y-1.5">
-            {invoices.map((inv) => (
+            {rows.map((inv) => (
               <InvoiceRow
                 key={inv.id}
                 invoice={inv}
                 projectId={projectId}
                 orgId={orgId}
                 xeroLinked={xeroLinked}
+                now={now}
+                hasCreditNote={rows.some((c) => c.kind === "CREDIT" && c.status !== "VOID" && c.creditForInvoiceId === inv.id)}
                 onIssue={() => setIssueTarget({ id: inv.id, kind: inv.kind, total: inv.total })}
+                onCreditRequest={() => setCreditTarget({ id: inv.id, number: inv.invoiceNumber ?? inv.id, total: inv.total })}
                 onDeleteDraft={() =>
                   void invoiceWrites.deleteDraft(inv.id).then(() => toast.success("Draft deleted")).catch((e) => toast.error(convexErrorMessage(e, "Failed")))
                 }
@@ -259,6 +230,16 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
           invoiceKind={issueTarget.kind}
           total={issueTarget.total}
           onIssued={(invoiceNumber) => offerAdvanceIfEligible(issueTarget.id, invoiceNumber)}
+        />
+      )}
+
+      {creditTarget && (
+        <CreditNoteDialog
+          open={!!creditTarget}
+          onOpenChange={(open) => !open && setCreditTarget(null)}
+          invoiceId={creditTarget.id}
+          invoiceNumber={creditTarget.number}
+          total={creditTarget.total}
         />
       )}
 
@@ -330,303 +311,6 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
   );
 }
 
-interface InvoiceRowDoc {
-  id: string;
-  status: string;
-  kind: string;
-  invoiceNumber?: string;
-  total: number;
-  xeroSyncStatus?: string;
-  lastSyncError?: string;
-  /** The STORED document, rendered once at issue (#987). Null on a draft, and
-   *  on an issued invoice whose render failed — hence the retry. */
-  pdfFileId?: string;
-  issuedAt?: number;
-  /** Derived from this invoice's non-voided `payments` rows (#1055) — patched
-   *  by paymentsWrites.ts, never hand-typed here. Absent = 0/UNPAID. */
-  amountPaid?: number;
-  paymentStatus?: string;
-}
-
-interface PaymentRowDoc {
-  id: string;
-  amount: number;
-  method: string;
-  paidAt: number;
-  reference?: string;
-  voidedAt?: number;
-}
-
-/** The overflow-menu cluster for an invoice row — Delete draft / Void /
- *  Delete permanently. `canDelete`/`canVoid` mirror the `<CanDo>` gates these
- *  replaced; still UX only, the server re-checks `invoice:delete`/
- *  `invoice:void` unconditionally. */
-export function invoiceRowMenuActions(
-  inv: InvoiceRowDoc,
-  perms: { canDelete: boolean; canVoid: boolean },
-  handlers: { onDeleteDraft: () => void; onVoidRequest: () => void; onDeleteVoidRequest: () => void },
-): ActionItem[] {
-  const actions: ActionItem[] = [];
-  if (inv.status === "DRAFT" && perms.canDelete) {
-    actions.push({ key: "delete-draft", label: "Delete draft", group: "danger", icon: Trash2, onSelect: handlers.onDeleteDraft, danger: true });
-  }
-  if (inv.status === "ISSUED" && perms.canVoid) {
-    actions.push({ key: "void", label: "Void invoice", group: "danger", icon: Ban, onSelect: handlers.onVoidRequest, danger: true });
-  }
-  if (inv.status === "VOID" && perms.canDelete) {
-    actions.push({ key: "delete-void", label: "Delete permanently", group: "danger", icon: Trash2, onSelect: handlers.onDeleteVoidRequest, danger: true });
-  }
-  return actions;
-}
-
-function InvoiceRow({
-  invoice: inv,
-  projectId,
-  orgId,
-  xeroLinked,
-  onIssue,
-  onDeleteDraft,
-  onVoidRequest,
-  onDeleteVoidRequest,
-  onRecordPaymentRequest,
-  onVoidPaymentRequest,
-}: {
-  invoice: InvoiceRowDoc;
-  projectId: string;
-  orgId?: string;
-  xeroLinked: boolean;
-  onIssue: () => void;
-  onDeleteDraft: () => void;
-  onVoidRequest: () => void;
-  onDeleteVoidRequest: () => void;
-  onRecordPaymentRequest: (balanceRemaining: number) => void;
-  onVoidPaymentRequest: (paymentId: string, amount: number) => void;
-}) {
-  // Document + at most one visible "primary" action (Issue on a draft, Push
-  // to Xero on an unsynced issued invoice) — everything else (Void, Delete
-  // draft/permanently) collapses into the overflow menu (#1038) instead of a
-  // row of pill buttons. Mirrors QuoteRowActions' consolidation in
-  // project-quote-rail.tsx.
-  const canDelete = useCanDo("invoice", "delete");
-  const canVoid = useCanDo("invoice", "void");
-  const canVoidPayment = useCanDo("invoice", "void_payment");
-  const menuActions = invoiceRowMenuActions(inv, { canDelete, canVoid }, { onDeleteDraft, onVoidRequest, onDeleteVoidRequest });
-
-  // Payments only ever exist against an invoice that was at some point ISSUED
-  // (paymentsWrites.ts recordNative requires it) — skip the query for a DRAFT.
-  const payments = useAuthedQuery(
-    api.payments.listForInvoice,
-    orgId && inv.status !== "DRAFT" ? { orgId, invoiceId: inv.id } : "skip",
-  ) as PaymentRowDoc[] | undefined;
-  const livePayments = (payments ?? []).filter((p) => p.voidedAt == null);
-  const amountPaid = inv.amountPaid ?? 0;
-  const balanceRemaining = inv.total - amountPaid;
-
-  return (
-    <li className="rounded-[var(--r)] border border-line px-3 py-2 text-table-cell">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <Badge status={INVOICE_STATUS_BADGE[inv.status] ?? "neutral"}>{inv.status}</Badge>
-          <span className="font-medium text-fg">{inv.invoiceNumber ?? `${inv.kind} (draft)`}</span>
-          <span className="text-fg-4">{formatCurrency(inv.total)}</span>
-          {inv.status !== "DRAFT" && (
-            <InvoicePaymentSummary paymentStatus={inv.paymentStatus} amountPaid={amountPaid} balanceRemaining={balanceRemaining} />
-          )}
-          <InvoiceXeroSyncBadge status={inv.xeroSyncStatus} error={inv.lastSyncError} />
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <InvoiceDocumentAction invoice={inv} projectId={projectId} />
-          <InvoiceRowPrimaryActions
-            status={inv.status}
-            invoiceId={inv.id}
-            xeroLinked={xeroLinked}
-            xeroSyncStatus={inv.xeroSyncStatus}
-            onIssue={onIssue}
-            onRecordPaymentRequest={() => onRecordPaymentRequest(balanceRemaining)}
-          />
-          <ActionMenu spec={{ items: menuActions }} label={`${inv.invoiceNumber ?? inv.kind} actions`} />
-        </div>
-      </div>
-
-      <InvoicePaymentsList payments={livePayments} canVoidPayment={canVoidPayment} onVoidPaymentRequest={onVoidPaymentRequest} />
-    </li>
-  );
-}
-
-/** The Xero sync status badge on an invoice row — split out of `InvoiceRow`
- *  to keep its own complexity low (R-3.6). */
-function InvoiceXeroSyncBadge({ status, error }: { status?: string; error?: string }) {
-  if (status === "SYNCED") return <Badge status="ok">Synced to Xero</Badge>;
-  if (status === "ERROR") {
-    return (
-      <span className="flex items-center gap-1 text-destructive" title={error}>
-        <AlertCircle className="h-3.5 w-3.5" /> Xero push failed
-      </span>
-    );
-  }
-  return null;
-}
-
-/** The at-most-one-visible "primary" action on an invoice row (Issue on a
- *  draft, Record payment on an issued invoice, Push to Xero on an unsynced
- *  issued invoice) — split out of `InvoiceRow` to keep its own complexity low
- *  (R-3.6). Everything else collapses into the overflow menu (#1038). */
-function InvoiceRowPrimaryActions({
-  status,
-  invoiceId,
-  xeroLinked,
-  xeroSyncStatus,
-  onIssue,
-  onRecordPaymentRequest,
-}: {
-  status: string;
-  invoiceId: string;
-  xeroLinked: boolean;
-  xeroSyncStatus?: string;
-  onIssue: () => void;
-  onRecordPaymentRequest: () => void;
-}) {
-  if (status === "DRAFT") {
-    return (
-      <CanDo resource="invoice" action="issue">
-        <Button type="button" variant="line" size="sm" onClick={onIssue}>
-          <Send className="h-3.5 w-3.5" /> Issue
-        </Button>
-      </CanDo>
-    );
-  }
-  if (status !== "ISSUED") return null;
-  return (
-    <>
-      <CanDo resource="invoice" action="record_payment">
-        <Button type="button" variant="line" size="sm" onClick={onRecordPaymentRequest}>
-          <Wallet className="h-3.5 w-3.5" /> Record payment
-        </Button>
-      </CanDo>
-      {xeroLinked && (
-        <CanDo resource="invoice" action="xero_push">
-          <PushToXeroButton invoiceId={invoiceId} alreadySynced={xeroSyncStatus === "SYNCED"} />
-        </CanDo>
-      )}
-    </>
-  );
-}
-
-/** The payment-status badge + balance-remaining readout on an invoice row —
- *  split out of `InvoiceRow` to keep its own complexity low (R-3.6). Renders
- *  nothing while nothing has been paid yet (a fresh ISSUED invoice with no
- *  payments looks the same as before this feature). */
-function InvoicePaymentSummary({
-  paymentStatus,
-  amountPaid,
-  balanceRemaining,
-}: {
-  paymentStatus?: string;
-  amountPaid: number;
-  balanceRemaining: number;
-}) {
-  if (amountPaid <= 0) return null;
-  return (
-    <>
-      <Badge status={PAYMENT_STATUS_BADGE[paymentStatus ?? ""] ?? "warn"}>
-        {PAYMENT_STATUS_LABEL[paymentStatus ?? ""] ?? "Partially paid"}
-      </Badge>
-      <span className="text-fg-4">Balance {formatCurrency(balanceRemaining)}</span>
-    </>
-  );
-}
-
-/** The always-visible payments list under an invoice row — split out of
- *  `InvoiceRow` to keep its own complexity low (R-3.6). */
-function InvoicePaymentsList({
-  payments,
-  canVoidPayment,
-  onVoidPaymentRequest,
-}: {
-  payments: PaymentRowDoc[];
-  canVoidPayment: boolean;
-  onVoidPaymentRequest: (paymentId: string, amount: number) => void;
-}) {
-  if (payments.length === 0) return null;
-  return (
-    <ul className="mt-1.5 space-y-1 border-t border-line pt-1.5">
-      {payments.map((p) => (
-        <li key={p.id} className="flex items-center justify-between gap-2 text-caption text-fg-4">
-          <span>
-            {formatCurrency(p.amount)} · {PAYMENT_METHOD_LABELS[p.method] ?? p.method} · {formatDate(new Date(p.paidAt))}
-            {p.reference ? ` · ${p.reference}` : ""}
-          </span>
-          {canVoidPayment && (
-            <button
-              type="button"
-              onClick={() => onVoidPaymentRequest(p.id, p.amount)}
-              className="shrink-0 underline underline-offset-2 hover:text-fg"
-            >
-              Void
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * The document side of an invoice (#987). An ISSUED invoice's PDF is rendered
- * once and stored, so re-downloading it can never produce a different document
- * from the one the client was sent — the row was already immutable, this is what
- * carries that past the database boundary. A VOIDed invoice keeps its document.
- *
- * A DRAFT has none by design: its amounts are still mutable, so the only
- * document it can produce is the watermarked preview.
- */
-function InvoiceDocumentAction({ invoice: inv, projectId }: { invoice: InvoiceRowDoc; projectId: string }) {
-  const retry = useServerMutation({
-    mutationFn: () => generateInvoiceArtifact(inv.id),
-    onSuccess: () => toast.success("Generated the invoice document"),
-    onError: (e) => toast.error(e.message),
-  });
-
-  if (inv.pdfFileId) {
-    return (
-      <Button variant="line" size="sm" asChild>
-        <a href={`/api/finance/invoice/${inv.id}/pdf`} target="_blank" rel="noopener noreferrer">
-          <Download className="h-3.5 w-3.5" /> Document
-        </a>
-      </Button>
-    );
-  }
-
-  // A draft's only document is the watermarked preview — the one place a
-  // client-facing finance PDF is still rendered from live state, and it says
-  // "NOT SENT" on every page. `invoiceId` matters here: without it the
-  // preview showed the live PROJECT total/breakdown regardless of this
-  // invoice's own kind — a 25% deposit draft rendered as the full invoice.
-  if (inv.issuedAt == null) {
-    return (
-      <Button variant="line" size="sm" asChild>
-        <a href={`/api/documents/${projectId}?type=invoice&preview=1&invoiceId=${inv.id}`} target="_blank" rel="noopener noreferrer">
-          <Eye className="h-3.5 w-3.5" /> Preview
-        </a>
-      </Button>
-    );
-  }
-
-  return (
-    <CanDo resource="invoice" action="issue">
-      <Button
-        type="button"
-        variant="line"
-        size="sm"
-        loading={retry.isPending}
-        onClick={() => retry.mutate(undefined)}
-      >
-        <AlertTriangle className="h-3.5 w-3.5 text-warn" /> Document missing — generate
-      </Button>
-    </CanDo>
-  );
-}
-
 /** The nudge chip's menu — a partial (any % or $ slice, any number of times)
  *  and a remaining-balance invoice, offered independently since a project can
  *  carry several partials before the remainder is raised (no forced order). */
@@ -661,42 +345,5 @@ function InvoiceMenuChip({
         </DropdownMenu>
       </CanDo>
     </div>
-  );
-}
-
-/**
- * `alreadySynced` only picks the IDLE label/toast wording — pushInvoiceToXero
- * itself decides create-vs-update from the invoice's own `xeroInvoiceId`
- * (whichever this button's prop reflects, since both read the same row), so
- * they can never disagree. A synced invoice keeps showing this button
- * (rather than disappearing once `xeroSyncStatus === "SYNCED"`, as it used
- * to) so a Flow-side correction — a fixed line description, a corrected
- * account/tax coding — has a way back into the SAME Xero invoice instead of
- * requiring a manual edit there.
- */
-function PushToXeroButton({ invoiceId, alreadySynced }: { invoiceId: string; alreadySynced: boolean }) {
-  const pushMutation = useServerMutation({
-    mutationFn: () => pushInvoiceToXero(invoiceId),
-    onSuccess: (r) => {
-      if (!r.ok) {
-        toast.error(r.error);
-        return;
-      }
-      if (r.updated) {
-        toast.success("Updated in Xero");
-      } else {
-        toast.success(r.autoCreatedContact ? "Pushed to Xero (new contact created)" : "Pushed to Xero");
-      }
-      if (r.varianceNote) toast.warning(r.varianceNote);
-    },
-    // pushInvoiceToXero never throws — it always resolves to { ok, ... } so its
-    // failure message survives Next's production Server Action redaction. This
-    // stays only as a last-resort net for a genuinely unexpected framework error.
-    onError: (e) => toast.error(e.message),
-  });
-  return (
-    <Button type="button" variant={alreadySynced ? "line" : "primary"} size="sm" loading={pushMutation.isPending} onClick={() => pushMutation.mutate(undefined)}>
-      <UploadCloud className="h-3.5 w-3.5" /> {alreadySynced ? "Update in Xero" : "Push to Xero"}
-    </Button>
   );
 }

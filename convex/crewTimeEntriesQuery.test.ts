@@ -254,6 +254,19 @@ describe("undoCreateManyNative — Log time's Undo, ONE atomic mutation", () => 
     expect(await undo(t, ["n1"])).toEqual({ count: 1 });
   });
 
+  test("S6: a colleague edits the entry (it stays a Draft) — the author's Undo is refused, nothing deleted", async () => {
+    const t = makeT(); await seed(t, []);
+    await logTime(t, ["n1"]);
+    // Ben edits Alice's freshly logged entry. updateNative leaves it a DRAFT with the
+    // same createdAt, so only `updatedAt === stamp` tells the Undo it moved on.
+    await t.withIdentity(asUser2).mutation(api.crewTimeEntriesWrites.updateNative, {
+      id: "n1", orgId: ORG, crewMemberId: "c1", date: NOW, startTime: "09:00", endTime: "17:00", now: NOW + 5, actor: { userId: USER2, userName: "Ben" }, auditId: "e2",
+    });
+    expect(await te(t, "n1")).toMatchObject({ status: "DRAFT", startTime: "09:00", createdAt: NOW });
+    await expect(undo(t, ["n1"])).rejects.toThrow(/edited, submitted or approved since/);
+    expect(await te(t, "n1")).not.toBeNull();
+  });
+
   test("refuses ids it did not create (another stamp, another org)", async () => {
     const t = makeT(); await seed(t, [{ id: "old", status: "DRAFT" }, { id: "theirs", status: "DRAFT", org: OTHER }]);
     await expect(undo(t, ["old"])).rejects.toThrow(/can't be undone/);

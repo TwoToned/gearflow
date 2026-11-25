@@ -136,6 +136,23 @@ describe("NewJobWizard", () => {
     expect(ids.id).not.toBe(ids.auditId);
   });
 
+  it("a fresh-org create end to end: Next (draft written) → What → Next → Review → Create job lands on the job, and a double press on step one is ONE step", async () => {
+    render(<NewJobWizard />);
+    fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Fresh org job" } });
+    fireEvent.change(document.querySelector('input[name="projectNumber"]') as HTMLInputElement, { target: { value: "E2E-1" } });
+    const next = screen.getByRole("button", { name: "Next" });
+    fireEvent.click(next);
+    fireEvent.click(next); // the e2e's early second press: still step one, not Review
+    await waitFor(() => expect(screen.getByRole("button", { name: "What 0" }).getAttribute("aria-current")).toBe("step"));
+    expect(screen.queryByRole("button", { name: "Create job" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("button", { name: "Create job" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Review" }).getAttribute("aria-current")).toBe("step");
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/projects/draft1"));
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
   it("Create as enquiry finishes the draft from step one without gear", async () => {
     render(<NewJobWizard />);
     fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Quick one" } });

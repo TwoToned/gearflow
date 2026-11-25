@@ -104,6 +104,9 @@ export async function createProject(page: Page, projectName: string, code: strin
   // `exact`: the calendar's "Next month" button also contains the word.
   await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
+  // The first Next writes the draft job (async), so wait for the What step before pressing Next
+  // again: a second press while the first is still in flight is the same step, not the next one.
+  await expect(page.getByRole("button", { name: /^What/ })).toHaveAttribute("aria-current", "step", { timeout: 30000 });
   await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Create job" }).focus();

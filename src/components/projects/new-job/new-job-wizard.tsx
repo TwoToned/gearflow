@@ -111,10 +111,18 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
     try { await task(); } catch (e) { toast.error((e as Error).message); } finally { setCreating(false); }
   };
 
+  const advancing = useRef(false);
   const next = async () => {
     if (step === "review") return void run(() => createJob(ctx, false));
     if (step === "what") return setStep("review");
-    if (await finishStepOne()) setStep("what");
+    // Step one writes the draft (async): a second press while it is in flight is the same step, not the next.
+    if (advancing.current) return;
+    advancing.current = true;
+    try {
+      if (await finishStepOne()) setStep("what");
+    } finally {
+      advancing.current = false;
+    }
   };
   const back = () => setStep(step === "review" ? "what" : "who");
 

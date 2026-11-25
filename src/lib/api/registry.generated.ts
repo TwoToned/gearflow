@@ -42724,6 +42724,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projects.windowOverlap",
+    "module": "projects",
+    "fn": "windowOverlap",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "end",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "excludeProjectId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "start",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b40bb58a461962df",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Other jobs whose gear window overlaps a date range (number, status, window; capped at 50 with the true total).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectServices.create",
     "module": "projectServices",
     "fn": "create",
@@ -65817,10 +65864,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1275,
-  agentReachable: 643,
-  queries: 455,
+  total: 1276,
+  agentReachable: 644,
+  queries: 456,
   mutations: 820,
-  agentReachableQueries: 319,
+  agentReachableQueries: 320,
   agentReachableMutations: 324,
 } as const;

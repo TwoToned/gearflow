@@ -311,7 +311,7 @@ interface ThreadScope {
  * only while `enabled`. Shared by the Sheet panel (its title) and the body below, so
  * the job's inline Discussion section and the Sheet are ONE component, never two.
  */
-export function useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled }: ThreadScope & { enabled: boolean }) {
+function useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled }: ThreadScope & { enabled: boolean }) {
   const threads = useAuthedQuery(
     api.collaboration.listThreads,
     enabled ? { orgId, entityType, entityId, targetType, targetId } : "skip",

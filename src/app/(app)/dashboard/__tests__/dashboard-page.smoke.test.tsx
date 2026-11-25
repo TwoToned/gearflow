@@ -17,7 +17,8 @@ const m = vi.hoisted(() => ({
   push: vi.fn(),
   toast: vi.fn(),
   save: vi.fn(async () => undefined),
-  updateTask: vi.fn(async () => undefined),
+  updateTask: vi.fn(async () => ({ changed: true, auditId: "audit-1" })),
+  undoTaskUpdate: vi.fn(async () => ({ restoredIds: ["k1"], skippedIds: [] })),
   financeArg: [] as (string | undefined)[],
   upcoming: [] as unknown[],
 }));
@@ -38,7 +39,7 @@ vi.mock("@/lib/use-permissions", () => ({
 // The real layout hook, over a stubbed Convex: no saved row ⇒ the D87 default.
 vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => null }));
 vi.mock("convex/react", () => ({ useMutation: () => m.save }));
-vi.mock("@/hooks/use-project-tasks-writes", () => ({ useProjectTaskWrites: () => ({ update: m.updateTask }) }));
+vi.mock("@/hooks/use-project-tasks-writes", () => ({ useProjectTaskWrites: () => ({ update: m.updateTask, undoUpdate: m.undoTaskUpdate }) }));
 vi.mock("@/components/dashboard/setup-panel", () => ({ SetupPanel: () => null, useSetupPanelState: () => ({ visible: false, title: "Finish setup" }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(m.toast, { success: m.toast, error: vi.fn() }) }));
 
@@ -96,6 +97,7 @@ beforeEach(() => {
   m.push.mockClear();
   m.toast.mockClear();
   m.updateTask.mockClear();
+  m.undoTaskUpdate.mockClear();
   m.financeArg = [];
 });
 
@@ -260,7 +262,7 @@ describe("Home (smoke)", () => {
     expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Open on the job"]);
   });
 
-  it("My tasks: the tick completes with the /my-tasks write and Undo restores the prior status", async () => {
+  it("My tasks: the tick completes with the /my-tasks write and Undo is the EXACT ids-only undo of that write", async () => {
     const user = userEvent.setup();
     render(<DashboardPage />);
     expect(screen.getByText("3d overdue")).toBeDefined();
@@ -268,6 +270,8 @@ describe("Home (smoke)", () => {
     expect(m.updateTask).toHaveBeenCalledWith("k1", { status: "DONE" });
     await waitFor(() => expect(lastToast()?.[0]).toBe("Done · “Send revised quote”"));
     await lastToast()?.[1]?.action?.onClick();
-    expect(m.updateTask).toHaveBeenLastCalledWith("k1", { status: "IN_PROGRESS" });
+    // No prior status is sent from the client: the server reads it from the forward write's own audit row.
+    expect(m.undoTaskUpdate).toHaveBeenCalledWith("audit-1", ["k1"]);
+    expect(m.updateTask).toHaveBeenCalledTimes(1);
   });
 });

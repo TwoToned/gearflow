@@ -17,7 +17,7 @@ export const TASK_FILTERS: readonly { value: TaskFilter; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-export type TaskGroupKey = TaskDueBucket | "DONE";
+type TaskGroupKey =TaskDueBucket | "DONE";
 
 export interface TaskGroup {
   key: TaskGroupKey;

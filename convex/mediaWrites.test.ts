@@ -27,8 +27,12 @@ function makeT(): T {
 async function seedMember(t: T, role = "admin") {
   await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role }); });
 }
-async function seedFile(t: T, id: string, org = ORG) {
-  await t.run(async (ctx) => { await ctx.db.insert("fileUploads", { id, organizationId: org, fileName: "f", fileSize: 1, mimeType: "image/png", storageKey: "sk-" + id, url: "/api/files/sk-" + id, uploadedById: USER }); });
+/** The caller's own fresh upload, with the `storedFiles` row `/api/uploads` writes for the kind's folder (default: assets). */
+async function seedFile(t: T, id: string, org = ORG, folder = "assets") {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("fileUploads", { id, organizationId: org, fileName: "f", fileSize: 1, mimeType: "image/png", storageKey: "sk-" + id, url: "/api/files/sk-" + id, uploadedById: USER });
+    await ctx.db.insert("storedFiles", { storageId: "sk-" + id, organizationId: org, folder });
+  });
 }
 async function seedAsset(t: T, id: string, org = ORG) {
   await t.run(async (ctx) => { await ctx.db.insert("assets", { id, organizationId: org, assetTag: "A-" + id, modelId: "m" }); });
@@ -88,7 +92,7 @@ describe("mediaWrites — client (non-photo kind)", () => {
   test("add sets no isPrimary; reorder re-numbers with org re-check", async () => {
     const t = makeT(); await seedMember(t);
     await t.run(async (ctx) => { await ctx.db.insert("clients", { id: "c1", organizationId: ORG, name: "Acme" }); });
-    await seedFile(t, "f1"); await seedFile(t, "f2");
+    await seedFile(t, "f1", ORG, "clients"); await seedFile(t, "f2", ORG, "clients");
     await t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "client", id: "cm1", orgId: ORG, parentId: "c1", fileId: "f1", type: "DOCUMENT", displayName: "Contract", now: NOW });
     await t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "client", id: "cm2", orgId: ORG, parentId: "c1", fileId: "f2", type: "DOCUMENT", now: NOW });
     const rows = await t.run(async (ctx) => ctx.db.query("clientMedia").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());

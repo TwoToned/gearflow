@@ -3,7 +3,9 @@
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-25 (review quarterly — POLICY.md R-5.5)_
 
 ## Suppliers
-- **List page data source (2026-07, perf fix):** `SupplierTable`
+- **Records (UX Phase 13, spec §9m):** the supplier and the order are `RecordShell` pages (`Overview · Orders · Sub-hires · Assets · History`; `Overview · Lines · Files · History`). **Order hire state is derived** (`convex/lib/orderHireState.ts`): a SUBHIRE order at RECEIVED/PARTIAL with no `returnedDate` is **On hire**; with one it is **Returned**; the stored status vocabulary is untouched. Two optional `supplierOrders` fields (owner-approved, no backfill, no index): `returnDueDate` (the supplier's date; moved by `Extend hire…`, which never touches a sub-hire's `hireEnd`) and `returnedDate` (set by `Mark returned…`). Both writes record one `fieldEditUndo` audit row and their toast Undo is `undoHireChangeNative` (ids only; refused outside the server window, for another user, a second time, or if the field moved since). `Return n d overdue` is derived (`returnLateDays`) and drives the supplier list's `Due back`, `On hire now` and `Overdue returns`. **Delete** is behind Archive and absent while the supplier has orders (the server guard stays). Supplier Contacts / Documents and multi-file order Files are approved but arrive in their own slice.
+- **List (UX Phase 13, spec §9f):** `src/components/people/suppliers-list.tsx` on the one `PeopleList` renderer; `SupplierTable` and the four `StatTile`s are gone. Reads `peopleLists.supplierPage` / `supplierSegmentCounts` (strip `All · Open orders · Archived`; open orders = DRAFT/ORDERED/PARTIAL). `Spend YTD` (committed order totals ordered this calendar year) is cost: returned only when `canSeeJobCost`, otherwise absent. **That rule now also covers `suppliers.detail.spend` and the cost / charge / margin of `suppliers.subhiresPage`** (before, any `supplier:read` caller got them; a sentinel test in `convex/peopleLists.test.ts` pins it). `On hire now`, `Due back` and `Overdue returns` arrive with the order return date (slice 2). Bulk `Archive n` / `Add tag…` use the new `suppliersWrites.patchNative` (tags / isActive only, so a list verb never replaces a whole supplier); Undo restores only rows still in the state the write set.
+- **List page data source (2026-07, perf fix; superseded by the above):** `SupplierTable`
   (`src/components/suppliers/supplier-table.tsx`) is server-side paginated —
   `suppliers.listPage` (filter/sort done in Convex) via `useAuthedQuery`, replacing a
   whole-org `useSuppliers` live subscription that filtered/sorted client-side. See
@@ -186,6 +188,36 @@ order from the app). Mirrors `subHireItems`' add/update/remove/reorder shape in
   invoice-attach precedent above).
 - `useSupplierOrderWrites()` (`src/hooks/use-supplier-order-writes.ts`) wraps all
   four with `supplierOrderItemSchema.parse()` before submit.
+
+### Supplier Contacts, Documents and an order's Files (UX Phase 13, B3)
+
+Three org-scoped tables (owner-approved 2026-11-25), each `by_cuid` + `by_organizationId` (the org export
+and erasure sweep them as DIRECT tables) + one parent index: **`supplierContacts`** (`name`, `role`,
+`email`, `phone`, `notes`; cap 50 per supplier; the supplier's embedded `contactName/email/phone` stays and
+is the primary), **`supplierDocuments`** (`fileId`, `name`, `kind`, `expiryDate`, `notes`; cap 100) and
+**`supplierOrderFiles`** (`fileId`, `kind` PO / DOCKET / OTHER, `name`; cap 50 per order). The order's
+invoice keeps its own 1:1 slot (`invoiceFileId`), so there is no INVOICE kind; the Files tab lists the
+PO / docket / other files above the invoice slot. A document's **expiry state is derived on read**
+(`documentExpiry` in `convex/lib/supplierRecordCore.ts`: expired, or within 30 days) and shows as a status
+word on the row and a health row on the supplier's Overview; it is never stored.
+
+- **Reads** (`convex/supplierRecord.ts`): `contacts`, `documents`, `orderFiles`, each `supplier:read`,
+  parent fetched by the global `by_cuid` index and org-checked, every child row org-checked again, bounded
+  by the caps. **Files** are served by `/api/files/<key>`, which authorises by the caller's org: that is
+  exactly the reach of these reads because every built-in role holds `supplier:read`, so no separate download
+  route is needed (the crew documents of slice 3 do need one; they are personal).
+- **Writes** (`convex/supplierRecordWrites.ts`, `supplier:update`): per-row org re-check on the parent, the
+  row and the file. Every write toasts with an **exact server-side Undo** (ids only; author + server window +
+  once + still-as-left; `convex/lib/fieldEditUndo` for an edit, `convex/lib/rowOpUndo` for an add / remove).
+  **An Undo never deletes a stored file**: undoing an add detaches the row and the uploaded file stays; undoing
+  a contact removal re-creates the row from the audit snapshot. **Removing a document or an order file deletes
+  its stored bytes for good**, so it is a confirmed red verb with no Undo (the same rule as removing an
+  invoice).
+- **Cascades**: deleting a supplier removes its contacts and documents (bytes included); deleting an order
+  removes its files. The PII inventory lists all three tables.
+- **UI**: `src/components/suppliers/record/` (`people-tabs.tsx`, `order-files-panel.tsx`, `record-sheets.tsx`
+  on the shared `FormSheet`, `use-supplier-record-writes.ts`); Zod schemas in
+  `src/lib/validations/supplier-record.ts`.
 
 ### Supplier spend rollups (WS7 #946)
 `suppliers.detail` (`convex/suppliers.ts`) gains a `spend` object, shown on the

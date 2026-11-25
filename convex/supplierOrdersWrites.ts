@@ -1,13 +1,16 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { MAX_FILES_PER_ORDER, SUPPLIER_INVOICE_FOLDER } from "./lib/supplierRecordCore";
+import { assertAttachableUpload } from "./lib/attachableUpload";
 import * as enums from "./lib/validators";
 
 /**
@@ -236,7 +239,8 @@ export const deleteNative = mutation({
 
     const items = await ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", a.id)).collect();
     for (const it of items) await ctx.db.delete(it._id);
-    if (order.invoiceFileId) await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+    if (order.invoiceFileId) await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
+    await deleteOrderFiles(ctx, a.orgId, a.id);
 
     await ctx.db.delete(order._id);
 
@@ -280,11 +284,15 @@ export const attachInvoiceNative = mutation({
     const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
 
-    const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
-    if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
+    // Re-attaching the file the order already holds is a no-op; any other file must be the actor's own recent
+    // upload into the invoice folder, so a replace/remove can only ever delete a file this order just received
+    // (never another order's invoice, a check photo or someone else's upload).
+    if (order.invoiceFileId !== a.fileId) {
+      await assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: actor.userId, fileId: a.fileId, folder: SUPPLIER_INVOICE_FOLDER });
+    }
 
     if (order.invoiceFileId && order.invoiceFileId !== a.fileId) {
-      await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+      await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     }
 
     await ctx.db.patch(order._id, { invoiceFileId: a.fileId, updatedAt: a.now });
@@ -319,7 +327,7 @@ export const removeInvoiceNative = mutation({
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
     if (!order.invoiceFileId) return { id: a.id }; // idempotent — nothing to remove
 
-    await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+    await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     await ctx.db.patch(order._id, { invoiceFileId: undefined, updatedAt: a.now });
 
     await writeActivityLog(ctx, {
@@ -339,21 +347,104 @@ export const removeInvoiceNative = mutation({
   },
 });
 
-/** Delete a fileUploads row + its stored bytes/storedFiles record (org re-checked). */
-async function deleteFileById(ctx: MutationCtx, fileId: string, orgId: string): Promise<void> {
-  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (!file || file.organizationId !== orgId) return;
-  const rec = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
-  if (rec) await ctx.db.delete(rec._id);
-  try {
-    await ctx.storage.delete(file.storageKey as Id<"_storage">);
-  } catch {
-    // already gone — idempotent
+/** An order's PO / docket / other files go with it, stored bytes included (B3). */
+async function deleteOrderFiles(ctx: MutationCtx, orgId: string, orderId: string): Promise<void> {
+  const files = await ctx.db.query("supplierOrderFiles").withIndex("by_orderId", (q) => q.eq("orderId", orderId)).take(MAX_FILES_PER_ORDER + 1);
+  for (const f of files.filter((x) => x.organizationId === orgId)) {
+    await deleteStoredFile(ctx, f.fileId, orgId);
+    await ctx.db.delete(f._id);
   }
-  await ctx.db.delete(file._id);
 }
 
+// ─── Hire return (UX Phase 13, D71) ── `Mark returned` and `Extend hire` ────────────
+// Each is ONE field edit recorded by `recordFieldEdit` and reversed by the shared
+// `undoFieldEdit` (ids only; refuses outside the server window, for another user, a second
+// time, or when the field moved since). `Extend hire` moves ONLY `returnDueDate`: it never
+// touches a sub-hire's `hireEnd` (that is our client-facing window, a different date).
+
+const DAY = 24 * 60 * 60 * 1000;
+const HIRE_FIELDS = ["returnDueDate", "returnedDate"] as const;
+
+async function loadHireOrder(ctx: MutationCtx, orgId: string, id: string) {
+  const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!order || order.organizationId !== orgId) throw new ConvexError("Order not found");
+  return order;
+}
+
+function assertOnHire(order: { type?: string; status?: string; returnedDate?: number }) {
+  if (order.type !== "SUBHIRE") throw new ConvexError("Only a sub-hire order has a return date.");
+  if (order.status !== "RECEIVED" && order.status !== "PARTIAL") throw new ConvexError("The order has not been received, so it is not on hire.");
+  if (order.returnedDate != null) throw new ConvexError("This order is already marked returned.");
+}
+
+const hireArgs = { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() };
+
+export const markReturnedNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { ...hireArgs, returnedDate: v.number() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "supplierOrder");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "supplier", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const order = await loadHireOrder(ctx, a.orgId, a.id);
+    assertOnHire(order);
+    if (order.orderDate != null && a.returnedDate < order.orderDate) throw new ConvexError("It can't have been returned before it was ordered.");
+    if (a.returnedDate > Date.now() + DAY) throw new ConvexError("The return date can't be in the future.");
+    const diff = diffFields(order, { ...order, returnedDate: a.returnedDate }, HIRE_FIELDS);
+    if (!diff) return { id: a.id };
+    await ctx.db.patch(order._id, { returnedDate: a.returnedDate, updatedAt: a.now });
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, auditId: a.auditId, actor, now: a.now, diff, summary: `Marked order ${order.orderNumber} returned` });
+    return { id: a.id };
+  },
+});
+
+export const extendHireNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { ...hireArgs, returnDueDate: v.number() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "supplierOrder");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "supplier", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const order = await loadHireOrder(ctx, a.orgId, a.id);
+    assertOnHire(order);
+    if (order.returnDueDate != null && a.returnDueDate <= order.returnDueDate) throw new ConvexError("The new return date must be after the current one.");
+    if (order.orderDate != null && a.returnDueDate < order.orderDate) throw new ConvexError("The return date can't be before the order date.");
+    const diff = diffFields(order, { ...order, returnDueDate: a.returnDueDate }, HIRE_FIELDS);
+    if (!diff) return { id: a.id };
+    await ctx.db.patch(order._id, { returnDueDate: a.returnDueDate, updatedAt: a.now });
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, auditId: a.auditId, actor, now: a.now, diff, summary: `Extended hire on order ${order.orderNumber}` });
+    return { id: a.id };
+  },
+});
+
+/** The exact Undo of either: ids only (the FORWARD `auditId`); the shared helper refuses as a whole unless it is still exact. */
+export const undoHireChangeNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), forwardAuditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "supplierOrder");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "supplier", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const order = await loadHireOrder(ctx, a.orgId, a.id);
+    return await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, auditId: a.forwardAuditId, actor, now: a.now,
+      load: async () => loadHireOrder(ctx, a.orgId, a.id),
+      apply: async (doc, plan) => {
+        const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+        for (const f of plan.clear) patch[f] = undefined;
+        await ctx.db.patch(doc._id, patch);
+      },
+    });
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
+  markReturnedNative: { danger: "medium" },
+  extendHireNative: { danger: "low" },
+  undoHireChangeNative: { danger: "medium" },
   // Attaching an invoice is recoverable (removeInvoiceNative / re-attach) — not a
   // financial issue/void action.
   attachInvoiceNative: { danger: "medium" },

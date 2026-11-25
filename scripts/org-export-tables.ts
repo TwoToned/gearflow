@@ -117,7 +117,10 @@ export const DIRECT_TABLES = [
   "ssoProviders",
   "subHireMedia",
   "subHires",
+  "supplierContacts",
+  "supplierDocuments",
   "supplierModelRates",
+  "supplierOrderFiles",
   "supplierOrders",
   "suppliers",
   "testProfiles",
@@ -288,9 +291,11 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // alongside the read path's by_organizationId_userId).
 // Custom accessories: +1 — modelCustomAccessories (DIRECT — free-text model-level
 // accessory, has its own by_organizationId index).
+// UX Phase 13 B3: +3 — supplierContacts, supplierDocuments, supplierOrderFiles (all DIRECT, each
+// with its own by_organizationId index).
 // UX Phase 10 Slice E: +1 — projectTaskLinks (PARENT_JOIN via projectTasks, the approved schema
 // has no by_organizationId index).
-export const EXPECTED_TABLE_COUNT = 129;
+export const EXPECTED_TABLE_COUNT = 132;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

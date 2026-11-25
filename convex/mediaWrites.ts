@@ -9,6 +9,7 @@ import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { emitProjectActivityEvent } from "./lib/activityEvents";
 import { ProjectMediaType as ProjectMediaTypeV } from "./lib/validators";
+import { assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
 
 /**
  * Native MEDIA write mutations (Phase 3 browser-direct — replaces the 6 *-media.ts
@@ -30,13 +31,15 @@ type MediaTable = "clientMedia" | "locationMedia" | "projectMedia" | "kitMedia" 
 type ParentTable = "clients" | "locations" | "projects" | "kits" | "assets" | "models";
 type Resource = "client" | "location" | "project" | "kit" | "asset" | "model";
 
-const CFG: Record<Kind, { table: MediaTable; fk: string; parentTable: ParentTable; parentIndex: string; resource: Resource; photo: boolean }> = {
-  client: { table: "clientMedia", fk: "clientId", parentTable: "clients", parentIndex: "by_clientId", resource: "client", photo: false },
-  location: { table: "locationMedia", fk: "locationId", parentTable: "locations", parentIndex: "by_locationId", resource: "location", photo: false },
-  project: { table: "projectMedia", fk: "projectId", parentTable: "projects", parentIndex: "by_projectId", resource: "project", photo: false },
-  kit: { table: "kitMedia", fk: "kitId", parentTable: "kits", parentIndex: "by_kitId", resource: "kit", photo: true },
-  asset: { table: "assetMedia", fk: "assetId", parentTable: "assets", parentIndex: "by_assetId", resource: "asset", photo: true },
-  model: { table: "modelMedia", fk: "modelId", parentTable: "models", parentIndex: "by_modelId", resource: "model", photo: true },
+// `folder` is the `/api/uploads` folder each kind's uploader sends (`MediaUploader`, the Files section):
+// the attach rule requires the file to have been uploaded for THIS kind.
+const CFG: Record<Kind, { table: MediaTable; fk: string; parentTable: ParentTable; parentIndex: string; resource: Resource; photo: boolean; folder: string }> = {
+  client: { table: "clientMedia", fk: "clientId", parentTable: "clients", parentIndex: "by_clientId", resource: "client", photo: false, folder: "clients" },
+  location: { table: "locationMedia", fk: "locationId", parentTable: "locations", parentIndex: "by_locationId", resource: "location", photo: false, folder: "locations" },
+  project: { table: "projectMedia", fk: "projectId", parentTable: "projects", parentIndex: "by_projectId", resource: "project", photo: false, folder: "projects" },
+  kit: { table: "kitMedia", fk: "kitId", parentTable: "kits", parentIndex: "by_kitId", resource: "kit", photo: true, folder: "kits" },
+  asset: { table: "assetMedia", fk: "assetId", parentTable: "assets", parentIndex: "by_assetId", resource: "asset", photo: true, folder: "assets" },
+  model: { table: "modelMedia", fk: "modelId", parentTable: "models", parentIndex: "by_modelId", resource: "model", photo: true, folder: "models" },
 };
 
 /** A media row — the fields we touch are common across all 6 media tables. */
@@ -61,45 +64,6 @@ async function assertParentInOrg(ctx: MutationCtx, cfg: (typeof CFG)[Kind], pare
   if (!parent || parent.organizationId !== orgId) throw new ConvexError("Parent not found");
 }
 
-/** Another row of this media table that already points at the file (its `by_fileId` index is global; the file is org-checked by the caller). */
-async function otherRowsForFile(ctx: MutationCtx, cfg: (typeof CFG)[Kind], fileId: string, exceptId?: string): Promise<boolean> {
-  const rows = await mediaRowsByFile(ctx, cfg.table, fileId);
-  return rows.some((r) => r.id !== exceptId);
-}
-
-/** Up to two rows of one media table pointing at a file (each table has its own typed `by_fileId` index). */
-async function mediaRowsByFile(ctx: MutationCtx, table: MediaTable, fileId: string): Promise<{ id: string }[]> {
-  switch (table) {
-    case "clientMedia":
-      return ctx.db.query("clientMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-    case "locationMedia":
-      return ctx.db.query("locationMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-    case "projectMedia":
-      return ctx.db.query("projectMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-    case "kitMedia":
-      return ctx.db.query("kitMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-    case "assetMedia":
-      return ctx.db.query("assetMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-    case "modelMedia":
-      return ctx.db.query("modelMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
-  }
-}
-
-/**
- * A file may be ATTACHED only if it is the caller's own fresh upload that nothing else
- * already holds (a removal later deletes the stored bytes, so attaching someone else's
- * file, or one a quote / sub-hire / another row uses, would let a remove destroy it).
- * A job's file must also come from the job upload folder. A service identity (no user
- * to compare) skips the uploader test; every other check still applies.
- */
-async function assertFileAttachable(ctx: MutationCtx, cfg: (typeof CFG)[Kind], a: { kind: Kind; orgId: string }, file: { id: string; storageKey: string; uploadedById: string }) {
-  const actor = await resolveActor(ctx, { userId: "", userName: "" });
-  if (actor.userId && file.uploadedById !== actor.userId) throw new ConvexError("You can only attach a file you uploaded");
-  if (await otherRowsForFile(ctx, cfg, file.id)) throw new ConvexError("That file is already attached");
-  if (a.kind !== "project") return;
-  const stored = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).first();
-  if (!stored || stored.organizationId !== a.orgId || stored.folder !== "projects") throw new ConvexError("That file was not uploaded to this job");
-}
 
 async function guards(ctx: MutationCtx, kind: Kind, orgId: string) {
   await assertWritesEnabled(ctx, "media");
@@ -117,7 +81,9 @@ export const addNative = mutation({
 
     const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
     if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
-    await assertFileAttachable(ctx, cfg, a, file);
+    // THE shared attach rule (Phase 13): the caller's own recent upload, in this kind's upload folder, held by nothing.
+    const actor = await resolveActor(ctx, { userId: "", userName: "" });
+    await assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: actor.userId, fileId: a.fileId, folder: cfg.folder });
 
     const dup = await mediaByCuid(ctx, cfg, a.id);
     if (dup) throw new ConvexError("Media already exists");
@@ -163,7 +129,8 @@ async function removeMediaRow(ctx: MutationCtx, kind: Kind, orgId: string, media
   // Delete the file (stored bytes + storedFiles record + thumbnail bytes + the fileUploads row)
   // ONLY when nothing else still holds it. Org-check the file too (by_cuid is global).
   const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (file && file.organizationId === orgId && !(await otherRowsForFile(ctx, cfg, fileId))) {
+  // The bytes go only when nothing else holds the file once THIS row is gone (`isFileReferenced`, Phase 13).
+  if (file && file.organizationId === orgId && !(await isFileReferenced(ctx.db, orgId, fileId))) {
     await deleteStored(ctx, file.storageKey);
     if (file.thumbnailUrl) {
       const thumb = storageIdFromUrl(file.thumbnailUrl);

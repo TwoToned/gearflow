@@ -6,7 +6,7 @@
 // job read; Internal notes are private).
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -35,6 +35,8 @@ async function seed(t: T) {
     await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "plan.pdf", fileSize: 10, mimeType: "application/pdf", storageKey: "k1", url: "/api/files/k1", uploadedById: USER, createdAt: NOW });
     await ctx.db.insert("fileUploads", { id: "f2", organizationId: ORG, fileName: "stage.jpg", fileSize: 20, mimeType: "image/jpeg", storageKey: "k2", url: "/api/files/k2", uploadedById: "stranger", createdAt: NOW });
     await ctx.db.insert("fileUploads", { id: "fX", organizationId: OTHER, fileName: "foreign.pdf", fileSize: 1, mimeType: "application/pdf", storageKey: "kX", url: "/api/files/kX", uploadedById: USER });
+    // The `storedFiles` rows `/api/uploads` writes (the job folder), so the attach rule can prove the folder.
+    for (const k of ["k1", "k2"]) await ctx.db.insert("storedFiles", { storageId: k, organizationId: ORG, folder: "projects" });
     await ctx.db.insert("projectMedia", { id: "pm1", organizationId: ORG, projectId: "P1", fileId: "f1", type: "OTHER", sortOrder: 0, createdAt: NOW });
     await ctx.db.insert("projectMedia", { id: "pm2", organizationId: ORG, projectId: "P1", fileId: "f2", type: "PHOTO", sortOrder: 1, createdAt: NOW });
     await ctx.db.insert("projectMedia", { id: "pmX", organizationId: OTHER, projectId: "P1", fileId: "fX", type: "OTHER", sortOrder: 2, createdAt: NOW });
@@ -140,20 +142,51 @@ describe("attaching and removing a file can never destroy bytes that are not the
 
   test("another person's upload in the same org is refused (cannot be attached, so cannot be removed-and-deleted)", async () => {
     const t = makeT(); await seed(t); await addUpload(t, "fTheirs", { by: "stranger" });
-    await expect(add(t, "fTheirs")).rejects.toThrow(/only attach a file you uploaded/i);
+    await expect(add(t, "fTheirs")).rejects.toThrow(/not uploaded by you/i);
     expect(await fileExists(t, "fTheirs")).toBe(true);
   });
 
-  test("a file something already holds (even the caller's own) is refused", async () => {
+  test("an old upload is refused (it must be the upload the form just made)", async () => {
+    const t = makeT(); await seed(t); await addUpload(t, "fOld");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+      await expect(add(t, "fOld")).rejects.toThrow(/too old/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a file something already holds (even the caller's own, in the right folder) is refused", async () => {
     const t = makeT(); await seed(t);
-    await expect(add(t, "f1")).rejects.toThrow(/already attached/i);
+    await expect(add(t, "f1")).rejects.toThrow(/already attached to something/i);
+  });
+
+  test("a file a SUB-HIRE holds is refused (the reproduced cross-holder hole)", async () => {
+    const t = makeT(); await seed(t); await addUpload(t, "fSh");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireMedia", { id: "shm2", organizationId: ORG, subHireId: "sh1", fileId: "fSh" });
+    });
+    await expect(add(t, "fSh")).rejects.toThrow(/already attached to something/i);
+    expect(await fileExists(t, "fSh")).toBe(true);
   });
 
   test("a file from another upload folder (a quote PDF, a check photo) or another org is refused", async () => {
-    const t = makeT(); await seed(t); await addUpload(t, "fPdf", { folder: "finance" }); await addUpload(t, "fNoRow", { folder: null });
-    await expect(add(t, "fPdf")).rejects.toThrow(/not uploaded to this job/i);
-    await expect(add(t, "fNoRow")).rejects.toThrow(/not uploaded to this job/i);
+    const t = makeT(); await seed(t); await addUpload(t, "fPdf", { folder: "finance/quotes" }); await addUpload(t, "fNoRow", { folder: null }); await addUpload(t, "fWrong", { folder: "assets" });
+    await expect(add(t, "fPdf")).rejects.toThrow(/not uploaded for this/i);
+    await expect(add(t, "fNoRow")).rejects.toThrow(/not uploaded for this/i);
+    await expect(add(t, "fWrong")).rejects.toThrow(/not uploaded for this/i); // another kind's folder
     await expect(add(t, "fX")).rejects.toThrow(/File not found/);
+  });
+
+  test("removing a project file a sub-hire also holds removes the row but keeps the bytes", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("subHireMedia", { id: "shm3", organizationId: ORG, subHireId: "sh1", fileId: "f2" });
+    });
+    await t.withIdentity(asUser).mutation(api.mediaWrites.removeNative, { kind: "project", orgId: ORG, mediaId: "pm2" });
+    expect(await t.run(async (ctx) => ctx.db.query("projectMedia").withIndex("by_cuid", (q) => q.eq("id", "pm2")).first())).toBeNull();
+    expect(await fileExists(t, "f2")).toBe(true);
   });
 
   test("removing a file another row still holds keeps its bytes; the last holder's removal deletes them", async () => {

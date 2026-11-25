@@ -11,7 +11,10 @@ import { claimRowOpUndo, recordRowOp } from "./lib/rowOpUndo";
 import { deleteStoredFile } from "./lib/deleteStoredFile";
 import { writeActivityLog } from "./lib/audit";
 import { collectCapped } from "./lib/pagination";
+import { assertAttachableUpload } from "./lib/attachableUpload";
 import {
+  SUPPLIER_DOCUMENTS_FOLDER,
+  SUPPLIER_ORDER_FILES_FOLDER,
   MAX_CONTACTS_PER_SUPPLIER,
   MAX_DOCUMENTS_PER_SUPPLIER,
   MAX_FILES_PER_ORDER,
@@ -56,11 +59,18 @@ async function loadOrder(ctx: MutationCtx, orgId: string, id: string) {
   return o;
 }
 
-/** The uploaded file must be this org's, and not already attached to another row of this kind. */
-async function assertOwnFile(ctx: MutationCtx, orgId: string, fileId: string): Promise<void> {
-  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (!file || file.organizationId !== orgId) throw new ConvexError("File not found");
-}
+/**
+ * A document's file must be the ACTOR's own recent upload into the `supplier-documents` folder and held by
+ * nothing (`assertAttachableUpload`, the one shared rule): a confirmed removal deletes the bytes of the file a
+ * row points at, so a row may only ever point at a file it just received. The folder is also what keeps an
+ * order's invoice, a check photo or another surface's file from being attached here.
+ */
+const assertDocumentFile = (ctx: MutationCtx, a: { orgId: string; userId: string; fileId: string }) =>
+  assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: a.userId, fileId: a.fileId, folder: SUPPLIER_DOCUMENTS_FOLDER });
+
+/** An order file's file: the same proof, in the `supplier-order-files` folder. */
+const assertOrderFile = (ctx: MutationCtx, a: { orgId: string; userId: string; fileId: string }) =>
+  assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: a.userId, fileId: a.fileId, folder: SUPPLIER_ORDER_FILES_FOLDER });
 
 // ─── Contacts ───────────────────────────────────────────────────────────────────────
 
@@ -221,7 +231,7 @@ export const addDocumentNative = mutation({
     const f = docValues(a);
     assertDocument(f);
     const supplier = await loadSupplier(ctx, a.orgId, a.supplierId);
-    await assertOwnFile(ctx, a.orgId, a.fileId);
+    await assertDocumentFile(ctx, { orgId: a.orgId, userId: actor.userId, fileId: a.fileId });
     if (await ctx.db.query("supplierDocuments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("Supplier document already exists");
     const existing = await collectCapped(ctx.db.query("supplierDocuments").withIndex("by_supplierId", (q) => q.eq("supplierId", a.supplierId)), MAX_DOCUMENTS_PER_SUPPLIER + 1);
     if (existing.rows.filter((d) => d.organizationId === a.orgId).length >= MAX_DOCUMENTS_PER_SUPPLIER) throw new ConvexError(`A supplier can have at most ${MAX_DOCUMENTS_PER_SUPPLIER} documents.`);
@@ -336,7 +346,7 @@ export const addOrderFileNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     assertStrLen(a.name, "name", { max: 200 });
     const order = await loadOrder(ctx, a.orgId, a.orderId);
-    await assertOwnFile(ctx, a.orgId, a.fileId);
+    await assertOrderFile(ctx, { orgId: a.orgId, userId: actor.userId, fileId: a.fileId });
     if (await ctx.db.query("supplierOrderFiles").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("Order file already exists");
     const existing = await collectCapped(ctx.db.query("supplierOrderFiles").withIndex("by_orderId", (q) => q.eq("orderId", a.orderId)), MAX_FILES_PER_ORDER + 1);
     if (existing.rows.filter((f) => f.organizationId === a.orgId).length >= MAX_FILES_PER_ORDER) throw new ConvexError(`An order can have at most ${MAX_FILES_PER_ORDER} files.`);

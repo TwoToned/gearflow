@@ -9,7 +9,8 @@ import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { deleteStoredFile } from "./lib/deleteStoredFile";
-import { MAX_FILES_PER_ORDER } from "./lib/supplierRecordCore";
+import { MAX_FILES_PER_ORDER, SUPPLIER_INVOICE_FOLDER } from "./lib/supplierRecordCore";
+import { assertAttachableUpload } from "./lib/attachableUpload";
 import * as enums from "./lib/validators";
 
 /**
@@ -283,8 +284,12 @@ export const attachInvoiceNative = mutation({
     const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
 
-    const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
-    if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
+    // Re-attaching the file the order already holds is a no-op; any other file must be the actor's own recent
+    // upload into the invoice folder, so a replace/remove can only ever delete a file this order just received
+    // (never another order's invoice, a check photo or someone else's upload).
+    if (order.invoiceFileId !== a.fileId) {
+      await assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: actor.userId, fileId: a.fileId, folder: SUPPLIER_INVOICE_FOLDER });
+    }
 
     if (order.invoiceFileId && order.invoiceFileId !== a.fileId) {
       await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);

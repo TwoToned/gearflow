@@ -1,5 +1,6 @@
 import { ConvexError } from "convex/values";
 import type { DatabaseReader } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
 import { collectCapped } from "./pagination";
 import { storageIdOf } from "./checkPhotos";
 
@@ -124,6 +125,15 @@ async function heldInPhotoArrays(db: DatabaseReader, orgId: string, file: { id: 
   return checks.truncated ? "unverifiable" : "free";
 }
 
+/** The holders that have no `by_fileId` index (the invoice FK, photo / attachment arrays), scanned with caps. */
+async function unindexedHolders(db: DatabaseReader, orgId: string, file: Doc<"fileUploads">, folder: string | undefined): Promise<FileRefs> {
+  const invoice: FileRefs = folder === INVOICE_UPLOAD_FOLDER ? await heldAsInvoice(db, orgId, file.id) : "free";
+  if (invoice === "held") return "held";
+  const photos = await heldInPhotoArrays(db, orgId, file);
+  if (photos === "held") return "held";
+  return invoice === "unverifiable" || photos === "unverifiable" ? "unverifiable" : "free";
+}
+
 /** The state behind {@link isFileReferenced}: a missing or foreign file is `free`. */
 export async function fileReferenceState(db: DatabaseReader, orgId: string, fileId: string): Promise<FileRefs> {
   const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
@@ -132,15 +142,7 @@ export async function fileReferenceState(db: DatabaseReader, orgId: string, file
   const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
   // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
   if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) return "held";
-  let unverifiable = false;
-  if (stored?.folder === INVOICE_UPLOAD_FOLDER) {
-    const invoice = await heldAsInvoice(db, orgId, fileId);
-    if (invoice === "held") return "held";
-    unverifiable = invoice === "unverifiable";
-  }
-  const photos = await heldInPhotoArrays(db, orgId, file);
-  if (photos === "held") return "held";
-  return unverifiable || photos === "unverifiable" ? "unverifiable" : "free";
+  return await unindexedHolders(db, orgId, file, stored?.folder);
 }
 
 /** Is this org's `fileUploads` file held by anything, or impossible to prove free (fail closed)? */

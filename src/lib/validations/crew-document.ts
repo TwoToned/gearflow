@@ -13,4 +13,3 @@ export const crewDocumentSchema = z.object({
   expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date").optional().or(z.literal("")),
 });
 
-export type CrewDocumentFormValues = z.input<typeof crewDocumentSchema>;

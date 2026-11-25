@@ -54,10 +54,13 @@ export function crewDocumentHealthItem(docs: { kind: CrewDocumentKind; expiresAt
 
 type SheetInitial = { kind: CrewDocumentKind; name: string; expiresAt: number | null };
 
+const sheetDefaults = (i?: SheetInitial) => ({ kind: i ? i.kind : ("LICENCE" as CrewDocumentKind), name: i ? i.name : "", expiry: i ? toDateInput(i.expiresAt) : "" });
+
 function DocumentSheet({ onOpenChange, initial, onSave }: { onOpenChange: (open: boolean) => void; initial?: SheetInitial; onSave: (v: CrewDocumentValues, file: File | null) => Promise<boolean> }) {
-  const [kind, setKind] = React.useState<CrewDocumentKind>(initial?.kind ?? "LICENCE");
-  const [name, setName] = React.useState(initial?.name ?? "");
-  const [expiry, setExpiry] = React.useState(toDateInput(initial?.expiresAt));
+  const start = sheetDefaults(initial);
+  const [kind, setKind] = React.useState<CrewDocumentKind>(start.kind);
+  const [name, setName] = React.useState(start.name);
+  const [expiry, setExpiry] = React.useState(start.expiry);
   const [file, setFile] = React.useState<File | null>(null);
   const [error, setError] = React.useState<string | undefined>();
   const [saving, setSaving] = React.useState(false);

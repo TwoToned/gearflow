@@ -22,6 +22,12 @@ export const runtime = "nodejs";
  */
 const idSchema = z.string().min(1).max(64);
 
+/** THE rule (`crewDocumentsVisible`) for the real caller: a user session that is the member or holds `crew:update`. */
+async function mayDownload(memberUserId: string | null, callerUserId: string): Promise<boolean> {
+  const role = await getCurrentRole();
+  return crewDocumentsVisible({ userSession: true, managesCrew: role != null && hasPermission(role, "crew", "update"), isSelf: memberUserId != null && memberUserId === callerUserId });
+}
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let ctx;
   try {
@@ -34,15 +40,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   try {
     const info = await (await getConvexClient()).query(api.crewDocuments.getForDownload, { orgId: ctx.organizationId, id: id.data });
-    const role = await getCurrentRole();
-    const visible =
-      !!info &&
-      crewDocumentsVisible({
-        userSession: true,
-        managesCrew: role != null && hasPermission(role, "crew", "update"),
-        isSelf: info.memberUserId != null && info.memberUserId === ctx.session.user.id,
-      });
-    if (!info || !visible) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!info || !(await mayDownload(info.memberUserId, ctx.session.user.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const upstream = await fetchWithTimeout(info.url);
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: "Not found" }, { status: 404 });

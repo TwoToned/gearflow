@@ -29825,6 +29825,348 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "maintenanceParts.listForRecord",
+    "module": "maintenanceParts",
+    "fn": "listForRecord",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "733dadef7a957883",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The parts of one maintenance job with the derived parts summary and cost (price and cost only for callers who can see job cost).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenancePartsWrites.addNative",
+    "module": "maintenancePartsWrites",
+    "fn": "addNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "part",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ec6a34373a266ac9",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Add a part (name, supplier, quantity, price, ETA) to a maintenance job.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenancePartsWrites.editNative",
+    "module": "maintenancePartsWrites",
+    "fn": "editNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "clear",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "set",
+        "optional": false,
+        "type": "object"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7ccf8166357d399f",
+    "returnsSha": "1cb2a7e9146018e1",
+    "stability": "tracks-app",
+    "summary": "Edit or clear a part's fields on a maintenance job (a price needs job-cost visibility).",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenancePartsWrites.markArrivedNative",
+    "module": "maintenancePartsWrites",
+    "fn": "markArrivedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "arrivedAt",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "462092ddfa650d3f",
+    "returnsSha": "9fe96e01323ebac6",
+    "stability": "tracks-app",
+    "summary": "Mark a part arrived; the last one moves an Awaiting parts job to In progress.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenancePartsWrites.removeNative",
+    "module": "maintenancePartsWrites",
+    "fn": "removeNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "612686f086d58e6e",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Remove a part from a maintenance job.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenancePartsWrites.undoNative",
+    "module": "maintenancePartsWrites",
+    "fn": "undoNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "recordId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "8aec6ed35ae958cb",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent part change by its audit id (refuses if the part changed since).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "maintenanceRecordAssets.create",
     "module": "maintenanceRecordAssets",
     "fn": "create",
@@ -71110,10 +71452,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1373,
-  agentReachable: 735,
-  queries: 486,
-  mutations: 887,
-  agentReachableQueries: 350,
-  agentReachableMutations: 385,
+  total: 1379,
+  agentReachable: 741,
+  queries: 487,
+  mutations: 892,
+  agentReachableQueries: 351,
+  agentReachableMutations: 390,
 } as const;

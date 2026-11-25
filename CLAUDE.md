@@ -318,6 +318,24 @@ portals to `<body>` as a sibling, inherits the lock, and every click is swallowe
 (`combobox-picker.tsx`, `tag-input.tsx`) are built on **Radix** Popover for exactly
 this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/07.
 
+### Assets: Retire has an exact Undo, Delete is for a bare row, health is derived (UX Phase 12)
+- **One exact field-edit Undo, `convex/lib/fieldEditUndo.ts`.** The forward write records the
+  before/after of ONLY the changed fields in its own audit row (`recordFieldEdit`); the Undo
+  (`undoFieldEdit`) takes ids only and refuses unless: same org and entity, server-clock window,
+  author only, once (`undo:<auditId>` marker), and every changed field still equals what the
+  forward edit left. Never add a caller-supplied "restore to" value, never hand-roll a second one.
+  Retire / Reinstate (`assetWrites`, `bulkAssetsWrites`) and model Archive / Restore
+  (`modelWrites`) use it; the one client closure is `src/hooks/use-retire-assets.ts`.
+- **Delete is only for a bare row, ONE rule:** `convex/lib/assetHistory.ts` (`assetHistoryReason`),
+  enforced by `deleteNative` (`ASSET_HAS_HISTORY`), never a second client-side check.
+- **Model Archive is a soft archive** (`isActive: false`). It does NOT touch the model's assets
+  (it once hard-deleted them; that was a data-loss bug).
+- **`assetHealth()`** (`convex/lib/assetHealth.ts`) is the asset Overview checklist, derived on
+  read: `unknown` ("not checked") never passes, so an unchecked unit is never `Ready to go`.
+- **Cost on gear reads** (`purchasePrice`, `replacementCost`, `defaultPurchasePrice`, `fleetCost`)
+  is ABSENT for a `noFinancials` key (`convex/lib/gearCostFields.ts`); `Show cost & payback` is
+  only a UI default. Optional money in the model / asset / bulk schemas is `blankableNumber`.
+
 ### ⚠️ Never regenerate `convex/schema.ts` over itself
 `scripts/generate-convex-schema.cjs` is a **scaffolding** tool, not a source of truth.
 The checked-in schema has diverged on purpose: hand-added `searchIndex`/composite

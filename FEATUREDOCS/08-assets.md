@@ -142,7 +142,8 @@ in localStorage `assets-view-mode`. The URL is the state: `seg`, `q`, `kind=bulk
   Serial · Status · Condition · Location · Next due · On job (from `assets.rowExtras`, gated per
   field on `testTag`/`project` read; `requireOrgReadFor` + RBAC); Tags opt-in.
 - **Bulk:** Edit…, Add tag…, Force return (only when a selected asset is deployed), Retire
-  (existing `archiveNative`, no Undo). Page ⋯: Export / Import CSV (formula-safe). Primary
+  (`archiveNative` through the shared `useRetireAssets` closure: one exact Undo for the selection,
+  see "Retire, Reinstate and Delete" below). Page ⋯: Export / Import CSV (formula-safe). Primary
   `New asset` (`?type=` follows the kind), `n` kept.
 - **Saved views:** URL mode; old rows' `locationId/categoryId/tags` keys map to `loc/cat/tag`.
 - **Deferred:** Group control, mixed serialized/bulk list, dashboard tiles, Value/Owner columns
@@ -217,6 +218,44 @@ mutations, handlers and permission gates are unchanged.
 
 Bulk assets still redirect to the model page; the not-found / loading states are
 unchanged.
+
+## Retire, Reinstate and Delete (UX Phase 12, D32/D33)
+
+- **Retire** (the verb formerly called Archive; `assetWrites.archiveNative` and
+  `bulkAssetsWrites.archiveNative`) sets `status: RETIRED` + `isActive: false` and retires the
+  unit's linked T&T rows (`retireAssetCore`). Availability, "short by 1" and the jobs that hold
+  the unit follow from the status (derived); nothing else is written. A deployed unit is warned
+  about in the dialog. **Retire writes an exact-Undo snapshot into its own audit row**
+  (`convex/lib/fieldEditUndo.ts`: before/after of `status` / `isActive`, plus the T&T rows it
+  changed). `undoRetireNative({ id, auditId })` takes ids only and refuses (changing nothing)
+  unless it is within 10 minutes (server clock), the caller is the author, it is the first Undo,
+  and the asset and its T&T rows are still exactly as the Retire left them.
+- **Reinstate** (`reinstateNative`) sets `isActive: true`, status `AVAILABLE`. T&T rows are NOT
+  revived (the health checklist then reads `not registered` with `Register`). It has its own
+  Undo through the same `undoRetireNative`.
+- **One closure:** `src/hooks/use-retire-assets.ts` is the only caller of these writes for the
+  Assets list, the asset page and the model page; its toast Undo reverses exactly the rows that
+  call changed, each from its own audit id, and skips rows that were already retired.
+- **Delete is only for a bare row** (`convex/lib/assetHistory.ts`, ONE rule): on a job, a
+  maintenance link, a recorded T&T test, a check record, a scan log, a kit membership or an
+  attached accessory each make the unit "has history" and `deleteNative` throws
+  `ASSET_HAS_HISTORY` (the same rule gates bulk stock). Edits and Retire audit rows are not
+  history. Delete has no Undo.
+- **Model Archive is a true soft archive (behaviour change, owner ruling Q-S1).**
+  `modelWrites.archiveNative` used to hard-DELETE every asset and bulk asset of the model; it
+  now only sets `isActive: false`: the model leaves new quotes and pickers, its assets stay,
+  units out finish on their jobs, reservations hold, quotes are unchanged. `restoreNative`
+  (`Restore model`) brings it back; both are audited with the same exact-Undo snapshot
+  (`undoArchiveNative`). API/MCP callers see the changed summary and the `undoable` return.
+- **Cost fields** (`purchasePrice`, the model's `replacementCost` / `defaultPurchasePrice`,
+  `fleetCost`) are ABSENT for a `noFinancials` API key on `assetDetail.bundle`,
+  `roi.getModelRoi` and `roi.fleetInventory` (`convex/lib/gearCostFields.ts`).
+- **`assetHealth()`** (`convex/lib/assetHealth.ts`, pure, derived on read): the asset Overview
+  checklist (test & tag, service, condition, whereabouts, double bookings, open repairs). A
+  check that cannot run says `not checked` and never passes; a unit with anything unchecked
+  never reads `Ready to go`.
+- **Blank money stays blank** on the model, asset and bulk schemas (`blankableNumber`,
+  `src/lib/validations/blankable.ts`).
 
 ## Asset Status Lifecycle
 ```

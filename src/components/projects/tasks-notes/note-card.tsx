@@ -9,7 +9,7 @@ import { showError } from "@/lib/show-error";
 import { cn, focusRing } from "@/lib/utils";
 
 /** The cap every note field has (`updateNotesNative`, the project schema). */
-export const NOTE_MAX = 5000;
+const NOTE_MAX = 5000;
 
 /** The client notes' Preview: the SAME markup the documents print (`**bold**`, `*italic*`, `- ` bullets). */
 function NotesPreview({ text }: { text: string }) {

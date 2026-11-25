@@ -14,7 +14,7 @@ export interface BinLabel {
 }
 
 /** The labels to print: the unprinted ones, or all of them (`Print bin labels` offers both). */
-export function labelsToPrint(labels: BinLabel[], mode: "unprinted" | "all"): BinLabel[] {
+function labelsToPrint(labels: BinLabel[], mode: "unprinted" | "all"): BinLabel[] {
   return mode === "all" ? labels : labels.filter((l) => !l.printed);
 }
 

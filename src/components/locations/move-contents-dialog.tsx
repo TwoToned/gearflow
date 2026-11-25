@@ -19,7 +19,7 @@ export interface MoveDestination {
 }
 
 /** Pure: the destinations on offer (every location that is not one of the sources). */
-export function destinationsFor(all: MoveDestination[], sources: MoveSource[]): MoveDestination[] {
+function destinationsFor(all: MoveDestination[], sources: MoveSource[]): MoveDestination[] {
   const taken = new Set(sources.map((s) => s.id));
   return all.filter((l) => !taken.has(l.id));
 }

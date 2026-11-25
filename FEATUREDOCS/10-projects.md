@@ -224,49 +224,41 @@ window overlaps, plus busy-day dots on the calendar via `RangeCalendar`'s option
 - `?clientId=` pre-picks the client; an org switch resets the wizard (the draft is left).
 - The e2e harness drives it with Next, Next, Create job.
 
-## Template create wizard (`src/components/projects/project-wizard.tsx`)
+## Templates (UX Phase 9, D23)
 
-The previous four-step wizard remains ONLY for template create until the templates
-slice replaces it (it no longer has a reachable edit mode). Route:
-- `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
+There is no templates page and no separate template wizard. `/projects/templates` redirects to
+`/projects?templates=1` and `/projects/templates/new` to `?templates=new`; `projects/layout.tsx` hosts
+`TemplatesHost`, so the same dialog opens over any `/projects/*` page (nav row, palette, the Jobs ⋯,
+the wizard's own menu).
+- **`Manage templates…`** (`templates/manage-templates-dialog.tsx`): always-on checkboxes with shift
+  range, a row ⋯ built by `buildTemplateRowActions` (`Use for a new job` → `/projects/new?template=<id>`,
+  `Edit template…` → the job edit sheet on the template, `Delete…` red), a bulk `Delete n`. Each
+  action is absent without its permission (`project:create` / `update` / `delete`). Data:
+  `projects.listTemplates` (newest updated first, capped AFTER the filter with `truncated`, gear line
+  counts, sell-side only). Usage isn't stored, so the picker is "recently updated".
+- **Delete ARCHIVES** (status `CANCELLED` on the template row, no schema change) with an exact Undo:
+  `projectTemplateWrites.archiveTemplatesNative` returns each forward audit id and
+  `unarchiveTemplatesNative` takes ids only and reads them (`fieldEditUndo`: author, 10-minute server
+  window, once, every field still as left, all-or-nothing). The **Archived** word lists archived
+  templates, where `Delete forever…` (bulk asks for the typed word) is the real delete
+  (`deleteTemplateNative`, which refuses a template that is not archived). No Undo for that.
+- **`Start from template ▾`** on wizard step one (`new-job/start-from-template.tsx`): the five most
+  recently updated, `Start from scratch` once one is set, `Manage templates…`, `New template…`. A pick
+  applies onto the draft with `applyTemplateNative` (the same copy `duplicateNative` runs,
+  `duplicateCore`): gear, categories, groups, managers, and type / tags / description / discount only
+  where the draft has none; dates are not copied; it refuses a draft that already has gear, a
+  non-draft, another org's or an archived template. A pick before the job is named waits and applies
+  when the draft exists. Its Undo (`undoApplyTemplateNative`, ids only) removes exactly what the apply
+  made and refuses if any of it was edited since; `Start from scratch` is that same Undo.
+- **`New template…`** (`templates/new-template-sheet.tsx`): the shared `ProjectFields` job block in a
+  `FormSheet` (name, type, tags, description, client, managers; no code, discount or dates); it creates
+  the template through the ordinary create and opens its page, where gear is added.
 
-**Edit mode** is engaged by passing the `project` prop (the `getProject`/
-`useProjectDetail` composite, typed loosely as `EditableProject`). In edit mode:
-- `defaultValues` are pre-filled from the project across all steps; stored dates
-  are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
-  `HH:mm`. Existing project managers seed `managerIds`.
-- One edit-only field appears that create mode hides: **Status** (basics step).
-  The wizard's old "Financial" block (site step, hand-typed Deposit %/Deposit
-  paid/Invoiced total inputs with no server-side math) is **REMOVED** as of
-  #940 (WS1 — finance model): deposit % now lives on the **client payment
-  profile** (client detail page — `paymentProfile`/`profileDepositPercent`,
-  see [FEATUREDOCS/66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md)),
-  and deposit-paid/invoiced-total are derived from the project's real
-  Quote/Invoice rows (Project page → Finance tab), never hand-typed here.
-  **Discount (%)** moved out of that block (QW-4 / #953) to the basics step,
-  always visible in both create and edit mode, right after the Client
-  picker — see "Discount default cascade" below.
-- Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
-  the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
-  on the delta only — no dupes, no accidental removals), then routes to
-  `/projects/{id}`. The final CTA reads "Save changes".
-- The next-project-number peek is skipped, and all steps are freely reachable
-  (every step is already valid). Create mode is unchanged.
+## Job fields
 
-- **Project code is required.** Pre-filled from `peekNextProjectNumber()` (create
-  only); the user accepts or overrides. `next()` blocks step 0 if blank (the Zod
-  schema still allows blank for auto-gen, so the requirement is enforced in the
-  wizard).
-- **Step-transition focus management (R-8.1.7, #894).** Continue/Back unmounts the
-  just-clicked button, so the wizard explicitly moves focus on every step change
-  instead of leaving it to the browser's `document.body` fallback (WCAG "focus is
-  never silently lost"). A `tabIndex={-1}` heading ("Step N: <label>") sits at the
-  top of the step-content card and is focused via `stepHeadingRef` in a `useEffect`
-  keyed on `step`, skipping the very first render. Step 0 is excluded from that
-  effect — its Name field already carries `autoFocus`, which re-fires on every
-  (re)mount (the step content is conditionally rendered, so returning to step 0
-  remounts the field) and would otherwise race the heading-focus effect.
-- **Schedule step — two windows (WS2 #941).** Two `RangeCalendar` blocks
+- **Project code is required.** In the wizard the draft allocates it (see above); the field is blank
+  until then, or typed by the org that numbers its own jobs.
+- **Schedule — two windows (WS2 #941).** Two `RangeCalendar` blocks
   (`src/components/ui/range-calendar.tsx`, a custom date-fns range calendar — no
   external calendar dep): **Rental** (the chargeable window, `rentalStartDate`/
   `rentalEndDate` — duration preset chips: 1 day / 2 days / Weekend / 1 week) and

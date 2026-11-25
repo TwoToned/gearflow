@@ -927,6 +927,16 @@ touch of those on a pricing-locked job, so never go back to sending every field.
 Moving the rental dates carries a set project window by the same calendar-day
 offset (`shiftWindowWithRental`); a blank window stays blank.
 
+**Templates are a dialog, not a page (UX Phase 9, D23).** `/projects/templates` and
+`/projects/templates/new` only redirect to `?templates=1|new` on `/projects`; `projects/layout.tsx`
+hosts the one `ManageTemplatesDialog` / `NewTemplateSheet`. A template's `Delete…` ARCHIVES it
+(status `CANCELLED`, exact `fieldEditUndo` Undo from the audit ids the archive returns); only an
+archived template can be deleted for real (`deleteTemplateNative` refuses otherwise, no Undo).
+`Start from template ▾` applies through `applyTemplateNative` onto the wizard's EMPTY draft, which
+runs `duplicateCore` (`projectWrites.ts`), the same deep copy `duplicateNative` runs: never write
+a second copy of how a plan is copied. Its Undo reads its own audit row and refuses if any copied
+row changed.
+
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
 EXCEPT Overview** (#1063). Overview composes the schedule, location and team
 facts into its own When · Where · Who columns (`overview/context-cards.tsx`) —

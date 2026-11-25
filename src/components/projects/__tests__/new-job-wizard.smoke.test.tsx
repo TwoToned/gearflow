@@ -16,6 +16,7 @@ beforeAll(() => {
 });
 
 const push = vi.fn();
+let templateParam = "";
 const create = vi.fn(async () => ({ id: "draft1" }));
 const update = vi.fn(async () => ({ id: "draft1" }));
 const discardDraft = vi.fn(async () => ({ outcome: "deleted" as const }));
@@ -24,7 +25,7 @@ let lines: { id: string; description: string; quantity: number; unitPrice: numbe
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, replace: vi.fn(), back: vi.fn() }),
-  useSearchParams: () => new URLSearchParams("clientId=c9"),
+  useSearchParams: () => new URLSearchParams(`clientId=c9${templateParam ? `&template=${templateParam}` : ""}`),
   usePathname: () => "/projects/new",
 }));
 vi.mock("@/lib/auth-client", () => ({
@@ -47,6 +48,16 @@ vi.mock("@/hooks/use-debounced-value", () => ({ useDebouncedValue: (v: unknown) 
 vi.mock("@/hooks/use-locations", () => ({ useLocations: () => [] }));
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: () => [] }));
 vi.mock("@/hooks/use-activation-milestones", () => ({ useActivationMilestones: () => undefined }));
+const applyT = vi.fn(async () => ({ id: "draft1", lineCount: 2, auditId: "ap1" }));
+const undoApplyT = vi.fn(async () => ({ removedLines: 2 }));
+const TEMPLATES = [
+  { id: "t1", number: "T-1", name: "Gala dinner", type: "CORPORATE", clientName: null, lineCount: 2, updatedAt: 3 },
+  { id: "t2", number: "T-2", name: "Festival rig", type: "FESTIVAL", clientName: null, lineCount: 9, updatedAt: 2 },
+];
+vi.mock("@/hooks/use-templates", () => ({
+  useTemplates: () => ({ templates: TEMPLATES, total: 2, truncated: false }),
+  useTemplateWrites: () => ({ apply: applyT, undoApply: undoApplyT, archive: vi.fn(), unarchive: vi.fn(), deleteForever: vi.fn() }),
+}));
 vi.mock("@/hooks/use-native-equipment-tab", () => ({
   useNativeEquipmentTab: () => ({ uncategorizedItems: lines, categories: [], overbookedMap: {}, isLoading: false }),
 }));
@@ -60,7 +71,8 @@ vi.mock("@/components/projects/equipment-add-bar", () => ({ EquipmentAddBar: ({ 
 import { NewJobWizard } from "../new-job/new-job-wizard";
 
 beforeEach(() => {
-  [push, create, update, discardDraft, updateStatus].forEach((m) => m.mockClear());
+  [push, create, update, discardDraft, updateStatus, applyT, undoApplyT].forEach((m) => m.mockClear());
+  templateParam = "";
   lines = [];
 });
 
@@ -174,6 +186,69 @@ describe("NewJobWizard", () => {
     const twice = await run(2);
     expect(once.create).toBe(1);
     expect(twice).toEqual(once); // an unguarded second press would queue another flush: one more update
+  });
+
+  describe("Start from template ▾ (D23)", () => {
+    const nameIt = () => {
+      fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Gala" } });
+      fireEvent.change(document.querySelector('input[name="projectNumber"]') as HTMLInputElement, { target: { value: "P-60" } });
+    };
+
+    it("opens with the five most recently updated templates and their line counts, plus Manage and New", async () => {
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      expect(await screen.findByText("Gala dinner · 2 lines")).toBeTruthy();
+      expect(screen.getByText("Festival rig · 9 lines")).toBeTruthy();
+      expect(screen.getByText("Manage templates…")).toBeTruthy();
+      expect(screen.getByText("New template…")).toBeTruthy();
+      expect(screen.queryByText("Start from scratch")).toBeNull();
+    });
+
+    it("a pick before the job is named WAITS, then applies onto the draft the moment it exists", async () => {
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      await user.click(await screen.findByText("Gala dinner · 2 lines"));
+      expect(applyT).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: /Template: Gala dinner/ })).toBeTruthy();
+      nameIt();
+      await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t1"));
+      expect(applyT).toHaveBeenCalledTimes(1);
+    });
+
+    it("Start from scratch undoes the apply with the apply's own audit id and clears the word", async () => {
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      nameIt();
+      await screen.findByText("✓ Draft #2360 saved");
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      await user.click(await screen.findByText("Festival rig · 9 lines"));
+      await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t2"));
+      await user.click(screen.getByRole("button", { name: /Template: Festival rig/ }));
+      await user.click(await screen.findByText("Start from scratch"));
+      await waitFor(() => expect(undoApplyT).toHaveBeenCalledWith("draft1", "ap1"));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Start from template" })).toBeTruthy());
+    });
+
+    it("?template=<id> (Use for a new job) is the same pick, once", async () => {
+      templateParam = "t2";
+      render(<NewJobWizard />);
+      nameIt();
+      await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t2"));
+      expect(applyT).toHaveBeenCalledTimes(1);
+    });
+
+    it("a refused apply says why and clears the pick", async () => {
+      applyT.mockRejectedValueOnce(new Error("This draft already has gear"));
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      nameIt();
+      await screen.findByText("✓ Draft #2360 saved");
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      await user.click(await screen.findByText("Gala dinner · 2 lines"));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Start from template" })).toBeTruthy());
+    });
   });
 
   it("Create as enquiry finishes the draft from step one without gear", async () => {

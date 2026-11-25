@@ -21,6 +21,7 @@ import {
   ProjectFields, projectFormDefaults, useProjectFieldsState,
 } from "@/components/projects/project-fields";
 import { useJobDraft } from "./use-job-draft";
+import { StartFromTemplate, useTemplateApply } from "./start-from-template";
 import { AvailabilityLine, useWizardAvailability } from "./availability-line";
 import { StepWhat, useWizardLines } from "./step-what";
 import { StepReview, type StartStatus } from "./step-review";
@@ -52,6 +53,19 @@ function useClientParam(form: UseFormReturn<ProjectFormValues>) {
       form.setValue("clientId", clientParam);
     }
   }, [clientParam, form]);
+}
+
+/** `/projects/new?template=<id>` (the manager's `Use for a new job`) is the same pick as the menu, once. */
+function useTemplateParam(pick: (t: { id: string }) => void) {
+  const id = useSearchParams().get("template");
+  const applied = useRef(false);
+  useEffect(() => {
+    if (id && !applied.current) {
+      applied.current = true;
+      pick({ id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 }
 
 /** Focus is never silently lost on a step change (R-8.1.7): land on the new step's heading. */
@@ -87,6 +101,8 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const avail = useWizardAvailability(orgId, draft.draftId, v.rentalStartDate as string | undefined, v.rentalEndDate as string | undefined, month);
   const shortLines = data.lines.filter((l) => (data.overbooked[l.id]?.overBy ?? 0) > 0).length;
   useClientParam(form);
+  const tpl = useTemplateApply(draft.draftId);
+  useTemplateParam(tpl.pick);
   const headingRef = useStepFocus(step);
 
   /** Step one must validate; the code is required when the org types its own. */
@@ -137,6 +153,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const whoStep = (
     <WhoStep
       form={form} state={state} onSubmit={() => void next()}
+      templateSlot={<StartFromTemplate orgId={orgId} picked={tpl.picked} onPick={tpl.pick} onScratch={tpl.scratch} />}
       availability={{ busyDays: avail.busyDays, onMonthChange: setMonth, footer: <AvailabilityLine hasDates={!!v.rentalStartDate} others={avail.others} shortLines={shortLines} lineCount={data.lines.length} /> }}
     />
   );
@@ -200,16 +217,18 @@ function StepNav({ step, unlocked, whatCount, onPick }: { step: StepKey; unlocke
 
 /** Step one: the shared fields, with the dates-and-availability line under the calendar and the rest folded. */
 function WhoStep({
-  form, state, availability, onSubmit,
+  form, state, availability, onSubmit, templateSlot,
 }: {
   form: UseFormReturn<ProjectFormValues>;
   state: ReturnType<typeof useProjectFieldsState>;
   availability: { busyDays?: ReadonlyMap<string, string>; footer: React.ReactNode; onMonthChange: (month: Date) => void };
   onSubmit: () => void;
+  templateSlot: React.ReactNode;
 }) {
   const [more, setMore] = useState(false);
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="space-y-8">
+      <div>{templateSlot}</div>
       <ProjectFields form={form} state={state} sections={["job", "schedule"]} schedule={availability} />
       <section>
         <button type="button" aria-expanded={more} onClick={() => setMore((m) => !m)} className={cn("flex min-h-11 items-center gap-1 text-table-cell text-ink-2", focusRing)}>

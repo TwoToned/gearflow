@@ -20,6 +20,7 @@ import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
 import { loadKitBookingGate } from "./lib/kitState";
+import { takesFromPool } from "./lib/saleStockFacts";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -87,9 +88,10 @@ async function applySaleStockOnAdd(
   if (fields.type !== "SALE") return undefined;
 
   if (fields.saleMode === "NEW_STOCK") {
-    if (fields.modelId) {
+    // The ONE predicate Reserved counts by (`convex/lib/saleStockFacts.ts`): they cannot drift.
+    if (takesFromPool(fields)) {
       await adjustModelSaleStock(ctx, {
-        modelId: fields.modelId,
+        modelId: fields.modelId!,
         orgId: args.orgId,
         delta: -fields.quantity,
         projectId: args.projectId,

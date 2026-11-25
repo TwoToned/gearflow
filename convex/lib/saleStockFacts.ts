@@ -1,16 +1,17 @@
 import type { QueryCtx } from "../_generated/server";
 import { collectCapped } from "./pagination";
+import type { ReadBudget } from "./readBudget";
 
 /**
  * The ONE definition of the Sales stock list's stock terms (UX Phase 14, D41).
  *
  * `models.saleStockQuantity` is the new-stock pool NET of every sale line: adding
  * a NEW_STOCK sale line decrements it (convex/lib/saleStock.ts), whatever the
- * job's status, and it stays down while the line is out. So:
+ * job's status or version, and it stays down (nothing restores it on cancel). So:
  *
  *   available = pool                       (what can still be sold)
- *   reserved  = qty on sale lines that are on a live job and have not gone out
- *               (already subtracted from the pool, still physically in the building)
+ *   reserved  = qty on sale lines whose quantity was taken from the pool and have not gone out
+ *               (`takesFromPool`: the SAME predicate the write path decrements by; still in the building)
  *   onHand    = pool + reserved            (physical stock in the building)
  *
  * which makes `onHand - reserved === available` by construction: a sale line is
@@ -24,41 +25,33 @@ export function parseSaleStockSegment(raw: string | undefined): SaleStockSegment
   return SALE_STOCK_SEGMENT_KEYS.find((k) => k === raw) ?? "all";
 }
 
-/** Job statuses whose sale lines no longer hold stock aside (same set as the overbooking board's dead statuses). */
-const DEAD_PROJECT_STATUSES = new Set(["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"]);
-/** A sale line in one of these states has left the building (or never will). */
-const LEFT_LINE_STATUSES = new Set(["CHECKED_OUT", "RETURNED", "CANCELLED"]);
+/** A sale line in one of these states has left the building. */
+const OUT_LINE_STATUSES = new Set(["CHECKED_OUT", "RETURNED"]);
 
 interface LineLike {
   type?: string | null;
   saleMode?: string | null;
   status?: string | null;
   quantity?: number | null;
-  versionId?: string | null;
-  projectId: string;
-}
-interface ProjectLike {
-  status?: string | null;
-  isTemplate?: boolean | null;
-  liveVersionId?: string | null;
+  modelId?: string | null;
 }
 
-/** Pure: does this line hold stock aside (counted in `reserved`)? */
-export function isReservedSaleLine(line: LineLike, project: ProjectLike | undefined): boolean {
-  return !!project && projectHoldsStock(project, line) && lineHoldsStock(line);
+/**
+ * THE predicate (review ruling): "this line's quantity was taken out of the new-stock pool". The write path
+ * (`applySaleStockOnAdd`) decrements the pool exactly when this is true, and Reserved counts exactly the
+ * lines for which it is true and which have not gone out, so the two cannot drift. It is deliberately
+ * independent of the job's status and the line's version: the decrement was applied at add time whatever
+ * they were, and nothing restores it on cancel (a known write-path gap, logged as a follow-up), so a
+ * cancelled job's held stock honestly reads as reserved. An UNSET `saleMode` is not decremented today, so
+ * it is not counted either.
+ */
+export function takesFromPool(line: Pick<LineLike, "type" | "saleMode" | "modelId">): boolean {
+  return line.type === "SALE" && line.saleMode === "NEW_STOCK" && !!line.modelId;
 }
 
-/** The job is live and the line belongs to its LIVE version (lines are versioned). */
-function projectHoldsStock(project: ProjectLike, line: LineLike): boolean {
-  if (project.isTemplate || DEAD_PROJECT_STATUSES.has(project.status ?? "")) return false;
-  return line.versionId != null && line.versionId === project.liveVersionId;
-}
-
-/** A new-stock sale line that has not gone out (or been cancelled). */
-function lineHoldsStock(line: LineLike): boolean {
-  if (line.type !== "SALE") return false;
-  if ((line.saleMode ?? "NEW_STOCK") !== "NEW_STOCK") return false;
-  return !LEFT_LINE_STATUSES.has(line.status ?? "");
+/** Pure: is this line's taken-from-pool quantity still physically in the building (counted in `reserved`)? */
+export function isReservedSaleLine(line: LineLike): boolean {
+  return takesFromPool(line) && !OUT_LINE_STATUSES.has(line.status ?? "");
 }
 
 export type SaleStockState = "OK" | "LOW" | "OUT";
@@ -87,43 +80,44 @@ export function saleStockInSegment(state: SaleStockState, segment: SaleStockSegm
   return segment === "out" ? state === "OUT" : state === "LOW";
 }
 
-/** Lines read per call: sale lines are a tiny slice of an org's lines, but the read must still be bounded. */
+/** Lines one model's read may take (the per-model ceiling; the call's budget can lower it). */
 const RESERVED_LINE_CAP = 5000;
 
 /**
- * modelId -> reserved qty for the org (live-version NEW_STOCK sale lines not yet out).
- * Reads `by_modelId` (GLOBAL index) per model and re-checks the org on every row.
+ * modelId -> reserved qty for the org: the NEW_STOCK sale lines whose quantity was taken from the pool and
+ * that have not gone out (`isReservedSaleLine`, any version, any job status). A line copied into another
+ * version is one add, so it counts ONCE per lineage.
+ *
+ * Reads `by_modelId` (GLOBAL index) per model, re-checks the org on every row, and draws every document
+ * read from the call's ONE budget. A model the budget could not cover is ABSENT from the map (its figure
+ * is unknown, never a guess) and `truncated` is set.
  */
 export async function loadReservedByModel(
   ctx: QueryCtx,
   orgId: string,
   modelIds: readonly string[],
+  budget: ReadBudget,
 ): Promise<{ reserved: Map<string, number>; truncated: boolean }> {
   const reserved = new Map<string, number>();
-  let truncated = false;
-  const projectCache = new Map<string, ProjectLike | undefined>();
   for (const modelId of modelIds) {
-    const { rows, truncated: t } = await collectCapped(
-      ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)),
-      RESERVED_LINE_CAP,
-    );
-    truncated ||= t;
-    let sum = 0;
-    for (const line of rows) {
-      if (line.organizationId !== orgId || line.type !== "SALE") continue;
-      const project = await orgProject(ctx, orgId, line.projectId, projectCache);
-      if (isReservedSaleLine(line, project)) sum += line.quantity ?? 0;
+    if (!budget.hasRoom) {
+      budget.truncated = true;
+      break;
     }
-    if (sum > 0) reserved.set(modelId, sum);
+    const room = Math.min(RESERVED_LINE_CAP, budget.left);
+    const { rows, truncated } = await collectCapped(ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)), room);
+    budget.take(rows.length);
+    if (truncated) {
+      budget.truncated = true;
+      continue;
+    }
+    const perLineage = new Map<string, number>();
+    for (const line of rows) {
+      if (line.organizationId !== orgId || !isReservedSaleLine(line)) continue;
+      const key = line.lineageId ?? line.id;
+      perLineage.set(key, Math.max(perLineage.get(key) ?? 0, line.quantity ?? 0));
+    }
+    reserved.set(modelId, [...perLineage.values()].reduce((n, q) => n + q, 0));
   }
-  return { reserved, truncated };
-}
-
-/** The job, only when it is in this org (the `by_cuid` index is global), memoised per call. */
-async function orgProject(ctx: QueryCtx, orgId: string, projectId: string, cache: Map<string, ProjectLike | undefined>) {
-  if (!cache.has(projectId)) {
-    const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
-    cache.set(projectId, p && p.organizationId === orgId ? p : undefined);
-  }
-  return cache.get(projectId);
+  return { reserved, truncated: budget.truncated };
 }

@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (663 agent-reachable)
+## Operations (664 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -261,7 +261,6 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `kits.listPage` (query, scope: kit:read)
 - `kitSerializedItems.getByAssetId` (query, scope: kit:read)
 - `kitsList.bookingGate` (query, scope: kit:read)
-- `kitsList.legacyIncompleteReport` (query, scope: kit:read)
 - `kitsList.listPage` (query, scope: kit:read)
 - `kitsList.segmentCounts` (query, scope: kit:read)
 - `kitWrites.addBulkItemNative` (mutation, scope: kit:update)
@@ -269,8 +268,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `kitWrites.archiveNative` (mutation, scope: kit:delete)
 - `kitWrites.createNative` (mutation, scope: kit:create)
 - `kitWrites.deleteNative` (mutation, scope: kit:delete)
+- `kitWrites.markCompleteNative` (mutation, scope: kit:update)
 - `kitWrites.removeBulkItemNative` (mutation, scope: kit:update)
 - `kitWrites.removeSerializedItemNative` (mutation, scope: kit:update)
+- `kitWrites.undoMarkCompleteNative` (mutation, scope: kit:update)
 - `kitWrites.updateNative` (mutation, scope: kit:update)
 - `kitWrites.updateNotesNative` (mutation, scope: kit:update)
 - `search.kits` (query, scope: kit:read)

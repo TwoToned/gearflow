@@ -17,6 +17,7 @@ import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useStableNow } from "@/hooks/use-stable-now";
+import { useKitWrites } from "@/hooks/use-kit-writes";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { toCsv } from "@/lib/csv";
@@ -31,7 +32,7 @@ import {
   kitsQueryArgs,
   type KitSource,
 } from "@/lib/list-views/kits";
-import { plural } from "@/lib/list-write-toast";
+import { announceListWrite, plural } from "@/lib/list-write-toast";
 import { buildKitActions, buildKitBulkActions } from "@/lib/row-actions/kit";
 import { showError } from "@/lib/show-error";
 import { useCanDo } from "@/lib/use-permissions";
@@ -59,6 +60,7 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
   const canUpdate = useCanDo("kit", "update");
   const canCheckIn = useCanDo("warehouse", "check_in");
   const warehouse = useWarehouseWrites();
+  const kitWrites = useKitWrites();
   const tags = useOrgTags(orgId);
   const categories = useCategories(orgId);
   const locations = useLocations(orgId);
@@ -75,7 +77,7 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
 
   const forceReturn = async (ids: string[]) => {
     try {
-      const out = ids.filter((id) => seen.current.get(id)?.state.key === "CHECKED_OUT");
+      const out = ids.filter((id) => seen.current.get(id)?.state?.key === "CHECKED_OUT");
       const r = await warehouse.forceReturnKits(out);
       toast.success(`Force returned ${plural(r.count, "kit")} to available${ids.length > out.length ? ` · ${ids.length - out.length} not out, left as they are` : ""}`);
     } catch (e) {
@@ -83,11 +85,26 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
     }
   };
 
+  /** Clears the reported-missing marker; the toast's Undo is the one exact server call. */
+  const markComplete = async (id: string, tag: string) => {
+    try {
+      const r = await kitWrites.markComplete(id);
+      if (!r.changed) return void toast(`${tag} was already complete`);
+      announceListWrite({
+        title: `Marked ${tag} complete`,
+        undoneTitle: `${tag} is reported missing again`,
+        performUndo: async () => void (await kitWrites.undoMarkComplete(id, r.auditId)),
+      });
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not mark the kit complete" });
+    }
+  };
+
   /** Print only: the selected kits as a CSV list (tag, name, state, items, location). */
   const printList = (ids: string[]) => {
     const rows = ids.flatMap((id) => {
       const k = seen.current.get(id);
-      return k ? [[k.assetTag, k.name, k.state.key, String(k.itemCount), k.location?.name ?? ""]] : [];
+      return k ? [[k.assetTag, k.name, k.state?.key ?? "", k.itemCount == null ? "" : String(k.itemCount), k.location?.name ?? ""]] : [];
     });
     downloadCsv(toCsv(["Tag", "Name", "State", "Items", "Location"], rows), "kits.csv");
   };
@@ -100,7 +117,8 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
       buildKitActions(k.assetTag, {
         onOpen: () => router.push(`/kits/${k.id}`),
         onEdit: canUpdate ? () => router.push(`/kits/${k.id}/edit`) : undefined,
-        onForceReturn: canCheckIn && k.state.key === "CHECKED_OUT" ? () => void forceReturn([k.id]) : undefined,
+        onMarkComplete: canUpdate && k.state?.reportedMissing ? () => void markComplete(k.id, k.assetTag) : undefined,
+        onForceReturn: canCheckIn && k.state?.key === "CHECKED_OUT" ? () => void forceReturn([k.id]) : undefined,
       }),
     ),
   );
@@ -126,7 +144,7 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
       leading={(row) => <MediaThumbnail url={photos.get(row.id)?.url} thumbnailUrl={photos.get(row.id)?.thumbnailUrl} alt={row.title} size={32} />}
       primary={primary}
       bulk={(ids) => {
-        const out = ids.filter((id) => seen.current.get(id)?.state.key === "CHECKED_OUT");
+        const out = ids.filter((id) => seen.current.get(id)?.state?.key === "CHECKED_OUT");
         return buildKitBulkActions({
           onPrintList: () => printList(ids),
           forceReturnCount: out.length,

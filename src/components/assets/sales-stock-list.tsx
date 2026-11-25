@@ -120,7 +120,7 @@ function SalesStockListInner({ orgId }: { orgId: string | undefined }) {
   const exportRows = (ids: string[]) => {
     const rows = ids.flatMap((id) => {
       const s = seen.current.get(id);
-      return s ? [[s.name, s.sku ?? "", String(s.onHand), String(s.reserved), String(s.available), s.reorderLevel != null ? String(s.reorderLevel) : "", s.salePrice != null ? String(s.salePrice) : ""]] : [];
+      return s ? [[s.name, s.sku ?? "", s.onHand == null ? "" : String(s.onHand), s.reserved == null ? "" : String(s.reserved), String(s.available), s.reorderLevel != null ? String(s.reorderLevel) : "", s.salePrice != null ? String(s.salePrice) : ""]] : [];
     });
     downloadCsv(toCsv(["Item", "SKU", "On hand", "Reserved", "Available", "Reorder at", "Price"], rows), "sales-stock.csv");
   };

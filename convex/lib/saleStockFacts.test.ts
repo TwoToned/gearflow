@@ -2,8 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { isReservedSaleLine, saleStockFacts, saleStockInSegment, parseSaleStockSegment } from "./saleStockFacts";
 
-const live = { status: "CONFIRMED", isTemplate: false, liveVersionId: "v1" };
-const line = { type: "SALE", saleMode: "NEW_STOCK", status: "CONFIRMED", quantity: 12, versionId: "v1", projectId: "p1" };
+const line = { type: "SALE", saleMode: "NEW_STOCK", status: "CONFIRMED", quantity: 12, modelId: "m1" };
 
 describe("saleStockFacts: On hand - Reserved = Available, never double-counted", () => {
   test.each([
@@ -37,26 +36,22 @@ describe("saleStockFacts: On hand - Reserved = Available, never double-counted",
   });
 });
 
+// The write-path-driven cases (cancelled job, draft version, unset saleMode, CHECKED_OUT, lineage copies)
+// live in convex/saleStockReserved.test.ts; these pin the pure predicate.
 describe("isReservedSaleLine", () => {
-  test("a live NEW_STOCK line on a confirmed job reserves", () => {
-    expect(isReservedSaleLine(line, live)).toBe(true);
+  test("an explicit NEW_STOCK line with a model reserves, whatever its job or version", () => {
+    expect(isReservedSaleLine(line)).toBe(true);
+    expect(isReservedSaleLine({ ...line, status: "CANCELLED" })).toBe(true);
   });
   test.each([
-    ["no project", line, undefined],
-    ["template", line, { ...live, isTemplate: true }],
-    ["dead job", line, { ...live, status: "CANCELLED" }],
-    ["completed job", line, { ...live, status: "COMPLETED" }],
-    ["line already out", { ...line, status: "CHECKED_OUT" }, live],
-    ["line cancelled", { ...line, status: "CANCELLED" }, live],
-    ["not a sale line", { ...line, type: "EQUIPMENT" }, live],
-    ["from rental stock", { ...line, saleMode: "FROM_RENTAL_STOCK" }, live],
-    ["not the live version", { ...line, versionId: "v0" }, live],
-    ["no version", { ...line, versionId: null }, live],
-  ])("%s does not reserve", (_n, l, p) => {
-    expect(isReservedSaleLine(l, p)).toBe(false);
-  });
-  test("an absent saleMode defaults to NEW_STOCK", () => {
-    expect(isReservedSaleLine({ ...line, saleMode: undefined }, live)).toBe(true);
+    ["line already out", { ...line, status: "CHECKED_OUT" }],
+    ["line returned", { ...line, status: "RETURNED" }],
+    ["not a sale line", { ...line, type: "EQUIPMENT" }],
+    ["from rental stock", { ...line, saleMode: "FROM_RENTAL_STOCK" }],
+    ["unset saleMode (the write path does not decrement it)", { ...line, saleMode: undefined }],
+    ["no model", { ...line, modelId: undefined }],
+  ])("%s does not reserve", (_n, l) => {
+    expect(isReservedSaleLine(l)).toBe(false);
   });
 });
 

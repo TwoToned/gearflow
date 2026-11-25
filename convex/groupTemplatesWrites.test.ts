@@ -314,8 +314,8 @@ describe("groupTemplatesWrites.applyNative", () => {
     });
   });
 
-  test("(b2) D75: a kit with a LOST member is skipped as incomplete; a legacy stored INCOMPLETE with every member present is applied", async () => {
-    for (const [stored, memberStatus, skipped] of [["AVAILABLE", "LOST", true], ["INCOMPLETE", "AVAILABLE", false]] as const) {
+  test("(b2) D75: a kit with a LOST member is skipped as incomplete; a legacy stored INCOMPLETE with every member present is skipped too", async () => {
+    for (const [stored, memberStatus, skipped] of [["AVAILABLE", "LOST", true], ["INCOMPLETE", "AVAILABLE", true]] as const) {
       const t = makeT();
       await seedBase(t, { kitStatus: stored });
       await t.run(async (ctx) => {

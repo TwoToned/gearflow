@@ -35,6 +35,7 @@ vi.mock("@/hooks/use-keyboard-shortcut", () => ({ useKeyboardShortcut: () => und
 vi.mock("@/components/ui/url-saved-views", () => ({ UrlSavedViewsMenu: () => <button type="button">Views</button> }));
 const wh = vi.hoisted(() => ({ forceReturnKits: vi.fn(async (ids: string[]) => ({ count: ids.length, succeeded: ids, errors: [] })) }));
 vi.mock("@/hooks/use-warehouse-writes", () => ({ useWarehouseWrites: () => wh }));
+vi.mock("@/hooks/use-kit-writes", () => ({ useKitWrites: () => ({ markComplete: vi.fn(), undoMarkComplete: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const kit = (over: Record<string, unknown>) => ({

@@ -50,11 +50,13 @@ describe("deriveKitState", () => {
     expect(deriveKitState({ kit: { status: "RETIRED" }, serialized: [], bulk: [] }).key).toBe("RETIRED");
   });
 
-  test("a legacy stored INCOMPLETE with nothing missing reads Available, flagged for the report; with a missing member it is Incomplete anyway", () => {
+  test("the stored INCOMPLETE is the human-cleared 'reported missing' marker: it blocks with nothing derived missing, and with a missing member", () => {
     const legacy = deriveKitState({ kit: { status: "INCOMPLETE" }, serialized: [ok("a")], bulk: [] });
-    expect(legacy).toMatchObject({ key: "AVAILABLE", blocksBooking: false, legacyIncomplete: true });
+    expect(legacy).toMatchObject({ key: "INCOMPLETE", blocksBooking: true, reportedMissing: true });
     const real = deriveKitState({ kit: { status: "INCOMPLETE" }, serialized: [ok("a", { status: "LOST" })], bulk: [] });
-    expect(real).toMatchObject({ key: "INCOMPLETE", legacyIncomplete: false });
+    expect(real).toMatchObject({ key: "INCOMPLETE", reportedMissing: true });
+    // Derived alone (no marker): a LOST member still blocks.
+    expect(deriveKitState({ kit: { status: "AVAILABLE" }, serialized: [ok("a", { status: "LOST" })], bulk: [] })).toMatchObject({ key: "INCOMPLETE", reportedMissing: false });
   });
 
   test("an absent status reads Available", () => {

@@ -13,6 +13,8 @@ const SEGMENT_DEFS = [
   { key: "complete", label: "Complete" },
   { key: "missing", label: "Missing items" },
   { key: "onjob", label: "On a job" },
+  { key: "maintenance", label: "In maintenance" },
+  { key: "retired", label: "Retired" },
 ] as const;
 
 export const KITS_SPEC: ListUrlSpec = {
@@ -73,15 +75,19 @@ export interface KitSource {
   condition?: string | null;
   purchasePrice?: number | null;
   tags?: string[] | null;
-  itemCount: number;
+  /** `null` = the call's read budget ran out before this row's count. */
+  itemCount: number | null;
   category?: { name: string } | null;
   location?: { name: string } | null;
   media?: { url: string | null; thumbnailUrl: string | null } | null;
+  /** `null` = the read budget ran out: the state is unknown (the row prints "—", never a guess). */
   state: {
     key: string;
     missing: { label: string; why: string }[];
     booking: { projectNumber: string; projectName: string } | null;
-  };
+    /** The stored INCOMPLETE marker: cleared only by Mark complete. */
+    reportedMissing: boolean;
+  } | null;
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -95,24 +101,41 @@ const STATE_LABELS: Record<string, string> = {
 
 /** Inline dot-word: `1 item missing` (red). */
 export function kitFlags(k: Pick<KitSource, "state">): RowFlag[] {
-  const n = k.state.missing.length;
-  return n > 0 ? [{ label: `${n} item${n === 1 ? "" : "s"} missing`, tone: "error" }] : [];
+  const n = k.state?.missing.length ?? 0;
+  if (n > 0) return [{ label: `${n} item${n === 1 ? "" : "s"} missing`, tone: "error" }];
+  return k.state?.reportedMissing ? [{ label: "Reported missing", tone: "error" }] : [];
 }
 
 export function kitStatus(k: Pick<KitSource, "state">): StatusValue {
+  if (!k.state) return { label: "—", intent: "neutral" };
   const key = k.state.key;
   const intent = key === "INCOMPLETE" ? "error" : key === "CHECKED_OUT" ? "primary" : key === "IN_MAINTENANCE" || key === "RESERVED" ? "warning" : key === "RETIRED" ? "neutral" : "success";
   return { label: STATE_LABELS[key] ?? key, intent, outline: key === "RETIRED" };
 }
 
+const DASH: Fact = { kind: "text", label: "—" };
+
+/** The "Complete" column: unknown (budget ran out) prints a dash, never a guess. */
+function completeFact(state: KitSource["state"]): Fact {
+  if (!state) return DASH;
+  return { kind: "text", label: state.key === "INCOMPLETE" ? "Missing" : "Complete" };
+}
+
 function kitFacts(k: KitSource): Record<string, Fact> {
-  const job = k.state.booking;
+  const job = k.state?.booking;
   return {
-    items: { kind: "qty", value: k.itemCount },
-    complete: { kind: "text", label: k.state.key === "INCOMPLETE" ? "Missing" : "Complete" },
-    onJob: { kind: "text", label: job ? `${job.projectNumber} ${job.projectName}` : "—" },
+    items: k.itemCount == null ? DASH : { kind: "qty", value: k.itemCount },
+    complete: completeFact(k.state),
+    onJob: job ? { kind: "text", label: `${job.projectNumber} ${job.projectName}` } : DASH,
     value: { kind: "money", amount: k.purchasePrice ?? null },
     condition: { kind: "text", label: conditionLabels[k.condition ?? "GOOD"] ?? "" },
+    ...placeAndTags(k),
+  };
+}
+
+/** Location and tags are present only when the kit has them. */
+function placeAndTags(k: KitSource): Record<string, Fact> {
+  return {
     ...(k.location?.name ? { location: { kind: "place" as const, label: k.location.name } } : {}),
     ...(k.tags?.length ? { tags: { kind: "text" as const, label: k.tags.join(", ") } } : {}),
   };

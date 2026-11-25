@@ -1999,7 +1999,7 @@ the recommended option.
 | D72 | Crew Documents with expiry dates drive an Overview health row | **Accepted 2026-11-24.** Yes | Keep licences in notes |
 | D73 | Client Merge ships with undo and a named list of what moves | **Accepted 2026-11-24.** Yes | Archive only |
 | D74 | Supplier and crew keep Delete but behind Archive/Inactive; supplier delete gated while orders exist | **Accepted 2026-11-24.** Yes | Remove Delete |
-| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | **Accepted 2026-11-24.** Derive; drop the status select from the kit sheet | Keep stored status |
+| D75 | Kit status derived from contents (Incomplete/Reserved/Available), not a stored `INCOMPLETE` | **Accepted 2026-11-24.** Derive; drop the status select from the kit sheet. **Amended in the 14a review:** the stored `INCOMPLETE` stays as the human-cleared "reported missing" marker (a MISSING return writes it; only "Mark complete", with an exact Undo, clears it), because a bulk-only kit has no `LOST` member to derive from. State = derived-missing OR the marker | Keep stored status |
 | D76 | Maintenance parts become rows (name, supplier, qty, price, ETA, on order/arrived); cost = parts + labour, never stored | **Accepted 2026-11-24.** Rows + derived cost | Keep `partsUsed` text and `cost` number |
 | D77 | Category default T&T profile (class + interval) inherited by models | **Accepted 2026-11-24.** Add, model can override | Keep per-model only |
 | D78 | Location capacity and bin labels (`cap`, printed state) as real fields | **Accepted 2026-11-24.** Add | Keep locations free of capacity |

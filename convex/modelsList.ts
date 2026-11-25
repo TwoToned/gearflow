@@ -8,6 +8,7 @@ import { dueAssetMap } from "./lib/assetAttention";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { clampPageSize, collectCapped } from "./lib/pagination";
 import { resolveNow } from "./lib/projectSegments";
+import { ReadBudget } from "./lib/readBudget";
 import {
   SALE_STOCK_SEGMENT_KEYS,
   loadReservedByModel,
@@ -116,16 +117,34 @@ interface SortCtx {
   stock: Map<string, ModelStock>;
 }
 
-/** The value each derived column orders by; any other key is a plain model field. */
-const DERIVED_SORT_KEYS: Record<string, (m: Doc<"models">, c: SortCtx) => unknown> = {
+/**
+ * The ONLY orderings the Models list offers: an explicit allow-list, no generic field fallback (a
+ * fallback lets a caller order rows by any stored field, a cost among them, and read it from the order).
+ */
+const MODEL_SORT_KEYS: Record<string, (m: Doc<"models">, c: SortCtx) => unknown> = {
+  name: (m) => m.name,
   category: (m, c) => c.categoryById.get(m.categoryId ?? "")?.name,
   owned: (m, c) => c.stock.get(m.id)?.owned ?? 0,
   available: (m, c) => c.stock.get(m.id)?.available ?? 0,
   assetType: (m) => m.assetType ?? "SERIALIZED",
+  dailyRate: (m) => m.dailyRate,
+  replacementCost: (m) => m.replacementCost,
 };
 
+/**
+ * Pure: the sort actually applied. An unknown key, or a cost key for a caller who cannot see cost, falls
+ * back to the default order ASCENDING whatever direction was asked (asc and desc must be identical, or the
+ * direction would leak the ordering).
+ */
+function effectiveModelSort(sortBy: string | undefined, dir: 1 | -1, redacted: boolean): { sortBy: string; dir: 1 | -1 } {
+  const s = sortBy ?? "name";
+  const isCost = (MODEL_COST_FIELDS as readonly string[]).includes(s);
+  if (!(s in MODEL_SORT_KEYS) || (redacted && isCost)) return { sortBy: "name", dir: 1 };
+  return { sortBy: s, dir };
+}
+
 function modelSortKey(m: Doc<"models">, sortBy: string, c: SortCtx): unknown {
-  return (DERIVED_SORT_KEYS[sortBy] ?? ((x: Doc<"models">) => (x as unknown as Record<string, unknown>)[sortBy]))(m, c);
+  return MODEL_SORT_KEYS[sortBy](m, c);
 }
 
 /** The category with its parent's name (for `Lighting → Moving heads`), or null. */
@@ -148,6 +167,18 @@ async function shapeModelRow(ctx: QueryCtx, orgId: string, m: Doc<"models">, c: 
 
 const sortDir = v.optional(v.union(v.literal("asc"), v.literal("desc")));
 
+/** The Sales stock orderings: an explicit allow-list (no generic field fallback), none of them a cost field. */
+const SALE_SORT_KEYS: Record<string, (m: Doc<"models">, categoryById: Map<string, Doc<"categories">>) => unknown> = {
+  name: (m) => m.name,
+  category: (m, byId) => byId.get(m.categoryId ?? "")?.name,
+  available: (m) => m.saleStockQuantity ?? 0,
+  salePrice: (m) => m.salePrice,
+  reorderLevel: (m) => m.reorderLevel,
+};
+
+/** Documents ONE Sales stock call may read for reserved lines (a TOTAL budget over the page's models). */
+const SALE_READ_BUDGET = 6000;
+
 /** One page of the Models list. */
 export const listPage = query({
   args: {
@@ -167,8 +198,8 @@ export const listPage = query({
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "model");
     const seg = parseModelSegment(a.segment);
-    const sortBy = a.sortBy ?? "name";
-    const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
+    const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
+    const { sortBy, dir } = effectiveModelSort(a.sortBy, a.sortOrder === "desc" ? -1 : 1, redact);
 
     const [models, categories, { stock, truncated: stockTruncated }, due] = await Promise.all([
       collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))),
@@ -184,7 +215,6 @@ export const listPage = query({
     const sorted = [...filtered].sort((x, y) => compareValues(modelSortKey(x, sortBy, sortCtx), modelSortKey(y, sortBy, sortCtx), dir) || x.name.localeCompare(y.name));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
 
-    const redact = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
     const items = [];
     for (const m of paged.items) items.push(await shapeModelRow(ctx, a.orgId, m, { redact, ...sortCtx }));
     return { ...paged, items, truncated: models.truncated || stockTruncated || due.truncated };
@@ -196,7 +226,7 @@ export const segmentCounts = query({
   args: { orgId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "model");
-    const [models, { stock }, due] = await Promise.all([
+    const [models, { stock, truncated: stockTruncated }, due] = await Promise.all([
       collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId))),
       loadModelStock(ctx, orgId),
       modelsDueForTestTag(ctx, orgId, resolveNow(now)),
@@ -206,7 +236,7 @@ export const segmentCounts = query({
       const owned = stock.get(m.id)?.owned ?? 0;
       for (const key of MODEL_SEGMENT_KEYS) if (modelInSegment(m, key, owned, due.ids)) counts[key]++;
     }
-    return counts;
+    return { ...counts, truncated: models.truncated || stockTruncated || due.truncated };
   },
 });
 
@@ -228,7 +258,7 @@ export const saleStockPage = query({
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "model");
     const seg = parseSaleStockSegment(a.segment);
-    const sortBy = a.sortBy ?? "available";
+    const sortBy = a.sortBy && a.sortBy in SALE_SORT_KEYS ? a.sortBy : "available";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
     const [models, categories] = await Promise.all([
       collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))),
@@ -244,16 +274,14 @@ export const saleStockPage = query({
       if (a.categoryIdIn?.length && !(m.categoryId && a.categoryIdIn.includes(m.categoryId))) return false;
       return !a.search || matchesSearch([m.name, m.manufacturer, m.modelNumber, m.sku], a.search);
     });
-    const keyOf = (m: Doc<"models">): unknown => {
-      if (sortBy === "category") return categoryById.get(m.categoryId ?? "")?.name;
-      if (sortBy === "available") return m.saleStockQuantity ?? 0;
-      return (m as unknown as Record<string, unknown>)[sortBy];
-    };
+    const keyOf = (m: Doc<"models">): unknown => SALE_SORT_KEYS[sortBy](m, categoryById);
     const sorted = [...filtered].sort((x, y) => compareValues(keyOf(x), keyOf(y), dir) || x.name.localeCompare(y.name));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
-    const { reserved, truncated: linesTruncated } = await loadReservedByModel(ctx, a.orgId, paged.items.map((m) => m.id));
+    const { reserved, truncated: linesTruncated } = await loadReservedByModel(ctx, a.orgId, paged.items.map((m) => m.id), new ReadBudget(SALE_READ_BUDGET));
     const items = paged.items.map((m) => {
       const cat = m.categoryId ? categoryById.get(m.categoryId) : undefined;
+      const held = reserved.get(m.id);
+      const facts = saleStockFacts({ pool: m.saleStockQuantity, reserved: held ?? 0, reorderLevel: m.reorderLevel });
       return {
         id: m.id,
         name: m.name,
@@ -262,7 +290,9 @@ export const saleStockPage = query({
         salePrice: m.salePrice ?? null,
         reorderLevel: m.reorderLevel ?? null,
         category: cat ? { id: cat.id, name: cat.name } : null,
-        ...saleStockFacts({ pool: m.saleStockQuantity, reserved: reserved.get(m.id) ?? 0, reorderLevel: m.reorderLevel }),
+        ...facts,
+        // The budget could not cover this model's lines: Reserved and On hand are unknown, never guessed.
+        ...(held === undefined ? { reserved: null, onHand: null } : {}),
       };
     });
     return { ...paged, items, truncated: models.truncated || linesTruncated };
@@ -273,14 +303,14 @@ export const saleStockSegmentCounts = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "model");
-    const { rows } = await collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)));
+    const { rows, truncated } = await collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)));
     const counts: Record<SaleStockSegmentKey, number> = { all: 0, low: 0, out: 0 };
     for (const m of rows) {
       if (m.isActive === false) continue;
       const state = saleStockFacts({ pool: m.saleStockQuantity, reserved: 0, reorderLevel: m.reorderLevel }).state;
       for (const key of SALE_STOCK_SEGMENT_KEYS) if (saleStockInSegment(state, key)) counts[key]++;
     }
-    return counts;
+    return { ...counts, truncated };
   },
 });
 

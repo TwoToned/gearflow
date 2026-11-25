@@ -63,7 +63,7 @@ describe("modelsList.listPage", () => {
     expect(names(await q("nostock"))).toEqual(["Truss"]);
     expect(names(await q("archived"))).toEqual(["Old Par"]);
     const counts = await t.withIdentity(asUser).query(api.modelsList.segmentCounts, { orgId: ORG });
-    expect(counts).toEqual({ all: 2, stock: 1, nostock: 1, due: 0, archived: 1 });
+    expect(counts).toEqual({ all: 2, stock: 1, nostock: 1, due: 0, archived: 1, truncated: false });
   });
 
   test("Due for T&T lists the model of a due asset", async () => {
@@ -87,6 +87,33 @@ describe("modelsList.listPage", () => {
     const p2 = await as.query(api.modelsList.listPage, { orgId: ORG, page: 2, pageSize: 1 });
     expect(names(p2)).toEqual(["Truss"]);
     expect(p2.total).toBe(2);
+  });
+
+  // Ordering by a cost field would leak it through the order (review finding). A noFinancials key falls
+  // back to the default order, in ascending order whatever direction was asked, so asc and desc are identical.
+  test("a noFinancials key cannot order by cost: asc and desc are the same default order, and an unknown key is ignored", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const set = async (id: string, patch: Record<string, unknown>) => {
+        const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+        await ctx.db.patch(m!._id, patch);
+      };
+      await set("stocked", { replacementCost: 5000 });
+      await set("empty", { replacementCost: 10 });
+      await ctx.db.insert("apiKeys", {
+        id: "key_1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["*"]), isActive: true, actingUserId: USER, createdById: USER, noFinancials: true,
+      });
+    });
+    const agent = t.withIdentity({ subject: USER, orgId: ORG, akid: "key_1" });
+    const asc = names(await agent.query(api.modelsList.listPage, { orgId: ORG, sortBy: "replacementCost", sortOrder: "asc" }));
+    const desc = names(await agent.query(api.modelsList.listPage, { orgId: ORG, sortBy: "replacementCost", sortOrder: "desc" }));
+    expect(asc).toEqual(desc);
+    expect(asc).toEqual(["MAC Aura", "Truss"]); // by name, not by cost (cost order would be Truss first)
+    expect(names(await agent.query(api.modelsList.listPage, { orgId: ORG, sortBy: "defaultPurchasePrice", sortOrder: "desc" }))).toEqual(asc);
+    // A human sees cost and may order by it.
+    expect(names(await t.withIdentity(asUser).query(api.modelsList.listPage, { orgId: ORG, sortBy: "replacementCost", sortOrder: "asc" }))).toEqual(["Truss", "MAC Aura"]);
   });
 
   test("a caller from another org is rejected", async () => {
@@ -119,8 +146,7 @@ async function seedSales(t: T) {
     await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: "v1", createdAt: 1, updatedAt: 1 });
     const line = { organizationId: ORG, projectId: "p1", type: "SALE" as const, saleMode: "NEW_STOCK" as const, status: "CONFIRMED" as const, description: "x" };
     await ctx.db.insert("projectLineItems", { ...line, id: "l1", modelId: "empty", quantity: 12, versionId: "v1" } as never);
-    // Not the live version, already out, and another org's line: none of them reserve.
-    await ctx.db.insert("projectLineItems", { ...line, id: "l2", modelId: "empty", quantity: 99, versionId: "v0" } as never);
+    // Already out and another org's line: neither reserves. (A draft-version line DOES: its add decremented the pool.)
     await ctx.db.insert("projectLineItems", { ...line, id: "l3", modelId: "empty", quantity: 98, versionId: "v1", status: "CHECKED_OUT" } as never);
     await ctx.db.insert("projectLineItems", { ...line, id: "l4", organizationId: OTHER, modelId: "empty", quantity: 97, versionId: "v1" } as never);
   });
@@ -133,7 +159,7 @@ describe("modelsList.saleStockPage", () => {
     const r = await t.withIdentity(asUser).query(api.modelsList.saleStockPage, { orgId: ORG });
     const empty = r.items.find((i) => i.id === "empty")!;
     expect(empty).toMatchObject({ available: 0, reserved: 12, onHand: 12, state: "OUT" });
-    for (const i of r.items) expect(i.onHand - i.reserved).toBe(i.available);
+    for (const i of r.items) expect(i.onHand! - i.reserved!).toBe(i.available);
   });
 
   test("Low stock needs a set reorder level; strip counts agree with the segments", async () => {
@@ -142,7 +168,7 @@ describe("modelsList.saleStockPage", () => {
     const as = t.withIdentity(asUser);
     expect((await as.query(api.modelsList.saleStockPage, { orgId: ORG, segment: "low" })).items.map((i) => i.id)).toEqual(["stocked"]);
     expect((await as.query(api.modelsList.saleStockPage, { orgId: ORG, segment: "out" })).items.map((i) => i.id)).toEqual(["empty"]);
-    expect(await as.query(api.modelsList.saleStockSegmentCounts, { orgId: ORG })).toEqual({ all: 2, low: 1, out: 1 });
+    expect(await as.query(api.modelsList.saleStockSegmentCounts, { orgId: ORG })).toEqual({ all: 2, low: 1, out: 1, truncated: false });
   });
 });
 

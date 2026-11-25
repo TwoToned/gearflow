@@ -3,20 +3,23 @@ import type { Doc } from "../_generated/dataModel";
 import { isConfirmedOrLater } from "./availabilityCore";
 import { getProjectWindow } from "./projectWindow";
 import { collectCapped } from "./pagination";
+import { unlimitedBudget, type ReadBudget } from "./readBudget";
 
 /**
  * The ONE definition of a kit's state (UX Phase 14, D75; owner ruling 2026-11-24: derive only
  * Incomplete / Reserved / Available and keep the physical statuses the warehouse writes).
  *
  *   RETIRED, CHECKED_OUT, IN_MAINTENANCE  stored lifecycle status (the warehouse and maintenance write them)
- *   INCOMPLETE                            DERIVED: a member is missing (below)
+ *   INCOMPLETE                            DERIVED (a member is missing, below) OR the stored `INCOMPLETE`
  *   RESERVED                              DERIVED: booked on a confirmed-or-later job that has not ended
  *   AVAILABLE                             everything else
  *
- * The stored `INCOMPLETE` is never read for state and is no longer written (`warehouseOps`
- * check-in of a MISSING kit writes AVAILABLE; its member assets go LOST, which is what this derives
- * from). A legacy kit that still stores `INCOMPLETE` but has no missing member reads as Available,
- * and shows up in `legacy` so the owner can see them (read-only report, no backfill).
+ * The stored `INCOMPLETE` is the human-cleared "reported missing" marker (review ruling, D75 note): a
+ * MISSING kit return writes it again (a bulk-only kit has no LOST status to derive from, because bulk
+ * `totalQuantity` is never reduced by a return), and ONLY `kitWrites.markCompleteNative` ("Mark
+ * complete", with an exact field-edit Undo) clears it. So a mixed kit stays Incomplete after its LOST
+ * asset is set back to AVAILABLE until someone says it is whole again, and a legacy stored INCOMPLETE
+ * row keeps blocking exactly as it did before this PR.
  *
  * A member is MISSING when: a serialised member's asset is gone, `LOST` or retired (`isActive:
  * false`); or a bulk member's bulk asset is gone or holds less in total than the kit needs.
@@ -69,8 +72,8 @@ export interface KitState {
   missing: KitMissingItem[];
   booking: KitBooking | null;
   blocksBooking: boolean;
-  /** A stored `INCOMPLETE` the derivation does not confirm (for the read-only legacy report). */
-  legacyIncomplete: boolean;
+  /** The stored `INCOMPLETE` marker is set (cleared only by Mark complete). */
+  reportedMissing: boolean;
 }
 
 /** Pure: the members this kit is missing. */
@@ -95,21 +98,22 @@ export function deriveKitState(input: KitStateInput): KitState {
   const missing = missingMembers(input.serialized, input.bulk);
   const stored = input.kit.status ?? "AVAILABLE";
   const booking = input.booking ?? null;
-  const key = stateKey(stored, input.kit.isActive === false, missing.length > 0, booking != null);
+  const reportedMissing = stored === "INCOMPLETE";
+  const key = stateKey(stored, input.kit.isActive === false, missing.length > 0 || reportedMissing, booking != null);
   return {
     key,
     missing,
     booking,
     blocksBooking: key === "IN_MAINTENANCE" || key === "INCOMPLETE",
-    legacyIncomplete: stored === "INCOMPLETE" && missing.length === 0,
+    reportedMissing,
   };
 }
 
-function stateKey(stored: string, inactive: boolean, anyMissing: boolean, booked: boolean): KitStateKey {
+function stateKey(stored: string, inactive: boolean, incomplete: boolean, booked: boolean): KitStateKey {
   if (inactive || stored === "RETIRED") return "RETIRED";
   if (stored === "CHECKED_OUT") return "CHECKED_OUT";
   if (stored === "IN_MAINTENANCE") return "IN_MAINTENANCE";
-  if (anyMissing) return "INCOMPLETE";
+  if (incomplete) return "INCOMPLETE";
   return booked ? "RESERVED" : "AVAILABLE";
 }
 
@@ -123,45 +127,73 @@ interface KitMembers {
   bulk: KitBulkMember[];
 }
 
-/** Members of each kit. Reads the GLOBAL `by_kitId` indexes and re-checks the org on every row. */
-export async function loadKitMembers(ctx: QueryCtx, orgId: string, kitIds: readonly string[]): Promise<Map<string, KitMembers>> {
-  const out = new Map<string, KitMembers>();
-  for (const kitId of kitIds) {
-    const [ser, blk] = await Promise.all([
-      collectCapped(ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), 500),
-      collectCapped(ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), 500),
-    ]);
-    const serialized: KitSerializedMember[] = [];
-    for (const m of ser.rows.filter((r) => r.organizationId === orgId)) {
-      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", m.assetId)).first();
-      serialized.push({ assetId: m.assetId, asset: a && a.organizationId === orgId ? { assetTag: a.assetTag, status: a.status, isActive: a.isActive } : null });
-    }
-    const bulk: KitBulkMember[] = [];
-    for (const m of blk.rows.filter((r) => r.organizationId === orgId)) {
-      const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", m.bulkAssetId)).first();
-      bulk.push({ bulkAssetId: m.bulkAssetId, required: m.quantity, bulkAsset: b && b.organizationId === orgId ? { assetTag: b.assetTag, totalQuantity: b.totalQuantity, isActive: b.isActive } : null });
-    }
-    out.set(kitId, { serialized, bulk });
+/** Rows one kit's member read may take (the per-kit ceiling; the call's budget can lower it). */
+const MEMBER_ROWS_CAP = 500;
+
+/**
+ * One kit's members, drawn from the call's read budget (every row read and every member looked up is
+ * charged). Reads the GLOBAL `by_kitId` indexes and re-checks the org on every row. `null` = the budget
+ * could not cover this kit, so its state is unknown (never a guess).
+ */
+async function loadKitMembersOf(ctx: QueryCtx, orgId: string, kitId: string, budget: ReadBudget): Promise<KitMembers | null> {
+  const rows = await readMemberRows(ctx, orgId, kitId, budget);
+  if (!rows) return null;
+  const { serRows, blkRows } = rows;
+  if (budget.take(serRows.length + blkRows.length) < serRows.length + blkRows.length) return unaffordable(budget);
+  const serialized: KitSerializedMember[] = [];
+  for (const m of serRows) {
+    const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", m.assetId)).first();
+    serialized.push({ assetId: m.assetId, asset: a && a.organizationId === orgId ? { assetTag: a.assetTag, status: a.status, isActive: a.isActive } : null });
   }
-  return out;
+  const bulk: KitBulkMember[] = [];
+  for (const m of blkRows) {
+    const b = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", m.bulkAssetId)).first();
+    bulk.push({ bulkAssetId: m.bulkAssetId, required: m.quantity, bulkAsset: b && b.organizationId === orgId ? { assetTag: b.assetTag, totalQuantity: b.totalQuantity, isActive: b.isActive } : null });
+  }
+  return { serialized, bulk };
+}
+
+/** The kit's member rows (org re-checked), charged to the budget; `null` when the budget cannot cover them. */
+async function readMemberRows(ctx: QueryCtx, orgId: string, kitId: string, budget: ReadBudget) {
+  if (!budget.hasRoom) return unaffordable(budget);
+  const room = Math.min(MEMBER_ROWS_CAP, budget.left);
+  const [ser, blk] = await Promise.all([
+    collectCapped(ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), room),
+    collectCapped(ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), room),
+  ]);
+  budget.take(ser.rows.length + blk.rows.length);
+  if ((ser.truncated || blk.truncated) && room < MEMBER_ROWS_CAP) return unaffordable(budget);
+  return { serRows: ser.rows.filter((r) => r.organizationId === orgId), blkRows: blk.rows.filter((r) => r.organizationId === orgId) };
+}
+
+function unaffordable(budget: ReadBudget): null {
+  budget.truncated = true;
+  return null;
 }
 
 /**
- * The booking that reserves a kit: its parent line on the LIVE version of a confirmed-or-later job
- * that has not ended yet (the earliest start wins). Reads by_kitId (global) with an org re-check.
+ * The booking that reserves ONE kit: its parent line on the LIVE version of a confirmed-or-later job
+ * that has not ended yet (the earliest start wins). Reads by_kitId (global) with an org re-check, drawn
+ * from the budget. `undefined` = the budget could not cover it (unknown), `null` = not booked.
  */
-export async function loadKitBookings(ctx: QueryCtx, orgId: string, kitIds: readonly string[], now: number): Promise<Map<string, KitBooking>> {
-  const out = new Map<string, KitBooking>();
-  const projects = new Map<string, Doc<"projects"> | null>();
-  for (const kitId of kitIds) {
-    const { rows } = await collectCapped(ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), BOOKING_LINES_CAP);
-    for (const li of rows.filter((r) => r.organizationId === orgId && isLiveParentKitLine(r))) {
-      const b = bookingOf(li, await orgProject(ctx, orgId, li.projectId, projects), now);
-      const prior = out.get(kitId);
-      if (b && (!prior || (b.start ?? Infinity) < (prior.start ?? Infinity))) out.set(kitId, b);
-    }
+async function loadKitBookingOf(ctx: QueryCtx, orgId: string, kitId: string, now: number, budget: ReadBudget, projects: Map<string, Doc<"projects"> | null>): Promise<KitBooking | null | undefined> {
+  if (!budget.hasRoom) return void unaffordable(budget);
+  const room = Math.min(BOOKING_LINES_CAP, budget.left);
+  const { rows, truncated } = await collectCapped(ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), room);
+  budget.take(rows.length);
+  if (truncated && room < BOOKING_LINES_CAP) return void unaffordable(budget);
+  let best: KitBooking | null = null;
+  for (const li of rows.filter((r) => r.organizationId === orgId && isLiveParentKitLine(r))) {
+    if (budget.take(1) < 1) return void unaffordable(budget);
+    best = earlier(best, bookingOf(li, await orgProject(ctx, orgId, li.projectId, projects), now));
   }
-  return out;
+  return best;
+}
+
+/** Pure: the booking with the earlier start (a booking with no start sorts last). */
+function earlier(a: KitBooking | null, b: KitBooking | null): KitBooking | null {
+  if (!b) return a;
+  return !a || (b.start ?? Infinity) < (a.start ?? Infinity) ? b : a;
 }
 
 /** A kit's own (non-child) line that is not cancelled or already returned. */
@@ -184,26 +216,28 @@ function bookingOf(li: Doc<"projectLineItems">, p: Doc<"projects"> | null | unde
   return end != null && end < now ? null : { projectId: p.id, projectNumber: p.projectNumber, projectName: p.name, start };
 }
 
-/** States for a set of kits, in one pass. */
-export async function loadKitStates(ctx: QueryCtx, orgId: string, kits: readonly Doc<"kits">[], now: number): Promise<Map<string, KitState>> {
-  const ids = kits.map((k) => k.id);
-  const [members, bookings] = await Promise.all([loadKitMembers(ctx, orgId, ids), loadKitBookings(ctx, orgId, ids, now)]);
-  return new Map(
-    kits.map((k) => [k.id, deriveKitState({ kit: k, serialized: members.get(k.id)?.serialized ?? [], bulk: members.get(k.id)?.bulk ?? [], booking: bookings.get(k.id) })]),
-  );
+/**
+ * States for a set of kits, drawn from ONE read budget for the whole call (`budget.truncated` is set
+ * when it bites). A kit the budget could not cover maps to `null`: its state is unknown, never guessed.
+ */
+export async function loadKitStates(ctx: QueryCtx, orgId: string, kits: readonly Doc<"kits">[], now: number, budget: ReadBudget): Promise<Map<string, KitState | null>> {
+  const out = new Map<string, KitState | null>();
+  const projects = new Map<string, Doc<"projects"> | null>();
+  for (const k of kits) {
+    const members = await loadKitMembersOf(ctx, orgId, k.id, budget);
+    const booking = members ? await loadKitBookingOf(ctx, orgId, k.id, now, budget, projects) : undefined;
+    out.set(k.id, members && booking !== undefined ? deriveKitState({ kit: k, serialized: members.serialized, bulk: members.bulk, booking }) : null);
+  }
+  return out;
 }
 
 /**
  * The booking gates' entry point (`lineItemWrites.addKit…`, `groupTemplatesWrites.applyNative`,
  * `kits.bookingState`): the kit's state WITHOUT the reservation read (a reservation never blocks;
  * the dated double-booking check owns that). One definition replaces the three stored-status tests.
+ * ONE kit, so it is not budgeted: a gate must never answer "unknown".
  */
 export async function loadKitBookingGate(ctx: QueryCtx, orgId: string, kit: Doc<"kits">): Promise<KitState> {
-  const members = (await loadKitMembers(ctx, orgId, [kit.id])).get(kit.id);
+  const members = await loadKitMembersOf(ctx, orgId, kit.id, unlimitedBudget());
   return deriveKitState({ kit, serialized: members?.serialized ?? [], bulk: members?.bulk ?? [] });
-}
-
-/** One kit's state. */
-export async function loadKitState(ctx: QueryCtx, orgId: string, kit: Doc<"kits">, now: number): Promise<KitState> {
-  return (await loadKitStates(ctx, orgId, [kit], now)).get(kit.id)!;
 }

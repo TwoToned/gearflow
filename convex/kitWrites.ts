@@ -14,6 +14,7 @@ import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { stampLocationMovement } from "./lib/locationMovement";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -232,6 +233,54 @@ export const updateNative = mutation({
     });
 
     return { id };
+  },
+});
+
+/**
+ * "Mark complete": clears the stored INCOMPLETE ("reported missing") marker a MISSING return wrote. It is
+ * the ONLY way that marker clears (a found asset set back to AVAILABLE does not), gated as a kit edit.
+ * One field-edit audit row (`status` INCOMPLETE -> AVAILABLE) is what its exact Undo reads.
+ */
+export const markCompleteNative = mutation({
+  returns: v.object({ id: v.string(), changed: v.boolean() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const doc = await getKitByCuid(ctx, a.id);
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found: " + a.id);
+    const diff = diffFields(doc, { ...doc, status: "AVAILABLE" }, ["status"]);
+    if (doc.status !== "INCOMPLETE" || !diff) return { id: a.id, changed: false };
+    await ctx.db.patch(doc._id, { status: "AVAILABLE", updatedAt: a.now });
+    await recordFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: doc.assetTag, auditId: a.auditId, actor, now: a.now, diff,
+      summary: `Marked kit ${doc.assetTag} complete`, links: { kitId: a.id },
+    });
+    return { id: a.id, changed: true };
+  },
+});
+
+/** Exactly reverses `markCompleteNative` (ids only; refused if the status changed since, by another person, or after 10 minutes). */
+export const undoMarkCompleteNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const named = await getKitByCuid(ctx, a.id);
+    await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: named?.assetTag ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (named && named.organizationId === a.orgId ? named : null),
+      apply: async (doc, plan) => {
+        if (Object.keys(plan.set).some((f) => f !== "status") || plan.clear.length > 0) throw new ConvexError("This change can't be undone");
+        await ctx.db.patch(doc._id, { ...plan.set, updatedAt: a.now });
+      },
+    });
+    return { id: a.id };
   },
 });
 
@@ -488,6 +537,8 @@ export const agentOps: AgentOpsAnnotations = {
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
+  markCompleteNative: { danger: "medium", summary: "Clear a kit's reported-missing marker (Mark complete). The kit becomes bookable again." },
+  undoMarkCompleteNative: { danger: "medium", summary: "Exactly undo a Mark complete by its audit id." },
   removeBulkItemNative: { danger: "medium" },
   removeSerializedItemNative: { danger: "medium" },
   updateNative: { danger: "medium" },

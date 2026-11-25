@@ -1,4 +1,4 @@
-import { ExternalLink, Pencil, Printer, RotateCcw } from "lucide-react";
+import { CheckCircle2, ExternalLink, Pencil, Printer, RotateCcw } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
 
@@ -12,6 +12,8 @@ import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/ty
 export interface KitActionCtx {
   onOpen: () => void;
   onEdit?: () => void;
+  /** Present only for a kit carrying the reported-missing marker. */
+  onMarkComplete?: () => void;
   /** Present only for a kit that is out. */
   onForceReturn?: () => void;
 }
@@ -22,6 +24,7 @@ export function buildKitActions(title: string, ctx: KitActionCtx): ActionMenuSpe
   const entries: Entry[] = [
     { key: "open", label: "Open", group: "edit", icon: ExternalLink, onSelect: ctx.onOpen },
     ctx.onEdit && { key: "edit", label: "Edit", group: "edit", icon: Pencil, kbd: "E", onSelect: ctx.onEdit },
+    ctx.onMarkComplete && { key: "mark-complete", label: "Mark complete", group: "organise", icon: CheckCircle2, onSelect: ctx.onMarkComplete },
     ctx.onForceReturn && {
       key: "force-return",
       label: "Force return…",

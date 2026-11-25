@@ -13,20 +13,31 @@ kit that is not out is skipped and the toast says so). Duplicate and Archive arr
 (14b-2): a kit archive releases members and has no exact reverse yet.
 
 ## Kit state is DERIVED (D75, `convex/lib/kitState.ts`)
-Incomplete / Reserved / Available are derived from the kit's contents, never read from the stored
-`status`. The stored physical statuses (`CHECKED_OUT`, `IN_MAINTENANCE`, `RETIRED`) are still written
-by the warehouse and maintenance flows and still win. Precedence: Retired > Out > In maintenance >
-Incomplete > Reserved > Available, so a missing item beats a reservation.
+Incomplete is derived from the kit's contents OR the stored `INCOMPLETE` marker (below); Reserved and
+Available are derived. The stored physical statuses (`CHECKED_OUT`, `IN_MAINTENANCE`, `RETIRED`) are still
+written by the warehouse and maintenance flows and still win. Precedence: Retired > Out > In maintenance >
+Incomplete > Reserved > Available, so a missing item beats a reservation. An archived or retired kit is
+unbookable (Retired wins); an archived or retired MEMBER counts as missing, so it makes the kit Incomplete
+and unbookable too.
 - **Missing**: a serialised member whose asset is gone, `LOST` or retired; a bulk member whose bulk asset
   is gone or holds less in total than the kit needs. A member in maintenance is "in repair", not missing.
 - **Reserved**: a parent kit line on the LIVE version of a confirmed-or-later job that has not ended.
   A reservation never blocks adding the kit to a job (the dated double-booking check owns clashes).
-- **The stored `INCOMPLETE` is never read for state and no longer written.** A MISSING return of a kit
-  writes `AVAILABLE`; its serialised members go `LOST`, which is what Incomplete derives from. (A kit
-  with only bulk members returned MISSING has no such signal and reads Available.) A legacy kit that
-  stores `INCOMPLETE` with nothing missing reads Available; `kitsList.legacyIncompleteReport` lists
-  those, read-only, with no backfill. A stored `INCOMPLETE` kit can still have items added, archived or
-  deleted (the AVAILABLE-only guards accept it).
+- **The stored `INCOMPLETE` is the human-cleared "reported missing" marker** (review ruling on D75). A
+  MISSING return of a kit writes it (`warehouseOps` `checkinKit`), because a kit with only bulk members has
+  no `LOST` member to derive from (bulk `totalQuantity` is never reduced by a return). The derived state is
+  (a member is missing) OR (the marker is set), and both block booking. ONLY `kitWrites.markCompleteNative`
+  ("Mark complete" in the row menu, gated as a kit edit, with an exact field-edit Undo through
+  `fieldEditUndo`) clears it: a found asset set back to `AVAILABLE` does not. Legacy `INCOMPLETE` rows keep
+  blocking exactly as before. A kit with the marker can still have items added, archived or deleted.
+- **Reads are budgeted.** `kitsList.listPage` / `segmentCounts` draw every member, booking-line and
+  member-count read from ONE per-call budget (`convex/lib/readBudget.ts`). A kit the budget cannot cover has
+  `state: null` (the row prints a dash, never a guess), and the response says `truncated`. The strip is
+  `All · Complete · Missing items · On a job · In maintenance · Retired`; the booking gate reads ONE kit and
+  is never budgeted.
+- **Sort is an allow-list** (`assetTag, name, condition, purchasePrice, category, location, state`); an
+  unknown key, or `purchasePrice` for a `noFinancials` key, falls back to the default order, ascending
+  whatever direction was asked.
 - **The three booking gates use the one helper** (`loadKitBookingGate`): `lineItemWrites.addKitNative`,
   `groupTemplatesWrites.applyNative`, and `src/server/line-items.ts` `checkKitAvailability` (through the
   `kitsList.bookingGate` query). A kit blocks booking exactly when it is In maintenance or Incomplete.

@@ -58,8 +58,9 @@ export interface SaleStockSource {
   salePrice?: number | null;
   reorderLevel?: number | null;
   category?: { name: string } | null;
-  onHand: number;
-  reserved: number;
+  /** `null` = the read budget ran out before this model's lines: unknown, printed as a dash. */
+  onHand: number | null;
+  reserved: number | null;
   available: number;
   state: "OK" | "LOW" | "OUT";
 }
@@ -73,8 +74,8 @@ export function saleStockFlags(s: Pick<SaleStockSource, "state" | "available">):
 
 export function saleStockRowOf(s: SaleStockSource, menu?: ActionMenuSpec): LineRowData {
   const facts: Record<string, Fact> = {
-    onHand: { kind: "qty", value: s.onHand },
-    reserved: { kind: "qty", value: s.reserved },
+    onHand: s.onHand == null ? { kind: "text", label: "—" } : { kind: "qty", value: s.onHand },
+    reserved: s.reserved == null ? { kind: "text", label: "—" } : { kind: "qty", value: s.reserved },
     available: { kind: "qty", value: s.available },
     reorderAt: s.reorderLevel != null ? { kind: "qty", value: s.reorderLevel } : { kind: "text", label: "—" },
     price: { kind: "money", amount: s.salePrice ?? null },

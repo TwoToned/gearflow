@@ -25011,38 +25011,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
-    "operation": "kitsList.legacyIncompleteReport",
-    "module": "kitsList",
-    "fn": "legacyIncompleteReport",
-    "kind": "query",
-    "guard": "orgReadFor",
-    "resource": "kit",
-    "action": "read",
-    "scopePairs": [
-      {
-        "resource": "kit",
-        "action": "read"
-      }
-    ],
-    "agentReachable": true,
-    "args": [
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "549a746c6908f6ab",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": "Kits that store the old INCOMPLETE status but have no missing member (they now read Available).",
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": null,
-    "deniedReason": null
-  },
-  {
     "operation": "kitsList.listPage",
     "module": "kitsList",
     "fn": "listPage",
@@ -25155,7 +25123,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "aa779fb8e4bbb517",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "Strip counts for the Kits list (all, complete, missing items, on a job).",
+    "summary": "Strip counts for the Kits list (all, complete, missing items, on a job, in maintenance, retired) and whether the read budget cut them short.",
     "danger": null,
     "mcpTier": null,
     "agentAccess": null,
@@ -25562,6 +25530,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "kitWrites.markCompleteNative",
+    "module": "kitWrites",
+    "fn": "markCompleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "1cb2a7e9146018e1",
+    "stability": "tracks-app",
+    "summary": "Clear a kit's reported-missing marker (Mark complete). The kit becomes bookable again.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "kitWrites.removeBulkItemNative",
     "module": "kitWrites",
     "fn": "removeBulkItemNative",
@@ -25670,6 +25690,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitWrites.undoMarkCompleteNative",
+    "module": "kitWrites",
+    "fn": "undoMarkCompleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a Mark complete by its audit id.",
     "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
@@ -66861,10 +66933,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1295,
-  agentReachable: 663,
-  queries: 465,
-  mutations: 830,
-  agentReachableQueries: 329,
-  agentReachableMutations: 334,
+  total: 1296,
+  agentReachable: 664,
+  queries: 464,
+  mutations: 832,
+  agentReachableQueries: 328,
+  agentReachableMutations: 336,
 } as const;

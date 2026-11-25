@@ -310,9 +310,15 @@ decrements it whatever the job's status, and it stays down while the line is out
 derived in ONE helper, `convex/lib/saleStockFacts.ts`, and a test pins that they never double-count a line:
 
 - **Available** = the stored pool (what can still be sold).
-- **Reserved** = quantity on NEW_STOCK sale lines of the **live version** of a live job (not a template,
-  not Cancelled/Returned/Completed/Invoiced) that have not gone out (line status not Checked out /
-  Returned / Cancelled). That quantity is already out of the pool but still in the building.
+- **Reserved** = exactly what the pool has given out and the building still holds: quantity on lines for
+  which `takesFromPool` is true (type SALE, `saleMode` explicitly `NEW_STOCK`, a model) that have not gone
+  out (line status not Checked out / Returned). `takesFromPool` is the SAME predicate `applySaleStockOnAdd`
+  decrements by, so the write and the read cannot drift. It deliberately ignores the job's status and the
+  line's version: the decrement was applied at add time whatever they were, and **nothing restores it on
+  cancel** (a known write-path gap, logged as a follow-up, not fixed here), so a cancelled job's held stock
+  honestly reads as reserved. An unset `saleMode` is not decremented today, so it is not counted. A line
+  copied into another version is one add and counts once per lineage. The reads draw from one budget
+  (`ReadBudget`); a model it could not cover shows `—` for Reserved and On hand, never 0.
 - **On hand** = Available + Reserved, so `On hand − Reserved = Available` by construction.
 - **State**: `OUT` when Available ≤ 0 (a negative pool reads `Oversold n`), `LOW` when a reorder level is
   set and Available ≤ it. An unset `models.reorderLevel` is never read as 0.

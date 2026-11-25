@@ -766,12 +766,44 @@ describe("lineItemWrites.addKitNative", () => {
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/KIT-1 is incomplete/i);
   });
 
-  test("D75: a legacy stored INCOMPLETE kit whose members are all present is accepted (the stored value is not read)", async () => {
+  test("D75: a legacy stored INCOMPLETE kit blocks even with every member present (only Mark complete clears it)", async () => {
     const t = makeT();
     await member(t, "member");
     await seedProject(t);
     await seedKitWithMember(t, "INCOMPLETE", "AVAILABLE");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/KIT-1 is incomplete/i);
+  });
+
+  test("D75: a mixed kit stays blocked after its LOST asset is set back to AVAILABLE, until Mark complete", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    // The MISSING return left the marker AND a LOST member; the asset is later found.
+    await seedKitWithMember(t, "INCOMPLETE", "LOST");
+    await t.run(async (ctx) => {
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { status: "AVAILABLE" });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/KIT-1 is incomplete/i);
+    // A plain member may book but not edit kits: someone with kit:update does Mark complete.
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").first();
+      await ctx.db.patch(m!._id, { role: "owner" });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.kitWrites.markCompleteNative, { orgId: ORG, id: "k1", auditId: "mc1", now: NOW, actor: { userId: "user_1", userName: "A" } });
     await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).resolves.toBeDefined();
+  });
+
+  test("D75: a bulk-only kit returned MISSING (stored INCOMPLETE, bulk total untouched) cannot be booked", async () => {
+    const t = makeT();
+    await member(t, "member");
+    await seedProject(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Cables", status: "INCOMPLETE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "XLR", totalQuantity: 10, isActive: true } as never);
+      await ctx.db.insert("kitBulkItems", { id: "kb1", organizationId: ORG, kitId: "k1", bulkAssetId: "b1", quantity: 4, addedById: "u1" } as never);
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.lineItemWrites.addKitNative, kargs)).rejects.toThrow(/KIT-1 is incomplete/i);
   });
 
   test("throws KIT_DOUBLE_BOOKED on a dated overlap with another project", async () => {

@@ -204,25 +204,62 @@ describe("kitsList", () => {
     });
   }
 
-  test("state is derived; Missing items is the red segment; a legacy stored INCOMPLETE with nothing missing is Available", async () => {
+  test("state is derived; Missing items is the red segment; a stored INCOMPLETE marker keeps blocking", async () => {
     const t = makeT();
     await seedKits(t);
     const as = t.withIdentity(asUser);
     const all = await as.query(api.kitsList.listPage, { orgId: ORG });
-    expect(Object.fromEntries(all.items.map((i) => [i.assetTag, i.state.key]))).toEqual({ "K-1": "AVAILABLE", "K-2": "INCOMPLETE", "K-3": "AVAILABLE" });
-    expect(all.items.find((i) => i.assetTag === "K-2")!.state.missing[0]).toMatchObject({ label: "PA805", why: "lost" });
-    expect((await as.query(api.kitsList.listPage, { orgId: ORG, segment: "missing" })).items.map((i) => i.assetTag)).toEqual(["K-2"]);
-    expect(await as.query(api.kitsList.segmentCounts, { orgId: ORG })).toEqual({ all: 3, complete: 2, missing: 1, onjob: 0 });
+    expect(Object.fromEntries(all.items.map((i) => [i.assetTag, i.state?.key]))).toEqual({ "K-1": "AVAILABLE", "K-2": "INCOMPLETE", "K-3": "INCOMPLETE" });
+    expect(all.items.find((i) => i.assetTag === "K-2")!.state!.missing[0]).toMatchObject({ label: "PA805", why: "lost" });
+    expect((await as.query(api.kitsList.listPage, { orgId: ORG, segment: "missing" })).items.map((i) => i.assetTag).sort()).toEqual(["K-2", "K-3"]);
+    expect(await as.query(api.kitsList.segmentCounts, { orgId: ORG })).toEqual({ all: 3, complete: 1, missing: 2, onjob: 0, maintenance: 0, retired: 0, truncated: false });
   });
 
-  test("the booking gate query agrees, and the legacy report lists the kit whose meaning changed", async () => {
+  test("a noFinancials key cannot order kits by purchase price: asc and desc are the same default order", async () => {
+    const t = makeT();
+    await seedKits(t);
+    await t.run(async (ctx) => {
+      const set = async (id: string, patch: Record<string, unknown>) => {
+        const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+        await ctx.db.patch(k!._id, patch);
+      };
+      await set("k1", { purchasePrice: 900 });
+      await set("k2", { purchasePrice: 10 });
+      await set("k3", { purchasePrice: 400 });
+      await ctx.db.insert("apiKeys", {
+        id: "key_1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["*"]), isActive: true, actingUserId: USER, createdById: USER, noFinancials: true,
+      });
+    });
+    const agent = t.withIdentity({ subject: USER, orgId: ORG, akid: "key_1" });
+    const tags = async (sortOrder: "asc" | "desc") =>
+      (await agent.query(api.kitsList.listPage, { orgId: ORG, sortBy: "purchasePrice", sortOrder })).items.map((i) => i.assetTag);
+    expect(await tags("asc")).toEqual(await tags("desc"));
+    expect(await tags("asc")).toEqual(["K-1", "K-2", "K-3"]);
+    expect((await agent.query(api.kitsList.listPage, { orgId: ORG, sortBy: "notAField", sortOrder: "desc" })).items.map((i) => i.assetTag)).toEqual(["K-1", "K-2", "K-3"]);
+  });
+
+  test("In maintenance and Retired are reachable words, with counts", async () => {
+    const t = makeT();
+    await seedKits(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "km", organizationId: ORG, assetTag: "K-M", name: "In repair", status: "IN_MAINTENANCE", isActive: true });
+      await ctx.db.insert("kits", { id: "kr", organizationId: ORG, assetTag: "K-R", name: "Old", status: "AVAILABLE", isActive: false });
+    });
+    const as = t.withIdentity(asUser);
+    expect((await as.query(api.kitsList.listPage, { orgId: ORG, segment: "maintenance" })).items.map((i) => i.assetTag)).toEqual(["K-M"]);
+    expect((await as.query(api.kitsList.listPage, { orgId: ORG, segment: "retired" })).items.map((i) => i.assetTag)).toEqual(["K-R"]);
+    expect((await as.query(api.kitsList.listPage, { orgId: ORG })).items.map((i) => i.assetTag)).not.toContain("K-R");
+    expect(await as.query(api.kitsList.segmentCounts, { orgId: ORG })).toMatchObject({ maintenance: 1, retired: 1, truncated: false });
+  });
+
+  test("the booking gate query agrees, including the stored INCOMPLETE marker", async () => {
     const t = makeT();
     await seedKits(t);
     const as = t.withIdentity(asUser);
     expect(await as.query(api.kitsList.bookingGate, { orgId: ORG, id: "k2" })).toMatchObject({ key: "INCOMPLETE", blocksBooking: true });
-    expect(await as.query(api.kitsList.bookingGate, { orgId: ORG, id: "k3" })).toMatchObject({ key: "AVAILABLE", blocksBooking: false });
+    expect(await as.query(api.kitsList.bookingGate, { orgId: ORG, id: "k3" })).toMatchObject({ key: "INCOMPLETE", blocksBooking: true });
     expect(await as.query(api.kitsList.bookingGate, { orgId: ORG, id: "kf" })).toBeNull();
-    expect((await as.query(api.kitsList.legacyIncompleteReport, { orgId: ORG })).kits.map((k) => k.assetTag)).toEqual(["K-3"]);
   });
 
   test("a kit booked on a confirmed job is Reserved and On a job; a missing item still beats it", async () => {

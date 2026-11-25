@@ -8,17 +8,19 @@ const kit = (over: Partial<KitSource> = {}): KitSource => ({
   assetTag: "K-0042",
   name: "Shure ULXD4Q",
   itemCount: 5,
-  state: { key: "AVAILABLE", missing: [], booking: null },
+  state: { key: "AVAILABLE", missing: [], booking: null, reportedMissing: false },
   ...over,
 });
 
 describe("kits list view", () => {
-  it("the strip is the four words with counts; the default query has no segment", () => {
+  it("the strip is the six words with counts (In maintenance and Retired stay reachable); the default query has no segment", () => {
     expect(kitSegments({ all: 4, missing: 1 }).map((s) => [s.key, s.label, s.count])).toEqual([
       ["all", "All", 4],
       ["complete", "Complete", undefined],
       ["missing", "Missing items", 1],
       ["onjob", "On a job", undefined],
+      ["maintenance", "In maintenance", undefined],
+      ["retired", "Retired", undefined],
     ]);
     expect(kitsQueryArgs(defaultListState(KITS_SPEC), 5)).toMatchObject({ segment: undefined, now: 5, sortBy: "assetTag" });
   });
@@ -28,11 +30,13 @@ describe("kits list view", () => {
   });
 
   it("a missing item is a red flag and the status word, derived", () => {
-    const k = kit({ state: { key: "INCOMPLETE", missing: [{ label: "PA805", why: "lost" }, { label: "X", why: "short" }], booking: null } });
+    const k = kit({ state: { key: "INCOMPLETE", missing: [{ label: "PA805", why: "lost" }, { label: "X", why: "short" }], booking: null, reportedMissing: false } });
     expect(kitFlags(k)).toEqual([{ label: "2 items missing", tone: "error" }]);
     expect(kitStatus(k)).toMatchObject({ label: "Incomplete", intent: "error" });
     expect(kitStatus(kit())).toMatchObject({ label: "Available", intent: "success" });
-    expect(kitStatus(kit({ state: { key: "CHECKED_OUT", missing: [], booking: null } }))).toMatchObject({ label: "Out", intent: "primary" });
+    expect(kitFlags(kit({ state: { key: "INCOMPLETE", missing: [], booking: null, reportedMissing: true } }))).toEqual([{ label: "Reported missing", tone: "error" }]);
+    expect(kitStatus(kit({ state: null }))).toMatchObject({ label: "—" });
+    expect(kitStatus(kit({ state: { key: "CHECKED_OUT", missing: [], booking: null, reportedMissing: false } }))).toMatchObject({ label: "Out", intent: "primary" });
   });
 
   it("a blank price stays blank; no job prints a dash", () => {

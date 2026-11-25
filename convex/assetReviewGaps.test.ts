@@ -52,9 +52,59 @@ describe("an edit cannot move an asset into or out of RETIRED", () => {
     await update(t, { status: "RETIRED", isActive: false, notes: "still retired" }, "e5"); // an edit of a retired unit may restate it
   });
 
+  test("clear can't reinstate: status / isActive are never cleared, and a retired asset stays retired", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(SERVICE).mutation(api.assetWrites.archiveNative, { id: "a1", orgId: ORG, actor: ME, auditId: "r1", now: NOW });
+    await update(t, { notes: "x" }, "c1", ["status", "isActive"]);
+    expect(await getAsset(t)).toMatchObject({ status: "RETIRED", isActive: false, notes: "x" });
+  });
+
+  test("bulk edit with status / isActive OMITTED keeps a retired row retired (no defaulting to ACTIVE), and a live row's isActive too", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", isActive: true, assetType: "BULK" } as never);
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: "RETIRED", isActive: false, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.updateNative, { id: "b1", orgId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, notes: "kept retired", actor: ME, auditId: "o1", now: NOW } as never);
+    const row = await t.run((ctx) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).first());
+    expect(row).toMatchObject({ status: "RETIRED", isActive: false, notes: "kept retired" });
+  });
+
+  test("the sheet-style bulk edit that STATES the opposite is refused (out of RETIRED, and into it)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", isActive: true, assetType: "BULK" } as never);
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: "RETIRED", isActive: false, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("bulkAssets", { id: "b2", organizationId: ORG, modelId: "m1", assetTag: "BK-2", totalQuantity: 5, availableQuantity: 5, status: "ACTIVE", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    const edit = (id: string, extra: Record<string, unknown>) =>
+      t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.updateNative, { id, orgId: ORG, modelId: "m1", assetTag: id === "b1" ? "BK-1" : "BK-2", totalQuantity: 5, actor: ME, auditId: `s-${id}`, now: NOW, ...extra } as never);
+    await expect(edit("b1", { status: "ACTIVE", isActive: true })).rejects.toThrow(/Retire or Reinstate/);
+    await expect(edit("b2", { status: "RETIRED" })).rejects.toThrow(/Retire or Reinstate/);
+    await expect(edit("b2", { isActive: false })).rejects.toThrow(/Retire or Reinstate/);
+  });
+
+  test("the bulk bar can't retire, and can't reinstate a retired unit (both directions)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(SERVICE).mutation(api.assetWrites.archiveNative, { id: "a1", orgId: ORG, actor: ME, auditId: "r1", now: NOW });
+    const bulk = (set: Record<string, unknown>, ids = ["a1"]) =>
+      t.withIdentity(SERVICE).mutation(api.assetWrites.bulkUpdateNative, { orgId: ORG, ids, set: set as never, clear: [], now: NOW });
+    await expect(bulk({ status: "RETIRED" }, ["a2"])).rejects.toThrow(); // not an accepted status at all
+    await expect(bulk({ status: "AVAILABLE" })).rejects.toThrow(/Retire or Reinstate/);
+    expect(await getAsset(t)).toMatchObject({ status: "RETIRED", isActive: false });
+    expect(await getAsset(t, "a2")).toMatchObject({ status: "AVAILABLE" });
+    await bulk({ condition: "FAIR" }); // an edit that leaves status alone still works on a retired unit
+    expect(await getAsset(t)).toMatchObject({ condition: "FAIR", status: "RETIRED" });
+  });
+
   test("a bulk edit is held to the same rule", async () => {
     const t = makeT();
-    await t.run((ctx) => ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: "ACTIVE", isActive: true, createdAt: NOW, updatedAt: NOW }));
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", isActive: true, assetType: "BULK" } as never);
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: "ACTIVE", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
     await expect(
       t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.updateNative, { id: "b1", orgId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, status: "RETIRED", actor: ME, auditId: "u1", now: NOW } as never),
     ).rejects.toThrow(/Retire or Reinstate/);

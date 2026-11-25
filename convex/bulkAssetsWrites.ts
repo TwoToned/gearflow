@@ -136,7 +136,6 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
-    assertNoRetireBypass(doc, a);
 
     if (a.assetTag !== doc.assetTag) {
       const dup = await ctx.db.query("bulkAssets")
@@ -161,11 +160,13 @@ export const updateNative = mutation({
       assetTag: a.assetTag,
       totalQuantity: newTotal,
       availableQuantity: newAvailable,
-      status: (a.status as "ACTIVE") ?? "ACTIVE",
-      isActive: a.isActive ?? true,
       tags: a.tags ?? [],
       updatedAt: a.now,
     };
+    // An omitted status / isActive keeps its STORED value on update (never a default that would reinstate a retired row).
+    if (a.status !== undefined) merged.status = a.status;
+    if (a.isActive !== undefined) merged.isActive = a.isActive;
+    assertNoRetireBypass(doc, merged);
     if (a.purchasePricePerUnit != null) merged.purchasePricePerUnit = Number(a.purchasePricePerUnit);
     else delete merged.purchasePricePerUnit;
     if (a.locationId) merged.locationId = a.locationId;

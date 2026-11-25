@@ -380,7 +380,8 @@ const assetSet = v.object({
   kitId: v.optional(v.string()),
   parentAssetId: v.optional(v.string()),
 });
-const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"]);
+// `status` / `isActive` are never cleared: Retire and Reinstate own them (and `assertNoRetireBypass` checks the result anyway).
+const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag", "status", "isActive"]);
 
 /**
  * createNative — insert an asset with the dup-tag guard + CREATE audit in ONE
@@ -524,7 +525,6 @@ export const updateNative = mutation({
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertAssetFields(set);
-    assertNoRetireBypass(doc, set);
     const effective = (k: "purchaseDate" | "warrantyExpiry") => (clear.includes(k) ? undefined : (set[k] ?? doc[k]));
     assertWarrantyOrder(effective("purchaseDate"), effective("warrantyExpiry"));
 
@@ -556,6 +556,11 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
     // mutation `now` (the client `set` omits it; parity with the old updateAsset).
     const setWithTs = { ...set, updatedAt: now };
+    // The doc this edit RESULTS in (set, then clear): the retire guard compares it to the stored one, so no
+    // combination of `set` / `clear` can reinstate or retire an asset.
+    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
+    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
+    assertNoRetireBypass(doc, after);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setWithTs);
       await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...setWithTs });
@@ -572,8 +577,6 @@ export const updateNative = mutation({
 
     const finalTag = set.assetTag ?? doc.assetTag;
     // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
-    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
-    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
     // absent tags / images / custom fields == empty (the sheet always sends them), on BOTH sides
     const emptyDefaults = (r: Record<string, unknown>) => ({ ...r, tags: r.tags ?? [], images: r.images ?? [], customFieldValues: r.customFieldValues ?? {} });
     const diff = diffFields(emptyDefaults(doc), emptyDefaults(after), EDIT_TRACKED_FIELDS);
@@ -734,7 +737,8 @@ export const bulkUpdateNative = mutation({
   args: {
     orgId: v.string(),
     ids: v.array(v.string()),
-    set: v.object({ status: v.optional(enums.AssetStatus), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
+    // No RETIRED (and no SOLD, the sale flow's): Retire and Reinstate are the only paths across it.
+    set: v.object({ status: v.optional(v.union(v.literal("AVAILABLE"), v.literal("CHECKED_OUT"), v.literal("IN_MAINTENANCE"), v.literal("RESERVED"), v.literal("LOST"))), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
     clear: v.array(v.literal("locationId")),
     now: v.number(),
   },
@@ -753,6 +757,8 @@ export const bulkUpdateNative = mutation({
     for (const id of ids) {
       const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
+      // A retired unit can't be moved out of RETIRED by a bulk status change (and nothing moves into it).
+      assertNoRetireBypass(doc, { ...doc, ...patch });
       if (clear.length === 0) {
         await ctx.db.patch(doc._id, patch);
         await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });

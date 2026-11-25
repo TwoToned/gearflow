@@ -4,14 +4,18 @@ import type { Doc } from "../_generated/dataModel";
 import { bumpAssetCounters } from "./counters";
 import { diffFields } from "./fieldEditUndo";
 
+type RetireFacts = { status?: string | null; isActive?: boolean | null };
+
 /**
  * Retire and Reinstate are the ONLY paths into and out of RETIRED (each has its gates, its
- * T&T handling and an exact Undo), and `isActive` follows them: an edit (serialised or bulk)
- * may restate the stored values but never change them.
+ * T&T handling and an exact Undo), and `isActive` follows them. The ONE guard compares the STORED
+ * doc with the doc an edit RESULTS in (after set, clear and any defaults), so no way of writing
+ * the fields (set, clear, omit, a bulk verb) can cross it: status may not cross RETIRED in either
+ * direction, and `isActive` may not change at all (absent means active).
  */
-export function assertNoRetireBypass(doc: { status?: string | null; isActive?: boolean | null }, set: { status?: string; isActive?: boolean }): void {
-  const statusMoves = set.status !== undefined && (set.status === "RETIRED") !== (doc.status === "RETIRED");
-  const activeMoves = set.isActive !== undefined && set.isActive !== (doc.isActive ?? true);
+export function assertNoRetireBypass(before: RetireFacts, after: RetireFacts): void {
+  const statusMoves = (before.status === "RETIRED") !== (after.status === "RETIRED");
+  const activeMoves = (before.isActive ?? true) !== (after.isActive ?? true);
   if (statusMoves || activeMoves) {
     throw new ConvexError({ code: "USE_RETIRE", message: "Use Retire or Reinstate to move an asset into or out of retired." });
   }

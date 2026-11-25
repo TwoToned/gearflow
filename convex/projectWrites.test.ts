@@ -404,6 +404,28 @@ describe("projectWrites.updateNative", () => {
       expect(p?.name).toBe("Renamed");
     });
   });
+  test("a discount-only edit recalculates the stored totals in the same transaction", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { versionId: "v1", lineageId: "li1", id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, unitPrice: 1000, duration: 1, lineTotal: 1000, status: "QUOTED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { discountPercent: 10, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.discountPercent).toBe(10);
+      expect(p?.discountAmount).toBe(100);
+    });
+  });
+  test("an edit that touches no recalc input leaves the totals alone", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "Renamed", updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.discountAmount).toBeUndefined();
+    });
+  });
   test("clear removes a field", async () => {
     const t = makeT();
     await t.run(async (ctx) => {

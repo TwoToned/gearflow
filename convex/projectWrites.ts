@@ -435,6 +435,26 @@ async function assertClientContactOnCreate(
 }
 
 /**
+ * The project fields `recalcProjectTotals` reads (its INPUTS; the outputs are
+ * `PROJECT_MONEY_ANCHORS`). Writing one without recalculating leaves the stored
+ * totals stale until some later line write, so `updateNative` decides here, in the
+ * same transaction, rather than trusting each client to remember a follow-up call.
+ */
+const RECALC_INPUT_FIELDS = ["taxRate", "discountPercent"] as const;
+
+async function recalcIfInputsWritten(
+  ctx: MutationCtx,
+  orgId: string,
+  id: string,
+  setObj: Record<string, unknown>,
+  clear: string[],
+  now: number,
+): Promise<void> {
+  if (!RECALC_INPUT_FIELDS.some((f) => f in setObj || clear.includes(f))) return;
+  await recalcProjectTotals(ctx, id, orgId, await resolveOrgDefaultTaxRate(ctx, orgId), now);
+}
+
+/**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
  * RBAC(project, update). STALE-COMMENT FIX: the former `updateProject` server action
  * this mutation replaced is gone — `projectSchema.parse()` now runs client-side in
@@ -556,6 +576,8 @@ export const updateNative = mutation({
       await ctx.db.replace(project._id, merged as typeof rest);
       await bumpProjectCounters(ctx, orgId, project, merged);
     }
+
+    await recalcIfInputsWritten(ctx, orgId, id, setObj, clear, now);
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
     await writeActivityLog(ctx, {

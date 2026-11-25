@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { logger } from "@/lib/logger";
 import type { FunctionArgs } from "convex/server";
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
@@ -225,7 +224,6 @@ export function useProjectWrites(orgId: string | undefined) {
   const duplicateM = useMutation(api.projectWrites.duplicateNative);
   const saveAsTemplateM = useMutation(api.projectWrites.saveAsTemplateNative);
   const deleteM = useMutation(api.projectWrites.deleteNative);
-  const recalcM = useMutation(api.lineItemWrites.recalcNative);
 
   const locations = useLocations(orgId);
 
@@ -425,20 +423,8 @@ export function useProjectWrites(orgId: string | undefined) {
       throw mapProjectWriteError(e, isTemplate);
     }
 
-    // Recalculate totals if tax rate changed. Best-effort: the project patch already
-    // committed, so a transient recalc failure must not reject an otherwise-successful
-    // update. Totals are derived and self-heal on the next line-item write / recalc.
-    const taxTouched = parsedBefore
-      ? "taxRate" in set || clear.includes("taxRate")
-      : parsed.taxRate !== undefined;
-    if (taxTouched) {
-      try {
-        await recalcM({ projectId: id, orgId, now: Date.now() });
-      } catch (e) {
-        logger.error("post-update recalc failed (non-fatal)", { error: e });
-      }
-    }
-
+    // No client recalc: `updateNative` recalculates in its own transaction whenever it
+    // writes a field the totals read (taxRate, discountPercent).
     return { id };
   };
 

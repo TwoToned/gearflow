@@ -137,7 +137,7 @@ describe("exports go through the CSV formula guard", () => {
     expect(supplierRowOf(partial).facts.spend).toEqual({ kind: "text", label: "at least $1,200" });
     expect(supplierRowOf({ ...partial, spendPartial: false }).facts.spend).toEqual({ kind: "money", amount: 1200 });
     expect(suppliersCsv([partial])).toContain("at least 1200");
-    expect(supplierSubline({ open: 1, openOrders: 2, spendYtd: 1200, truncated: 1 })).toContain("at least $1,200 this year");
+    expect(supplierSubline({ open: 1, openOrders: 2, spendYtd: 1200, truncated: 1, spendPartial: 1 })).toContain("at least $1,200 this year");
   });
   it("dayLabel is UTC", () => {
     expect(dayLabel(Math.floor(Date.UTC(2026, 10, 24) / 86_400_000))).toBe("24 Nov");

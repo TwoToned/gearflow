@@ -348,11 +348,17 @@ async function loadSuppliers(ctx: QueryCtx, orgId: string, nowArg: number | unde
   const showMoney = await canSeeJobCost(ctx, orgId);
   const [suppliers, orders] = await Promise.all([
     collectCapped(ctx.db.query("suppliers").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
-    collectCapped(ctx.db.query("supplierOrders").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), ROSTER_CAP),
+    // NEWEST first: when the cap bites it drops the oldest orders, never the newest (the ones that
+    // are open, on hire or in this year's spend).
+    collectCapped(ctx.db.query("supplierOrders").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).order("desc"), ROSTER_CAP),
   ]);
   const facts = supplierFacts(suppliers.rows, orders.rows, yearStart, showMoney, today);
   await addHireUnits(ctx, orgId, orders.rows, facts);
-  return { suppliers: suppliers.rows, facts, showMoney, truncated: suppliers.truncated || orders.truncated };
+  // Spend this year is a floor only when the read stopped while still inside the year; if it reached
+  // an order from before the year the year is fully covered and only older history was dropped.
+  const oldest = orders.rows.at(-1)?._creationTime ?? 0;
+  const spendPartial = orders.truncated && oldest >= yearStart;
+  return { suppliers: suppliers.rows, facts, showMoney, truncated: suppliers.truncated || orders.truncated, spendPartial };
 }
 
 type SupplierSortFn = (s: Doc<"suppliers">, f: SupplierFacts) => unknown;
@@ -392,7 +398,7 @@ export const supplierPage = query({
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "supplier");
     const { page, pageSize } = pageArgs(a);
-    const { suppliers, facts, showMoney, truncated } = await loadSuppliers(ctx, a.orgId, a.now);
+    const { suppliers, facts, showMoney, truncated, spendPartial } = await loadSuppliers(ctx, a.orgId, a.now);
     const seg = (SUPPLIER_SEGMENTS as readonly string[]).includes(a.segment ?? "") ? (a.segment as SupplierSegment) : "all";
     const sortBy = SUPPLIER_SORTS.has(a.sortBy ?? "") ? (a.sortBy as string) : "name";
     const matches = (s: Doc<"suppliers">) => !a.search || matchesSearch([s.name, s.contactName, s.email, s.accountNumber, ...(s.tags ?? [])], a.search);
@@ -405,7 +411,7 @@ export const supplierPage = query({
       id: s.id, name: s.name, contactName: s.contactName ?? null, email: s.email ?? null, phone: s.phone ?? null,
       accountNumber: s.accountNumber ?? null, tags: s.tags ?? [], isActive: (s.isActive ?? true) === true, ...facts.get(s.id)!,
     }));
-    return { items, total, totalPages, page, pageSize, truncated, moneyVisible: showMoney };
+    return { items, total, totalPages, page, pageSize, truncated, spendPartial, moneyVisible: showMoney };
   },
 });
 
@@ -413,8 +419,8 @@ export const supplierSegmentCounts = query({
   args: { orgId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { orgId, now }) => {
     await requireOrgReadFor(ctx, orgId, "supplier");
-    const { suppliers, facts, showMoney, truncated } = await loadSuppliers(ctx, orgId, now);
-    const counts = { all: 0, open: 0, overdue: 0, archived: 0, truncated: truncated ? 1 : 0, openOrders: 0 };
+    const { suppliers, facts, showMoney, truncated, spendPartial } = await loadSuppliers(ctx, orgId, now);
+    const counts = { all: 0, open: 0, overdue: 0, archived: 0, truncated: truncated ? 1 : 0, spendPartial: spendPartial ? 1 : 0, openOrders: 0 };
     let spend = 0;
     for (const s of suppliers) {
       const active = (s.isActive ?? true) === true;

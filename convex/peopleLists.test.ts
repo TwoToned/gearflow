@@ -184,6 +184,26 @@ describe("supplier list and the cost-line closure", () => {
   });
 });
 
+describe("supplier list: a capped orders read drops the OLDEST orders, never the newest", () => {
+  test("the newest order is counted and the figure is flagged partial", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      // The OLDEST row (inserted first) is a committed order this year; 5000 newer rows push it past the cap.
+      await ctx.db.insert("supplierOrders", { id: "oldest", organizationId: ORG, supplierId: "s2", orderNumber: "OLD", type: "PURCHASE", status: "ORDERED", orderDate: day(-5), total: 700 });
+      for (let i = 0; i < 4999; i++) await ctx.db.insert("supplierOrders", { id: `fill${i}`, organizationId: ORG, supplierId: "s2", orderNumber: `F${i}`, type: "PURCHASE", status: "DRAFT" });
+      await ctx.db.insert("supplierOrders", { id: "newest", organizationId: ORG, supplierId: "s2", orderNumber: "NEW", type: "PURCHASE", status: "ORDERED", orderDate: day(-1), total: 100 });
+    });
+    const page = await as(t, asUser).query(api.peopleLists.supplierPage, { orgId: ORG, now: NOW, segment: "all" });
+    const s2 = page.items.find((r) => r.id === "s2");
+    expect(page.truncated).toBe(true);
+    expect(s2?.spendYtd).toBe(100); // the newest counted; the dropped oldest (700) is not
+    expect(page.spendPartial).toBe(Date.now() >= Date.UTC(2026, 0, 1));
+    const counts = await as(t, asUser).query(api.peopleLists.supplierSegmentCounts, { orgId: ORG, now: NOW });
+    expect(counts.truncated).toBe(1);
+  });
+});
+
 describe("supplier list: hire facts (D71)", () => {
   test("On hire now (units), Due back and the Overdue returns segment come from the order's return dates", async () => {
     const t = makeT();

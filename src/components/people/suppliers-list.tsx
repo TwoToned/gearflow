@@ -44,7 +44,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
   useKeyboardShortcut("n", () => canCreate && router.push("/suppliers/new"));
   const page = useAuthedQuery(api.peopleLists.supplierPage, orgId ? { orgId, ...supplierQueryArgs(state, now) } : "skip");
   const counts = useAuthedQuery(api.peopleLists.supplierSegmentCounts, orgId ? { orgId, now } : "skip") as Record<string, number> | undefined;
-  const items = React.useMemo(() => ((page?.items ?? []) as unknown as SupplierSource[]).map((s) => ({ ...s, spendPartial: page?.truncated === true })), [page]);
+  const items = React.useMemo(() => ((page?.items ?? []) as unknown as SupplierSource[]).map((s) => ({ ...s, spendPartial: page?.spendPartial === true })), [page]);
 
   const seen = React.useRef(new Map<string, SupplierSource>());
   React.useEffect(() => {

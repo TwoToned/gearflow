@@ -381,12 +381,12 @@ export interface SupplierSource {
 }
 
 /** The head sub line: `3 with open orders · 5 open orders · $12,000 this year` (spend only when sent). */
-export function supplierSubline(c: { open?: number; openOrders?: number; spendYtd?: number; truncated?: number } | undefined): string | undefined {
+export function supplierSubline(c: { open?: number; openOrders?: number; spendYtd?: number; truncated?: number; spendPartial?: number } | undefined): string | undefined {
   if (!c) return undefined;
   return joinDot([
     `${c.open ?? 0} with open orders`,
     c.openOrders == null ? undefined : `${c.openOrders} open orders`,
-    c.spendYtd == null ? undefined : `${c.truncated ? "at least " : ""}${wholeDollars(c.spendYtd)} this year`,
+    c.spendYtd == null ? undefined : `${c.spendPartial ? "at least " : ""}${wholeDollars(c.spendYtd)} this year`,
     c.truncated ? "counts may be incomplete" : undefined,
   ]);
 }

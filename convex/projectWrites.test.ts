@@ -566,7 +566,8 @@ describe("projectWrites.updateNative", () => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.siteContactEmail).toBe("crew@example.com");
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
+    // A second forward write needs its own audit id (`assertAuditIdFree`: an Undo trusts the row with its id).
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, auditId: "log2", set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
   });
   test("rejects crewNotes/internalNotes/clientNotes over the 5000-char bound", async () => {
     const t = makeT();
@@ -633,7 +634,7 @@ describe("projectWrites.updateNative", () => {
       // Switch clients WITHOUT touching clientContactId — the stale cc1 pick must
       // not silently carry over onto c2's documents.
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
+        ...uargs, auditId: "log2", set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBe("c2");
@@ -648,7 +649,7 @@ describe("projectWrites.updateNative", () => {
         ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
       });
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { updatedAt: NOW + 1 }, clear: ["clientId"],
+        ...uargs, auditId: "log2", set: { updatedAt: NOW + 1 }, clear: ["clientId"],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBeUndefined();

@@ -4,18 +4,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  CheckCircle2,
-  Copy,
   Download,
   Eye,
   FileText,
   History,
-  Pencil,
   Send,
-  Trash2,
-  Undo2,
-  XCircle,
 } from "lucide-react";
+import { quoteStatusLabel } from "@/lib/quote-status-label";
+import { StatusWord } from "@/components/ui/status-word";
+import { ownerOnlyQuoteRowActions, quoteRowFlags, standardQuoteRowActions } from "@/lib/row-actions/quote-row";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../../convex/_generated/api";
@@ -26,7 +23,7 @@ import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency, formatDate } from "@/lib/formatters";
-import { quoteStatusIntent, intentToBadgeStatus, intentStyles, intentBorderClass } from "@/lib/status-colors";
+import { quoteStatusIntent, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
 import { cn } from "@/lib/utils";
@@ -313,11 +310,6 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         />
       )}
 
-      <p className="t-micro text-fg-4">
-        Sending freezes pricing at that revision — to change prices afterwards, create the next version.
-        Flow doesn&rsquo;t email clients; sending records the send and generates the document for you.
-      </p>
-
       <QuoteRevisionList
         quotes={quotes}
         visibleQuotes={visibleQuotes}
@@ -330,6 +322,8 @@ export function ProjectQuoteRail({ projectId, orgId, projectNumber, clientId, pr
         projectId={projectId}
         now={now}
         allProjectVersions={allProjectVersions}
+        sendableQuoteId={viewingVersion ? null : draftQuoteId}
+        onSend={() => setSendOpen(true)}
         onAccept={setAcceptTarget}
         onDecline={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "decline" })}
         onRecall={(quote) => setReasonTarget({ id: quote.id, version: quote.version, verb: "recall" })}
@@ -547,6 +541,8 @@ function QuoteRevisionList({
   projectId,
   now,
   allProjectVersions,
+  sendableQuoteId,
+  onSend,
   onAccept,
   onDecline,
   onRecall,
@@ -555,6 +551,9 @@ function QuoteRevisionList({
   onEditLabel,
   onChase,
 }: {
+  /** The open live draft the strip's `Send quote vN` sends; only its row's ⋯ offers Send. */
+  sendableQuoteId: string | null;
+  onSend: () => void;
   quotes: QuoteRevisionDoc[];
   visibleQuotes: QuoteRevisionDoc[];
   hiddenCount: number;
@@ -591,6 +590,7 @@ function QuoteRevisionList({
             invoicesForVersion={invoices?.filter((inv) => inv.sourceRevision === quote.version) ?? []}
             projectId={projectId}
             allProjectVersions={allProjectVersions}
+            onSend={quote.id === sendableQuoteId ? onSend : undefined}
             onAccept={() => onAccept(quote)}
             onDecline={() => onDecline(quote)}
             onRecall={() => onRecall(quote)}
@@ -692,69 +692,6 @@ function QuoteRailTargetDialogs({
  * number of its own (decision 5); it is referred to everywhere as
  * `<projectNumber> v<version>`, and the project number is already on the page.
  */
-/** Derived booleans shared by `QuoteRevisionRow` and its two action clusters —
- *  computed once so the split-out components read as pure props, not a second
- *  copy of the same status checks (R-3.1). */
-export function quoteRowFlags(quote: QuoteRevisionDoc) {
-  const isSent = quote.effectiveStatus === "SENT";
-  const isAccepted = quote.effectiveStatus === "ACCEPTED";
-  // A sent-or-expired revision is the one the client is holding: it can be
-  // recalled or declined. Only a still-valid one can be accepted.
-  const isHeldByClient = isSent || quote.effectiveStatus === "EXPIRED";
-  const everSent = quote.sentAt != null || quote.publishedAt != null;
-  // A DRAFT with send history is sitting here because of a Recall (#1027) —
-  // it needs the stricter recall-then-delete flow (#1029), not the ordinary
-  // never-sent draft delete (#1028).
-  const isRecalledDraft = quote.effectiveStatus === "DRAFT" && everSent;
-  const isNeverSentDraft = quote.effectiveStatus === "DRAFT" && !everSent;
-  return { isSent, isAccepted, isHeldByClient, isRecalledDraft, isNeverSentDraft };
-}
-
-/**
- * Every state-transition action for a revision, collapsed into ONE overflow
- * menu (#1038) instead of a wall of pill buttons. Same two audiences as
- * before — `invoice:publish` (`useCanDo`, mirrors `<CanDo>`) for the standard
- * cluster, owner-only (`useIsOwner`) for delete-permanently — read as
- * booleans up front so both clusters can merge into one action list instead
- * of two side-by-side button groups. `requireQuoteOwnerOnly`/the
- * `invoice:publish` permission check are still the real server-side gates;
- * this is UX only.
- *
- * #1230 note: Unapprove (`unacceptNative`), Correct date (`correctQuoteNative`)
- * and Protect/Unprotect are DELETED — the whole protect/unprotect mechanism
- * (and its lock-tier plumbing) is gone. Recall (`recallNative`) survives
- * unchanged and is no longer gated on a `protected` check.
- */
-/** The `invoice:publish` cluster's actions — accept/decline/recall/rename.
- *  #1231 note: "Delete draft" is gone — `deleteDraftNative` was deleted in
- *  #1229 Phase 3, superseded by `versions.deleteNative`; deleting a version
- *  is now exclusively a Versions panel verb (design §5.1, "one control to
- *  switch, one place to manage"), not a per-quote-row action here. */
-export function standardQuoteRowActions(
-  flags: ReturnType<typeof quoteRowFlags>,
-  handlers: {
-    onAccept: () => void;
-    onDecline: () => void;
-    onRecall: () => void;
-    onEditLabel: () => void;
-    onChase: () => void;
-  },
-): ActionItem[] {
-  const { isHeldByClient } = flags;
-  const actions: ActionItem[] = [];
-  actions.push({ key: "rename", label: "Rename version", group: "edit", icon: Pencil, onSelect: handlers.onEditLabel });
-  // Expiry is advisory, not a hard stop (2026-09) — an operator can still mark
-  // an EXPIRED revision accepted exactly as they would a still-live SENT one.
-  if (isHeldByClient) actions.push({ key: "accept", label: "Mark accepted", group: "organise", icon: CheckCircle2, onSelect: handlers.onAccept });
-  // #1225 (Q2) — a follow-up nudge for the client. Flow doesn't email the
-  // client itself (decision 7 of #989); this just hands the operator text
-  // for their own mail client, same as the send dialog's own copy-summary.
-  if (isHeldByClient) actions.push({ key: "chase", label: "Chase", group: "organise", icon: Copy, onSelect: handlers.onChase });
-  if (isHeldByClient) actions.push({ key: "decline", label: "Declined", group: "organise", icon: XCircle, onSelect: handlers.onDecline });
-  if (isHeldByClient) actions.push({ key: "recall", label: "Recall", group: "organise", icon: Undo2, onSelect: handlers.onRecall });
-  return actions;
-}
-
 /**
  * The Chase action's clipboard text (#1225, Q2) — same grammar as
  * `SendQuoteDialog`'s `copySummary`, plus the sent date and days remaining
@@ -793,23 +730,11 @@ export function chaseSummary(
   return lines.join("\n");
 }
 
-/** The owner-only cluster's actions — recall-then-delete (#1029) survives;
- *  protect/unprotect and correct-date are deleted (#1230). */
-export function ownerOnlyQuoteRowActions(
-  flags: ReturnType<typeof quoteRowFlags>,
-  handlers: { onDeleteRecalled: () => void },
-): ActionItem[] {
-  const { isRecalledDraft } = flags;
-  const actions: ActionItem[] = [];
-  if (isRecalledDraft) {
-    actions.push({ key: "delete-recalled", label: "Delete permanently", group: "danger", icon: Trash2, onSelect: handlers.onDeleteRecalled, danger: true });
-  }
-  return actions;
-}
-
 function QuoteRowActions({
   quote,
   flags,
+  onView,
+  onSend,
   onAccept,
   onDecline,
   onRecall,
@@ -819,6 +744,8 @@ function QuoteRowActions({
 }: {
   quote: QuoteRevisionDoc;
   flags: ReturnType<typeof quoteRowFlags>;
+  onView: () => void;
+  onSend?: () => void;
   onAccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
@@ -830,7 +757,7 @@ function QuoteRowActions({
   const isOwner = useIsOwner();
 
   const actions: ActionItem[] = [
-    ...(canPublish ? standardQuoteRowActions(flags, { onAccept, onDecline, onRecall, onEditLabel, onChase }) : []),
+    ...(canPublish ? standardQuoteRowActions(flags, { onView, onSend, onAccept, onDecline, onRecall, onEditLabel, onChase }) : []),
     ...(isOwner ? ownerOnlyQuoteRowActions(flags, { onDeleteRecalled }) : []),
   ];
 
@@ -847,6 +774,7 @@ function QuoteRevisionRow({
   invoicesForVersion,
   projectId,
   allProjectVersions,
+  onSend,
   onAccept,
   onDecline,
   onRecall,
@@ -861,6 +789,8 @@ function QuoteRevisionRow({
   invoicesForVersion: InvoiceLineageDoc[];
   projectId: string;
   allProjectVersions: QuoteRailProjectVersion[];
+  /** Set only on the open draft the strip's `Send quote vN` would send. */
+  onSend?: () => void;
   onAccept: () => void;
   onDecline: () => void;
   onRecall: () => void;
@@ -883,6 +813,8 @@ function QuoteRevisionRow({
           <QuoteRowActions
             quote={quote}
             flags={flags}
+            onView={onView}
+            onSend={onSend}
             onAccept={onAccept}
             onDecline={onDecline}
             onRecall={onRecall}
@@ -1012,13 +944,11 @@ function RevisionMeta({
   const projectVersionNumber = projectVersionNumberFor(quote, allProjectVersions);
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {/* SUPERSEDED earns no pill — a dead revision doesn't earn a filled shape
-          (finance-workflow-ux.md §3.5). */}
-      {isSuperseded ? (
-        <span className="t-micro text-fg-4">Superseded</span>
-      ) : (
-        <Badge status={intentToBadgeStatus(quoteStatusIntent(quote.effectiveStatus))}>{quote.effectiveStatus}</Badge>
-      )}
+      {/* A dot and a human word (D91), never the raw enum. A SUPERSEDED revision is
+          an outline dot: a dead revision doesn't earn a filled shape. */}
+      <StatusWord
+        status={{ label: quoteStatusLabel(quote.effectiveStatus), intent: quoteStatusIntent(quote.effectiveStatus), outline: isSuperseded }}
+      />
       <span className="font-medium text-fg">v{quote.version}</span>
       {/* "Live" (decision 13, design doc) — never "Latest": a promoted older
           version can sit above a newer one, so a recency word would fight

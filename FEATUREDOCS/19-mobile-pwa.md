@@ -453,7 +453,7 @@ the same way as `resolve` (one `safeTag` helper).
 Dialogs that benefit from edge-to-edge space on phones switch to a full-screen
 sheet when `useIsMobile()` is true: `h-[100dvh] max-h-[100dvh] w-full max-w-full
 rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
-`CommandSearch` dialog and the task edit dialog in `tasks-panel.tsx`.
+`CommandSearch` dialog and the task sheet in `tasks-notes/task-sheet.tsx`.
 
 ## One phone breakpoint (D68) and the tablet rail (D67)
 

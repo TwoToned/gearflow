@@ -185,6 +185,13 @@ Two lines decide who sees what:
   someone who can also see the job's cost (so never on a no-financials key, or
   a key that can't read invoices).
 
+A job's **margin is ex GST**: the taxable amount (subtotal less discount) minus
+service, labour, sub-hire and sale costs (`marginExGst` in `convex/lib/recalc.ts`).
+The GST on the total is the client's money to remit, not margin. (Before the
+2026-11 fix it was total minus costs and so overstated margin by the GST; rows
+keep the old figure until recalculated or the one-off backfill runs.) The
+operational P&L's net margin uses the same base and also subtracts maintenance.
+
 Past either line the figures are simply absent (and the P&L comes back all
 zeros). Absent is not $0: say "not visible to this role", never "this job made
 no margin".

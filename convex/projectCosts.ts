@@ -111,8 +111,11 @@ export const operationalCosts = query({
     const subHireCostTotal = Number(project.subHireCostTotal ?? 0);
 
     const allCosts = serviceCostTotal + labourCostTotal + subHireCostTotal + maintenanceCostTotal + saleCostTotal;
-    const netMargin = total - allCosts;
-    const marginPercent = total > 0 ? Math.max(0, Math.min(100, (netMargin / total) * 100)) : 0;
+    // EX GST, the same base as `projects.margin` (`recalcProjectTotals`): `total`
+    // includes tax, which is not margin. `netMargin` here also subtracts maintenance.
+    const revenueExGst = total - Number(project.taxAmount ?? 0);
+    const netMargin = revenueExGst - allCosts;
+    const marginPercent = revenueExGst > 0 ? Math.max(0, Math.min(100, (netMargin / revenueExGst) * 100)) : 0;
 
     return {
       equipmentRevenue,

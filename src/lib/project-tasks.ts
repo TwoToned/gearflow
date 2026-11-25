@@ -36,4 +36,8 @@ export interface ProjectTaskRow {
   assigneeUser: { id: string; name: string; image: string | null } | null;
   assigneeCrew: { id: string; firstName: string; lastName: string } | null;
   sortOrder: number;
+  /** The task sheet's history line; absent on an older response shape. */
+  createdAt?: number | null;
+  completedAt?: number | null;
+  createdByName?: string | null;
 }

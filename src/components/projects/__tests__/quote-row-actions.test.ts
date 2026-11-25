@@ -1,11 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-import {
-  quoteRowFlags,
-  standardQuoteRowActions,
-  ownerOnlyQuoteRowActions,
-  chaseSummary,
-} from "@/components/projects/project-quote-rail";
+import { chaseSummary } from "@/components/projects/project-quote-rail";
+import { quoteRowFlags, standardQuoteRowActions, ownerOnlyQuoteRowActions } from "@/lib/row-actions/quote-row";
 
 /**
  * #1038 — unit coverage for the action-list logic behind the row's overflow
@@ -27,6 +23,7 @@ import {
  */
 function noopHandlers() {
   return {
+    onView: vi.fn(),
     onAccept: vi.fn(),
     onDecline: vi.fn(),
     onRecall: vi.fn(),
@@ -60,30 +57,36 @@ describe("standardQuoteRowActions", () => {
   it("offers Mark accepted, Chase, Declined and Recall on a SENT revision", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "SENT", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename", "accept", "chase", "decline", "recall"]);
+    expect(keys(actions)).toEqual(["view", "rename", "accept", "chase", "decline", "recall"]);
+  });
+
+  it("offers Send only when the strip hands the row an onSend (the open live draft), never on a held revision's row by default", () => {
+    const flags = quoteRowFlags({ id: "q1", version: 3, effectiveStatus: "DRAFT" });
+    expect(keys(standardQuoteRowActions(flags, { ...noopHandlers(), onSend: vi.fn() }))).toEqual(["view", "send", "rename"]);
+    expect(keys(standardQuoteRowActions(flags, noopHandlers()))).toEqual(["view", "rename"]);
   });
 
   it("offers Mark accepted, Chase, Declined and Recall on an EXPIRED revision — expiry is advisory, not a hard stop", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "EXPIRED", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename", "accept", "chase", "decline", "recall"]);
+    expect(keys(actions)).toEqual(["view", "rename", "accept", "chase", "decline", "recall"]);
   });
 
   it("offers only Rename version on an ACCEPTED revision — no Unapprove (#1230 — unacceptNative deleted)", () => {
     const flags = quoteRowFlags({ id: "q1", version: 2, effectiveStatus: "ACCEPTED", sentAt: 1 });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename"]);
+    expect(keys(actions)).toEqual(["view", "rename"]);
   });
 
   it("offers only Rename on a never-sent draft — Delete draft is gone (#1231, superseded by the Versions panel)", () => {
     const flags = quoteRowFlags({ id: "q1", version: 1, effectiveStatus: "DRAFT" });
     const actions = standardQuoteRowActions(flags, noopHandlers());
-    expect(keys(actions)).toEqual(["rename"]);
+    expect(keys(actions)).toEqual(["view", "rename"]);
   });
 
-  it("offers only Rename version on a SUPERSEDED revision (#1097 — rename is unconditional)", () => {
+  it("offers only View and Rename version on a SUPERSEDED revision (#1097 — rename is unconditional)", () => {
     const flags = quoteRowFlags({ id: "q1", version: 1, effectiveStatus: "SUPERSEDED", sentAt: 1 });
-    expect(keys(standardQuoteRowActions(flags, noopHandlers()))).toEqual(["rename"]);
+    expect(keys(standardQuoteRowActions(flags, noopHandlers()))).toEqual(["view", "rename"]);
   });
 });
 

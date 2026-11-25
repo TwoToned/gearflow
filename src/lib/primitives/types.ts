@@ -106,7 +106,9 @@ export type RowKind =
   | "accessory"
   | "crew"
   | "asset"
-  | "job";
+  | "job"
+  | "client"
+  | "supplier";
 
 /**
  * A typed fact. The parent decides which facts become desktop columns; the

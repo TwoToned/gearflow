@@ -107,6 +107,15 @@ describe("Mark returned / Extend hire", () => {
     expect((await order(t2, "o1"))?.returnedDate).toBeUndefined();
   });
 
+  test("an Undo can only be pointed at the entity its forward row is for (a different order's id is refused)", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("supplierOrders", { id: "o3", organizationId: ORG, supplierId: "s1", orderNumber: "SH-3", type: "SUBHIRE", status: "RECEIVED", returnDueDate: NOW - DAY_MS }); });
+    await markReturned(t); // forward audit "a1" is for o1
+    await expect(undo(t, { id: "o3" })).rejects.toThrow(/not found/);
+    expect((await order(t, "o1"))?.returnedDate).toBe(NOW - DAY_MS);
+    expect((await order(t, "o3"))?.returnedDate).toBeUndefined();
+  });
+
   test("getDetail and listBySupplier carry both dates", async () => {
     const t = makeT(); await seed(t);
     await markReturned(t);

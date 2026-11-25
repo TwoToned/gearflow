@@ -184,6 +184,29 @@ describe("supplier list and the cost-line closure", () => {
   });
 });
 
+describe("supplier order reads: the order's money is the job-cost line", () => {
+  test("SENTINEL: total, subtotal, tax and line prices are ABSENT for a noFinancials key, present otherwise", async () => {
+    const t = makeT();
+    await seed(t, "manager", { noFinancials: true });
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first())!._id, { subtotal: 2846, taxAmount: 285 });
+      await ctx.db.insert("supplierOrderItems", { id: "li", orderId: "o1", description: "Deck", quantity: 2, unitPrice: 1423, lineTotal: 2846 });
+    });
+    const reads = async (identity: typeof asUser | typeof asAgent) => {
+      const c = as(t, identity);
+      return JSON.stringify([await c.query(api.supplierOrders.listBySupplier, { orgId: ORG, supplierId: "s1" }), await c.query(api.supplierOrders.getDetail, { orgId: ORG, id: "o1" })]);
+    };
+    const hidden = await reads(asAgent);
+    expect(hidden).not.toMatch(/3131|2846|"taxAmount"|1423|"subtotal"|"unitPrice"|"lineTotal"|"total":\d{2,}/);
+    expect(hidden).toContain("SH-1"); // the rest is intact
+    expect(hidden).toContain("Deck");
+    const shown = await reads(asUser);
+    expect(shown).toMatch(/3131/);
+    expect(shown).toMatch(/1423/);
+    expect(shown).toMatch(/"subtotal":2846/);
+  });
+});
+
 describe("supplier list: a capped orders read drops the OLDEST orders, never the newest", () => {
   test("the newest order is counted and the figure is flagged partial", async () => {
     const t = makeT();

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { useSession } from "@/lib/auth-client";
 import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
@@ -26,6 +27,19 @@ export type HireMode = "return" | "extend";
  * while the field is still exactly what that write left (the shared `fieldEditUndo`).
  * Extend moves the SUPPLIER's return date and never the sub-hire's own hire window.
  */
+/**
+ * The dialog's date: DERIVED from the mode and the order (today, or the day after the current return
+ * date), with the user's edit layered on top and keyed to them, so it resets when the dialog opens for
+ * something else (no effect, no set-state-in-effect).
+ */
+function useHireDate(mode: HireMode | null, order: { id: string; returnDueDate: number | null }): [string, (next: string) => void] {
+  const now = useStableNow();
+  const defaultValue = toInput(mode === "extend" ? (order.returnDueDate ?? now) + 24 * 60 * 60 * 1000 : now);
+  const editKey = `${mode ?? ""}|${order.id}|${order.returnDueDate ?? ""}`;
+  const [edit, setEdit] = React.useState<{ key: string; value: string } | null>(null);
+  return [edit?.key === editKey ? edit.value : defaultValue, (next) => setEdit({ key: editKey, value: next })];
+}
+
 export function HireDateDialog({
   mode,
   onOpenChange,
@@ -41,13 +55,8 @@ export function HireDateDialog({
   const markReturned = useMutation(api.supplierOrdersWrites.markReturnedNative);
   const extend = useMutation(api.supplierOrdersWrites.extendHireNative);
   const undo = useMutation(api.supplierOrdersWrites.undoHireChangeNative);
-  const today = toInput(Date.now());
-  const [value, setValue] = React.useState(today);
+  const [value, setValue] = useHireDate(mode, order);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => {
-    if (mode === "return") setValue(today);
-    if (mode === "extend") setValue(toInput((order.returnDueDate ?? Date.now()) + 24 * 60 * 60 * 1000));
-  }, [mode, order.returnDueDate, today]);
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
 
   async function run() {

@@ -162,8 +162,8 @@ removes exactly those still as it left them (a check item itself is never delete
 the model page: a model archive deletes the model's assets, so it has no exact reverse. `models.reorderLevel`
 (optional, never read as 0) feeds the Sales stock list ([67](./67-sales-line-items.md)).
 
-The **model form** (`/assets/models/new` + `/assets/models/[id]/edit`, both
-render `ModelForm` — edit pre-fills, reusing create) uses the shell with these
+The **model form** (historical: `ModelForm` was replaced by `ModelSheet`, see
+"ModelSheet and the model page" below; the sections carry over) used the shell with these
 sections: Identity (name, manufacturer, model number, SKU, category via
 `ComboboxPicker` with inline `QuickCreateCategory`, asset-type `Select`,
 description) → Pricing (daily/weekly/monthly rate card with the suggested-rate
@@ -345,6 +345,32 @@ create's Undo removes exactly the unit it made. The sheet holds every field the 
 sets (notes, tags, images, custom fields), so an edit never clears what the Notes tab
 or the registry owns. The activation hand-off (`Create your first job`), the quick-create
 dialogs and the onboarding tour anchor are kept.
+
+## ModelSheet and the model page (UX Phase 12, slice 3, D62/D63)
+
+- **`ModelSheet`** (`src/components/assets/model-sheet.tsx`, fields in `model-sheet-fields.tsx`) on
+  `FormSheet` replaces `model-form` and the `/assets/models/new` and `[id]/edit` pages. Sections:
+  Identity · Pricing · Xero coding (only when Xero is linked) · Compliance and technical · More details.
+  **`<ModelSheetHost />`** is mounted ONCE in `src/app/(app)/assets/layout.tsx` and is driven by the
+  URL: `?new-model=1` creates, `?edit-model=<id>` edits, on any page under `/assets` (the models list
+  and the model page use it; the old routes redirect). After an edit saves it fires `MODEL_SAVED_EVENT`
+  so a page holding a one-shot read of that model refetches.
+- **Edit never clears what it did not show.** `modelToFormValues` (`src/lib/model-edit-values.ts`) is the
+  ONE mapping from a stored model to form values, with every field the write sets (rates, sale price,
+  sale stock, the deprecated `maintenanceIntervalDays`), because the write treats an absent value as
+  "clear it". `isActive` is not in the sheet: Archive and Restore are the only paths.
+- **The page's ⋯** (`buildModelPageActions`, `src/lib/row-actions/model.ts`): New asset · Edit ·
+  `Duplicate…` · `Print labels for all (n)` · `Archive…` (last, red, `model:delete`) or `Restore`
+  (`model:update`). Absent, never disabled. Archive, Restore and Duplicate each toast with an exact Undo.
+- **Duplicate** (`modelWrites.duplicateNative`) copies the model's own fields only: no assets, bulk
+  stock, accessories or media, the name gets ` (copy)` and the SKU is cleared. Its Undo
+  (`undoDuplicateNative`, ids only) reads the duplicate's own audit row and deletes the copy only while
+  it is the author's, inside the server-clock window, unedited, and has no units, stock, job lines or
+  sub-hire lines on it.
+- **Print labels for all** is a browser-print QR sheet (`ModelPrintLabelsDialog`, no PDF type): one label
+  per live serialised unit and bulk tag (`modelLabels`), retired units left out.
+- **ROI `Show cost & payback`** hides fleet cost, payback and the cost-recovered panel until asked for; a
+  `noFinancials` key gets none of it (the toggle is absent, `costRedacted`).
 
 ## Retire, Reinstate and Delete (UX Phase 12, D32/D33)
 

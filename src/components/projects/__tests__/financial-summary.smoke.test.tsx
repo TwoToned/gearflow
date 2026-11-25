@@ -24,8 +24,6 @@ const BASE_PROPS = {
   taxAmount: 100,
   total: 1100,
   margin: 400,
-  depositPaid: null,
-  invoicedTotal: null,
 };
 
 const RECONSTRUCTED_DOC = { id: "p1", organizationId: "o1", projectNumber: "1", name: "Gig", status: "CONFIRMED", total: 1100, subtotal: 1000, taxAmount: 100, taxRate: 10, equipmentRevenue: 1000, subHireCostTotal: 0 };
@@ -35,7 +33,7 @@ function renderMapped(p: ReturnType<typeof mapProject>) {
     <FinancialSummary
       equipmentRevenue={p.equipmentRevenue} serviceCostTotal={p.serviceCostTotal} labourCostTotal={p.labourCostTotal}
       subHireCostTotal={p.subHireCostTotal} subtotal={p.subtotal} discountPercent={p.discountPercent} discountAmount={p.discountAmount}
-      taxRate={p.taxRate} taxAmount={p.taxAmount} total={p.total} margin={p.margin} depositPaid={p.depositPaid} invoicedTotal={p.invoicedTotal}
+      taxRate={p.taxRate} taxAmount={p.taxAmount} total={p.total} margin={p.margin}
     />,
   );
 }
@@ -90,5 +88,37 @@ describe("FinancialSummary smoke", () => {
     expect(screen.getByText("Sale cost of goods")).toBeTruthy();
     // $90 is also the (only) "Total costs" figure — assert at least one, not uniqueness.
     expect(screen.getAllByText("$90.00").length).toBeGreaterThan(0);
+  });
+
+  it("folds maintenance into the Costs column and its total (one margin, ex GST)", () => {
+    const { container } = render(
+      <FinancialSummary {...BASE_PROPS} serviceCostTotal={100} maintenance={{ total: 60, count: 2, href: "/maintenance?projectId=p1", labourRevenue: 0 }} />,
+    );
+    // Maintenance is a memo line, NOT in the margin or in Total costs (no second margin).
+    expect(screen.getByText("Maintenance (2), not in margin")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Maintenance records/ }).getAttribute("href")).toBe("/maintenance?projectId=p1");
+    expect(screen.getByText("Total costs").nextSibling?.textContent).toBe("$100.00");
+    expect(container.textContent).toMatch(/Margin: \$400\.00 ex GST/);
+  });
+
+  it("the margin bar's % is of revenue ex GST (the tile's base), not of the GST-inclusive total", () => {
+    const { container } = render(<FinancialSummary {...BASE_PROPS} serviceCostTotal={600} />); // margin 400 of ex-GST 1000
+    expect(container.textContent).toMatch(/40%/);
+    expect(container.textContent).not.toMatch(/36%/); // 400 / 1100
+  });
+
+  it("never shows maintenance without job cost, even when it is passed", () => {
+    const { container } = render(
+      <FinancialSummary {...BASE_PROPS} serviceCostTotal={undefined} labourCostTotal={undefined} margin={null} maintenance={{ total: 60, count: 2, href: "/m", labourRevenue: 5 }} />,
+    );
+    expect(container.textContent).not.toMatch(/Maintenance|Costs|Margin/);
+  });
+
+  it("opens Show group pricing", async () => {
+    const user = (await import("@testing-library/user-event")).default.setup();
+    render(<FinancialSummary {...BASE_PROPS} groupBreakdown={[{ title: "FOH package", quantity: 1, price: 500 }]} />);
+    expect(screen.queryByText("FOH package")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Show group pricing/ }));
+    expect(screen.getByText("FOH package")).toBeTruthy();
   });
 });

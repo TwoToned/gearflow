@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConvex, useConvexAuth } from "convex/react";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { api } from "../../convex/_generated/api";
 import { formatDate } from "@/lib/formatters";
 import {
@@ -39,6 +40,19 @@ function useProjectConflictsOnce(projectId: string | undefined, enabled: boolean
   return answer && answer.projectId === projectId ? answer.rows : null;
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The ONE args object for `projectReadiness.forProject`, so every reader (the
+ * checklist, the crew counts) shares a single subscription. The overdue-task
+ * rule needs a clock; it is a mount-time snapshot floored to the hour, never a
+ * fresh `Date.now()` in query args (that re-keys the subscription every render).
+ */
+export function useReadinessArgs(projectId: string, orgId: string | undefined, enabled: boolean) {
+  const now = Math.floor(useStableNow() / HOUR_MS) * HOUR_MS;
+  return orgId && enabled ? { orgId, projectId, now } : ("skip" as const);
+}
+
 /**
  * The Overview's readiness rows, in one hook (#1061, restored in UX Phase 7
  * after `6bbdee8` deleted the original along with the Work card).
@@ -60,7 +74,7 @@ export function useProjectReadiness(
   status?: string,
 ): { checks: ReadinessCheck[] | null } {
   const args = orgId && enabled ? { orgId, projectId } : "skip";
-  const readiness = useAuthedQuery(api.projectReadiness.forProject, args);
+  const readiness = useAuthedQuery(api.projectReadiness.forProject, useReadinessArgs(projectId, orgId, enabled));
   const blocking = useAuthedQuery(api.collaboration.getProjectBlockingSummary, args) as { count: number } | undefined;
   const conflicts = useProjectConflictsOnce(projectId, enabled && !!orgId);
 
@@ -76,6 +90,7 @@ export function useProjectReadiness(
       pricing: readiness.pricing,
       packing: readiness.packing,
       incidents: readiness.incidents,
+      tasks: readiness.tasks,
       conflicts,
       blockingCount: blocking?.count ?? null,
       status,

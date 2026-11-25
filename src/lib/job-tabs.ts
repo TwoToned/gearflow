@@ -13,12 +13,28 @@ import { MODULE_NAMES } from "@/lib/vocabulary";
 
 /** In strip order. `labour` is the Logistics tab (the value is kept so old links work). */
 export const JOB_TAB_KEYS = [
-  "overview", "equipment", "packing", "labour", "finance", "tasks", "notes", "files", "versions",
+  "overview", "equipment", "packing", "labour", "finance", "tasks", "versions",
 ] as const;
 export type JobTabKey = (typeof JOB_TAB_KEYS)[number];
 
-/** Old `?tab=` values that still land: the Work-layer rename and the Logistics word. */
-const JOB_TAB_ALIASES: Readonly<Record<string, JobTabKey>> = { work: "tasks", logistics: "labour" };
+/**
+ * Old `?tab=` values that still land: the Work-layer rename, the Logistics word,
+ * and (UX Phase 10) Notes and Files, which merged into the one `Tasks & notes`
+ * tab. `notes` / `files` also name the SECTION to land on (`jobTabSection`).
+ */
+const JOB_TAB_ALIASES: Readonly<Record<string, JobTabKey>> = {
+  work: "tasks",
+  logistics: "labour",
+  notes: "tasks",
+  files: "tasks",
+  discussion: "tasks",
+};
+
+/** The section of the merged tab a `?tab=` value names, if it names one. */
+export type TasksNotesSection = "tasks" | "notes" | "files" | "discussion";
+export function jobTabSection(param: string | null | undefined): TasksNotesSection | null {
+  return param === "notes" || param === "files" || param === "discussion" ? param : null;
+}
 
 /** Tabs a template never has (it has no pipeline, no finance and no versions). */
 const NOT_ON_TEMPLATES: ReadonlySet<JobTabKey> = new Set(["packing", "finance", "versions"]);
@@ -29,16 +45,13 @@ const LABELS: Record<JobTabKey, string> = {
   packing: "Packing",
   labour: MODULE_NAMES.logistics,
   finance: "Finance",
-  tasks: "Tasks",
-  notes: "Notes",
-  files: "Files",
+  tasks: "Tasks & notes",
   versions: "Versions",
 };
 
 /** What each tab owner feeds into its label. `undefined` = no count shown. */
 export interface JobTabCounts {
-  tasks?: { done: number; total: number };
-  files?: number;
+  tasks?: { done: number; total: number; overdue?: number };
   /** `Packing 36/44`: planned / total (Phase 8 owns the derivation). */
   packing?: { planned: number; total: number };
   /** `Versions 3`. */
@@ -68,12 +81,16 @@ const fraction = (done: number, total: number) => (total > 0 ? `${done}/${total}
 
 const COUNT: Partial<Record<JobTabKey, (c: JobTabCounts) => string | number | undefined>> = {
   tasks: (c) => (c.tasks ? fraction(c.tasks.done, c.tasks.total) : undefined),
-  files: (c) => c.files || undefined,
   packing: (c) => (c.packing ? fraction(c.packing.planned, c.packing.total) : undefined),
   versions: (c) => c.versions || undefined,
 };
 
 /** The `TabStrip` items: underlined words with muted counts (`Tasks 9/14`). */
 export function jobTabItems(available: readonly JobTabKey[], counts: JobTabCounts): TabStripItem[] {
-  return available.map((value) => ({ value, label: LABELS[value], count: COUNT[value]?.(counts) }));
+  return available.map((value) => ({
+    value,
+    label: LABELS[value],
+    count: COUNT[value]?.(counts),
+    alert: value === "tasks" && counts.tasks?.overdue ? `${counts.tasks.overdue} overdue` : undefined,
+  }));
 }

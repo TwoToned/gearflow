@@ -27,6 +27,7 @@ vi.mock("@/hooks/use-server-query", () => ({ useServerQuery: () => ({ data: [] }
 vi.mock("@/hooks/use-server-mutation", () => ({ useServerMutation: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("@/hooks/use-collaboration-writes", () => ({ useCollaborationWrites: () => ({ createThread: vi.fn() }) }));
 vi.mock("@/server/org-members", () => ({ getMentionableMembers: vi.fn() }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";

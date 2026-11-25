@@ -367,8 +367,10 @@ taxableAmount = subtotal - discountAmount
 taxAmount = taxableAmount × taxRate / 100
 total = taxableAmount + taxAmount
 
-margin = total - (serviceCostTotal + labourCostTotal + saleCostTotal)   -- saleCostTotal added WS11 #950
-marginPercent = margin / total × 100
+margin = taxableAmount - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal)   -- EX GST
+marginPercent = margin / taxableAmount × 100
+-- UX Phase 10 fix: this used `total` (which includes tax), so "Margin ex GST" overstated the margin by the GST.
+-- One definition: `marginExGst()` in convex/lib/recalc.ts (the operational P&L uses the same base).
 ```
 
 ### Tax Rate Cascade

@@ -622,6 +622,31 @@ export const listActivityEvents = query({
   },
 });
 
+/**
+ * Who last saved each of a job's three note fields, and when (UX Phase 10, the notes
+ * cards' `Saved · Sam · Thu 6 Nov` line). DERIVED from the `note_updated` Activity
+ * events the notes write emits: no `updatedBy` column. Bounded to the newest 60 events
+ * on the job; a field never saved since has no entry.
+ */
+export const lastNoteSaves = query({
+  args: { orgId: v.string(), projectId: v.string() },
+  handler: async (ctx, { orgId, projectId }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const rows = await ctx.db
+      .query("activityEvents")
+      .withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", orgId).eq("entityId", projectId))
+      .order("desc")
+      .take(60);
+    const out: Record<string, { by: string; at: number }> = {};
+    for (const r of rows) {
+      const field = (r.metadata as { field?: string } | undefined)?.field;
+      if (r.entityType !== "project" || r.action !== "note_updated" || !field || out[field]) continue;
+      out[field] = { by: r.actorName, at: r.createdAt };
+    }
+    return out;
+  },
+});
+
 export const listThreadCommentCounts = query({
   args: {
     orgId: v.string(),
@@ -767,6 +792,7 @@ export const agentOps: AgentOpsAnnotations = {
   getReviewMarker: { summary: "Get the review marker for one target on an entity.", danger: "low", mcpTier: 3 },
   listReviewMarkersForEntity: { summary: "List review markers across an entity's targets.", danger: "low", mcpTier: 3 },
   listActivityEvents: { summary: "List recent collaboration activity events for an entity.", danger: "low", mcpTier: 3 },
+  lastNoteSaves: { summary: "Who last saved each of a job's three note fields, and when (derived from Activity events).", danger: "low", mcpTier: 3 },
   listThreadCommentCounts: { summary: "Open/total/blocking comment counts per target on an entity.", danger: "low", mcpTier: 3 },
   getProjectBlockingSummary: { summary: "Summarise open blocking comment threads on one project.", danger: "low", mcpTier: 2 },
   listBlockingForProjects: { summary: "Open blocking comment counts across many projects.", danger: "low", mcpTier: 3 },

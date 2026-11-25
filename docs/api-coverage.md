@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 469 | 333 | 132 | 2 | 2 |
-| Mutations | 850 | 351 | 485 | 0 | 14 |
-| **Total** | **1319** | **684** | **617** | **2** | **16** |
+| Queries | 473 | 337 | 132 | 2 | 2 |
+| Mutations | 861 | 359 | 485 | 0 | 17 |
+| **Total** | **1334** | **696** | **617** | **2** | **19** |
 
-<!-- reachability-floor: 684 -->
+<!-- reachability-floor: 696 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 112 |
-| `medium` | 163 |
-| `low` | 76 |
+| `high` | 113 |
+| `medium` | 168 |
+| `low` | 78 |
 
 ## Modules with no agent-reachable operation
 
@@ -78,7 +78,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `emails` | 1 |
 | `financeArtifacts` | 5 |
 | `globalSearch` | 1 |
-| `mediaWrites` | 4 |
+| `mediaWrites` | 7 |
 | `miraConversations` | 4 |
 | `miraKeys` | 2 |
 | `miraMessages` | 4 |

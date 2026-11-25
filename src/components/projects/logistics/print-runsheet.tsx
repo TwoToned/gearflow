@@ -7,12 +7,15 @@
  * It reads the tab's own data set: the old `/runsheet` page's separate
  * read-only copy is gone.
  */
+import { crewNotesLines } from "@/lib/crew-notes-print";
 import { dayLabel, groupByDay, whenText, type LogisticsService } from "@/lib/logistics-model";
 import { personName, whereLine } from "./service-rows";
 import type { SiteFacts } from "./facts";
 
-export function PrintRunsheet({ title, services, site }: { title: string; services: LogisticsService[]; site: SiteFacts }) {
+export function PrintRunsheet({ title, services, site, crewNotes }: { title: string; services: LogisticsService[]; site: SiteFacts; crewNotes?: string | null }) {
   const live = services.filter((s) => s.status !== "CANCELLED");
+  // The job's crew notes print at the top, the same lines the call sheet prints (UX Phase 10).
+  const notes = crewNotesLines(crewNotes);
   return (
     <div className="hidden print:block" data-testid="print-runsheet">
       {/* Paper shows only the run sheet: hide the rest of the page, lift this block to the top. */}
@@ -23,6 +26,16 @@ export function PrintRunsheet({ title, services, site }: { title: string; servic
           {[site.venue, site.address, site.access].filter(Boolean).join(" · ")}
           {site.contactName ? " · " + site.contactName + " " + site.contactPhone : ""}
         </p>
+      )}
+      {notes.length > 0 && (
+        <section className="mt-3 break-inside-avoid" data-testid="print-runsheet-crew-notes">
+          <h2 className="border-b border-black text-base font-semibold">Crew notes</h2>
+          {notes.map((line, i) => (
+            <p key={i} className="min-h-[1em] whitespace-pre-wrap text-sm">
+              {line}
+            </p>
+          ))}
+        </section>
       )}
       {groupByDay(live).map((g) => (
         <section key={g.key || "tbc"} className="mt-4 break-inside-avoid">

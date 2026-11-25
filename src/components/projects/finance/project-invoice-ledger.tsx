@@ -26,7 +26,7 @@ import { RecordPaymentDialog } from "@/components/projects/finance/record-paymen
 import { DeleteVoidInvoiceDialog } from "@/components/projects/finance/delete-void-invoice-dialog";
 import { CreditNoteDialog } from "@/components/projects/finance/credit-note-dialog";
 import { InvoiceRow, type InvoiceRowDoc } from "@/components/projects/finance/invoice-row";
-import { deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
+import { clientDepositPercent, deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
 
 interface ProjectInvoiceLedgerProps {
   projectId: string;
@@ -86,7 +86,7 @@ export function ProjectInvoiceLedger({ projectId, orgId, clientId, projectStatus
     return <p className="t-micro text-fg-4">Loading…</p>;
   }
 
-  const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
+  const depositPercent = clientDepositPercent(client);
 
   // One derivation, shared with the Overview tab's invoicing card and the
   // tiles (R-3.1).

@@ -10,6 +10,7 @@ import { api } from "../../../../convex/_generated/api";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import {
+  clientDepositPercent,
   deriveInvoicingState,
   INVOICING_HEADLINE_LABEL,
   type InvoiceLike,
@@ -53,7 +54,7 @@ function deriveInvoicingView(
   now: number,
 ): InvoicingView | null {
   if (invoices === undefined || client === undefined) return null;
-  const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
+  const depositPercent = clientDepositPercent(client);
   return {
     state: deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total, now),
     depositPercent,

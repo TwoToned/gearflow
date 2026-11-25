@@ -18,6 +18,15 @@
 
 import { isInvoiceOverdue } from "../../convex/lib/invoiceOverdue";
 
+/** The default % a partial invoice offers when the client has no `profileDepositPercent`. */
+const DEFAULT_DEPOSIT_PERCENT = 25;
+
+/** The ONE read of a client's deposit default (R-3.1): every caller of `deriveInvoicingState` uses it. */
+export function clientDepositPercent(client: { profileDepositPercent?: unknown } | null | undefined): number {
+  const p = client?.profileDepositPercent;
+  return typeof p === "number" ? p : DEFAULT_DEPOSIT_PERCENT;
+}
+
 export interface InvoiceLike {
   id: string;
   kind: string;

@@ -5,7 +5,7 @@ import { useStableNow } from "@/hooks/use-stable-now";
 import { api } from "../../../../convex/_generated/api";
 import { formatCurrency } from "@/lib/formatters";
 import { financePositionTiles } from "@/lib/finance-position";
-import { deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
+import { clientDepositPercent, deriveInvoicingState, type InvoiceLike } from "@/lib/project-invoicing-state";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,12 +22,14 @@ import { cn } from "@/lib/utils";
 export function PositionTiles({
   projectId,
   orgId,
+  clientId,
   total,
   taxAmount,
   margin,
 }: {
   projectId: string;
   orgId: string | undefined;
+  clientId?: string | null;
   total: number | null;
   taxAmount: number | null;
   /** The ONE margin, ex GST; `null`/`undefined` = the caller does not see job cost. */
@@ -36,9 +38,14 @@ export function PositionTiles({
   const now = useStableNow();
   const invoices = useAuthedQuery(api.invoices.listForProject, orgId ? { orgId, projectId } : "skip");
   const revision = useAuthedQuery(api.quotes.revisionStateForProject, orgId ? { orgId, projectId, now } : "skip");
-  if (invoices === undefined || revision === undefined) return <div className="h-16" aria-hidden="true" />;
+  // The client's own deposit default, read the same way the ledger and the
+  // Overview card read it (one subscription, deduped): never a second copy of the setting.
+  const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
+  if (invoices === undefined || revision === undefined || (clientId && client === undefined)) {
+    return <div className="h-16" aria-hidden="true" />;
+  }
 
-  const invoicing = deriveInvoicingState(invoices as InvoiceLike[], 25, total, now);
+  const invoicing = deriveInvoicingState(invoices as InvoiceLike[], clientDepositPercent(client), total, now);
   const tiles = financePositionTiles({
     liveQuote: revision.liveQuote
       ? { version: revision.liveQuote.version, status: revision.liveQuote.status, validUntil: revision.liveQuote.validUntil }

@@ -63,6 +63,7 @@ export function FinanceTabSlot(props: FinanceTabSlotProps) {
       <PositionTiles
         projectId={props.projectId}
         orgId={props.orgId}
+        clientId={props.clientId}
         total={props.total}
         taxAmount={props.taxAmount}
         margin={props.margin}

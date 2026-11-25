@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -119,36 +120,25 @@ function assertProjectFields(f: {
   assertStrLen(f.clientNotes, "clientNotes", { max: 5000 });
 }
 
-export const updateStatusNative = mutation({
-  returns: v.object({ id: v.string() }),
-  args: {
-    id: v.string(),
-    orgId: v.string(),
-    status: enums.ProjectStatus,
-    actor: actorValidator,
-    auditId: v.string(),
-    // Gate for the folded `project.status_changed` webhook. OPTIONAL + only honored
-    // when `=== true`, so the pre-fold app image (never passes it) does NOT double-emit
-    // — its own server tail still emits during the deploy window; the new app/browser
-    // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
-    // Expand-contract (mirrors convex/lineItemWrites.ts).
-    emitSideEffects: v.optional(v.boolean()),
-    now: v.number(),
+/**
+ * THE project status transition (its gates, snapshot, lock raise, audit row and
+ * webhook). `updateStatusNative` and `discardDraftNative`'s cancel both run through
+ * it, so no caller can move a job's status around those rules with a raw patch.
+ * The caller has already checked permission, the project's org and that it is not a template.
+ */
+export async function transitionProjectStatus(
+  ctx: MutationCtx,
+  { orgId, project, status, actor, auditId, emitSideEffects, now }: {
+    orgId: string;
+    project: Doc<"projects">;
+    status: Doc<"projects">["status"] & string;
+    actor: { userId: string; userName: string };
+    auditId: string;
+    emitSideEffects?: boolean;
+    now: number;
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
-    await assertWritesEnabled(ctx, "project");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, orgId, "project", "update");
-    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
-    const actor = await resolveActor(ctx, suppliedActor);
-
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
-    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    if (project.isTemplate) {
-      throw new ConvexError({ code: "TEMPLATE_STATUS", message: "Templates don't have a status." });
-    }
-
+): Promise<{ id: string }> {
+    const id = project.id;
     const from = project.status ?? "";
     // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
     // with the deleted server action). Only on an actual status change (template excluded above).
@@ -244,6 +234,38 @@ export const updateStatusNative = mutation({
     }
 
     return { id };
+}
+
+export const updateStatusNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    status: enums.ProjectStatus,
+    actor: actorValidator,
+    auditId: v.string(),
+    // Gate for the folded `project.status_changed` webhook. OPTIONAL + only honored
+    // when `=== true`, so the pre-fold app image (never passes it) does NOT double-emit
+    // — its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
+    // Expand-contract (mirrors convex/lineItemWrites.ts).
+    emitSideEffects: v.optional(v.boolean()),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "update");
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (project.isTemplate) {
+      throw new ConvexError({ code: "TEMPLATE_STATUS", message: "Templates don't have a status." });
+    }
+    return transitionProjectStatus(ctx, { orgId, project, status, actor, auditId, emitSideEffects, now });
   },
 });
 

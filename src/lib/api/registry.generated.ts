@@ -37223,7 +37223,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "6bd58c961e73686a",
     "returnsSha": "99a30a0f18eaacc2",
     "stability": "tracks-app",
-    "summary": "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it while it is still an enquiry. Refuses once it has moved on.",
+    "summary": "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it (through the normal status transition) while it is still an enquiry. Refuses a non-author and any job that has moved on.",
     "danger": "high",
     "mcpTier": null,
     "agentAccess": null,

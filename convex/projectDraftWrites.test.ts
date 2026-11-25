@@ -141,21 +141,103 @@ describe("discardDraftNative: every guard holds (undo refuses, discard cancels i
     expect(await exists(t2)).toBe(true);
   });
 
-  test("a caller who did not create it cannot delete it (Undo refuses; Discard cancels)", async () => {
+  test("a non-author is refused for BOTH verbs and the job is untouched (no cancel back door)", async () => {
     const t = makeT();
     await seedDraft(t);
-    await expect(call(t, args({ via: "undo" }), asUser(OTHER))).rejects.toThrow(/did not create/);
-    expect(await exists(t)).toBe(true);
-    expect(await call(t, { ...args(), actor: { userId: OTHER, userName: "Bob" } }, asUser(OTHER))).toEqual({ outcome: "cancelled" });
+    const other = { ...args(), actor: { userId: OTHER, userName: "Bob" } };
+    await expect(call(t, { ...other, via: "undo" }, asUser(OTHER))).rejects.toThrow(/Only the person who created/);
+    await expect(call(t, other, asUser(OTHER))).rejects.toThrow(/Only the person who created/);
+    // A made-up create audit id proves nothing either.
+    await expect(call(t, { ...other, createAuditId: "bogus" }, asUser(OTHER))).rejects.toThrow(/Only the person who created/);
+    await expect(call(t, args({ createAuditId: "bogus" }))).rejects.toThrow(/Only the person who created/);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.status).toBe("ENQUIRY");
+    });
   });
 
-  test("a create audit id from another project or org proves nothing", async () => {
+  // Each field of the authorship proof, tested alone: a row that is right in every other way.
+  test.each([
+    ["another org", { organizationId: "org_2" }],
+    ["another entity type", { entityType: "asset" }],
+    ["another project", { entityId: "someone-elses" }],
+    ["not a CREATE row", { action: "UPDATE" }],
+    ["another user", { userId: OTHER }],
+  ])("the create audit row must be this org's, this project's, a project CREATE by the caller: %s refuses", async (_label, patch) => {
     const t = makeT();
     await seedDraft(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("activityLogs", { id: "create-other", organizationId: ORG, action: "CREATE", entityType: "project", entityId: "someone-elses", entityName: "X", userId: USER, userName: "Alice", summary: "c", createdAt: NOW });
+      await ctx.db.insert("activityLogs", {
+        id: "forged", organizationId: ORG, action: "CREATE", entityType: "project", entityId: "p1", entityName: "P-1",
+        userId: USER, userName: "Alice", summary: "c", projectId: "p1", createdAt: NOW, ...patch,
+      });
     });
-    await expect(call(t, args({ via: "undo", createAuditId: "create-other" }))).rejects.toThrow(/did not create/);
+    await expect(call(t, args({ via: "undo", createAuditId: "forged" }))).rejects.toThrow(/Only the person who created/);
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("more than 50 audit rows is too many to vouch for: Undo refuses even when they are all the author's", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 51; i++) {
+        await ctx.db.insert("activityLogs", { id: `own${i}`, organizationId: ORG, action: "UPDATE", entityType: "project", entityId: "p1", entityName: "P-1", userId: USER, userName: "Alice", summary: "e", projectId: "p1", createdAt: NOW });
+      }
+    });
+    await expect(call(t, args({ via: "undo" }))).rejects.toThrow(/someone else/);
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("a project in another org is refused even with a matching create row", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "member" });
+      await ctx.db.insert("projects", { id: "pz", organizationId: "org_2", projectNumber: "Z", name: "Theirs", status: "ENQUIRY", isTemplate: false, liveVersionId: "vz", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectVersions", { id: "vz", organizationId: "org_2", projectId: "pz", number: 1, contentState: "ready", createdAt: NOW, createdById: USER });
+      await ctx.db.insert("activityLogs", { id: "cz", organizationId: "org_2", action: "CREATE", entityType: "project", entityId: "pz", entityName: "Z", userId: USER, userName: "Alice", summary: "c", projectId: "pz", createdAt: NOW });
+    });
+    await expect(call(t, args({ projectId: "pz", createAuditId: "cz" }))).rejects.toThrow(/organization mismatch/);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "pz")).first()).not.toBeNull();
+    });
+  });
+
+  test("the delete path re-checks project:create: a key scoped to update only cannot delete", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("apiKeys", {
+        id: "key1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(["project:update"]), isActive: true, actingUserId: USER, createdById: USER,
+      });
+    });
+    await expect(call(t, args(), { subject: USER, orgId: ORG, akid: "key1" } as ReturnType<typeof asUser>)).rejects.toThrow();
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("the cancel path runs the normal status transition: a STATUS_CHANGE audit row, not a bare patch", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { versionId: "v1", lineageId: "l1", id: "l1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "QUOTED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    expect(await call(t, args())).toEqual({ outcome: "cancelled" });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      expect(row?.action).toBe("STATUS_CHANGE");
+      expect(row?.details).toEqual({ changes: [{ field: "status", from: "ENQUIRY", to: "CANCELLED" }] });
+    });
+  });
+
+  test("discarding with a manager row removes it; a draft that fills the manager bound refuses instead of orphaning", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 200; i++) {
+        await ctx.db.insert("projectManagers", { id: `pmx${i}`, organizationId: ORG, projectId: "p1", userId: `u${i}`, addedAt: NOW });
+      }
+    });
+    await expect(call(t, args())).rejects.toThrow(/too many managers/);
     expect(await exists(t)).toBe(true);
   });
 
@@ -187,6 +269,65 @@ describe("discardDraftNative: every guard holds (undo refuses, discard cancels i
     await seedDraft(t);
     await expect(call(t, args(), asUser("user_9", "org_2"))).rejects.toThrow();
     expect(await exists(t)).toBe(true);
+  });
+});
+
+// One row in each table the draft must NOT have, inserted alone: the matching probe is the only thing that can refuse.
+const NOT_EMPTY: [string, string, Record<string, unknown>][] = [
+  ["services", "projectServices", { id: "x", organizationId: ORG, versionId: "v1", lineageId: "x", projectId: "p1", title: "Bump in", type: "DELIVERY" }],
+  ["cases", "projectContainers", { id: "x", organizationId: ORG, versionId: "v1", lineageId: "x", projectId: "p1", label: "LX-1", lineItemId: "li", kind: "CUSTOM" }],
+  ["categories", "projectCategories", { id: "x", organizationId: ORG, versionId: "v1", lineageId: "x", projectId: "p1", name: "Audio", sortOrder: 0 }],
+  ["groups", "projectGroups", { id: "x", organizationId: ORG, versionId: "v1", lineageId: "x", projectId: "p1", title: "Rig", sortOrder: 0 }],
+  ["crew calls", "crewAssignments", { id: "x", organizationId: ORG, projectId: "p1", crewMemberId: "cm" }],
+  ["invoices", "invoices", { id: "x", organizationId: ORG, projectId: "p1", clientId: "c", kind: "FULL", status: "DRAFT", subtotal: 0, taxAmount: 0, total: 0 }],
+  ["files", "projectMedia", { id: "x", organizationId: ORG, projectId: "p1", fileId: "f" }],
+  ["tasks", "projectTasks", { id: "x", organizationId: ORG, projectId: "p1", title: "Call venue" }],
+  ["sub-hires", "subHires", { id: "x", organizationId: ORG, projectId: "p1", supplierId: "s", createdById: USER, orderNumber: "SH-1" }],
+  ["supplier orders", "supplierOrders", { id: "x", organizationId: ORG, projectId: "p1", supplierId: "s", orderNumber: "PO-1", type: "PURCHASE" }],
+  ["snapshots", "projectSnapshots", { id: "x", organizationId: ORG, projectId: "p1", reason: "CONFIRMED", takenAt: NOW, takenBy: USER }],
+  ["discussion", "commentThreads", { orgId: ORG, entityType: "project", entityId: "p1", projectId: "p1", status: "open", createdBy: OTHER, createdByName: "Bob", createdAt: NOW, updatedAt: NOW }],
+  ["review markers", "reviewMarkers", { orgId: ORG, entityType: "project", entityId: "p1", targetType: "line", targetId: "l", status: "needs_review", createdBy: OTHER, createdByName: "Bob", createdAt: NOW, updatedAt: NOW }],
+  ["maintenance records", "maintenanceRecords", { id: "x", organizationId: ORG, projectId: "p1", title: "Fix", type: "REPAIR" }],
+  ["scan history", "assetScanLogs", { id: "x", organizationId: ORG, projectId: "p1", scannedById: USER, action: "CHECK_OUT" }],
+  ["warehouse close-outs", "warehouseCloses", { id: "x", organizationId: ORG, projectId: "p1", closedById: USER }],
+  ["revenue rollups", "projectModelRevenues", { id: "x", organizationId: ORG, projectId: "p1", modelId: "m", allocatedRevenue: 0, updatedAt: NOW }],
+  ["web orders", "wooCommerceOrderLogs", { id: "x", organizationId: ORG, projectId: "p1", wooOrderId: 1, status: "RECEIVED", payload: {} }],
+];
+
+describe("discardDraftNative: every table the draft must not have blocks the delete", () => {
+  test.each(NOT_EMPTY)("a row in %s refuses Undo and leaves the job", async (label, table, fields) => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => { await ctx.db.insert(table as "quotes", fields as never); });
+    await expect(call(t, args({ via: "undo" }))).rejects.toThrow(new RegExp(`it has ${label}`));
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("another user's comment (a collaboration event, no audit row) refuses Undo", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("activityEvents", { orgId: ORG, actorUserId: OTHER, actorName: "Bob", actorColor: "#fff", entityType: "project", entityId: "p1", action: "comment", summary: "Bob commented", createdAt: NOW });
+    });
+    await expect(call(t, args({ via: "undo" }))).rejects.toThrow(/someone else/);
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("the author's own collaboration events do not block; more than 50 do", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("activityEvents", { orgId: ORG, actorUserId: USER, actorName: "Alice", actorColor: "#fff", entityType: "project", entityId: "p1", action: "note", summary: "own", createdAt: NOW });
+    });
+    expect(await call(t, args({ via: "undo" }))).toEqual({ outcome: "deleted" });
+    const t2 = makeT();
+    await seedDraft(t2);
+    await t2.run(async (ctx) => {
+      for (let i = 0; i < 51; i++) {
+        await ctx.db.insert("activityEvents", { orgId: ORG, actorUserId: USER, actorName: "Alice", actorColor: "#fff", entityType: "project", entityId: "p1", action: "note", summary: `own${i}`, createdAt: NOW });
+      }
+    });
+    await expect(call(t2, args({ via: "undo" }))).rejects.toThrow(/someone else/);
   });
 });
 

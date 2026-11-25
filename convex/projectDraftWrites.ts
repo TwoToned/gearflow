@@ -10,6 +10,7 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpProjectCounters } from "./lib/counters";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { listProjectVersions } from "./lib/projectVersionState";
+import { transitionProjectStatus } from "./projectWrites";
 
 /**
  * Discard a wizard draft (UX Phase 9, D24): ONE server-guarded verb behind both
@@ -26,8 +27,10 @@ import { listProjectVersions } from "./lib/projectVersionState";
  *    version beyond the first.
  * `undo` additionally needs the server-clock `UNDO_WINDOW_MS` and runs once (a
  * deterministic `undo:<createAuditId>` marker, which is also the audit row).
- * `discard` has no window; when the draft is not empty it CANCELS instead (still
- * only while it is an `ENQUIRY`), with no Undo. A burnt job number is accepted.
+ * `discard` has no window; for the AUTHOR of a draft that is not empty it CANCELS
+ * instead (still only while an `ENQUIRY`) through the same status transition
+ * `updateStatusNative` uses, with no Undo. A non-author is refused for both verbs: they
+ * use the normal status change. A burnt job number is accepted.
  */
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
@@ -46,13 +49,22 @@ async function authoredCreate(ctx: MutationCtx, a: Args, userId: string): Promis
   return ok ? row : null;
 }
 
-/** True when anyone else has an activity row on the project (or there are too many to tell). */
+/**
+ * True when anyone else has written to the project (or there are too many rows to tell):
+ * an audit row (`activityLogs`) OR a collaboration event (`activityEvents`, which comments
+ * and threads write WITHOUT an audit row) by a different user.
+ */
 async function writtenByOthers(ctx: MutationCtx, a: Args, userId: string): Promise<boolean> {
-  const rows = await ctx.db
+  const audit = await ctx.db
     .query("activityLogs")
     .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", a.orgId).eq("projectId", a.projectId))
     .take(MAX_AUDIT_ROWS + 1);
-  return rows.length > MAX_AUDIT_ROWS || rows.some((r) => r.userId !== userId);
+  if (audit.length > MAX_AUDIT_ROWS || audit.some((r) => r.userId !== userId)) return true;
+  const events = await ctx.db
+    .query("activityEvents")
+    .withIndex("by_orgId_entityId_createdAt", (q) => q.eq("orgId", a.orgId).eq("entityId", a.projectId))
+    .take(MAX_AUDIT_ROWS + 1);
+  return events.length > MAX_AUDIT_ROWS || events.some((e) => e.actorUserId !== userId);
 }
 
 /** The first thing the draft has that makes it more than the empty row, or null. */
@@ -75,16 +87,30 @@ async function contentReason(ctx: MutationCtx, orgId: string, project: Doc<"proj
     ["sub-hires", () => ctx.db.query("subHires").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
     ["supplier orders", () => ctx.db.query("supplierOrders").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
     ["snapshots", () => ctx.db.query("projectSnapshots").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
+    // Collaboration and the rest: none can exist on a fresh enquiry the wizard made, so any hit means
+    // someone worked on it. Probed rather than argued, because each has a write path from the job page.
+    ["discussion", () => ctx.db.query("commentThreads").withIndex("by_orgId_projectId", (q) => q.eq("orgId", orgId).eq("projectId", id)).first()],
+    ["review markers", () => ctx.db.query("reviewMarkers").withIndex("by_orgId_entityId", (q) => q.eq("orgId", orgId).eq("entityId", id)).first()],
+    ["maintenance records", () => ctx.db.query("maintenanceRecords").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
+    ["scan history", () => ctx.db.query("assetScanLogs").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
+    ["warehouse close-outs", () => ctx.db.query("warehouseCloses").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
+    ["revenue rollups", () => ctx.db.query("projectModelRevenues").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
+    ["web orders", () => ctx.db.query("wooCommerceOrderLogs").withIndex("by_projectId", (q) => q.eq("projectId", id)).first()],
   ];
   for (const [label, probe] of probes) if (await probe()) return `it has ${label}`;
   return null;
 }
 
 async function deleteEmptyDraft(ctx: MutationCtx, orgId: string, project: Doc<"projects">): Promise<void> {
-  // A draft's managers are a handful of org members; bounded, not a scan.
+  // A draft's managers are a handful of org members; bounded, and it refuses rather than leave orphans if it ever fills.
   const managers = await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).take(MAX_DRAFT_MANAGERS);
+  if (managers.length >= MAX_DRAFT_MANAGERS) {
+    throw new ConvexError({ code: "TOO_MANY_MANAGERS", message: "This draft has too many managers to discard in one go. Cancel it instead." });
+  }
   for (const m of managers) if (m.organizationId === orgId) await ctx.db.delete(m._id);
   for (const ver of await listProjectVersions(ctx, orgId, project.id)) await ctx.db.delete(ver._id);
+  // An ENQUIRY is never an active project (`ACTIVE_PROJECT_STATUSES`), so this moves no counter today; kept so
+  // the delete stays correct if that set ever changes. (Removing it is an equivalent mutant: nothing observable.)
   await bumpProjectCounters(ctx, orgId, project, null);
   await ctx.db.delete(project._id);
 }
@@ -116,9 +142,14 @@ export const discardDraftNative = mutation({
     const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", markerId(a.createAuditId))).first();
     if (marker && marker.organizationId === a.orgId) throw new ConvexError({ code: "ALREADY_UNDONE", message: "That draft was already discarded." });
 
+    // Only the proven author may discard, for BOTH verbs: a non-author who wants a job
+    // gone uses the normal status change (and its gates), never this door.
     const created = await authoredCreate(ctx, a, actor.userId);
-    const blocker = !created ? "you did not create it" : (await writtenByOthers(ctx, a, actor.userId)) ? "someone else has worked on it" : await contentReason(ctx, a.orgId, project);
-    if (blocker === null && created) return finishDelete(ctx, a, actor, project, created);
+    if (!created) {
+      throw new ConvexError({ code: "NOT_AUTHOR", message: "Only the person who created this draft can discard it." });
+    }
+    const blocker = (await writtenByOthers(ctx, a, actor.userId)) ? "someone else has worked on it" : await contentReason(ctx, a.orgId, project);
+    if (blocker === null) return finishDelete(ctx, a, actor, project, created);
     if (a.via === "undo") {
       throw new ConvexError({ code: "CHANGED_SINCE", message: `Can't undo: ${blocker}.` });
     }
@@ -141,23 +172,24 @@ async function finishDelete(
   return { outcome: "deleted" as const };
 }
 
-/** A draft that has content or other hands on it is cancelled, not deleted (still only while an Enquiry). */
+/**
+ * The author's draft has content or other hands on it: cancel, not delete. It runs through
+ * the SAME transition `updateStatusNative` uses (its gates, audit row and webhook), never a
+ * raw patch, so the cancel is indistinguishable from a normal status change.
+ */
 async function cancelDraft(
   ctx: MutationCtx, a: Args & { auditId: string; now: number }, actor: { userId: string; userName: string }, project: Doc<"projects">,
 ) {
-  await ctx.db.patch(project._id, { status: "CANCELLED", updatedAt: a.now });
-  await bumpProjectCounters(ctx, a.orgId, project, { ...project, status: "CANCELLED" });
-  await writeActivityLog(ctx, {
-    id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project", entityId: a.projectId,
-    entityName: project.projectNumber, userId: actor.userId, userName: actor.userName,
-    summary: `Cancelled draft ${project.projectNumber}`, projectId: a.projectId, createdAt: a.now,
-  });
+  await transitionProjectStatus(ctx, { orgId: a.orgId, project, status: "CANCELLED", actor, auditId: a.auditId, emitSideEffects: true, now: a.now });
   return { outcome: "cancelled" as const };
 }
 
 export const agentOps: AgentOpsAnnotations = {
+  // `via` is deliberately NOT a privileged arg: it only selects Undo (which adds the 10-minute window and
+  // once-only marker) or Discard (no window, because Discard never deletes non-empty work: with content or
+  // other hands on the draft it cancels through the normal status transition, with no Undo).
   discardDraftNative: {
-    summary: "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it while it is still an enquiry. Refuses once it has moved on.",
+    summary: "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it (through the normal status transition) while it is still an enquiry. Refuses a non-author and any job that has moved on.",
     danger: "high",
   },
 };

@@ -115,7 +115,7 @@ export function useCrewListWrites(orgId: string | undefined, seen: Seen<CrewSour
         performUndo: created > 0
           ? async () => {
               const r = await undoCreateMany({ orgId: orgId!, forwardAuditId: auditId, now: Date.now(), actor: actor() });
-              return r.kept.length > 0 ? `${plural(r.removed, "call")} removed · ${r.kept.length} stayed (${r.kept[0].reason})` : undefined;
+              return r.kept.length > 0 ? `${plural(r.removed, "call")} removed · ${r.kept.length} stayed (${r.reasons.join(", ")})` : undefined;
             }
           : undefined,
       });

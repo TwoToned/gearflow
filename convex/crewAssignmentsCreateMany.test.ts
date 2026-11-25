@@ -74,7 +74,7 @@ describe("createManyNative", () => {
     const t = makeT(); await seed(t);
     await assign(t, [{ id: "n1", crewMemberId: "c1" }]);
     expect((await rows(t)).map((r) => r.id).sort()).toEqual(["live", "n1"]);
-    expect(await undo(t)).toEqual({ removed: 1, kept: [] });
+    expect(await undo(t)).toEqual({ removed: 1, kept: [], reasons: [] });
     expect((await rows(t)).map((r) => r.id)).toEqual(["live"]);
   });
 
@@ -106,6 +106,42 @@ describe("createManyNative", () => {
     const res = await undo(t);
     expect(res.removed).toBe(0);
     expect(res.kept.map((k) => k.reason).sort()).toEqual(["it has shifts", "it was offered"]);
+  });
+
+  test("a call edited since, or attached to a service, is KEPT and named; an all-kept Undo writes no marker and can be retried", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("crewMembers", { id: "c4", organizationId: ORG, firstName: "Di", lastName: "Eve", isActive: true }); });
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }, { id: "n2", crewMemberId: "c4" }]);
+    const patch = (id: string, p: Record<string, unknown>) => t.run(async (ctx) => { const r = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first(); await ctx.db.patch(r!._id, p); });
+    await patch("n1", { updatedAt: NOW + 5 });
+    await patch("n2", { serviceId: "svc1" });
+    const res = await undo(t);
+    expect(res.removed).toBe(0);
+    expect(res.kept.map((k) => k.reason).sort()).toEqual(["it was attached to a service", "it was edited since"]);
+    expect(res.reasons.sort()).toEqual(["it was attached to a service", "it was edited since"]);
+    expect(await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "undo:log1")).first())).toBeNull();
+    // Whatever kept them is resolved: the SAME Undo now works (it was never spent).
+    await patch("n1", { updatedAt: NOW });
+    await patch("n2", { serviceId: undefined });
+    expect((await undo(t)).removed).toBe(2);
+    expect((await rows(t)).map((r) => r.id)).toEqual(["live"]);
+  });
+
+  test("Undo recalculates the job's labour cost (the created calls' estimates leave the total)", async () => {
+    const t = makeT(); await seed(t);
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }]);
+    const labour = () => t.run(async (ctx) => (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first())?.labourCostTotal ?? 0);
+    expect(await labour()).toBeGreaterThan(0);
+    await undo(t);
+    expect(await labour()).toBe(0);
+  });
+
+  test("another org cannot undo this org's assign, and nothing is deleted", async () => {
+    const t = makeT(); await seed(t);
+    await assign(t, [{ id: "n1", crewMemberId: "c1" }]);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mo", organizationId: OTHER, userId: USER, role: "admin" }); });
+    await expect(undo(t, { orgId: OTHER }, t.withIdentity({ subject: USER, orgId: OTHER, role: "admin" }))).rejects.toThrow(/not found/);
+    expect((await rows(t)).map((r) => r.id).sort()).toEqual(["live", "n1"]);
   });
 
   test("a manager (crew:create, no crew:delete) can undo; another user, the second time, and outside the window are refused", async () => {

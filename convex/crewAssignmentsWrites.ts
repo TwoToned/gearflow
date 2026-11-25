@@ -703,7 +703,7 @@ const CREATE_MANY_KIND = "crewCreateMany";
  * to shifts and time entries and needs `crew:delete`.
  */
 export const undoCreateManyNative = mutation({
-  returns: v.object({ removed: v.number(), kept: v.array(v.object({ id: v.string(), crewMemberId: v.string(), reason: v.string() })) }),
+  returns: v.object({ removed: v.number(), kept: v.array(v.object({ id: v.string(), crewMemberId: v.string(), reason: v.string() })), reasons: v.array(v.string()) }),
   args: { orgId: v.string(), forwardAuditId: v.string(), now: v.number(), actor: actorValidator },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "crew");
@@ -721,6 +721,7 @@ export const undoCreateManyNative = mutation({
 
     const kept: { id: string; crewMemberId: string; reason: string }[] = [];
     const projectIds = new Set<string>();
+    const serviceIds = new Set<string>();
     let removed = 0;
     for (const id of d.createdIds) {
       const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -728,19 +729,25 @@ export const undoCreateManyNative = mutation({
       const reason = await whyCallStays(ctx, doc);
       if (reason) { kept.push({ id, crewMemberId: doc.crewMemberId, reason }); continue; }
       projectIds.add(doc.projectId);
+      if (doc.serviceId) serviceIds.add(doc.serviceId);
       await ctx.db.delete(doc._id);
       await bumpCountersForTable(ctx, "crewAssignments", doc, null);
       removed++;
     }
-    if (removed > 0) await recalcAfterBulkDelete(ctx, a.orgId, new Set(), projectIds, a.now);
+    const reasons = [...new Set(kept.map((k) => k.reason))];
+    // Nothing removed: no marker, so the Undo can be retried once whatever kept the calls is resolved.
+    if (removed === 0) return { removed, kept, reasons };
+    await recalcAfterBulkDelete(ctx, a.orgId, serviceIds, projectIds, a.now);
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: markerId, now: a.now, action: "UNDO", id: forward.entityId, name: forward.entityName, summary: `Undid assigning ${removed} crew call${removed === 1 ? "" : "s"}`, projectId: forward.projectId ?? undefined, details: { undoOf: a.forwardAuditId, kept } });
-    return { removed, kept };
+    return { removed, kept, reasons };
   },
 });
 
 /** Why this created call must NOT be deleted by an Undo (or null when it is still exactly as created). */
-async function whyCallStays(ctx: MutationCtx, doc: { id: string; status?: string; offeredAt?: number; respondedAt?: number; confirmedAt?: number }): Promise<string | null> {
+async function whyCallStays(ctx: MutationCtx, doc: { id: string; status?: string; offeredAt?: number; respondedAt?: number; confirmedAt?: number; serviceId?: string; createdAt?: number; updatedAt?: number }): Promise<string | null> {
   if ((doc.status ?? "PENDING") !== "PENDING") return "it has moved on";
+  if (doc.serviceId) return "it was attached to a service";
+  if (doc.updatedAt !== doc.createdAt) return "it was edited since";
   if (doc.offeredAt != null || doc.respondedAt != null || doc.confirmedAt != null) return "it was offered";
   const shift = await ctx.db.query("crewShifts").withIndex("by_assignmentId", (q) => q.eq("assignmentId", doc.id)).first();
   if (shift) return "it has shifts";

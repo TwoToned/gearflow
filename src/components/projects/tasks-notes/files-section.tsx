@@ -166,11 +166,17 @@ function useFileActions(projectId: string, clear: () => void) {
     setUploading(false);
   };
   const setType = (ids: string[], type: FileCategory) => run(() => writes.setType(ids, type), `Set ${ids.length} ${ids.length === 1 ? "file" : "files"} to ${fileCategoryLabel(type)}`);
-  const remove = (ids: string[]) =>
-    run(async () => {
-      for (const id of ids) await writes.remove(id);
+  // ONE server mutation for one file or many (the same bytes-only-if-unreferenced rule); skipped rows are named.
+  const remove = async (ids: string[]) => {
+    try {
+      const r = await writes.removeMany(ids);
       clear();
-    }, ids.length === 1 ? "File removed" : `${ids.length} files removed`);
+      const done = r.removed === 1 ? "File removed" : `${r.removed} files removed`;
+      toast.success(r.skipped.length > 0 ? `${done} · skipped ${r.skipped.length}: not found` : done);
+    } catch (e) {
+      showError(e);
+    }
+  };
   const rename = (id: string, name: string) => run(() => writes.rename(id, name), `Renamed to “${name}”`);
   return { upload, uploading, setType, remove, rename };
 }

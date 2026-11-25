@@ -18,7 +18,7 @@ beforeAll(() => {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as never;
 });
 
-const writes = { add: vi.fn(), remove: vi.fn(async () => undefined), setType: vi.fn(async () => undefined), rename: vi.fn(async () => undefined) };
+const writes = { add: vi.fn(), remove: vi.fn(async () => undefined), removeMany: vi.fn(async (ids: string[]) => ({ removed: ids.length, skipped: [] as { id: string; why: string }[] })), setType: vi.fn(async () => undefined), rename: vi.fn(async () => undefined) };
 vi.mock("@/hooks/use-project-file-writes", () => ({ useProjectFileWrites: () => writes }));
 let viewer = false;
 vi.mock("@/lib/use-permissions", () => ({ useIsViewer: () => viewer }));
@@ -120,10 +120,10 @@ describe("FilesSection", () => {
     render(<FilesSection projectId="p1" orgId="org1" />);
     await user.click(screen.getByRole("button", { name: "rider.pdf actions" }));
     await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: /Remove/ }));
-    expect(writes.remove).not.toHaveBeenCalled();
+    expect(writes.removeMany).not.toHaveBeenCalled();
     expect(await screen.findByText(/cannot be undone/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Remove file" }));
-    expect(writes.remove).toHaveBeenCalledWith("m1");
+    expect(writes.removeMany).toHaveBeenCalledWith(["m1"]); // ONE server call, never a client loop
   });
 
   it("selecting a file shows the bulk bar with counted verbs", async () => {
@@ -134,6 +134,9 @@ describe("FilesSection", () => {
     const bar = await screen.findByRole("toolbar", { name: "Bulk actions" }).catch(() => screen.getByLabelText("Bulk actions"));
     expect(within(bar).getByText(/Remove 2/)).toBeTruthy();
     expect(within(bar).getByText(/Download 2/)).toBeTruthy();
+    await user.click(within(bar).getByText(/Remove 2/));
+    await user.click(await screen.findByRole("button", { name: /Remove file|Remove files/ }));
+    expect(writes.removeMany).toHaveBeenCalledWith(["m1", "m2"]); // both in ONE call
   });
 
   it("a file shows which task links to it, and Attach to a task links ONE open task (done tasks and already-linked ones are not offered)", async () => {

@@ -29315,6 +29315,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "mediaWrites.removeManyNative",
+    "module": "mediaWrites",
+    "fn": "removeManyNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "mediaIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f32e7a999e46db8b",
+    "returnsSha": "14a4752eb90241b3",
+    "stability": "tracks-app",
+    "summary": "Remove several files from a job in one call; deletes the stored bytes of each file nothing else still holds. No Undo.",
+    "danger": "high",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "mediaWrites.removeNative",
     "module": "mediaWrites",
     "fn": "removeNative",
@@ -66650,10 +66687,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1291,
+  total: 1292,
   agentReachable: 657,
   queries: 460,
-  mutations: 831,
+  mutations: 832,
   agentReachableQueries: 324,
   agentReachableMutations: 333,
 } as const;

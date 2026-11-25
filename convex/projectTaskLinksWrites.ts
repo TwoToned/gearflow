@@ -46,6 +46,20 @@ async function linkInOrg(ctx: MutationCtx, orgId: string, id: string): Promise<D
   return link && link.organizationId === orgId ? link : null;
 }
 
+/**
+ * A client-chosen audit id (and link id) must be unused: a duplicate would make an Undo's
+ * `by_cuid` read ambiguous, or let one write masquerade as another's forward row. `by_cuid`
+ * is global, so ANY existing row with the id (any org) refuses.
+ */
+async function assertIdsFree(ctx: MutationCtx, a: { linkId?: string; auditId: string }): Promise<void> {
+  if (a.linkId !== undefined) {
+    const dup = await ctx.db.query("projectTaskLinks").withIndex("by_cuid", (q) => q.eq("id", a.linkId!)).first();
+    if (dup) throw new ConvexError("That link id is already used");
+  }
+  const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  if (log) throw new ConvexError("That audit id is already used");
+}
+
 async function pairExists(ctx: MutationCtx, taskId: string, kind: LinkKind, linkedId: string): Promise<Doc<"projectTaskLinks"> | null> {
   const rows = await ctx.db.query("projectTaskLinks").withIndex("by_taskId", (q) => q.eq("taskId", taskId)).take(MAX_LINKS_PER_TASK + 1);
   return rows.find((r) => r.linkedKind === kind && r.linkedId === linkedId) ?? null;
@@ -125,6 +139,7 @@ export const linkNative = mutation({
     const existing = await pairExists(ctx, a.taskId, a.linkedKind, a.linkedId);
     if (existing) return { id: existing.id, created: false };
 
+    await assertIdsFree(ctx, { linkId: a.id, auditId: a.auditId });
     const count = (await ctx.db.query("projectTaskLinks").withIndex("by_taskId", (q) => q.eq("taskId", a.taskId)).take(MAX_LINKS_PER_TASK + 1)).length;
     if (count >= MAX_LINKS_PER_TASK) throw new ConvexError(`A task can link to at most ${MAX_LINKS_PER_TASK} items`);
     const label = await assertLinkTarget(ctx, a.orgId, task.projectId, a.linkedKind, a.linkedId);
@@ -152,6 +167,7 @@ export const unlinkNative = mutation({
 
     const link = await linkInOrg(ctx, a.orgId, a.id);
     if (!link) throw new ConvexError("Link not found");
+    await assertIdsFree(ctx, { auditId: a.auditId });
     const task = await taskInOrg(ctx, a.orgId, link.taskId);
     const row = { id: link.id, organizationId: link.organizationId, taskId: link.taskId, linkedKind: link.linkedKind, linkedId: link.linkedId, createdById: link.createdById, createdAt: link.createdAt };
     await ctx.db.delete(link._id);

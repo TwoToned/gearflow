@@ -166,6 +166,37 @@ describe("attaching and removing a file can never destroy bytes that are not the
   });
 });
 
+describe("removeManyNative (the Files bulk bar: ONE mutation)", () => {
+  const many = (t: T, mediaIds: string[], as: object = asUser) => t.withIdentity(as).mutation(api.mediaWrites.removeManyNative, { kind: "project", orgId: ORG, mediaIds });
+  const fileExists = (t: T, id: string) => t.run(async (ctx) => !!(await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).first()));
+
+  test("removes several, deletes bytes only for files nothing else holds, and NAMES what it skipped", async () => {
+    const t = makeT(); await seed(t);
+    const r = await many(t, ["pm1", "pm2", "pmX", "nope", "pm2"]); // pmX is another org's; pm2 repeated; pm1's file f1 is also held by pmP2
+    expect(r.removed).toBe(2);
+    expect(r.skipped.map((s) => s.id).sort()).toEqual(["nope", "pmX"]);
+    expect(await fileExists(t, "f1")).toBe(true); // still held by pmP2
+    expect(await fileExists(t, "f2")).toBe(false); // last holder: bytes gone
+    expect(await fileExists(t, "fX")).toBe(true); // another org's file untouched
+    expect((await events(t)).map((e) => e.action)).toEqual(["file_removed", "file_removed"]);
+  });
+
+  test("a viewer cannot remove, and nothing changes", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", ORG).eq("userId", USER)).first();
+      if (m) await ctx.db.patch(m._id, { role: "viewer" });
+    });
+    await expect(many(t, ["pm2"], { subject: USER, orgId: ORG, role: "viewer" })).rejects.toThrow();
+    expect(await fileExists(t, "f2")).toBe(true);
+  });
+
+  test("the bulk size is capped by the verified identity", async () => {
+    const t = makeT(); await seed(t);
+    await expect(many(t, Array.from({ length: 501 }, (_, i) => `m${i}`))).rejects.toThrow();
+  });
+});
+
 describe("notes save event", () => {
   test("a notes save writes a note_updated event naming the field, NEVER the text; lastNoteSaves reads it back", async () => {
     const t = makeT(); await seed(t);

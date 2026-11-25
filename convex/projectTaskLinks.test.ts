@@ -214,6 +214,90 @@ describe("Undo (ids only, exact)", () => {
     expect(await links(t)).toHaveLength(0);
   });
 
+  // The forward row is only trusted for THIS link: kill the entityId / entityType / org checks one by one.
+  const patchAudit = (t: T, rowId: string, patch: Record<string, unknown>) =>
+    t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", rowId)).first();
+      await ctx.db.patch(row!._id, patch as never);
+    });
+
+  test("a forward row for ANOTHER link cannot undo this one (entityId check)", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await link(t, { id: "l2", linkedKind: "file", linkedId: "pm1", auditId: "a2" });
+    await expect(undoLink(t, asUser, { id: "l2", auditId: "a1" })).rejects.toThrow(/not found/i);
+    expect(await links(t)).toHaveLength(2);
+  });
+
+  test("an audit row of another entity type cannot be used as a forward row (entityType check)", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await patchAudit(t, "a1", { entityType: "ProjectTask" });
+    await expect(undoLink(t, asUser, { id: "l1", auditId: "a1" })).rejects.toThrow(/not found/i);
+    expect(await links(t)).toHaveLength(1);
+  });
+
+  test("an Undo marker from ANOTHER org with the same id does not block this org's Undo (marker org check)", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("activityLogs", { id: "undo:a1", organizationId: OTHER, action: "UNDO", entityType: "ProjectTaskLink", entityId: "l1", entityName: "x", userId: "z", userName: "Z", summary: "x", createdAt: NOW } as never);
+    });
+    expect(await undoLink(t)).toEqual({ ok: true });
+    expect(await links(t)).toHaveLength(0);
+  });
+
+  test("a tampered unlink snapshot (another link id, or another org) is refused", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await unlink(t);
+    const setSnap = (over: Record<string, unknown>) =>
+      t.run(async (ctx) => {
+        const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "u1")).first();
+        const d = row!.details as { taskLink: { row: Record<string, unknown> } };
+        await ctx.db.patch(row!._id, { details: { taskLink: { ...d.taskLink, row: { ...d.taskLink.row, ...over } } } });
+      });
+    await setSnap({ id: "someone-else" });
+    await expect(undoUnlink(t)).rejects.toThrow(/can't be undone/i);
+    await setSnap({ id: "l1", organizationId: OTHER });
+    await expect(undoUnlink(t)).rejects.toThrow(/can't be undone/i);
+    expect(await links(t)).toHaveLength(0);
+  });
+
+  test("undoUnlink refuses when a link with the same id exists again (a different pair)", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await unlink(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTaskLinks", { id: "l1", organizationId: ORG, taskId: "t1", linkedKind: "file", linkedId: "pm1", createdById: USER, createdAt: NOW });
+    });
+    await expect(undoUnlink(t)).rejects.toThrow(/already exists again/i);
+  });
+
+  test("a viewer cannot unlink, undo a link or undo an unlink (each stays refused after the manager's own write)", async () => {
+    const t = makeT(); await seed(t);
+    const asViewer = { subject: "v1", orgId: ORG, role: "viewer" };
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mv", organizationId: ORG, userId: "v1", role: "viewer", createdAt: 3 });
+    });
+    await link(t);
+    await expect(t.withIdentity(asViewer).mutation(W.unlinkNative, { id: "l1", orgId: ORG, now: NOW, actor: { userId: "v1", userName: "V" }, auditId: "uv" })).rejects.toThrow();
+    await expect(undoLink(t, asViewer, { actor: { userId: "v1", userName: "V" } })).rejects.toThrow();
+    expect(await links(t)).toHaveLength(1);
+    await unlink(t);
+    await expect(undoUnlink(t, asViewer, { actor: { userId: "v1", userName: "V" } })).rejects.toThrow();
+    expect(await links(t)).toHaveLength(0);
+  });
+
+  test("a client-chosen link id or audit id that is already used is refused (link and unlink)", async () => {
+    const t = makeT(); await seed(t);
+    await link(t);
+    await expect(link(t, { id: "l1", linkedKind: "file", linkedId: "pm1", auditId: "a7" })).rejects.toThrow(/link id is already used/i);
+    await expect(link(t, { id: "l8", linkedKind: "file", linkedId: "pm1", auditId: "a1" })).rejects.toThrow(/audit id is already used/i);
+    await expect(unlink(t, { auditId: "a1" })).rejects.toThrow(/audit id is already used/i);
+    expect(await links(t)).toHaveLength(1);
+  });
+
   test("unlink of a link in another org is refused", async () => {
     const t = makeT(); await seed(t);
     await t.run(async (ctx) => {

@@ -126,47 +126,78 @@ async function emitFileEvent(ctx: MutationCtx, kind: Kind, orgId: string, parent
   await emitProjectActivityEvent(ctx, { orgId, projectId: parentId, actor, now, action, summary, targetType: "file", targetId: mediaId });
 }
 
+/**
+ * Remove ONE media row (org-checked) and, only when nothing else still holds the file, its
+ * stored bytes. Throws "Media not found" BEFORE any write, so a caller looping over several
+ * rows can skip a missing one without leaving a half-done removal behind.
+ */
+async function removeMediaRow(ctx: MutationCtx, kind: Kind, orgId: string, mediaId: string): Promise<void> {
+  const cfg = CFG[kind];
+  const media = await mediaByCuid(ctx, cfg, mediaId);
+  if (!media || media.organizationId !== orgId) throw new ConvexError("Media not found");
+  const parentId = media[cfg.fk] as string;
+  const wasPrimary = media.isPrimary ?? false;
+  const fileId = media.fileId;
+  const label = (media.displayName as string | undefined) ?? (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first())?.fileName ?? "a file";
+
+  await ctx.db.delete(media._id);
+  await emitFileEvent(ctx, kind, orgId, parentId, Date.now(), "file_removed", `removed file "${label}"`, mediaId);
+
+  // Delete the file (stored bytes + storedFiles record + thumbnail bytes + the fileUploads row)
+  // ONLY when nothing else still holds it. Org-check the file too (by_cuid is global).
+  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
+  if (file && file.organizationId === orgId && !(await otherRowsForFile(ctx, cfg, fileId))) {
+    await deleteStored(ctx, file.storageKey);
+    if (file.thumbnailUrl) {
+      const thumb = storageIdFromUrl(file.thumbnailUrl);
+      if (thumb) await deleteStored(ctx, thumb);
+    }
+    await ctx.db.delete(file._id);
+  }
+
+  // Promote the next PHOTO if the removed one was primary (photo kinds only).
+  if (cfg.photo && wasPrimary && media.type === "PHOTO") {
+    const next = (await rowsByParent(ctx, cfg, parentId, orgId))
+      .filter((r) => r.type === "PHOTO")
+      .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))[0];
+    if (next) await ctx.db.patch(next._id, { isPrimary: true });
+  }
+}
+
 export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { kind: MediaKind, orgId: v.string(), mediaId: v.string() },
   handler: async (ctx, a) => {
     await guards(ctx, a.kind, a.orgId);
-    const cfg = CFG[a.kind];
-
-    const media = await mediaByCuid(ctx, cfg, a.mediaId);
-    if (!media || media.organizationId !== a.orgId) throw new ConvexError("Media not found");
-    const parentId = media[cfg.fk] as string;
-    const wasPrimary = media.isPrimary ?? false;
-    const fileId = media.fileId;
-    const label = (media.displayName as string | undefined) ?? (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first())?.fileName ?? "a file";
-
-    await ctx.db.delete(media._id);
-    await emitFileEvent(ctx, a.kind, a.orgId, parentId, Date.now(), "file_removed", `removed file "${label}"`, a.mediaId);
-
-    // Delete the file: stored bytes + storedFiles record (replicating files.deleteFile)
-    // + thumbnail bytes + the fileUploads row. Unconditional (the 6 UI kinds never
-    // ref-count — that path stays on media-write.ts for subHire).
-    // Org-check the file too (by_cuid is global) — add enforces file.org == media.org,
-    // so this only guards against a corrupt/mismatched row deleting another org's file.
-    const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-    // Bytes go only when this was the file's last holder (a shared file stays for the others).
-    if (file && file.organizationId === a.orgId && !(await otherRowsForFile(ctx, cfg, fileId))) {
-      await deleteStored(ctx, file.storageKey);
-      if (file.thumbnailUrl) {
-        const thumb = storageIdFromUrl(file.thumbnailUrl);
-        if (thumb) await deleteStored(ctx, thumb);
-      }
-      await ctx.db.delete(file._id);
-    }
-
-    // Promote the next PHOTO if the removed one was primary (photo kinds only).
-    if (cfg.photo && wasPrimary && media.type === "PHOTO") {
-      const next = (await rowsByParent(ctx, cfg, parentId, a.orgId))
-        .filter((r) => r.type === "PHOTO")
-        .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))[0];
-      if (next) await ctx.db.patch(next._id, { isPrimary: true });
-    }
+    await removeMediaRow(ctx, a.kind, a.orgId, a.mediaId);
     return { id: a.mediaId };
+  },
+});
+
+/**
+ * Remove several media rows in ONE mutation (the Files bulk bar), by the same rule as
+ * `removeNative`: bytes go only for a file nothing else holds. A row that is not found
+ * (or another org's) is skipped and NAMED, never silent; the bulk size is capped by the
+ * verified identity (`assertBulkSizeOk`).
+ */
+export const removeManyNative = mutation({
+  returns: v.object({ removed: v.number(), skipped: v.array(v.object({ id: v.string(), why: v.string() })) }),
+  args: { kind: MediaKind, orgId: v.string(), mediaIds: v.array(v.string()) },
+  handler: async (ctx, a) => {
+    await guards(ctx, a.kind, a.orgId);
+    await assertBulkSizeOk(ctx, a.mediaIds.length);
+    let removed = 0;
+    const skipped: { id: string; why: string }[] = [];
+    for (const id of new Set(a.mediaIds)) {
+      try {
+        await removeMediaRow(ctx, a.kind, a.orgId, id);
+        removed++;
+      } catch (e) {
+        if (!(e instanceof ConvexError)) throw e;
+        skipped.push({ id, why: "not found" });
+      }
+    }
+    return { removed, skipped };
   },
 });
 
@@ -273,4 +304,5 @@ function storageIdFromUrl(url: string): string | null {
 export const agentOps: AgentOpsAnnotations = {
   setTypeNative: { summary: "Set the category of one or more project files (the ProjectMediaType enum). Changes only the category.", danger: "low", mcpTier: 3 },
   renameNative: { summary: "Rename a project file's display name; the stored file is untouched.", danger: "low", mcpTier: 3 },
+  removeManyNative: { summary: "Remove several files from a job in one call; deletes the stored bytes of each file nothing else still holds. No Undo.", danger: "high", mcpTier: 3 },
 };

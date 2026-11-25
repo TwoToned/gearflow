@@ -18,6 +18,7 @@ export function useProjectFileWrites(projectId: string) {
   const media = useMediaWrites("project");
   const setTypeM = useMutation(api.mediaWrites.setTypeNative);
   const renameM = useMutation(api.mediaWrites.renameNative);
+  const removeManyM = useMutation(api.mediaWrites.removeManyNative);
   const requireOrg = (): string => {
     if (!orgId) throw new Error("No active organization");
     return orgId;
@@ -25,6 +26,8 @@ export function useProjectFileWrites(projectId: string) {
   return {
     add: (fileId: string, type: FileCategory) => media.add({ parentId: projectId, fileId, type }),
     remove: (mediaId: string) => media.remove(mediaId),
+    /** ONE mutation for the bulk bar: reports the rows it skipped (not found), never silently. */
+    removeMany: (mediaIds: string[]) => removeManyM({ kind: "project", orgId: requireOrg(), mediaIds }),
     setType: (mediaIds: string[], type: FileCategory) => setTypeM({ orgId: requireOrg(), projectId, mediaIds, type, now: Date.now() }),
     rename: (mediaId: string, displayName: string) => renameM({ orgId: requireOrg(), projectId, mediaId, displayName, now: Date.now() }),
   };

@@ -353,9 +353,9 @@ describe("supplierOrdersWrites.attachInvoiceNative / removeInvoiceNative", () =>
     await t.run(async (ctx) => {
       await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", createdAt: NOW });
       await ctx.db.insert("fileUploads", { id: "f1", organizationId: ORG, fileName: "invoice1.pdf", fileSize: 10, mimeType: "application/pdf", storageKey: "sk1", url: "/api/files/sk1", uploadedById: USER });
-      await ctx.db.insert("storedFiles", { storageId: "sk1", organizationId: ORG });
+      await ctx.db.insert("storedFiles", { storageId: "sk1", organizationId: ORG, folder: "supplier-order-invoices" });
       await ctx.db.insert("fileUploads", { id: "f2", organizationId: ORG, fileName: "invoice2.pdf", fileSize: 20, mimeType: "application/pdf", storageKey: "sk2", url: "/api/files/sk2", uploadedById: USER });
-      await ctx.db.insert("storedFiles", { storageId: "sk2", organizationId: ORG });
+      await ctx.db.insert("storedFiles", { storageId: "sk2", organizationId: ORG, folder: "supplier-order-invoices" });
     });
   }
 

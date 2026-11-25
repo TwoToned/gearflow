@@ -37,7 +37,7 @@ export function IdentityFields({ form, lookups, editing, taken, onCheckTag, onTa
         <SheetField label="Equipment model" required error={errors.modelId?.message}>
           <Controller control={form.control} name="modelId" render={({ field }) => (
             <ComboboxPicker value={field.value || ""} onChange={field.onChange} options={lookups.models.map(modelOption)}
-              placeholder="Search models…" searchPlaceholder="Search models…" emptyMessage="No models found."
+              placeholder="Select a model…" searchPlaceholder="Search models…" emptyMessage="No models found."
               onCreateNew={onNewModel} createNewLabel="New model" />
           )} />
         </SheetField>

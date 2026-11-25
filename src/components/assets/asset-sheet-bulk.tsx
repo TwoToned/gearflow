@@ -49,7 +49,7 @@ function IdentityFields({ form, lookups, editing, taken, onCheckTag, onTagChange
             value={field.value || ""}
             onChange={field.onChange}
             options={lookups.models.map((m) => ({ value: m.id, label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`, description: m.modelNumber || undefined }))}
-            placeholder="Search models…" searchPlaceholder="Search models…" emptyMessage="No bulk models found."
+            placeholder="Select a model…" searchPlaceholder="Search models…" emptyMessage="No bulk models found."
             onCreateNew={onNewModel} createNewLabel="New model"
           />
         )} />

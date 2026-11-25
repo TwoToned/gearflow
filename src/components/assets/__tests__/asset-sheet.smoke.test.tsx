@@ -145,7 +145,7 @@ describe("AssetSheet", () => {
 
   it("a Radix picker works inside the open sheet (no Base UI popup in a Radix dialog)", async () => {
     open({ mode: "create", kind: "serialized" });
-    await userEvent.click(screen.getByRole("button", { name: "Search models…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Select a model…" }));
     await userEvent.click(await screen.findByText("Martin MAC Aura XB"));
     // the pick landed in the form: the trigger now names the model
     await waitFor(() => expect(screen.getByRole("button", { name: "Martin MAC Aura XB" })).toBeTruthy());

@@ -15830,38 +15830,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "Service-only: the gated download route decides for the real caller."
   },
   {
-    "operation": "crewDocuments.healthForMember",
-    "module": "crewDocuments",
-    "fn": "healthForMember",
-    "kind": "query",
-    "guard": "none",
-    "resource": null,
-    "action": null,
-    "scopePairs": [],
-    "agentReachable": false,
-    "args": [
-      {
-        "name": "crewMemberId",
-        "optional": false,
-        "type": "string"
-      },
-      {
-        "name": "orgId",
-        "optional": false,
-        "type": "string"
-      }
-    ],
-    "privilegedArgs": [],
-    "argsSha": "e2b869c2b76896ca",
-    "returnsSha": "74234e98afe7498f",
-    "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
-    "agentAccess": "denied",
-    "deniedReason": "A document's expiry is as private as the document: same rule as the list (owner ruling B2), never an API key."
-  },
-  {
     "operation": "crewDocuments.listForMember",
     "module": "crewDocuments",
     "fn": "listForMember",
@@ -68099,9 +68067,9 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1317,
+  total: 1316,
   agentReachable: 674,
-  queries: 470,
+  queries: 469,
   mutations: 847,
   agentReachableQueries: 331,
   agentReachableMutations: 343,

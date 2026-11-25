@@ -670,7 +670,12 @@ recorded ids still where the merge left them. Record pages share `RecordShell` (
 Overview fallback, a rail on every tab but Overview). **Supplier Contacts / Documents and an order's Files**
 (B3, FEATUREDOCS/22): three small tables; an add is undone by DETACHING the row (an Undo never deletes a stored
 file), removing a document or order file deletes its bytes and is a confirmed verb with no Undo, and a
-document's expiry state is derived on read, never stored. A People list that reads a capped set reads it
+document's expiry state is derived on read, never stored. **Crew documents** (D72, FEATUREDOCS/31) are the most restricted data in the app:
+ONE rule, `crewDocumentsVisible` (`convex/lib/crewDocumentCore.ts`): the member themself or `crew:update`, on a
+user session, never an API key, never warehouse / viewer, and it covers the expiry health too. Their files live in the
+`crew-documents` stored-file folder that `files.getServeInfo` refuses, so `/api/files` can never serve them; the only
+download is `/api/crew/documents/[id]/file`. `crewWrites.deleteNative` refuses a member who is not INACTIVE or ARCHIVED
+(C2) and deletes their documents and files with them. A People list that reads a capped set reads it
 newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
 
 ### Project status advances itself — add a TRIGGER, never a second patch site

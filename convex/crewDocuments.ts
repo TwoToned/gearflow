@@ -19,7 +19,6 @@ import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
 
 export const agentOps: AgentOpsAnnotations = {
   listForMember: { agentAccess: "denied", reason: "Crew documents are identity and licence material: visible only to the member themself or crew:update on a user session (owner ruling B2), never an API key." },
-  healthForMember: { agentAccess: "denied", reason: "A document's expiry is as private as the document: same rule as the list (owner ruling B2), never an API key." },
   getForDownload: { agentAccess: "denied", reason: "Service-only: the gated download route decides for the real caller." },
 };
 
@@ -52,16 +51,6 @@ export const listForMember = query({
     const out = [];
     for (const d of await memberDocuments(ctx, orgId, crewMemberId)) out.push(await documentView(ctx, orgId, d));
     return out.sort((a, b) => (a.expiresAt ?? Number.POSITIVE_INFINITY) - (b.expiresAt ?? Number.POSITIVE_INFINITY) || b.createdAt - a.createdAt);
-  },
-});
-
-/** `kind` and `expiresAt` only: no name, no file reference. Same rule as the list. */
-export const healthForMember = query({
-  args: { orgId: v.string(), crewMemberId: v.string() },
-  handler: async (ctx, { orgId, crewMemberId }) => {
-    const member = await loadMember(ctx, orgId, crewMemberId);
-    if (!member || !(await canSeeCrewDocuments(ctx, orgId, member))) return null;
-    return (await memberDocuments(ctx, orgId, crewMemberId)).filter((d) => d.expiresAt != null).map((d) => ({ id: d.id, kind: d.kind, expiresAt: d.expiresAt as number }));
   },
 });
 

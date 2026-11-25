@@ -68,31 +68,24 @@ describe("the pure rule and health", () => {
   });
 });
 
-describe("visibility: list and health", () => {
+describe("visibility: the list", () => {
   test("a manager and the member themself see them; warehouse, viewer, another member and an API key get null", async () => {
     const t = makeT(); await seed(t);
     await add(t);
     const list = (id: Record<string, string>) => t.withIdentity(id).query(api.crewDocuments.listForMember, { orgId: ORG, crewMemberId: "c1" });
-    const health = (id: Record<string, string>) => t.withIdentity(id).query(api.crewDocuments.healthForMember, { orgId: ORG, crewMemberId: "c1" });
     for (const who of [as("manager"), as("member", SELF)]) {
       expect(await list(who)).toEqual([expect.objectContaining({ id: "d1", kind: "LICENCE", name: "White card", file: expect.objectContaining({ downloadPath: "/api/crew/documents/d1/file" }) })]);
-      expect(await health(who)).toEqual([{ id: "d1", kind: "LICENCE", expiresAt: NOW + 10 * DAY }]);
     }
     for (const who of [as("warehouse", "u_wh"), as("viewer", "u_viewer"), as("member", "u_other"), { subject: USER, orgId: ORG, role: "manager", akid: KEY }]) {
       expect(await list(who)).toBeNull();
-      expect(await health(who)).toBeNull();
     }
   });
 
-  test("SENTINEL: no storage key, URL or file id ever reaches a list or health read", async () => {
+  test("SENTINEL: no storage key, URL or file id ever reaches the list", async () => {
     const t = makeT(); await seed(t);
     await add(t);
-    const out = JSON.stringify([
-      await t.withIdentity(as("manager")).query(api.crewDocuments.listForMember, { orgId: ORG, crewMemberId: "c1" }),
-      await t.withIdentity(as("manager")).query(api.crewDocuments.healthForMember, { orgId: ORG, crewMemberId: "c1" }),
-    ]);
+    const out = JSON.stringify(await t.withIdentity(as("manager")).query(api.crewDocuments.listForMember, { orgId: ORG, crewMemberId: "c1" }));
     expect(out).not.toMatch(/k_f1|\/api\/files|"fileId"|storageKey|"url"/);
-    expect(JSON.stringify(await t.withIdentity(as("manager")).query(api.crewDocuments.healthForMember, { orgId: ORG, crewMemberId: "c1" }))).not.toMatch(/White card|f1\.pdf/); // health carries kind + date only
   });
 
   test("another org's member reads as null (never an empty list) and a foreign document row is never listed", async () => {

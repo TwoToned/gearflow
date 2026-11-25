@@ -3,7 +3,13 @@
 
 import { use, useEffect, useState, useRef } from "react";
 import Link from "next/link";
-import { PageMeta } from "@/components/layout/page-meta";
+import { Facts, HealthRows, Headline, RecordShell, type HealthItem, type RecordTab } from "@/components/people/record-shell";
+import { CrewDocumentsTab, crewDocumentHealthItem, type CrewDocumentRow } from "@/components/crew/record/crew-documents-tab";
+import { useCrewDocumentWrites } from "@/components/crew/record/use-crew-document-writes";
+import { usePeopleBulk } from "@/components/people/use-people-writes";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
+import type { ActionMenuSpec, StatusValue } from "@/lib/primitives/types";
 import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useForm } from "react-hook-form";
@@ -11,13 +17,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Pencil,
   Mail,
-  Phone,
   Trash2,
   Plus,
   Briefcase,
   CalendarOff,
   CalendarDays,
-  DollarSign,
   Clock,
   MoreHorizontal,
   Send,
@@ -26,7 +30,6 @@ import {
   Download,
   Camera,
   X,
-  LinkIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -62,7 +65,6 @@ import { Button } from "@/components/ui/button";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
 import { ConfirmActionMenuItem } from "@/components/ui/confirm-action-menu-item";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -101,16 +103,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { StatusIndicator } from "@/components/ui/status-indicator";
-import { FadeIn } from "@/components/ui/motion";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { getStatusColor } from "@/lib/status-colors";
 import { focusRing } from "@/lib/utils";
@@ -118,6 +110,8 @@ import { formatDate, formatCurrency } from "@/lib/formatters";
 
 // Availability-block pill styling via status-colors (§3): UNAVAILABLE = error,
 // TENTATIVE = warn, PREFERRED = ok.
+const TAB_ALIASES: Record<string, string> = { assignments: "calls", "time-entries": "timesheets" };
+
 function availabilityPill(type: string): string {
   return getStatusColor("availabilityType", type).pill;
 }
@@ -130,31 +124,6 @@ function availabilityPill(type: string): string {
  * rule). Calm by default: callers pass a muted node for empty/zero values
  * rather than a bare "—".
  */
-function GlanceTile({
-  label,
-  icon: Icon,
-  value,
-  sub,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  value: React.ReactNode;
-  sub?: string;
-}) {
-  return (
-    <div className="bg-card px-4 py-3 sm:first:rounded-l-[var(--r)] sm:last:rounded-r-[var(--r)]">
-      <div className="flex items-center gap-1.5 text-muted">
-        <Icon className="size-3.5" />
-        <span className="t-overline">{label}</span>
-      </div>
-      <div className="mt-0.5 text-card-title font-bold tabular-nums tracking-tight text-ink">
-        {value}
-      </div>
-      {sub && <p className="truncate text-caption text-muted">{sub}</p>}
-    </div>
-  );
-}
-
 
 export default function CrewMemberDetailPage({
   params,
@@ -170,11 +139,9 @@ export default function CrewMemberDetailPage({
   const availWrites = useCrewAvailabilityWrites();
   const canReadCrew = useCanDo("crew", "read");
 
-  const [tabValue, setTabValue] = useState("assignments");
   const [addAvailOpen, setAddAvailOpen] = useState(false);
   const [addTimeOpen, setAddTimeOpen] = useState(false);
   const [editingTimeEntry, setEditingTimeEntry] = useState<string | null>(null);
-  const [deleteCrewOpen, setDeleteCrewOpen] = useState(false);
   const [removeAvailId, setRemoveAvailId] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -187,7 +154,8 @@ export default function CrewMemberDetailPage({
       // Tab switching
       if (event?.startsWith("switch-tab:")) {
         const tab = event.replace("switch-tab:", "");
-        setTabValue(tab);
+        // The old tab names still arrive from the slash commands; the record's own names are the URL's.
+        router.replace(`/crew/${id}?tab=${TAB_ALIASES[tab] ?? tab}`, { scroll: false });
       }
 
       // Dialog opening
@@ -197,7 +165,7 @@ export default function CrewMemberDetailPage({
 
     window.addEventListener("slash-command", handler);
     return () => window.removeEventListener("slash-command", handler);
-  }, []);
+  }, [router, id]);
 
   const crewWrites = useCrewWrites();
   const { data: member, isLoading, refetch: refetchMember } = useServerQuery({
@@ -205,6 +173,19 @@ export default function CrewMemberDetailPage({
     queryFn: () => caConvex.query(crewAvailApi.crew.memberDetail, { id, orgId: orgId as string }),
     enabled: !!orgId && caAuthed,
   });
+
+
+  const stableNow = useStableNow();
+  const canUpdate = useCanDo("crew", "update");
+  const canDelete = useCanDo("crew", "delete");
+  // The Documents tab exists only when the server returns the list: the member themself or crew:update on a user session.
+  const documents = useAuthedQuery(crewAvailApi.crewDocuments.listForMember, orgId ? { orgId, crewMemberId: id } : "skip") as CrewDocumentRow[] | null | undefined;
+  const docWrites = useCrewDocumentWrites(orgId);
+  const peopleBulk = usePeopleBulk("crew", orgId, "crew member");
+  const setActiveMember = async (active: boolean) => {
+    await peopleBulk.setActive([id], active);
+    void refetchMember();
+  };
 
   const deleteMutation = useServerMutation({
     mutationFn: () => crewWrites.remove(id),
@@ -399,11 +380,6 @@ export default function CrewMemberDetailPage({
     .filter((a) => a.startDate)
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())[0];
 
-  // Active assignments = currently live (not cancelled/declined/completed).
-  const activeAssignmentCount = (assignments as any[]).filter(
-    (a) => !["CANCELLED", "DECLINED", "COMPLETED"].includes(a.status)
-  ).length;
-
   // Approved hours logged this calendar month.
   const hoursThisMonth = (timeEntries ?? [])
     .filter(
@@ -419,14 +395,6 @@ export default function CrewMemberDetailPage({
   const hasApprovedHours = (timeEntries ?? []).some(
     (e: { status: string }) => e.status === "APPROVED"
   );
-
-  // Headline rate: prefer day rate, fall back to hourly.
-  const rate =
-    member.defaultDayRate != null
-      ? { value: Number(member.defaultDayRate), unit: "/day" }
-      : member.defaultHourlyRate != null
-        ? { value: Number(member.defaultHourlyRate), unit: "/hr" }
-        : null;
 
   // ── Mobile card column layouts for the sub-tables (rendered below `md`) ────
   const assignmentColumns: ColumnDef<any>[] = [
@@ -784,252 +752,113 @@ export default function CrewMemberDetailPage({
     },
   ];
 
-  return (
-    <>
-      <PageMeta title={fullName} />
-      <FadeIn>
-        <div className="space-y-6">
-          {/* Own profile banner */}
-          {isOwnProfile && (
-            <div className="rounded-[var(--r)] border border-line border-l-2 border-l-blue bg-card px-4 py-3 text-ui-text text-ink-2 flex items-center gap-2">
-              <CheckCircle className="size-4 shrink-0 text-blue" />
-              You are viewing your own crew profile.
-            </div>
+  const goTab = (t: string) => router.replace(`/crew/${id}?tab=${t}`, { scroll: false });
+  const unconfirmed = (assignments as any[]).filter((a) => ["PENDING", "OFFERED"].includes(a.status)).length;
+  const docHealth = documents ? crewDocumentHealthItem(documents, stableNow, () => goTab("documents")) : null;
+  const health: HealthItem[] = [
+    ...(docHealth ? [docHealth] : []),
+    ...(unconfirmed > 0 ? [{ key: "calls", tone: "warning" as const, text: `${unconfirmed} call${unconfirmed === 1 ? "" : "s"} awaiting an answer`, action: { label: "Calls", onSelect: () => goTab("calls") } }] : []),
+    ...(activeUnavailable ? [{ key: "away", tone: "neutral" as const, text: "Unavailable right now", action: { label: "Availability", onSelect: () => goTab("availability") } }] : []),
+  ];
+  const statusWord: StatusValue =
+    member.status === "ACTIVE" ? { label: "Active", intent: "success" }
+    : member.status === "ON_LEAVE" ? { label: crewMemberStatusLabels.ON_LEAVE ?? "On leave", intent: "warning" }
+    : { label: crewMemberStatusLabels[member.status] || formatLabel(member.status), intent: "neutral", outline: true };
+  const inactive = member.status === "INACTIVE" || member.status === "ARCHIVED" || member.isActive === false;
+  const setActive = (active: boolean) => void setActiveMember(active);
+
+  const menu: ActionMenuSpec = {
+    items: [
+      ...(displayEmail ? [{ key: "message", label: "Email", group: "reporting" as const, icon: Mail, onSelect: () => { window.location.href = `mailto:${displayEmail}`; } }] : []),
+      { key: "calendar", label: "Calendar feed…", group: "organise" as const, icon: CalendarDays, onSelect: () => goTab("calendar") },
+      ...(canUpdate && inactive ? [{ key: "reactivate", label: "Reactivate", group: "organise" as const, icon: CheckCircle, onSelect: () => setActive(true) }] : []),
+      ...(canUpdate && !inactive
+        ? [{ key: "deactivate", label: "Deactivate…", group: "danger" as const, icon: CalendarOff, danger: true, onSelect: () => setActive(false), confirm: { title: `Deactivate ${fullName}?`, body: "They leave the pickers and the planner's open list. Their calls, timesheets and history stay, and you can reactivate them. Someone with a confirmed call cannot be deactivated.", confirmLabel: "Deactivate" } }]
+        : []),
+      // Delete sits behind Deactivate: absent while the person is active (the server refuses it too).
+      ...(canDelete && inactive
+        ? [{ key: "delete", label: "Delete…", group: "danger" as const, icon: Trash2, danger: true, onSelect: () => deleteMutation.mutate(), confirm: { title: `Delete ${fullName}?`, body: "Removes the crew member, their documents and their stored files. Past assignments and timesheets are removed with them. This cannot be undone.", confirmLabel: "Delete crew member" } }]
+        : []),
+    ],
+  };
+
+  const overview = (
+    <div className="flex flex-col gap-8">
+      <div className="flex items-start gap-4">
+        <div className="relative group shrink-0">
+          <PersonAvatar name={fullName} src={displayImage || undefined} className="size-16 text-lg" />
+          {/* Only crew without a linked user: linked users sync their photo from the account. */}
+          {!member.user && canUpdate && (
+            <>
+              <button
+                type="button"
+                aria-label="Change profile picture"
+                className={`absolute inset-0 flex items-center justify-center rounded-full bg-paper/70 opacity-0 transition-opacity cursor-pointer group-hover:opacity-100 pointer-coarse:inset-auto pointer-coarse:-bottom-1 pointer-coarse:-right-1 pointer-coarse:size-11 pointer-coarse:border-2 pointer-coarse:border-border pointer-coarse:bg-paper pointer-coarse:opacity-100 ${focusRing}`}
+                onClick={() => avatarInputRef.current?.click()}
+              >
+                <Camera className="size-5 text-ink" />
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadAvatarMutation.mutate(file);
+                  e.target.value = "";
+                }}
+              />
+              {member.image && (
+                <button
+                  type="button"
+                  aria-label="Remove profile picture"
+                  className={`absolute -top-1 -right-1 rounded-full bg-primary text-white p-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:p-2.5 pointer-coarse:opacity-100 ${focusRing}`}
+                  onClick={() => removeAvatarMutation.mutate()}
+                  title="Remove photo"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </>
           )}
+        </div>
+        <Headline sub={nextAssignment ? `${nextAssignment.project?.projectNumber ?? ""} ${nextAssignment.project?.name ?? ""}`.trim() || undefined : `${assignments.length} call${assignments.length === 1 ? "" : "s"} in total`}>
+          {nextAssignment?.startDate ? `Next call ${formatDate(nextAssignment.startDate)}` : "No calls booked"}
+        </Headline>
+      </div>
+      <HealthRows items={health} allClear="Nothing needs a look." />
+      <div className="grid gap-8 md:grid-cols-3">
+        <Facts title="Contact" facts={[
+          { label: "Email", value: displayEmail ? <a className="hover:underline" href={`mailto:${displayEmail}`}>{displayEmail}</a> : null },
+          { label: "Phone", value: member.phone ? <a className="hover:underline" href={`tel:${member.phone}`}>{member.phone}</a> : null },
+          { label: "Address", value: member.address },
+          { label: "Linked to", value: member.user && !isOwnProfile ? member.user.name || member.user.email : null },
+          { label: "Emergency", value: member.emergencyContactName ? `${member.emergencyContactName}${member.emergencyContactPhone ? ` · ${member.emergencyContactPhone}` : ""}` : null },
+        ]} />
+        <Facts title="Work" facts={[
+          { label: "Role", value: member.crewRole?.name },
+          { label: "Department", value: member.department },
+          { label: "Type", value: crewMemberTypeLabels[member.type] || formatLabel(member.type) },
+          { label: "Skills", value: skills.length ? skills.map((sk: { name: string }) => sk.name).join(", ") : null },
+          { label: "Tags", value: member.tags?.length ? member.tags.join(", ") : null },
+        ]} />
+        {/* Rates are ABSENT (never zeroed) for a caller without the pay line, so the block only exists when the server sent them. */}
+        {member.defaultDayRate != null || member.defaultHourlyRate != null || member.overtimeMultiplier != null ? (
+          <Facts title="Rates" facts={[
+            { label: "Day rate", value: member.defaultDayRate != null ? formatCurrency(Number(member.defaultDayRate)) : null },
+            { label: "Hourly rate", value: member.defaultHourlyRate != null ? formatCurrency(Number(member.defaultHourlyRate)) : null },
+            { label: "Overtime", value: member.overtimeMultiplier != null ? `${Number(member.overtimeMultiplier)}x` : null },
+          ]} />
+        ) : null}
+      </div>
+      {member.notes ? <p className="max-w-prose whitespace-pre-wrap text-table-cell text-ink-2">{member.notes}</p> : null}
+    </div>
+  );
 
-          {/* ── Header (full width) ────────────────────────────────── */}
-          <div>
-            {/* Breadcrumb */}
-            <Breadcrumb className="mb-2">
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link href="/crew" />}>Crew</BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{fullName}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-start gap-4">
-                {/* Profile Picture */}
-                <div className="relative group shrink-0">
-                  <PersonAvatar
-                    name={fullName}
-                    src={displayImage || undefined}
-                    className="size-16 text-lg"
-                  />
-                  {/* Only show upload controls for crew without a linked user (linked users sync from account) */}
-                  {!member.user && (
-                    <CanDo resource="crew" action="update">
-                      {/* Pointer devices get a hover overlay. Touch has no hover, and a
-                          permanent full-bleed overlay would bury the avatar — so coarse
-                          pointers get a 44px camera badge in the corner instead. */}
-                      <button
-                        type="button"
-                        aria-label="Change profile picture"
-                        className={`absolute inset-0 flex items-center justify-center rounded-full bg-paper/70 opacity-0 transition-opacity cursor-pointer group-hover:opacity-100 pointer-coarse:inset-auto pointer-coarse:-bottom-1 pointer-coarse:-right-1 pointer-coarse:size-11 pointer-coarse:border-2 pointer-coarse:border-border pointer-coarse:bg-paper pointer-coarse:opacity-100 ${focusRing}`}
-                        onClick={() => avatarInputRef.current?.click()}
-                      >
-                        <Camera className="size-5 text-ink" />
-                      </button>
-                      <input
-                        ref={avatarInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) uploadAvatarMutation.mutate(file);
-                          e.target.value = "";
-                        }}
-                      />
-                      {member.image && (
-                        <button
-                          type="button"
-                          aria-label="Remove profile picture"
-                          className={`absolute -top-1 -right-1 rounded-full bg-primary text-white p-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:p-2.5 pointer-coarse:opacity-100 ${focusRing}`}
-                          onClick={() => removeAvatarMutation.mutate()}
-                          title="Remove photo"
-                        >
-                          <X className="size-3" />
-                        </button>
-                      )}
-                    </CanDo>
-                  )}
-                  {uploadAvatarMutation.isPending && (
-                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-paper/70">
-                      <span className="size-5 motion-safe:animate-spin rounded-full border-2 border-ink border-t-transparent" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="t-page-title text-ink">{fullName}</h1>
-                    <StatusIndicator
-                      category="crewMember"
-                      value={member.status}
-                      label={crewMemberStatusLabels[member.status] || formatLabel(member.status)}
-                    />
-                    <Badge status="neutral">
-                      {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
-                    </Badge>
-                    {activeUnavailable ? (
-                      <Badge status="overbooked" className="gap-1">
-                        <CalendarOff className="h-3 w-3" />
-                        Unavailable
-                      </Badge>
-                    ) : (
-                      <Badge status="ok" className="gap-1">
-                        <CheckCircle className="h-3 w-3" />
-                        Available
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-ui-text text-muted mt-0.5">
-                    {member.crewRole?.name || "No role assigned"}
-                    {member.department && <> &middot; {member.department}</>}
-                  </p>
-                  {/* Contact quick-actions — only render what exists (no "—" noise) */}
-                  {(displayEmail || member.phone || (member.user && !isOwnProfile)) && (
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-caption">
-                      {displayEmail && (
-                        <a
-                          href={`mailto:${displayEmail}`}
-                          className={`flex items-center gap-1.5 text-link hover:underline rounded-[var(--r)] ${focusRing}`}
-                        >
-                          <Mail className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{displayEmail}</span>
-                        </a>
-                      )}
-                      {member.phone && (
-                        <a
-                          href={`tel:${member.phone}`}
-                          className={`flex items-center gap-1.5 text-link hover:underline rounded-[var(--r)] ${focusRing}`}
-                        >
-                          <Phone className="h-3.5 w-3.5 shrink-0" />
-                          {member.phone}
-                        </a>
-                      )}
-                      {member.user && !isOwnProfile && (
-                        <span className="flex items-center gap-1 text-muted">
-                          <LinkIcon className="h-3 w-3" />
-                          Linked to {member.user.name || member.user.email}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <CanDo resource="crew" action="update">
-                <div className="flex gap-2">
-                  <Button variant="line" asChild>
-                    <Link href={`/crew/${id}/edit`}>
-                      <Pencil className="size-5" />
-                      Edit
-                    </Link>
-                  </Button>
-                  <CanDo resource="crew" action="delete">
-                    <Button
-                      variant="line"
-                      className="border-t-out/40 text-t-out hover:bg-primary hover:text-white hover:border-red"
-                      onClick={() => setDeleteCrewOpen(true)}
-                    >
-                      <Trash2 className="size-5" />
-                      Delete
-                    </Button>
-                  </CanDo>
-                </div>
-              </CanDo>
-            </div>
-          </div>
-
-          {/* ── At-a-glance strip ──────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--r)] border border-line bg-line shadow-[var(--sh-card)] sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-line sm:bg-card">
-            <GlanceTile
-              label="Next shift"
-              icon={CalendarDays}
-              value={
-                nextAssignment?.startDate ? (
-                  formatDate(nextAssignment.startDate)
-                ) : (
-                  <span className="text-muted">None booked</span>
-                )
-              }
-              sub={
-                nextAssignment
-                  ? `${nextAssignment.project?.projectNumber ?? ""} ${nextAssignment.project?.name ?? ""}`.trim()
-                  : undefined
-              }
-            />
-            <GlanceTile
-              label="Hours this month"
-              icon={Clock}
-              value={
-                hasApprovedHours ? (
-                  `${hoursThisMonth.toFixed(1)}h`
-                ) : (
-                  <span className="text-muted">0h</span>
-                )
-              }
-              sub="Approved"
-            />
-            <GlanceTile
-              label="Active assignments"
-              icon={Briefcase}
-              value={
-                activeAssignmentCount > 0 ? (
-                  activeAssignmentCount
-                ) : (
-                  <span className="text-muted">0</span>
-                )
-              }
-              sub={`${assignments.length} total`}
-            />
-            <GlanceTile
-              label="Rate"
-              icon={DollarSign}
-              value={
-                rate ? (
-                  <span>
-                    {formatCurrency(rate.value)}
-                    <span className="text-caption font-normal text-muted">{rate.unit}</span>
-                  </span>
-                ) : (
-                  <span className="text-muted">Not set</span>
-                )
-              }
-              sub={
-                member.overtimeMultiplier != null
-                  ? `${Number(member.overtimeMultiplier)}× OT`
-                  : undefined
-              }
-            />
-          </div>
-
-          {/* ── 2-Column Layout ────────────────────────────────────── */}
-          <DetailLayout>
-            {/* Main content */}
-            <DetailMain>
-              <Tabs value={tabValue} onValueChange={setTabValue}>
-                <TabsList>
-                  <TabsTrigger value="assignments">
-                    Assignments ({assignments.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="availability">
-                    Availability ({availabilityRecords?.length || 0})
-                  </TabsTrigger>
-                  <TabsTrigger value="time-entries">
-                    Time ({timeEntries?.length || 0})
-                  </TabsTrigger>
-                  <TabsTrigger value="calendar">Calendar</TabsTrigger>
-                </TabsList>
-
-                {/* Assignments Tab */}
-                <TabsContent value="assignments" className="mt-4">
+  const tabs: RecordTab[] = [
+    { value: "overview", label: "Overview", panel: overview },
+    { value: "calls", label: "Calls", count: assignments.length, panel: <>
                   <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
                     <h3 className="text-card-title font-bold text-ink mb-4">Job assignments</h3>
                       {assignments.length === 0 ? (
@@ -1211,115 +1040,8 @@ export default function CrewMemberDetailPage({
                         </>
                       )}
                   </div>
-                </TabsContent>
-
-                {/* Availability Tab */}
-                <TabsContent value="availability" className="mt-4">
-                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-card-title font-bold text-ink">Availability blocks</h3>
-                      <CanDo resource="crew" action="update">
-                        <Button
-                          size="sm"
-                          variant="line"
-                          onClick={() => setAddAvailOpen(true)}
-                        >
-                          <Plus className="size-5" />
-                          Add block
-                        </Button>
-                      </CanDo>
-                    </div>
-                      {!availabilityRecords || availabilityRecords.length === 0 ? (
-                        <EmptyState
-                          title="No availability blocks set"
-                          description="Add blocks to indicate when this crew member is unavailable, tentative, or preferred."
-                        />
-                      ) : (
-                        <>
-                        <div className="hidden rounded-[var(--r)] border border-line md:block">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Dates</TableHead>
-                                <TableHead className="hidden md:table-cell">
-                                  Time
-                                </TableHead>
-                                <TableHead className="hidden md:table-cell">
-                                  Reason
-                                </TableHead>
-                                <TableHead className="w-10" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {availabilityRecords.map(
-                                (av: {
-                                  id: string;
-                                  type: string;
-                                  startDate: string | Date;
-                                  endDate: string | Date;
-                                  isAllDay: boolean;
-                                  startTime: string | null;
-                                  endTime: string | null;
-                                  reason: string | null;
-                                }) => (
-                                  <TableRow key={av.id}>
-                                    <TableCell>
-                                      <Badge
-                                        status="neutral"
-                                        className={availabilityPill(av.type)}
-                                      >
-                                        <CalendarOff className="mr-1 h-3 w-3" />
-                                        {availabilityTypeLabels[av.type] ||
-                                          formatLabel(av.type)}
-                                      </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-table-cell tabular-nums text-ink-2">
-                                      {formatDate(av.startDate)}
-                                      {av.endDate !== av.startDate
-                                        ? ` \u2013 ${formatDate(av.endDate)}`
-                                        : ""}
-                                    </TableCell>
-                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
-                                      {av.isAllDay
-                                        ? "All day"
-                                        : `${av.startTime || ""} \u2013 ${av.endTime || ""}`}
-                                    </TableCell>
-                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
-                                      {av.reason || "\u2014"}
-                                    </TableCell>
-                                    <TableCell>
-                                      <CanDo resource="crew" action="update">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="touch-target size-9 text-t-out hover:bg-out-soft"
-                                          aria-label="Remove availability block"
-                                          onClick={() => setRemoveAvailId(av.id)}
-                                        >
-                                          <Trash2 className="size-5" />
-                                        </Button>
-                                      </CanDo>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <MobileCardList
-                          className="md:hidden"
-                          data={availabilityRecords}
-                          columns={availabilityColumns}
-                          getRowId={(av) => av.id}
-                        />
-                        </>
-                      )}
-                  </div>
-                </TabsContent>
-
-                {/* Time Entries Tab */}
-                <TabsContent value="time-entries" className="mt-4">
+                </> },
+    { value: "timesheets", label: "Timesheets", count: timeEntries?.length ?? 0, panel: <>
                   <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-card-title font-bold text-ink flex items-center gap-2">
@@ -1551,214 +1273,136 @@ export default function CrewMemberDetailPage({
                         </>
                       )}
                   </div>
-                </TabsContent>
-
-                {/* Calendar Tab */}
-                <TabsContent value="calendar" className="mt-4">
+                </> },
+    { value: "availability", label: "Availability", count: availabilityRecords?.length ?? 0, panel: <>
+                  <div className="rounded-[var(--r-lg)] bg-card p-5 ring-1 ring-line shadow-[var(--sh-card)] sm:p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-card-title font-bold text-ink">Availability blocks</h3>
+                      <CanDo resource="crew" action="update">
+                        <Button
+                          size="sm"
+                          variant="line"
+                          onClick={() => setAddAvailOpen(true)}
+                        >
+                          <Plus className="size-5" />
+                          Add block
+                        </Button>
+                      </CanDo>
+                    </div>
+                      {!availabilityRecords || availabilityRecords.length === 0 ? (
+                        <EmptyState
+                          title="No availability blocks set"
+                          description="Add blocks to indicate when this crew member is unavailable, tentative, or preferred."
+                        />
+                      ) : (
+                        <>
+                        <div className="hidden rounded-[var(--r)] border border-line md:block">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Type</TableHead>
+                                <TableHead>Dates</TableHead>
+                                <TableHead className="hidden md:table-cell">
+                                  Time
+                                </TableHead>
+                                <TableHead className="hidden md:table-cell">
+                                  Reason
+                                </TableHead>
+                                <TableHead className="w-10" />
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {availabilityRecords.map(
+                                (av: {
+                                  id: string;
+                                  type: string;
+                                  startDate: string | Date;
+                                  endDate: string | Date;
+                                  isAllDay: boolean;
+                                  startTime: string | null;
+                                  endTime: string | null;
+                                  reason: string | null;
+                                }) => (
+                                  <TableRow key={av.id}>
+                                    <TableCell>
+                                      <Badge
+                                        status="neutral"
+                                        className={availabilityPill(av.type)}
+                                      >
+                                        <CalendarOff className="mr-1 h-3 w-3" />
+                                        {availabilityTypeLabels[av.type] ||
+                                          formatLabel(av.type)}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-table-cell tabular-nums text-ink-2">
+                                      {formatDate(av.startDate)}
+                                      {av.endDate !== av.startDate
+                                        ? ` \u2013 ${formatDate(av.endDate)}`
+                                        : ""}
+                                    </TableCell>
+                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
+                                      {av.isAllDay
+                                        ? "All day"
+                                        : `${av.startTime || ""} \u2013 ${av.endTime || ""}`}
+                                    </TableCell>
+                                    <TableCell className="text-table-cell text-muted hidden md:table-cell">
+                                      {av.reason || "\u2014"}
+                                    </TableCell>
+                                    <TableCell>
+                                      <CanDo resource="crew" action="update">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="touch-target size-9 text-t-out hover:bg-out-soft"
+                                          aria-label="Remove availability block"
+                                          onClick={() => setRemoveAvailId(av.id)}
+                                        >
+                                          <Trash2 className="size-5" />
+                                        </Button>
+                                      </CanDo>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <MobileCardList
+                          className="md:hidden"
+                          data={availabilityRecords}
+                          columns={availabilityColumns}
+                          getRowId={(av) => av.id}
+                        />
+                        </>
+                      )}
+                  </div>
+                </> },
+    // Absent (not empty) for a caller the visibility rule refuses: the server returned null.
+    ...(documents
+      ? [{
+          value: "documents", label: "Documents", count: documents.length,
+          panel: <CrewDocumentsTab documents={documents} now={stableNow} canWrite={canUpdate} onAdd={(v, file) => docWrites.add(id, file, v)} onEdit={(did, v) => docWrites.update(id, did, v)} onRemove={(did, label) => docWrites.remove(id, did, label)} />,
+        }]
+      : []),
+    { value: "history", label: "History", panel: <ActivityTimeline entityType="crew" entityId={id} /> },
+    { value: "calendar", label: "Calendar", panel: <>
                   {/* The feed URL's token comes only from memberDetail's redacted row (self or crew:update). */}
                   <CrewIcalFeedCard memberId={id} feedToken={(member as { icalToken?: string | null }).icalToken ?? undefined} onTokenChanged={() => void refetchMember()} />
-                </TabsContent>
-              </Tabs>
-            </DetailMain>
+                </> },
+  ];
 
-            {/* ── Sidebar ──────────────────────────────────────────── */}
-            <DetailSidebar>
-                {/* Contact */}
-                <SidebarSection title="Contact">
-                  <div className="space-y-2 text-ui-text">
-                    {displayEmail && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Mail className="h-3.5 w-3.5 shrink-0" />
-                        <a
-                          href={`mailto:${displayEmail}`}
-                          className={`text-link hover:underline truncate rounded-[var(--r)] ${focusRing}`}
-                        >
-                          {displayEmail}
-                        </a>
-                      </div>
-                    )}
-                    {member.phone && (
-                      <div className="flex items-center gap-2 text-muted">
-                        <Phone className="h-3.5 w-3.5 shrink-0" />
-                        <a href={`tel:${member.phone}`} className={`text-link hover:underline rounded-[var(--r)] ${focusRing}`}>
-                          {member.phone}
-                        </a>
-                      </div>
-                    )}
-                    {member.address && (
-                      <p className="text-ui-text text-muted whitespace-pre-wrap">
-                        {member.address}
-                      </p>
-                    )}
-                    {!displayEmail && !member.phone && !member.address && (
-                      <p className="text-muted">No contact info</p>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Role & Department */}
-                <SidebarSection title="Role & department">
-                  <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <span className="text-muted">Role</span>
-                      {member.crewRole?.name ? (
-                        <span className="font-medium text-ink">{member.crewRole.name}</span>
-                      ) : (
-                        <span className="text-muted">{"\u2014"}</span>
-                      )}
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Department</span>
-                      {member.department ? (
-                        <span className="font-medium text-ink">{member.department}</span>
-                      ) : (
-                        <span className="text-muted">{"\u2014"}</span>
-                      )}
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Type</span>
-                      <span className="font-medium text-ink">
-                        {crewMemberTypeLabels[member.type] || formatLabel(member.type)}
-                      </span>
-                    </div>
-                    {member.emergencyContactName && (
-                      <>
-                        <div className="mt-2 pt-2 border-t border-line">
-                          <p className="text-caption text-muted mb-1">Emergency contact</p>
-                          <p className="font-medium text-ink">{member.emergencyContactName}</p>
-                          {member.emergencyContactPhone && (
-                            <div className="flex items-center gap-2 text-muted mt-0.5">
-                              <Phone className="h-3 w-3" />
-                              <a
-                                href={`tel:${member.emergencyContactPhone}`}
-                                className={`text-link hover:underline text-caption rounded-[var(--r)] ${focusRing}`}
-                              >
-                                {member.emergencyContactPhone}
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Rates */}
-                <SidebarSection title="Rates">
-                  <div className="space-y-1.5 text-ui-text">
-                    <div className="flex justify-between">
-                      <span className="text-muted">Day rate</span>
-                      {member.defaultDayRate != null ? (
-                        <span className="font-medium font-mono tabular-nums text-ink">
-                          {`$${Number(member.defaultDayRate).toFixed(2)}`}
-                        </span>
-                      ) : (
-                        <span className="text-muted">{"\u2014"}</span>
-                      )}
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">Hourly rate</span>
-                      {member.defaultHourlyRate != null ? (
-                        <span className="font-medium font-mono tabular-nums text-ink">
-                          {`$${Number(member.defaultHourlyRate).toFixed(2)}`}
-                        </span>
-                      ) : (
-                        <span className="text-muted">{"\u2014"}</span>
-                      )}
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted">OT multiplier</span>
-                      {member.overtimeMultiplier != null ? (
-                        <span className="font-medium font-mono tabular-nums text-ink">
-                          {`${Number(member.overtimeMultiplier)}x`}
-                        </span>
-                      ) : (
-                        <span className="text-muted">{"\u2014"}</span>
-                      )}
-                    </div>
-                  </div>
-                </SidebarSection>
-                {/* Skills */}
-                {skills.length > 0 && (
-                  <SidebarSection title="Skills">
-                    <div className="flex flex-wrap gap-1">
-                      {skills.map(
-                        (skill: {
-                          id: string;
-                          name: string;
-                          category: string | null;
-                        }) => (
-                          <Badge key={skill.id} status="neutral">
-                            {skill.name}
-                          </Badge>
-                        )
-                      )}
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Tags */}
-                {member.tags?.length > 0 && (
-                  <SidebarSection title="Tags">
-                    <div className="flex flex-wrap gap-1">
-                      {member.tags.map((tag: string) => (
-                        <Badge key={tag} status="neutral">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </SidebarSection>
-                )}
-
-                {/* Availability Status */}
-                <SidebarSection title="Availability">
-                  <div className="text-ui-text">
-                    {activeUnavailable ? (
-                      <div className="flex items-center gap-2 text-t-out">
-                        <CalendarOff className="h-3.5 w-3.5" />
-                        <span>Currently unavailable</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-ok">
-                        <CheckCircle className="h-3.5 w-3.5" />
-                        <span>Available</span>
-                      </div>
-                    )}
-                    {availabilityRecords && availabilityRecords.length > 0 && (
-                      <p className="text-caption text-muted mt-1">
-                        {availabilityRecords.length} block{availabilityRecords.length !== 1 ? "s" : ""} scheduled
-                      </p>
-                    )}
-                  </div>
-                </SidebarSection>
-
-                {/* Notes */}
-                {member.notes && (
-                  <SidebarSection title="Notes">
-                    <p className="text-ui-text whitespace-pre-wrap text-muted">{member.notes}</p>
-                  </SidebarSection>
-                )}
-
-                {/* Activity Timeline */}
-                <SidebarSection title="Activity" divider={false}>
-                  <ActivityTimeline entityType="crew" entityId={id} />
-                </SidebarSection>
-            </DetailSidebar>
-          </DetailLayout>
-        </div>
-      </FadeIn>
-
-      <DeleteDialog
-        open={deleteCrewOpen}
-        onOpenChange={setDeleteCrewOpen}
-        title="Delete this crew member?"
-        description="Removes the crew member from your roster. Past assignments and timesheets are preserved but unlinked. This cannot be undone."
-        confirmLabel="Delete crew member"
-        onConfirm={() => {
-          deleteMutation.mutate();
-          setDeleteCrewOpen(false);
-        }}
-        pending={deleteMutation.isPending}
+  return (
+    <>
+      <RecordShell
+        crumb={{ label: "Crew", href: "/crew" }}
+        title={fullName}
+        status={statusWord}
+        meta={[member.crewRole?.name ?? "No role assigned", member.department, crewMemberTypeLabels[member.type] || formatLabel(member.type)].filter(Boolean)}
+        banner={isOwnProfile ? <span>You are viewing your own crew profile.</span> : undefined}
+        onEdit={canUpdate ? () => router.push(`/crew/${id}/edit`) : undefined}
+        menu={menu}
+        tabs={tabs}
+        rail={<Facts title="At a glance" facts={[{ label: "Role", value: member.crewRole?.name }, { label: "Next call", value: nextAssignment?.startDate ? formatDate(nextAssignment.startDate) : null }, { label: "Hours this month", value: hasApprovedHours ? `${hoursThisMonth.toFixed(1)}h` : null }]} />}
       />
       <DeleteDialog
         open={!!removeAvailId}

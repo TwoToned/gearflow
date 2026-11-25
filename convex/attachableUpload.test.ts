@@ -6,7 +6,8 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
-import type { DatabaseReader } from "./_generated/server";
+import type { DatabaseReader, MutationCtx } from "./_generated/server";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { ATTACH_UPLOAD_MAX_AGE_MS, FILE_HOLDERS, NOT_FILE_HOLDERS, FINANCE_FOLDER_PREFIX, INVOICE_UPLOAD_FOLDER, assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
 
 type T = TestConvex<typeof schema>;
@@ -140,5 +141,25 @@ describe("the holder registry", () => {
     expect(found.filter((h) => !registered.has(h)), "register these in FILE_HOLDERS and isFileReferenced").toEqual([]);
     expect([...registered].filter((h) => !found.includes(h)), "FILE_HOLDERS / NOT_FILE_HOLDERS names a field that no longer exists").toEqual([]);
     for (const [field, reason] of Object.entries(NOT_FILE_HOLDERS)) expect(reason.length, `${field} needs a reason`).toBeGreaterThan(20);
+  });
+});
+
+describe("deleteStoredFileIfUnreferenced (the one remove rule)", () => {
+  test("deletes the file AND its thumbnail's stored record only when nothing holds it", async () => {
+    const t = makeT(); await addFile(t, "f", { thumb: "/api/files/k_f_thumb" });
+    await t.run(async (ctx) => { await ctx.db.insert("storedFiles", { storageId: "k_f_thumb", organizationId: ORG, folder: FOLDER }); });
+    await t.run(async (ctx) => { await ctx.db.insert("clientMedia", { id: "h", organizationId: ORG, clientId: "c", fileId: "f" }); });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).toBe(false); // held: survives
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f")).first())).not.toBeNull();
+    await t.run(async (ctx) => { await ctx.db.delete((await ctx.db.query("clientMedia").first())!._id); });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).toBe(true);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).toBeNull();
+    expect(await t.run(async (ctx) => ctx.db.query("storedFiles").collect())).toEqual([]); // the original and the thumbnail record
+  });
+
+  test("never deletes another org's file", async () => {
+    const t = makeT(); await addFile(t, "fx", { org: OTHER });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "fx"))).toBe(false);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).not.toBeNull();
   });
 });

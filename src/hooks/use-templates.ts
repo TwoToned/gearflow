@@ -17,7 +17,7 @@ export type TemplateRow = NonNullable<ReturnType<typeof useTemplates>>["template
 
 /**
  * Template writes (UX Phase 9, D23), all browser-direct and guarded server-side:
- * archive with an exact Undo (the audit ids come back from the archive), apply onto a wizard
+ * archive and restore, each with an exact Undo (the audit ids come back from the write), apply onto a wizard
  * draft with its own exact Undo, and the real delete of an ALREADY-archived template (no Undo).
  */
 export function useTemplateWrites() {
@@ -26,6 +26,8 @@ export function useTemplateWrites() {
   const orgId = activeOrg?.id;
   const archiveM = useMutation(api.projectTemplateWrites.archiveTemplatesNative);
   const unarchiveM = useMutation(api.projectTemplateWrites.unarchiveTemplatesNative);
+  const restoreM = useMutation(api.projectTemplateWrites.restoreTemplatesNative);
+  const unrestoreM = useMutation(api.projectTemplateWrites.unrestoreTemplatesNative);
   const applyM = useMutation(api.projectTemplateWrites.applyTemplateNative);
   const undoApplyM = useMutation(api.projectTemplateWrites.undoApplyTemplateNative);
   const projectWrites = useProjectWrites(orgId);
@@ -43,6 +45,9 @@ export function useTemplateWrites() {
   return {
     archive: (ids: string[]) => guard((org) => archiveM({ orgId: org, ids, actor: actor(), auditId: createId(), now: Date.now() })),
     unarchive: (items: { id: string; auditId: string }[]) => guard((org) => unarchiveM({ orgId: org, items, actor: actor(), now: Date.now() })),
+    /** Bring archived templates back; returns each audit id so the restore has its own exact Undo. */
+    restore: (ids: string[]) => guard((org) => restoreM({ orgId: org, ids, actor: actor(), auditId: createId(), now: Date.now() })),
+    unrestore: (items: { id: string; auditId: string }[]) => guard((org) => unrestoreM({ orgId: org, items, actor: actor(), now: Date.now() })),
     /** Returns the audit id the Undo needs. */
     apply: async (draftId: string, templateId: string) => {
       const auditId = createId();

@@ -63,37 +63,85 @@ export const archiveTemplatesNative = mutation({
   },
 });
 
+const undoItemsArgs = {
+  orgId: v.string(),
+  /** The forward audit ids the archive / restore returned: ids only, nothing else decides what is restored. */
+  items: v.array(v.object({ id: v.string(), auditId: v.string() })),
+  actor: actorValidator,
+  now: v.number(),
+};
+
+/** The exact Undo of an archive or a restore (each is one forward field-edit row per template, `fieldEditUndo`). */
+async function undoTemplateEdits(
+  ctx: MutationCtx,
+  a: { orgId: string; items: { id: string; auditId: string }[]; actor: { userId: string; userName: string }; now: number },
+): Promise<{ restored: string[] }> {
+  await assertWritesEnabled(ctx, "project");
+  await enforceBrowserWriteLimit(ctx);
+  await assertBulkSizeOk(ctx, a.items.length);
+  await requireOrgPermission(ctx, a.orgId, "project", "delete");
+  const actor = await resolveActor(ctx, a.actor);
+  // One transaction, so a refusal for any one item rolls the whole Undo back (all-or-nothing).
+  const restored: string[] = [];
+  for (const item of a.items) {
+    await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "project", entityId: item.id, entityName: item.id, auditId: item.auditId, actor, now: a.now,
+      load: () => loadTemplate(ctx, a.orgId, item.id),
+      apply: async (doc, plan) => {
+        const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+        for (const f of plan.clear) patch[f] = undefined;
+        await ctx.db.patch(doc._id, patch);
+      },
+    });
+    restored.push(item.id);
+  }
+  return { restored };
+}
+
 export const unarchiveTemplatesNative = mutation({
   returns: v.object({ restored: v.array(v.string()) }),
-  args: {
-    orgId: v.string(),
-    /** The forward audit ids `archiveTemplatesNative` returned: ids only, nothing else decides what is restored. */
-    items: v.array(v.object({ id: v.string(), auditId: v.string() })),
-    actor: actorValidator,
-    now: v.number(),
-  },
+  args: undoItemsArgs,
+  handler: (ctx, a) => undoTemplateEdits(ctx, a),
+});
+
+/**
+ * RESTORE: the standing way back for an archived template (the archive's own Undo lasts 10 minutes). Gated
+ * like archive (`project:delete`), no confirm, and returns each forward audit id so ITS Undo
+ * (`unrestoreTemplatesNative`) is exact too. A live template in the list is skipped, not an error.
+ */
+export const restoreTemplatesNative = mutation({
+  returns: v.object({ restored: v.array(v.object({ id: v.string(), auditId: v.string() })) }),
+  args: { orgId: v.string(), ids: v.array(v.string()), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
-    await assertBulkSizeOk(ctx, a.items.length);
+    await assertBulkSizeOk(ctx, a.ids.length);
     await requireOrgPermission(ctx, a.orgId, "project", "delete");
     const actor = await resolveActor(ctx, a.actor);
-    // One transaction, so a refusal for any one item rolls the whole Undo back (all-or-nothing).
-    const restored: string[] = [];
-    for (const item of a.items) {
-      await undoFieldEdit(ctx, {
-        orgId: a.orgId, entityType: "project", entityId: item.id, entityName: item.id, auditId: item.auditId, actor, now: a.now,
-        load: () => loadTemplate(ctx, a.orgId, item.id),
-        apply: async (doc, plan) => {
-          const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
-          for (const f of plan.clear) patch[f] = undefined;
-          await ctx.db.patch(doc._id, patch);
-        },
-      });
-      restored.push(item.id);
+    const restored: { id: string; auditId: string }[] = [];
+    for (const id of new Set(a.ids)) {
+      const t = await loadTemplate(ctx, a.orgId, id);
+      if (!t) throw new ConvexError({ code: "NOT_FOUND", message: "Template not found." });
+      if (t.status !== "CANCELLED") continue;
+      const auditId = `${a.auditId}:${restored.length}`;
+      const diff = diffFields({ status: t.status }, { status: "ENQUIRY" }, ["status"]);
+      await ctx.db.patch(t._id, { status: "ENQUIRY", updatedAt: a.now });
+      if (diff) {
+        await recordFieldEdit(ctx, {
+          orgId: a.orgId, entityType: "project", entityId: t.id, entityName: t.projectNumber, auditId, actor,
+          summary: `Restored template ${t.projectNumber} - ${t.name}`, diff, now: a.now, links: { projectId: t.id },
+        });
+      }
+      restored.push({ id: t.id, auditId });
     }
     return { restored };
   },
+});
+
+export const unrestoreTemplatesNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: undoItemsArgs,
+  handler: (ctx, a) => undoTemplateEdits(ctx, a),
 });
 
 // ─── apply / undo apply ──────────────────────────────────────────────────────
@@ -136,7 +184,8 @@ async function loadApplyTargets(ctx: MutationCtx, a: { orgId: string; draftId: s
 }
 
 export const applyTemplateNative = mutation({
-  returns: v.object({ id: v.string(), lineCount: v.number() }),
+  /** `applied` = the scalars the apply filled on the draft (the wizard form adopts them), `previous` = what the draft had (null = none). */
+  returns: v.object({ id: v.string(), lineCount: v.number(), applied: v.record(v.string(), v.any()), previous: v.record(v.string(), v.any()) }),
   args: { orgId: v.string(), draftId: v.string(), templateId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "project");
@@ -163,7 +212,7 @@ export const applyTemplateNative = mutation({
       summary: `Applied template ${template.projectNumber} - ${template.name} to ${draft.projectNumber}`,
       details: { fieldEdit, templateApply: { templateId: template.id, copied, copiedAt: a.now } }, createdAt: a.now,
     });
-    return { id: draft.id, lineCount: copied.lines.length };
+    return { id: draft.id, lineCount: copied.lines.length, applied: after, previous: before };
   },
 });
 
@@ -228,7 +277,8 @@ async function removeCopiedPlan(ctx: MutationCtx, orgId: string, project: Doc<"p
 }
 
 export const undoApplyTemplateNative = mutation({
-  returns: v.object({ removedLines: v.number() }),
+  /** `restored` = the draft's scalars as they are again (null = none), for the wizard form to adopt. */
+  returns: v.object({ removedLines: v.number(), restored: v.record(v.string(), v.any()) }),
   args: { orgId: v.string(), projectId: v.string(), applyAuditId: v.string(), actor: actorValidator, now: v.number() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "project");
@@ -249,13 +299,15 @@ export const undoApplyTemplateNative = mutation({
       entityName: project.projectNumber, userId: actor.userId, userName: actor.userName, projectId: a.projectId,
       summary: `Undid applying a template to ${project.projectNumber}`, details: { undoOf: a.applyAuditId }, createdAt: a.now,
     });
-    return { removedLines: ta.copied.lines.length };
+    return { removedLines: ta.copied.lines.length, restored: { ...plan.set, ...Object.fromEntries(plan.clear.map((f) => [f, null])) } };
   },
 });
 
 export const agentOps: AgentOpsAnnotations = {
   archiveTemplatesNative: { summary: "Archive job templates (reversible: returns each audit id for the exact Undo); an archived template can then be deleted.", danger: "medium" },
   unarchiveTemplatesNative: { summary: "Undo an archive of job templates, from the audit ids the archive returned.", danger: "low" },
+  restoreTemplatesNative: { summary: "Restore archived job templates (returns each audit id for the exact Undo); a template that is not archived is skipped.", danger: "low" },
+  unrestoreTemplatesNative: { summary: "Undo a restore of job templates (archives them again), from the audit ids the restore returned.", danger: "low" },
   applyTemplateNative: { summary: "Copy a template's gear, tags, type, description and discount onto an empty draft enquiry; refuses a draft that already has gear.", danger: "medium" },
   undoApplyTemplateNative: { summary: "Undo applying a template to a draft: removes exactly what the apply made, refusing if anything was changed since.", danger: "medium" },
 };

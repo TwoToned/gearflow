@@ -22,7 +22,7 @@ import { cn, focusRing } from "@/lib/utils";
  * Manage templates (UX Phase 9, D23): the ONE place templates are listed, used, edited and
  * deleted (the old templates page, its phone-card copy and its per-row buttons are gone).
  * Always-on checkboxes with shift range, a row ⋯, a bulk `Delete n`. Delete ARCHIVES, with an
- * exact Undo; `Show archived` is where a real, final delete lives (no Undo).
+ * exact Undo; the Archived tab is where `Restore` (with its own Undo) and the real, final delete (no Undo) live.
  */
 export function ManageTemplatesDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
@@ -61,6 +61,27 @@ export function ManageTemplatesDialog({ open, onOpenChange }: { open: boolean; o
       toast.error((e as Error).message);
     }
   };
+  const restore = async (ids: string[]) => {
+    try {
+      const { restored } = await writes.restore(ids);
+      selection.clear();
+      toast.success(`Restored ${restored.length} template${restored.length === 1 ? "" : "s"}`, restored.length === 0 ? undefined : {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              await writes.unrestore(restored);
+              toast.success("Archived again");
+            } catch (e) {
+              toast.error((e as Error).message);
+            }
+          },
+        },
+      });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
   const deleteForever = async (ids: string[]) => {
     setBusy(true);
     try {
@@ -78,6 +99,7 @@ export function ManageTemplatesDialog({ open, onOpenChange }: { open: boolean; o
     onUse: canCreate ? () => { close(); router.push(`/projects/new?template=${r.id}`); } : undefined,
     onEdit: canUpdate ? () => { close(); router.push(`/projects/${r.id}?edit=1`); } : undefined,
     onArchive: canDelete ? () => void archive([r.id]) : undefined,
+    onRestore: canDelete ? () => void restore([r.id]) : undefined,
     onDeleteForever: canDelete ? () => void deleteForever([r.id]) : undefined,
   });
 
@@ -88,7 +110,7 @@ export function ManageTemplatesDialog({ open, onOpenChange }: { open: boolean; o
           <DialogHeader>
             <DialogTitle>Manage templates</DialogTitle>
             <DialogDescription>
-              {archived ? "Archived templates. Delete one forever here." : "Reusable jobs with their gear. Start a job from one, edit it, or delete it."}
+              {archived ? "Archived templates. Restore one, or delete it forever." : "Reusable jobs with their gear. Start a job from one, edit it, or delete it."}
             </DialogDescription>
           </DialogHeader>
 
@@ -144,9 +166,11 @@ export function ManageTemplatesDialog({ open, onOpenChange }: { open: boolean; o
 
           <BulkBar
             noun="template"
+            inDialog
             selection={selection}
             actions={buildTemplateBulkActions(archived, {
               onArchive: canDelete ? () => void archive([...selection.selected]) : undefined,
+              onRestore: canDelete ? () => void restore([...selection.selected]) : undefined,
               onDeleteForever: canDelete ? () => setConfirmIds([...selection.selected]) : undefined,
             })}
           />

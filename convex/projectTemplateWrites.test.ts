@@ -313,3 +313,174 @@ describe("projects.listTemplates", () => {
     await expect(list(t, false, asUser("u9", "org_2"))).rejects.toThrow();
   });
 });
+
+// ─── restore / unrestore ─────────────────────────────────────────────────────
+
+describe("restoreTemplatesNative / unrestoreTemplatesNative", () => {
+  const restore = (t: T, ids: string[], who = asUser()) => t.withIdentity(who).mutation(api.projectTemplateWrites.restoreTemplatesNative, { orgId: ORG, ids, actor: ACTOR, auditId: "res", now: NOW });
+  const unrestore = (t: T, items: { id: string; auditId: string }[], who = asUser()) => t.withIdentity(who).mutation(api.projectTemplateWrites.unrestoreTemplatesNative, { orgId: ORG, items, actor: ACTOR, now: NOW });
+  const archiveOne = (t: T, ids: string[], auditId = "arc") => t.withIdentity(asUser()).mutation(api.projectTemplateWrites.archiveTemplatesNative, { orgId: ORG, ids, actor: ACTOR, auditId, now: NOW });
+  const setRole = (t: T, role: string) => t.run(async (ctx) => {
+    for (const m of await ctx.db.query("members").collect()) await ctx.db.patch(m._id, { role });
+  });
+
+  test("brings an archived template back to a live Enquiry, and its own Undo archives it again", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await seedTemplate(t, { id: "a", status: "CANCELLED" });
+    const r = await restore(t, ["a"]);
+    expect(r.restored.map((x) => x.id)).toEqual(["a"]);
+    expect(await status(t, "a")).toBe("ENQUIRY");
+    expect(await unrestore(t, r.restored)).toEqual({ restored: ["a"] });
+    expect(await status(t, "a")).toBe("CANCELLED");
+  });
+
+  test("a live template is skipped; another org's template and a missing id are refused", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await seedTemplate(t, { id: "live", status: "ENQUIRY" });
+    await seedTemplate(t, { id: "gone", status: "CANCELLED" });
+    await seedTemplate(t, { id: "x", org: "org_2", status: "CANCELLED" });
+    expect((await restore(t, ["live"])).restored).toEqual([]);
+    for (const bad of ["x", "nope"]) await expect(restore(t, ["gone", bad])).rejects.toThrow(/Template not found/);
+    expect(await status(t, "gone")).toBe("CANCELLED");
+    expect(await status(t, "x")).toBe("CANCELLED");
+  });
+
+  test("needs project:delete, like archive: a manager (create/update only) is refused for archive, restore and both Undos", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await seedTemplate(t, { id: "a" });
+    await seedTemplate(t, { id: "b", status: "CANCELLED" });
+    const arc = await archiveOne(t, ["a"]);
+    const res = await restore(t, ["b"]);
+    await setRole(t, "manager");
+    await expect(archiveOne(t, ["b"], "arc2")).rejects.toThrow();
+    await expect(restore(t, ["a"])).rejects.toThrow();
+    await expect(t.withIdentity(asUser()).mutation(api.projectTemplateWrites.unarchiveTemplatesNative, { orgId: ORG, items: arc.archived, actor: ACTOR, now: NOW })).rejects.toThrow();
+    await expect(unrestore(t, res.restored)).rejects.toThrow();
+    expect(await status(t, "a")).toBe("CANCELLED");
+    expect(await status(t, "b")).toBe("ENQUIRY");
+  });
+
+  test("the generic Undo helper refuses an audit id for another template, another entity type and another org", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await seedTemplate(t, { id: "a" });
+    await seedTemplate(t, { id: "b" });
+    const r = await archiveOne(t, ["a", "b"]);
+    const [aItem, bItem] = r.archived;
+    const undoItems = (items: { id: string; auditId: string }[]) => t.withIdentity(asUser()).mutation(api.projectTemplateWrites.unarchiveTemplatesNative, { orgId: ORG, items, actor: ACTOR, now: NOW });
+    const patchRow = (p: { entityType?: string; organizationId?: string }) => t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", aItem.auditId)).first();
+      await ctx.db.patch(row!._id, p);
+    });
+    // entityId: a's audit row presented for b.
+    await expect(undoItems([{ id: bItem.id, auditId: aItem.auditId }])).rejects.toThrow(/not found/);
+    await patchRow({ entityType: "asset" });
+    await expect(undoItems([aItem])).rejects.toThrow(/not found/);
+    await patchRow({ entityType: "project", organizationId: "org_2" });
+    await expect(undoItems([aItem])).rejects.toThrow(/not found/);
+    expect(await status(t, "a")).toBe("CANCELLED");
+  });
+});
+
+// ─── the apply Undo's guards ─────────────────────────────────────────────────
+
+describe("undoApplyTemplateNative guards", () => {
+  const apply = (t: T) => t.withIdentity(asUser()).mutation(api.projectTemplateWrites.applyTemplateNative, { orgId: ORG, draftId: "d1", templateId: "t1", actor: ACTOR, auditId: "ap1", now: NOW });
+  const undo = (t: T, over: Partial<{ projectId: string; orgId: string }> = {}, who = asUser()) =>
+    t.withIdentity(who).mutation(api.projectTemplateWrites.undoApplyTemplateNative, { orgId: ORG, projectId: "d1", applyAuditId: "ap1", actor: ACTOR, now: NOW + 5, ...over });
+  const lineCount = (t: T) => t.run(async (ctx) => (await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", "v-d1")).collect()).length);
+  const patchAudit = (t: T, p: { entityType?: string; organizationId?: string }) => t.run(async (ctx) => {
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "ap1")).first();
+    await ctx.db.patch(row!._id, p);
+  });
+
+  async function setup(t: T) {
+    await seedMembers(t);
+    await seedTemplate(t, { id: "t1", lines: 2, discountPercent: 5 });
+    await seedDraft(t);
+    await apply(t);
+  }
+
+  test("an audit id from another project is refused", async () => {
+    const t = makeT();
+    await setup(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "d2", organizationId: ORG, projectNumber: "P-2", name: "Other", status: "ENQUIRY", isTemplate: false, liveVersionId: "v-d2", createdAt: NOW, updatedAt: NOW, tags: [] });
+      await ctx.db.insert("projectVersions", { id: "v-d2", organizationId: ORG, projectId: "d2", number: 1, contentState: "ready", createdAt: NOW, createdById: USER });
+    });
+    await expect(undo(t, { projectId: "d2" })).rejects.toThrow(/not found/);
+    expect(await lineCount(t)).toBe(2);
+  });
+
+  test("an audit row of another entity type or another org is refused", async () => {
+    const t = makeT();
+    await setup(t);
+    await patchAudit(t, { entityType: "asset" });
+    await expect(undo(t)).rejects.toThrow(/not found/);
+    await patchAudit(t, { entityType: "project", organizationId: "org_2" });
+    await expect(undo(t)).rejects.toThrow(/not found/);
+    expect(await lineCount(t)).toBe(2);
+  });
+
+  test("another org's caller cannot undo it", async () => {
+    const t = makeT();
+    await setup(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m9", organizationId: "org_2", userId: USER, role: "owner" }); });
+    await expect(undo(t, { orgId: "org_2" }, { subject: USER, orgId: "org_2" })).rejects.toThrow();
+    expect(await lineCount(t)).toBe(2);
+  });
+
+  test("needs project:update", async () => {
+    const t = makeT();
+    await setup(t);
+    await t.run(async (ctx) => { for (const m of await ctx.db.query("members").collect()) await ctx.db.patch(m._id, { role: "viewer" }); });
+    await expect(undo(t)).rejects.toThrow();
+    expect(await lineCount(t)).toBe(2);
+  });
+
+  test("writes a once-only marker row that carries the undone audit id", async () => {
+    const t = makeT();
+    await setup(t);
+    await undo(t);
+    const marker = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "undo:ap1")).first());
+    expect(marker).toMatchObject({ organizationId: ORG, entityType: "project", entityId: "d1", details: { undoOf: "ap1" } });
+    // With the gear put back exactly as the apply left it, only the marker stops a replay.
+    await t.run(async (ctx) => {
+      const audit = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "ap1")).first();
+      const ta = (audit!.details as { templateApply: { copied: { lines: string[] }; copiedAt: number } }).templateApply;
+      for (let i = 0; i < ta.copied.lines.length; i++) {
+        const id = ta.copied.lines[i];
+        await ctx.db.insert("projectLineItems", { versionId: "v-d1", lineageId: id, id, organizationId: ORG, projectId: "d1", type: "EQUIPMENT", quantity: 1, status: "QUOTED", sortOrder: i, createdAt: NOW, updatedAt: ta.copiedAt });
+      }
+    });
+    await expect(undo(t)).rejects.toThrow(/already undone/);
+  });
+
+  test("recalculates the draft's stored totals after removing the gear", async () => {
+    const t = makeT();
+    await setup(t);
+    const subtotal = () => t.run(async (ctx) => (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "d1")).first())?.subtotal ?? 0);
+    // Stored totals as an apply followed by a recalc would leave them.
+    await t.run(async (ctx) => { const d = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "d1")).first(); await ctx.db.patch(d!._id, { subtotal: 400, total: 400 }); });
+    expect(await subtotal()).toBe(400);
+    await undo(t);
+    expect(await subtotal()).toBe(0);
+  });
+
+  test("never deletes a manager row of another organization, even if the audit lists its id", async () => {
+    const t = makeT();
+    await setup(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectManagers", { id: "foreign-pm", organizationId: "org_2", projectId: "d1", userId: OTHER, addedAt: NOW });
+      const audit = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "ap1")).first();
+      const d = audit!.details as { templateApply: { copied: { managers: string[] } } };
+      await ctx.db.patch(audit!._id, { details: { ...d, templateApply: { ...d.templateApply, copied: { ...d.templateApply.copied, managers: [...d.templateApply.copied.managers, "foreign-pm"] } } } });
+    });
+    await undo(t);
+    const left = await t.run(async (ctx) => ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", "d1")).collect());
+    expect(left.map((m) => m.id)).toEqual(["foreign-pm"]);
+  });
+});

@@ -1,4 +1,4 @@
-import { Archive, Copy, Pencil, Trash2 } from "lucide-react";
+import { Archive, Copy, Pencil, Trash2, Undo2 } from "lucide-react";
 import type { ActionItem, ActionMenuSpec, BulkAction, RowActionBuilder } from "@/lib/primitives/types";
 
 /** The facts a template row's menu depends on. */
@@ -13,18 +13,21 @@ export interface TemplateRowCtx {
   onEdit?: () => void;
   /** Archive (the manager's `Delete…`): reversible, so the confirm says it can be undone. */
   onArchive?: () => void;
+  /** Bring an archived template back (no confirm: it is reversible and harmless). */
+  onRestore?: () => void;
   /** The real delete, only offered for an already-archived template. No Undo. */
   onDeleteForever?: () => void;
 }
 
 /**
  * The Manage templates row ⋯ (spec 7c.2): `Use for a new job`, `Edit template…`,
- * `Delete…` (red, last). On an archived template there is nothing to use or edit: only
+ * `Delete…` (red, last). On an archived template there is nothing to use or edit: `Restore`, then
  * `Delete forever…`.
  */
 export const buildTemplateRowActions: RowActionBuilder<TemplateRowFacts, TemplateRowCtx> = (row, ctx): ActionMenuSpec => {
   const items: (ActionItem | false | undefined)[] = row.archived
     ? [
+        ctx.onRestore && { key: "restore", label: "Restore", group: "edit", icon: Undo2, onSelect: ctx.onRestore },
         ctx.onDeleteForever && {
           key: "delete-forever", label: "Delete forever…", group: "danger", danger: true, icon: Trash2, onSelect: ctx.onDeleteForever,
           confirm: {
@@ -50,12 +53,21 @@ export const buildTemplateRowActions: RowActionBuilder<TemplateRowFacts, Templat
 };
 
 /** The bulk verbs for the ticked templates; each absent when the caller has no handler. */
-export function buildTemplateBulkActions(archived: boolean, ctx: { onArchive?: () => void; onDeleteForever?: () => void }): BulkAction[] {
+export function buildTemplateBulkActions(
+  archived: boolean,
+  ctx: { onArchive?: () => void; onRestore?: () => void; onDeleteForever?: () => void },
+): BulkAction[] {
   const verb = archived ? ctx.onDeleteForever : ctx.onArchive;
-  if (!verb) return [];
-  return [{
-    key: "delete", group: "danger", danger: true, icon: Trash2,
-    label: (n: number) => (archived ? `Delete ${n} forever` : `Delete ${n}`),
-    onSelect: verb,
-  }];
+  const actions: BulkAction[] = [];
+  if (archived && ctx.onRestore) {
+    actions.push({ key: "restore", group: "edit", icon: Undo2, label: (n: number) => `Restore ${n}`, onSelect: ctx.onRestore });
+  }
+  if (verb) {
+    actions.push({
+      key: "delete", group: "danger", danger: true, icon: Trash2,
+      label: (n: number) => (archived ? `Delete ${n} forever` : `Delete ${n}`),
+      onSelect: verb,
+    });
+  }
+  return actions;
 }

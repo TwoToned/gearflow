@@ -33,6 +33,22 @@ export const FINANCE_FOLDER_PREFIX = "finance/";
 export const INVOICE_UPLOAD_FOLDER = "supplier-order-invoices";
 
 /** Every `table.field` that can hold a file; the schema test requires each file-shaped field to be listed. */
+/**
+ * File-ish fields that are NOT holders of a `fileUploads` file, each with the reason it is safe to leave out.
+ * The schema-walk test requires every `image` / `images` / `logo` / `avatar` field to be listed here or in
+ * {@link FILE_HOLDERS}, so a new one cannot be silently missed.
+ */
+export const NOT_FILE_HOLDERS: Record<string, string> = {
+  "users.image": "Better Auth profile image: set by the account flow from its own upload, never from a fileUploads row.",
+  "organizations.logo": "Organisation logo: written by the settings flow from its own upload, never from a fileUploads row.",
+  "crewMembers.image": "Crew avatar: `/api/crew/avatar` stores it in storedFiles without a fileUploads row, so there is no fileId to attach.",
+  "models.image": "Denormalised primary-image URL; the attachable holder is `modelMedia.fileId` (indexed, in FILE_HOLDERS).",
+  "models.images": "Denormalised image URLs; the attachable holder is `modelMedia.fileId` (indexed, in FILE_HOLDERS).",
+  "kits.image": "Denormalised primary-image URL; the attachable holder is `kitMedia.fileId` (indexed, in FILE_HOLDERS).",
+  "kits.images": "Denormalised image URLs; the attachable holder is `kitMedia.fileId` (indexed, in FILE_HOLDERS).",
+  "assets.images": "Denormalised image URLs; the attachable holder is `assetMedia.fileId` (indexed, in FILE_HOLDERS).",
+};
+
 export const FILE_HOLDERS = [
   "modelMedia.fileId", "assetMedia.fileId", "kitMedia.fileId", "projectMedia.fileId", "clientMedia.fileId", "locationMedia.fileId", "subHireMedia.fileId",
   "supplierDocuments.fileId", "supplierOrderFiles.fileId",
@@ -42,7 +58,6 @@ export const FILE_HOLDERS = [
 ] as const;
 
 const INVOICE_SCAN_CAP = 5000;
-const PHOTO_SCAN_CAP = 2000;
 
 /** The media-style tables, each indexed `by_fileId`. */
 async function heldByIndexedTable(db: DatabaseReader, fileId: string): Promise<boolean> {
@@ -67,18 +82,28 @@ async function heldAsInvoice(db: DatabaseReader, orgId: string, fileId: string):
 }
 
 /**
- * Photo / attachment arrays hold URLs, so they are scanned. A record can only hold a file that EXISTS, so
- * only this org's records created at or after the file are read: exact, and bounded by the file's age.
+ * Photo / attachment arrays hold URLs, so they are scanned. NOT bounded by the file's age: a record can be
+ * PATCHED later to hold a file that did not exist when it was created (`maintenanceWrites` update and
+ * `maintenanceRecords.update` both take `photos` / `attachments`), so the only exact answer for
+ * `maintenanceRecords` is the org's whole set, read bounded (when the cap bites we cannot prove it
+ * unreferenced, so the file counts as referenced: fail closed).
+ *
+ * `checkRecords.photos` is set when a check is saved (the app never patches it; only the service-only generic
+ * `checkRecords.update` could), so only this org's records created at or after the file are read. That bound
+ * is deliberately NOT claimed exact: a service-token patch of an older check record would be missed.
  */
+const MAINTENANCE_SCAN_CAP = 5000;
+const CHECK_SCAN_CAP = 2000;
+
 async function heldInPhotoArrays(db: DatabaseReader, orgId: string, file: { id: string; url: string; thumbnailUrl?: string; storageKey: string; _creationTime: number }): Promise<boolean> {
   const needles = new Set([file.id, file.url, file.storageKey, ...(file.thumbnailUrl ? [file.thumbnailUrl] : [])]);
   const holds = (values: string[] | undefined) => (values ?? []).some((v) => needles.has(v) || needles.has(storageIdOf(v) ?? ""));
-  const [maintenance, checks] = await Promise.all([
-    collectCapped(db.query("maintenanceRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", file._creationTime)), PHOTO_SCAN_CAP),
-    collectCapped(db.query("checkRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", file._creationTime)), PHOTO_SCAN_CAP),
-  ]);
-  if (maintenance.truncated || checks.truncated) return true; // cannot prove it unreferenced: fail closed
-  return maintenance.rows.some((r) => holds(r.photos) || holds(r.attachments)) || checks.rows.some((r) => holds(r.photos));
+  const maintenance = await collectCapped(db.query("maintenanceRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), MAINTENANCE_SCAN_CAP);
+  if (maintenance.truncated) return true; // cannot prove it unreferenced: fail closed
+  if (maintenance.rows.some((r) => holds(r.photos) || holds(r.attachments))) return true;
+  const checks = await collectCapped(db.query("checkRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", file._creationTime)), CHECK_SCAN_CAP);
+  if (checks.truncated) return true; // fail closed
+  return checks.rows.some((r) => holds(r.photos));
 }
 
 /** Is this org's `fileUploads` file held by anything (see {@link FILE_HOLDERS})? A missing or foreign file holds nothing. */

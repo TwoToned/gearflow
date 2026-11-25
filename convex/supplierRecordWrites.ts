@@ -8,7 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit, type FieldValue } from "./lib/fieldEditUndo";
 import { claimRowOpUndo, recordRowOp } from "./lib/rowOpUndo";
-import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { writeActivityLog } from "./lib/audit";
 import { collectCapped } from "./lib/pagination";
 import { assertAttachableUpload } from "./lib/attachableUpload";
@@ -276,8 +276,8 @@ export const removeDocumentNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     const supplier = await loadSupplier(ctx, a.orgId, a.supplierId);
     const doc = await loadDocument(ctx, a.orgId, a.supplierId, a.documentId);
-    await deleteStoredFile(ctx, doc.fileId, a.orgId);
     await ctx.db.delete(doc._id);
+    await deleteStoredFileIfUnreferenced(ctx, a.orgId, doc.fileId);
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "DELETE", entityType: "supplier", entityId: a.supplierId, entityName: supplier.name,
       userId: actor.userId, userName: actor.userName, summary: `Removed document ${doc.name} from supplier ${supplier.name}`, createdAt: a.now,
@@ -369,8 +369,8 @@ export const removeOrderFileNative = mutation({
     const order = await loadOrder(ctx, a.orgId, a.orderId);
     const row = await ctx.db.query("supplierOrderFiles").withIndex("by_cuid", (q) => q.eq("id", a.fileRowId)).first();
     if (!row || row.organizationId !== a.orgId || row.orderId !== a.orderId) throw new ConvexError("That file is not on this order.");
-    await deleteStoredFile(ctx, row.fileId, a.orgId);
     await ctx.db.delete(row._id);
+    await deleteStoredFileIfUnreferenced(ctx, a.orgId, row.fileId);
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "DELETE", entityType: "supplierOrder", entityId: a.orderId, entityName: order.orderNumber,
       userId: actor.userId, userName: actor.userName, summary: `Removed a file from order ${order.orderNumber}`, createdAt: a.now,

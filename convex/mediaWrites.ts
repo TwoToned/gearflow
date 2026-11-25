@@ -9,7 +9,8 @@ import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { emitProjectActivityEvent } from "./lib/activityEvents";
 import { ProjectMediaType as ProjectMediaTypeV } from "./lib/validators";
-import { assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
+import { assertAttachableUpload } from "./lib/attachableUpload";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 
 /**
  * Native MEDIA write mutations (Phase 3 browser-direct — replaces the 6 *-media.ts
@@ -126,18 +127,9 @@ async function removeMediaRow(ctx: MutationCtx, kind: Kind, orgId: string, media
   await ctx.db.delete(media._id);
   await emitFileEvent(ctx, kind, orgId, parentId, Date.now(), "file_removed", `removed file "${label}"`, mediaId);
 
-  // Delete the file (stored bytes + storedFiles record + thumbnail bytes + the fileUploads row)
-  // ONLY when nothing else still holds it. Org-check the file too (by_cuid is global).
-  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  // The bytes go only when nothing else holds the file once THIS row is gone (`isFileReferenced`, Phase 13).
-  if (file && file.organizationId === orgId && !(await isFileReferenced(ctx.db, orgId, fileId))) {
-    await deleteStored(ctx, file.storageKey);
-    if (file.thumbnailUrl) {
-      const thumb = storageIdFromUrl(file.thumbnailUrl);
-      if (thumb) await deleteStored(ctx, thumb);
-    }
-    await ctx.db.delete(file._id);
-  }
+  // The ONE remove rule: the file (stored bytes, thumbnail bytes, storedFiles record, fileUploads row) goes only
+  // when nothing else holds it once THIS row is gone, and only if it is this org's (`deleteStoredFileIfUnreferenced`).
+  await deleteStoredFileIfUnreferenced(ctx, orgId, fileId);
 
   // Promote the next PHOTO if the removed one was primary (photo kinds only).
   if (cfg.photo && wasPrimary && media.type === "PHOTO") {
@@ -269,22 +261,6 @@ export const reorderNative = mutation({
 });
 
 // ── Storage helpers (replicate files.deleteFile: storedFiles record + bytes) ──
-async function deleteStored(ctx: MutationCtx, storageId: string) {
-  const rec = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", storageId)).unique();
-  if (rec) await ctx.db.delete(rec._id);
-  try {
-    await ctx.storage.delete(storageId as Id<"_storage">);
-  } catch {
-    // already gone — idempotent
-  }
-}
-/** Extract the storage id from a `/api/files/{id}` proxy url (mirrors storageKeyFromUrl). */
-function storageIdFromUrl(url: string): string | null {
-  const prefix = "/api/files/";
-  const idx = url.indexOf(prefix);
-  return idx === -1 ? null : url.slice(idx + prefix.length);
-}
-
 export const agentOps: AgentOpsAnnotations = {
   setTypeNative: { summary: "Set the category of one or more project files (the ProjectMediaType enum). Changes only the category.", danger: "low", mcpTier: 3 },
   renameNative: { summary: "Rename a project file's display name; the stored file is untouched.", danger: "low", mcpTier: 3 },

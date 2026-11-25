@@ -225,6 +225,7 @@ export function useProjectWrites(orgId: string | undefined) {
   const saveAsTemplateM = useMutation(api.projectWrites.saveAsTemplateNative);
   const deleteM = useMutation(api.projectWrites.deleteNative);
   const discardDraftM = useMutation(api.projectDraftWrites.discardDraftNative);
+  const undoUpdateM = useMutation(api.projectEditUndo.undoUpdateNative);
 
   const locations = useLocations(orgId);
 
@@ -391,7 +392,7 @@ export function useProjectWrites(orgId: string | undefined) {
     /** The form values as loaded. When given, only the fields that changed are
      *  written (never `status`, never an untouched locked money field). */
     before?: ProjectFormValues,
-  ): Promise<{ id: string }> => {
+  ): Promise<{ id: string; /** The audit id of the write (absent when nothing was written): what `undoUpdate` takes. */ auditId?: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchema.parse(data);
     const parsedBefore = before ? projectSchema.parse(before) : undefined;
@@ -413,6 +414,7 @@ export function useProjectWrites(orgId: string | undefined) {
     const { set, clear } = buildProjectUpdate(parsed, { before: parsedBefore, now: Date.now() });
     if (parsedBefore && clear.length === 0 && Object.keys(set).length === 0) return { id };
 
+    const auditId = createId();
     try {
       await updateM({
         id,
@@ -420,7 +422,7 @@ export function useProjectWrites(orgId: string | undefined) {
         set,
         clear,
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
-        auditId: createId(),
+        auditId,
         now: Date.now(),
       });
     } catch (e) {
@@ -429,7 +431,21 @@ export function useProjectWrites(orgId: string | undefined) {
 
     // No client recalc: `updateNative` recalculates in its own transaction whenever it
     // writes a field the totals read (taxRate, discountPercent).
-    return { id };
+    return { id, auditId };
+  };
+
+  /** The exact Undo of a job edit, from the audit id its save returned (ids only; the server restores what that edit changed). */
+  const undoUpdate = async (projectId: string, auditId: string): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      await undoUpdateM({
+        orgId, projectId, auditId,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
   };
 
   /**
@@ -592,5 +608,5 @@ export function useProjectWrites(orgId: string | undefined) {
     }
   };
 
-  return { enabled, archive, deleteTemplate, create, update, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove, discardDraft };
+  return { enabled, archive, deleteTemplate, create, update, undoUpdate, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove, discardDraft };
 }

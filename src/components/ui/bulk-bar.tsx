@@ -35,6 +35,10 @@ import { cn } from "@/lib/utils";
  * is selected reflows the list on every tap, and a `fixed` element left in
  * place resolves against `<main>` (its page-enter animation leaves a
  * `transform`), not the viewport. Do not drop the portal.
+ *
+ * **Inside a modal Dialog, `inDialog`:** a Radix modal Dialog puts `pointer-events: none` on `<body>`, and a
+ * portaled sibling inherits it (every click swallowed). So there the bar stays INSIDE `DialogContent`, sticky
+ * to its bottom, on every breakpoint. The portal stays for everywhere else.
  */
 export interface BulkBarProps {
   selection: Pick<RowSelection, "count" | "clear">;
@@ -44,6 +48,8 @@ export interface BulkBarProps {
   /** Optional leading control (e.g. a select-all checkbox) kept from a surface. */
   leading?: React.ReactNode;
   className?: string;
+  /** Render inside a modal Dialog's content (sticky, no portal) instead of the phone's body portal. */
+  inDialog?: boolean;
 }
 
 /** Danger verbs last (stable otherwise). */
@@ -151,8 +157,8 @@ function Verb({
   );
 }
 
-export function BulkBar({ selection, actions, noun = "item", leading, className }: BulkBarProps) {
-  const isMobile = useIsMobile();
+export function BulkBar({ selection, actions, noun = "item", leading, className, inDialog = false }: BulkBarProps) {
+  const isMobile = useIsMobile() && !inDialog;
   const [pending, setPending] = React.useState<BulkAction | null>(null);
   const { count } = selection;
   if (count <= 0) return null;
@@ -168,6 +174,7 @@ export function BulkBar({ selection, actions, noun = "item", leading, className 
         "flex flex-wrap items-center gap-3 rounded-[var(--r)] border-2 border-line-2 px-4 py-2",
         // Opaque + raised when floating on mobile so scrolling content doesn't bleed through.
         isMobile ? "bg-elev shadow-[var(--sh-card)]" : "bg-paper-2/50",
+        inDialog && "sticky bottom-0 bg-elev",
         className,
       )}
       role="toolbar"

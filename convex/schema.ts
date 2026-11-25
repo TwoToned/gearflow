@@ -1318,7 +1318,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_supplierId", ["supplierId"]),
+    .index("by_supplierId", ["supplierId"])
+    .index("by_fileId", ["fileId"]),
 
   // SupplierOrderFile (B3). DIRECT. The order's PO / docket / other files. The invoice keeps
   // its own 1:1 slot (`supplierOrders.invoiceFileId`), so there is no INVOICE kind here.
@@ -1333,7 +1334,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_orderId", ["orderId"]),
+    .index("by_orderId", ["orderId"])
+    .index("by_fileId", ["fileId"]),
 
   // Project
   projects: defineTable({

@@ -131,6 +131,19 @@ describe("ProjectWizard schedule step — project window (WS2 #941)", () => {
     await screen.findByText(/Step 3: Site/);
   });
 
+  it("clearing the rental leaves a set job window alone (the shift itself is pinned in project-form-dates.test.ts)", async () => {
+    await goToScheduleStep();
+    fireEvent.click(screen.getByRole("button", { name: "1 week" }));
+    fireEvent.click(screen.getByRole("button", { name: /Job window/i }));
+    // Window one day either side of the rental (today .. today+6).
+    fireEvent.change(screen.getByLabelText("Job starts date"), { target: { value: isoDateOffset(-1) } });
+    fireEvent.change(screen.getByLabelText("Job ends date"), { target: { value: isoDateOffset(7) } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    // Clearing the rental leaves the window alone (nothing to offset from).
+    expect((screen.getByLabelText("Job starts date") as HTMLInputElement).value).toBe(isoDateOffset(-1));
+    expect((screen.getByLabelText("Job ends date") as HTMLInputElement).value).toBe(isoDateOffset(7));
+  });
+
   it("shows a non-blocking hint when the project window starts after the rental window", async () => {
     await goToScheduleStep();
     fireEvent.click(screen.getByRole("button", { name: "1 week" }));

@@ -1,71 +1,12 @@
-"use client";
-// use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
+import { redirect } from "next/navigation";
+import { jobEditHref } from "@/lib/job-edit-url";
 
-import { use } from "react";
-import Link from "next/link";
-import { useProjectDetail } from "@/hooks/use-project-detail";
-import { ProjectWizard, type EditableProject } from "@/components/projects/project-wizard";
-import { CanDo } from "@/components/auth/permission-gate";
-import { RequirePermission } from "@/components/auth/require-permission";
-import { FadeIn } from "@/components/ui/motion";
-import { FormSkeleton } from "@/components/ui/skeleton";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-
-export default function EditProjectPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = use(params);
-
-  const { data: project, isLoading } = useProjectDetail(id);
-
-  if (isLoading)
-    return <FadeIn><div className="mx-auto max-w-5xl"><FormSkeleton /></div></FadeIn>;
-  if (!project)
-    return (
-      <div className="mx-auto max-w-5xl rounded-[var(--r-lg)] border-l-2 border-l-t-out border border-line bg-card p-6 text-center">
-        <p className="text-ui-text text-ink-2">Job not found.</p>
-      </div>
-    );
-
-  return (
-    <RequirePermission resource="project" action="update">
-    <CanDo resource="project" action="update" fallback={<div className="p-8 text-center text-ui-text text-muted">You don&apos;t have permission to perform this action.</div>}>
-      <FadeIn>
-        <div className="mx-auto max-w-5xl space-y-4">
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink render={<Link href="/projects" />}>Jobs</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbLink render={<Link href={`/projects/${project.id}`} />}>{project.name}</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Edit</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div>
-            <h1 className="t-page-title text-ink">Edit job</h1>
-            <p className="t-body text-muted">
-              <span className="t-mono">{project.projectNumber}</span> &middot; {project.name}
-            </p>
-          </div>
-          <ProjectWizard project={project as EditableProject} />
-        </div>
-      </FadeIn>
-    </CanDo>
-    </RequirePermission>
-  );
+/**
+ * `/projects/[id]/edit` is a deep link now, not a page (D22): the job edit is a
+ * sheet over the record (`?edit=1`). Kept so the slash command, emails, bookmarks
+ * and the Overview `Edit` links keep working.
+ */
+export default async function EditProjectRedirect({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  redirect(jobEditHref(`/projects/${id}`));
 }

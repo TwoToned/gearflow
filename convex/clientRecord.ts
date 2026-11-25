@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, type QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
@@ -21,6 +22,18 @@ export const agentOps: AgentOpsAnnotations = {
 
 const CAP = 200;
 
+/** The quotes on a client's jobs, org-checked per row (`by_projectId` is global), bounded per job. */
+async function loadQuotes(ctx: QueryCtx, orgId: string, jobs: Doc<"projects">[], now: number) {
+  const quotes = [];
+  for (const p of jobs) {
+    const rows = await collectCapped(ctx.db.query("quotes").withIndex("by_projectId", (q) => q.eq("projectId", p.id)), 50);
+    for (const q of rows.rows.filter((r) => r.organizationId === orgId)) {
+      quotes.push({ id: q.id, projectId: p.id, projectNumber: p.projectNumber, version: q.version, label: q.label ?? null, status: effectiveQuoteStatus(q, now), validUntil: q.validUntil ?? null, sentAt: q.sentAt ?? null });
+    }
+  }
+  return quotes;
+}
+
 export const clientAccount = query({
   args: { orgId: v.string(), clientId: v.string(), now: v.optional(v.number()) },
   handler: async (ctx, { orgId, clientId, now: nowArg }) => {
@@ -35,14 +48,7 @@ export const clientAccount = query({
     ]);
     const jobs = projects.rows.filter((p) => p.organizationId === orgId && !p.isTemplate);
     const numberOf = new Map(jobs.map((p) => [p.id, p.projectNumber]));
-    const quotes = [];
-    for (const p of jobs) {
-      const rows = await collectCapped(ctx.db.query("quotes").withIndex("by_projectId", (q) => q.eq("projectId", p.id)), 50);
-      for (const q of rows.rows) {
-        if (q.organizationId !== orgId) continue;
-        quotes.push({ id: q.id, projectId: p.id, projectNumber: p.projectNumber, version: q.version, label: q.label ?? null, status: effectiveQuoteStatus(q, now), validUntil: q.validUntil ?? null, sentAt: q.sentAt ?? null });
-      }
-    }
+    const quotes = await loadQuotes(ctx, orgId, jobs, now);
     return {
       invoices: invoices.rows
         .filter((i) => i.organizationId === orgId && i.status !== "DRAFT")

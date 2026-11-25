@@ -23,6 +23,7 @@ import {
   clientRowOf,
   clientSegments,
   clientSubline,
+  markTruncated,
   clientsBuiltInViews,
   type ClientSource,
 } from "@/lib/list-views/people";
@@ -71,6 +72,7 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
     return clientRowOf(c, menu);
   });
 
+  const create = canCreate ? { label: "New client", onSelect: () => router.push("/clients/new") } : undefined;
   const model: PeopleListModel = {
     key: "clients",
     spec: CLIENTS_SPEC,
@@ -87,15 +89,15 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
     loading: page === undefined,
     itemHeader: CLIENT_ITEM_HEADER,
     itemSortKey: CLIENT_ITEM_SORT_KEY,
-    subline: clientSubline(counts ? ({ ...counts, truncated: counts.truncated || page?.truncated ? 1 : 0 } as Parameters<typeof clientSubline>[0]) : undefined),
-    primary: canCreate ? { label: "New client", onSelect: () => router.push("/clients/new") } : undefined,
+    subline: clientSubline(markTruncated(counts, page) as Parameters<typeof clientSubline>[0]),
+    primary: create,
     bulk: (ids) =>
       clientBulkActions({
         onAddTag: canUpdate ? () => setTagIds(ids) : undefined,
         onExport: () => w.bulkExport(ids),
         onArchive: canUpdate ? () => void w.bulkArchive(ids) : undefined,
       }),
-    empty: { title: "No clients yet", description: "Companies, venues and people you hire to appear here.", action: canCreate ? { label: "New client", onSelect: () => router.push("/clients/new") } : undefined },
+    empty: { title: "No clients yet", description: "Companies, venues and people you hire to appear here.", action: create },
     toolbarExtra: <UrlSavedViewsMenu tableId="clients" spec={CLIENTS_SPEC} state={state} setState={setState} builtIns={clientsBuiltInViews(moneyVisible)} />,
   };
 

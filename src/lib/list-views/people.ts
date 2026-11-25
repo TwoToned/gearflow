@@ -288,6 +288,11 @@ export function clientRowOf(c: ClientSource, menu?: ActionMenuSpec): LineRowData
 
 const wholeDollars = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 
+/** Segment counts plus the page's own `truncated`, so the sub line can say the counts may be incomplete. */
+export function markTruncated<C extends object>(counts: (C & { truncated?: unknown }) | undefined, page: { truncated?: boolean } | undefined): (C & { truncated: number }) | undefined {
+  return counts && { ...counts, truncated: counts.truncated || page?.truncated ? 1 : 0 };
+}
+
 /** The head sub line: `10 with open jobs · $234,400 quoted · $76,170 outstanding` (money only when sent). */
 export function clientSubline(c: { withOpenJobs?: number; quoted?: number; outstanding?: number; truncated?: number } | undefined): string | undefined {
   if (!c) return undefined;

@@ -305,9 +305,11 @@ function addOrder(f: SupplierFacts, o: Doc<"supplierOrders">, yearStart: number,
   const status = o.status ?? "DRAFT";
   if (isOnHire(o)) addHire(f, o, today);
   if (OPEN_ORDER.has(status)) f.openOrders++;
-  const thisYear = (o.orderDate ?? o.createdAt ?? 0) >= yearStart;
-  if (showMoney && COMMITTED.has(status) && thisYear) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
+  if (showMoney && spendsThisYear(o, status, yearStart)) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
 }
+
+const spendsThisYear = (o: Doc<"supplierOrders">, status: string, yearStart: number) =>
+  COMMITTED.has(status) && (o.orderDate ?? o.createdAt ?? 0) >= yearStart;
 
 /** An order still on hire: counts, its due day (the earliest wins) and how late the most overdue one is. */
 function addHire(f: SupplierFacts, o: Doc<"supplierOrders">, today: number) {

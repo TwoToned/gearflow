@@ -214,6 +214,14 @@ function ClientRecord({ params }: { params: Promise<{ id: string }> }) {
   );
 }
 
+/** An invoice's one word (Void / Paid / Overdue / Issued) and whether it is late. */
+function invoiceWord(i: { status: string; paymentStatus?: string | null; dueDate?: number | null }, now: number) {
+  const late = i.status === "ISSUED" && i.paymentStatus !== "PAID" && i.dueDate != null && i.dueDate < now;
+  if (i.status === "VOID") return { label: "Void", late };
+  if (i.paymentStatus === "PAID") return { label: "Paid", late };
+  return { label: late ? "Overdue" : "Issued", late };
+}
+
 /** The account view: Finance owns the documents; each row links into it. */
 function MoneyTab({ account, now }: { account: Account; now: number }) {
   return (
@@ -221,8 +229,7 @@ function MoneyTab({ account, now }: { account: Account; now: number }) {
       <section aria-label="Invoices">
         <Overline>Invoices</Overline>
         <RecordRows noun="invoice" empty="No invoices yet." rows={account.invoices.map((i) => {
-          const late = i.status === "ISSUED" && i.paymentStatus !== "PAID" && i.dueDate != null && i.dueDate < now;
-          const label = i.status === "VOID" ? "Void" : i.paymentStatus === "PAID" ? "Paid" : late ? "Overdue" : "Issued";
+          const { label, late } = invoiceWord(i, now);
           return {
             id: i.id, title: `${i.invoiceNumber ?? "Invoice"} · ${formatCurrency(i.total)}`, href: i.projectId ? `/projects/${i.projectId}?tab=finance` : undefined,
             meta: [i.projectNumber, i.dueDate ? `due ${day(i.dueDate)}` : null],

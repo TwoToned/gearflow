@@ -23,6 +23,7 @@ import {
   supplierRowOf,
   supplierSegments,
   supplierSubline,
+  markTruncated,
   type SupplierSource,
 } from "@/lib/list-views/people";
 import { supplierActions, supplierBulkActions, when } from "@/lib/row-actions/people";
@@ -72,6 +73,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
     ),
   );
 
+  const create = canCreate ? { label: "New supplier", onSelect: goNew } : undefined;
   const model: PeopleListModel = {
     key: "suppliers",
     spec: SUPPLIERS_SPEC,
@@ -88,15 +90,15 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
     loading: page === undefined,
     itemHeader: SUPPLIER_ITEM_HEADER,
     itemSortKey: SUPPLIER_ITEM_SORT_KEY,
-    subline: supplierSubline(counts ? { ...counts, truncated: counts.truncated || page?.truncated ? 1 : 0 } : undefined),
-    primary: canCreate ? { label: "New supplier", onSelect: goNew } : undefined,
+    subline: supplierSubline(markTruncated(counts, page)),
+    primary: create,
     bulk: (ids) =>
       supplierBulkActions({
         onExport: () => w.bulkExport(ids),
         onAddTag: when(canUpdate, () => setTagIds(ids)),
         onArchive: when(canUpdate, () => void w.bulkArchive(ids)),
       }),
-    empty: { title: "No suppliers yet", description: "Vendors you buy from or sub-hire from appear here.", action: canCreate ? { label: "New supplier", onSelect: goNew } : undefined },
+    empty: { title: "No suppliers yet", description: "Vendors you buy from or sub-hire from appear here.", action: create },
     toolbarExtra: <UrlSavedViewsMenu tableId="suppliers" spec={SUPPLIERS_SPEC} state={state} setState={setState} />,
   };
 

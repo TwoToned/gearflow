@@ -11028,11 +11028,6 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "object"
       },
       {
-        "name": "auditId",
-        "optional": false,
-        "type": "string"
-      },
-      {
         "name": "forwardAuditId",
         "optional": false,
         "type": "string"
@@ -11049,7 +11044,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "905ed2ad029837e1",
+    "argsSha": "90575c090d7504e5",
     "returnsSha": "aecfa6018dd719d1",
     "stability": "tracks-app",
     "summary": null,

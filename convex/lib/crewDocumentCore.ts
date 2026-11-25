@@ -18,9 +18,6 @@ export const CREW_DOCUMENT_KIND_LABELS: Record<CrewDocumentKind, string> = {
 /** The `storedFiles.folder` every crew document's bytes live in. `/api/files` REFUSES this folder. */
 export const CREW_DOCUMENTS_FOLDER = "crew-documents";
 
-/** A file may be attached only if the caller uploaded it this recently. */
-export const CREW_UPLOAD_MAX_AGE_MS = 10 * 60 * 1000;
-
 /** Caps that bound the member's document list. */
 export const MAX_CREW_DOCUMENTS = 100;
 

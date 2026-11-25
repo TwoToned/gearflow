@@ -110,7 +110,7 @@ describe("addNative: the fresh-upload guard", () => {
     const t = makeT(); await seed(t);
     await expect(add(t, { fileId: "f3" })).rejects.toThrow(/not uploaded by you/);
     await expect(add(t, { fileId: "fx" })).rejects.toThrow(/File not found/);
-    await expect(add(t, { fileId: "f4" })).rejects.toThrow(/not uploaded as a crew document/);
+    await expect(add(t, { fileId: "f4" })).rejects.toThrow(/not uploaded for this/);
     await expect(add(t, { crewMemberId: "cx" })).rejects.toThrow(/not found/);
     await add(t);
     await expect(add(t, { id: "d2", auditId: "a2" })).rejects.toThrow(/already attached/);
@@ -218,5 +218,29 @@ describe("delete cascade and the C2 guard", () => {
     await patch("c2", { isActive: false });
     await del("c2", "x4");
     expect(await t.run(async (ctx) => ctx.db.query("crewMembers").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect())).toEqual([]);
+  });
+});
+
+describe("a crew document's file only goes when nothing else holds it", () => {
+  test("remove and the member-delete cascade keep a file another row still holds", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clientMedia", { id: "cm", organizationId: ORG, clientId: "c", fileId: "f1" }); // legacy: also held by a media row
+      await ctx.db.insert("members", { id: "own", organizationId: ORG, userId: "u_owner", role: "owner" });
+    });
+    await t.withIdentity(as("manager")).mutation(api.crewDocumentsWrites.removeNative, { orgId: ORG, crewMemberId: "c1", documentId: "d1", now: NOW, actor, auditId: "r1" });
+    expect(await rows(t)).toHaveLength(0);
+    expect(await fileRow(t, "f1")).not.toBeNull(); // the media row still holds it
+
+    await add(t, { id: "d2", fileId: "f2", auditId: "a8" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clientMedia", { id: "cm2", organizationId: ORG, clientId: "c", fileId: "f2" });
+      const m = (await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first())!;
+      await ctx.db.patch(m._id, { status: "INACTIVE" });
+    });
+    await t.withIdentity(as("owner", "u_owner")).mutation(api.crewWrites.deleteNative, { id: "c1", orgId: ORG, actor, auditId: "del", now: NOW });
+    expect(await rows(t)).toHaveLength(0);
+    expect(await fileRow(t, "f2")).not.toBeNull();
   });
 });

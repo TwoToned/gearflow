@@ -8,11 +8,12 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { collectCapped } from "./lib/pagination";
-import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { assertAttachableUpload } from "./lib/attachableUpload";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { claimRowOpUndo, recordRowOp } from "./lib/rowOpUndo";
 import { requireCrewDocumentWriter } from "./lib/crewDocumentAccess";
-import { CREW_DOCUMENTS_FOLDER, CREW_UPLOAD_MAX_AGE_MS, MAX_CREW_DOCUMENTS, crewDocumentKind } from "./lib/crewDocumentCore";
+import { CREW_DOCUMENTS_FOLDER, MAX_CREW_DOCUMENTS, crewDocumentKind } from "./lib/crewDocumentCore";
 
 /**
  * Crew document writes (UX Phase 13, D72). Gate: `crew:update` on a USER session (a member may
@@ -56,17 +57,9 @@ async function loadDocument(ctx: MutationCtx, orgId: string, crewMemberId: strin
 const memberName = (m: { firstName: string; lastName: string }) => `${m.firstName} ${m.lastName}`;
 const clean = (s: string | undefined) => (s && s.trim() ? s.trim() : undefined);
 
-/** The file is this caller's own, fresh upload into the crew-documents folder, and attached nowhere else. */
-async function assertFreshCrewUpload(ctx: MutationCtx, a: { orgId: string; userId: string; fileId: string }): Promise<void> {
-  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
-  if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
-  if (file.uploadedById !== a.userId) throw new ConvexError("That file was not uploaded by you.");
-  if (Date.now() - file._creationTime > CREW_UPLOAD_MAX_AGE_MS) throw new ConvexError("That upload is too old: upload the file again.");
-  const stored = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
-  if (!stored || stored.organizationId !== a.orgId || stored.folder !== CREW_DOCUMENTS_FOLDER) throw new ConvexError("That file was not uploaded as a crew document.");
-  const used = await ctx.db.query("crewDocuments").withIndex("by_fileId", (q) => q.eq("fileId", a.fileId)).first();
-  if (used) throw new ConvexError("That file is already attached to a document.");
-}
+/** The file is this caller's own fresh crew-documents upload, held by nothing: the one shared attach rule. */
+const assertCrewDocumentFile = (ctx: MutationCtx, a: { orgId: string; userId: string; fileId: string }) =>
+  assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: a.userId, fileId: a.fileId, folder: CREW_DOCUMENTS_FOLDER });
 
 const DOC_FIELDS = ["name", "kind", "expiresAt"] as const;
 
@@ -81,7 +74,7 @@ export const addNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     assertStrLen(a.name, "name", { max: 200 });
     const member = await loadMember(ctx, a.orgId, a.crewMemberId);
-    await assertFreshCrewUpload(ctx, { orgId: a.orgId, userId: actor.userId, fileId: a.fileId });
+    await assertCrewDocumentFile(ctx, { orgId: a.orgId, userId: actor.userId, fileId: a.fileId });
     if (await ctx.db.query("crewDocuments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("Crew document already exists");
     const existing = await collectCapped(ctx.db.query("crewDocuments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", a.crewMemberId)), MAX_CREW_DOCUMENTS + 1);
     if (existing.rows.filter((d) => d.organizationId === a.orgId).length >= MAX_CREW_DOCUMENTS) throw new ConvexError(`A crew member can have at most ${MAX_CREW_DOCUMENTS} documents.`);
@@ -127,8 +120,8 @@ export const removeNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     const member = await loadMember(ctx, a.orgId, a.crewMemberId);
     const doc = await loadDocument(ctx, a.orgId, a.crewMemberId, a.documentId);
-    await deleteStoredFile(ctx, doc.fileId, a.orgId);
     await ctx.db.delete(doc._id);
+    await deleteStoredFileIfUnreferenced(ctx, a.orgId, doc.fileId);
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "DELETE", entityType: MEMBER_ENTITY, entityId: a.crewMemberId, entityName: memberName(member),
       userId: actor.userId, userName: actor.userName, summary: `Removed a ${doc.kind.toLowerCase()} document from ${memberName(member)}`, createdAt: a.now,

@@ -219,6 +219,24 @@ word on the row and a health row on the supplier's Overview; it is never stored.
   on the shared `FormSheet`, `use-supplier-record-writes.ts`); Zod schemas in
   `src/lib/validations/supplier-record.ts`.
 
+#### The shared file rules (`convex/lib/attachableUpload.ts`, `convex/lib/deleteStoredFile.ts`)
+
+One rule attaches a file (`assertAttachableUpload`: the actor's own upload, within 10 minutes on the server clock,
+in the surface's folder, in this org, and held by nothing) and one rule removes it
+(`deleteStoredFileIfUnreferenced`: the bytes and thumbnail go only when nothing holds the file once the caller's own
+row is gone). Supplier documents and files, the order's invoice, crew documents, `mediaWrites` and the legacy
+sub-hire media path (`fileUploads.removeIfUnreferenced`) all use them. `FILE_HOLDERS` lists every `table.field`
+that can hold a file; a schema-walk test fails on an unregistered `fileId` / `*FileId` / `photos` / `attachments`
+field, and on an `image` / `images` / `logo` / `avatar` field not listed with a reason in `NOT_FILE_HOLDERS`
+(URLs inside the settings blob are recorded in `NOT_FILE_HOLDER_SETTINGS`).
+
+**Known limit.** Some holders have no `by_fileId` index (`supplierOrders.invoiceFileId`, the `photos` /
+`attachments` arrays), so they are scanned with a cap. When a scan hits its cap the file cannot be PROVEN free, so
+it fails CLOSED: an attach is refused with the distinct code `FILE_REFS_UNVERIFIABLE` ("Too many records to check
+this file safely", not "already attached"), and a removal keeps the bytes. In an org big enough to hit a cap every
+attach of the affected kind is refused until a holder index exists; adding one is a schema change that needs the
+owner's decision (it is not part of Phase 13).
+
 ### Supplier spend rollups (WS7 #946)
 `suppliers.detail` (`convex/suppliers.ts`) gains a `spend` object, shown on the
 supplier detail page's hero strip (headline "Spend" figure) and a dedicated

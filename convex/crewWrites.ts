@@ -12,7 +12,7 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
-import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
 import * as enums from "./lib/validators";
 
@@ -249,8 +249,8 @@ function isDeletableCrewStatus(m: { status?: string; isActive?: boolean }): bool
 async function deleteCrewDocuments(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<void> {
   const docs = await ctx.db.query("crewDocuments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).take(MAX_CREW_DOCUMENTS + 1);
   for (const d of docs.filter((x) => x.organizationId === orgId)) {
-    await deleteStoredFile(ctx, d.fileId, orgId);
     await ctx.db.delete(d._id);
+    await deleteStoredFileIfUnreferenced(ctx, orgId, d.fileId);
   }
 }
 

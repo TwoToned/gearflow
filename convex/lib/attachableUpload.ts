@@ -32,7 +32,6 @@ export const FINANCE_FOLDER_PREFIX = "finance/";
 /** The folder an order's invoice is uploaded into (`supplierOrders.invoiceFileId`). */
 export const INVOICE_UPLOAD_FOLDER = "supplier-order-invoices";
 
-/** Every `table.field` that can hold a file; the schema test requires each file-shaped field to be listed. */
 /**
  * File-ish fields that are NOT holders of a `fileUploads` file, each with the reason it is safe to leave out.
  * The schema-walk test requires every `image` / `images` / `logo` / `avatar` field to be listed here or in
@@ -49,9 +48,19 @@ export const NOT_FILE_HOLDERS: Record<string, string> = {
   "assets.images": "Denormalised image URLs; the attachable holder is `assetMedia.fileId` (indexed, in FILE_HOLDERS).",
 };
 
+/** Every `table.field` that can hold a file; the schema test requires each file-shaped field to be listed. */
+/**
+ * File-ish URLs inside the `orgSettings.settings` JSON blob (invisible to the schema walk), each with its reason.
+ * The test checks the blob field still exists; this list is the record that they were considered.
+ */
+export const NOT_FILE_HOLDER_SETTINGS: Record<string, string> = {
+  "settings.branding.logoUrl": "Organisation logo URL: written by the settings flow from its own upload, never from a fileUploads row.",
+  "settings.branding.iconUrl": "Organisation icon URL: written by the settings flow from its own upload, never from a fileUploads row.",
+};
+
 export const FILE_HOLDERS = [
   "modelMedia.fileId", "assetMedia.fileId", "kitMedia.fileId", "projectMedia.fileId", "clientMedia.fileId", "locationMedia.fileId", "subHireMedia.fileId",
-  "supplierDocuments.fileId", "supplierOrderFiles.fileId",
+  "supplierDocuments.fileId", "supplierOrderFiles.fileId", "crewDocuments.fileId",
   "supplierOrders.invoiceFileId",
   "maintenanceRecords.photos", "maintenanceRecords.attachments", "checkRecords.photos",
   "quotes.pdfFileId", "quotes.recalledPdfFileIds", "invoices.pdfFileId",
@@ -71,14 +80,23 @@ async function heldByIndexedTable(db: DatabaseReader, fileId: string): Promise<b
     db.query("subHireMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).first(),
     db.query("supplierDocuments").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).first(),
     db.query("supplierOrderFiles").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).first(),
+    db.query("crewDocuments").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).first(),
   ]);
   return hits.some((h) => h != null);
 }
 
+/**
+ * What the holders say about a file: `held` by something, `free` of everything, or `unverifiable` (a scan hit its
+ * cap, so it cannot be proven unreferenced). Both non-free states fail CLOSED everywhere: nothing attaches and
+ * nothing is deleted. They differ only in the message an attach is refused with.
+ */
+export type FileRefs = "held" | "free" | "unverifiable";
+
 /** `supplierOrders.invoiceFileId` has no index, so the org's orders are scanned (bounded; unprovable = referenced). */
-async function heldAsInvoice(db: DatabaseReader, orgId: string, fileId: string): Promise<boolean> {
+async function heldAsInvoice(db: DatabaseReader, orgId: string, fileId: string): Promise<FileRefs> {
   const orders = await collectCapped(db.query("supplierOrders").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), INVOICE_SCAN_CAP);
-  return orders.truncated || orders.rows.some((o) => o.invoiceFileId === fileId);
+  if (orders.rows.some((o) => o.invoiceFileId === fileId)) return "held";
+  return orders.truncated ? "unverifiable" : "free";
 }
 
 /**
@@ -95,27 +113,39 @@ async function heldAsInvoice(db: DatabaseReader, orgId: string, fileId: string):
 const MAINTENANCE_SCAN_CAP = 5000;
 const CHECK_SCAN_CAP = 2000;
 
-async function heldInPhotoArrays(db: DatabaseReader, orgId: string, file: { id: string; url: string; thumbnailUrl?: string; storageKey: string; _creationTime: number }): Promise<boolean> {
+async function heldInPhotoArrays(db: DatabaseReader, orgId: string, file: { id: string; url: string; thumbnailUrl?: string; storageKey: string; _creationTime: number }): Promise<FileRefs> {
   const needles = new Set([file.id, file.url, file.storageKey, ...(file.thumbnailUrl ? [file.thumbnailUrl] : [])]);
   const holds = (values: string[] | undefined) => (values ?? []).some((v) => needles.has(v) || needles.has(storageIdOf(v) ?? ""));
   const maintenance = await collectCapped(db.query("maintenanceRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), MAINTENANCE_SCAN_CAP);
-  if (maintenance.truncated) return true; // cannot prove it unreferenced: fail closed
-  if (maintenance.rows.some((r) => holds(r.photos) || holds(r.attachments))) return true;
+  if (maintenance.rows.some((r) => holds(r.photos) || holds(r.attachments))) return "held";
+  if (maintenance.truncated) return "unverifiable"; // cannot prove it unreferenced
   const checks = await collectCapped(db.query("checkRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", file._creationTime)), CHECK_SCAN_CAP);
-  if (checks.truncated) return true; // fail closed
-  return checks.rows.some((r) => holds(r.photos));
+  if (checks.rows.some((r) => holds(r.photos))) return "held";
+  return checks.truncated ? "unverifiable" : "free";
 }
 
-/** Is this org's `fileUploads` file held by anything (see {@link FILE_HOLDERS})? A missing or foreign file holds nothing. */
-export async function isFileReferenced(db: DatabaseReader, orgId: string, fileId: string): Promise<boolean> {
+/** The state behind {@link isFileReferenced}: a missing or foreign file is `free`. */
+export async function fileReferenceState(db: DatabaseReader, orgId: string, fileId: string): Promise<FileRefs> {
   const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (!file || file.organizationId !== orgId) return false;
-  if (await heldByIndexedTable(db, fileId)) return true;
+  if (!file || file.organizationId !== orgId) return "free";
+  if (await heldByIndexedTable(db, fileId)) return "held";
   const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
   // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
-  if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) return true;
-  if (stored?.folder === INVOICE_UPLOAD_FOLDER && (await heldAsInvoice(db, orgId, fileId))) return true;
-  return await heldInPhotoArrays(db, orgId, file);
+  if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) return "held";
+  let unverifiable = false;
+  if (stored?.folder === INVOICE_UPLOAD_FOLDER) {
+    const invoice = await heldAsInvoice(db, orgId, fileId);
+    if (invoice === "held") return "held";
+    unverifiable = invoice === "unverifiable";
+  }
+  const photos = await heldInPhotoArrays(db, orgId, file);
+  if (photos === "held") return "held";
+  return unverifiable || photos === "unverifiable" ? "unverifiable" : "free";
+}
+
+/** Is this org's `fileUploads` file held by anything, or impossible to prove free (fail closed)? */
+export async function isFileReferenced(db: DatabaseReader, orgId: string, fileId: string): Promise<boolean> {
+  return (await fileReferenceState(db, orgId, fileId)) !== "free";
 }
 
 /** Prove `fileId` may be attached by `actorUserId` for a surface that uploads into `folder`; throws otherwise. */
@@ -129,5 +159,8 @@ export async function assertAttachableUpload(
   if (Date.now() - file._creationTime > ATTACH_UPLOAD_MAX_AGE_MS) throw new ConvexError("That upload is too old: upload the file again.");
   const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
   if (!stored || stored.organizationId !== a.orgId || stored.folder !== a.folder) throw new ConvexError("That file was not uploaded for this.");
-  if (await isFileReferenced(db, a.orgId, a.fileId)) throw new ConvexError("That file is already attached to something.");
+  const refs = await fileReferenceState(db, a.orgId, a.fileId);
+  if (refs === "held") throw new ConvexError("That file is already attached to something.");
+  // Distinct from "held": this org has too many records to prove the file free. Still refused (fail closed).
+  if (refs === "unverifiable") throw new ConvexError({ code: "FILE_REFS_UNVERIFIABLE", message: "Too many records to check this file safely" });
 }

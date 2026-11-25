@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { KIT_COST_FIELDS, costSortAllowed } from "./lib/gearCostFields";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { clampPageSize, collectCapped } from "./lib/pagination";
 import { resolveNow } from "./lib/projectSegments";
@@ -17,8 +18,8 @@ import { ReadBudget } from "./lib/readBudget";
  * say so with `truncated`.
  */
 
-/** What the org paid: redacted for a `noFinancials` key, like every other cost field. */
-const KIT_COST_FIELDS = ["purchasePrice"] as const;
+// What the org paid is `KIT_COST_FIELDS` in `lib/gearCostFields.ts`, the ONE list: redacted for a
+// `noFinancials` key, and a hidden cost column is not a sort key (`costSortAllowed`).
 
 /**
  * Documents ONE call may read for kit members, reserving lines and member counts (a TOTAL budget, not a
@@ -78,9 +79,6 @@ const KIT_SORT_KEYS: Record<string, (k: Doc<"kits">, c: KitSortCtx) => unknown> 
   state: (k, c) => c.states?.get(k.id)?.key,
 };
 
-/** Sort keys that order by a cost field: a caller who cannot see the field gets the default order instead. */
-const KIT_COST_SORT_KEYS: readonly string[] = KIT_COST_FIELDS;
-
 /**
  * Pure: the sort actually applied. An unknown key, or a cost key for a caller who cannot see cost, falls
  * back to the default order in ASCENDING order whatever direction was asked (asc and desc must be
@@ -88,7 +86,7 @@ const KIT_COST_SORT_KEYS: readonly string[] = KIT_COST_FIELDS;
  */
 function effectiveKitSort(sortBy: string | undefined, dir: 1 | -1, redacted: boolean): { sortBy: string; dir: 1 | -1 } {
   const s = sortBy ?? "assetTag";
-  if (!Object.hasOwn(KIT_SORT_KEYS, s) || (redacted && KIT_COST_SORT_KEYS.includes(s))) return { sortBy: "assetTag", dir: 1 };
+  if (!Object.hasOwn(KIT_SORT_KEYS, s) || !costSortAllowed(s, redacted)) return { sortBy: "assetTag", dir: 1 };
   return { sortBy: s, dir };
 }
 

@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { MODEL_COST_FIELDS, costSortAllowed } from "./lib/gearCostFields";
 import { dueAssetMap } from "./lib/assetAttention";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { clampPageSize, collectCapped } from "./lib/pagination";
@@ -25,8 +26,8 @@ import {
  * full-table read), with a `truncated` flag when a cap bites.
  */
 
-/** Cost data (what the org paid / would pay): redacted for a `noFinancials` key, like `models.list`. */
-const MODEL_COST_FIELDS = ["replacementCost", "defaultPurchasePrice"] as const;
+// Cost data (what the org paid / would pay) is `MODEL_COST_FIELDS` in `lib/gearCostFields.ts`, the ONE list:
+// redacted for a `noFinancials` key, and a hidden cost column is not a sort key (`costSortAllowed`).
 
 const MODEL_SEGMENT_KEYS = ["all", "stock", "nostock", "due", "archived"] as const;
 type ModelSegmentKey = (typeof MODEL_SEGMENT_KEYS)[number];
@@ -138,8 +139,7 @@ const MODEL_SORT_KEYS: Record<string, (m: Doc<"models">, c: SortCtx) => unknown>
  */
 function effectiveModelSort(sortBy: string | undefined, dir: 1 | -1, redacted: boolean): { sortBy: string; dir: 1 | -1 } {
   const s = sortBy ?? "name";
-  const isCost = (MODEL_COST_FIELDS as readonly string[]).includes(s);
-  if (!Object.hasOwn(MODEL_SORT_KEYS, s) || (redacted && isCost)) return { sortBy: "name", dir: 1 };
+  if (!Object.hasOwn(MODEL_SORT_KEYS, s) || !costSortAllowed(s, redacted)) return { sortBy: "name", dir: 1 };
   return { sortBy: s, dir };
 }
 

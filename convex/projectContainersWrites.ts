@@ -15,6 +15,7 @@ import { resolveWriteVersionId, versionRows } from "./lib/versionScope";
 import { assertContainerNotSealed } from "./lib/containerSeal";
 import { isPackedUnit } from "./lib/packedUnit";
 import { MAX_PLAN_LINES } from "./lib/packingPlan";
+import { assertModelNotArchived } from "./lib/modelArchive";
 import type { Doc } from "./_generated/dataModel";
 
 /**
@@ -134,6 +135,7 @@ async function assertContainerRefsInOrg(
   if (refs.assetId) await assertRefInOrg(ctx, "assets", refs.assetId, orgId);
   if (refs.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", refs.bulkAssetId, orgId);
   if (refs.modelId) await assertRefInOrg(ctx, "models", refs.modelId, orgId);
+  if (refs.modelId) await assertModelNotArchived(ctx, orgId, refs.modelId);
 }
 
 async function assertParentContainerOnSameProject(

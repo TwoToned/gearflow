@@ -8,7 +8,6 @@ import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import type { Doc } from "./_generated/dataModel";
 import { writeActivityLog } from "./lib/audit";
-import { bumpCountersForTable } from "./lib/counters";
 import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
@@ -32,8 +31,8 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *  - create/update with requiresTestAndTag → backfillTestTagAssetsCore (auto-register).
  *  - update also PROPAGATES the model's T&T defaults to every active testTagAsset
  *    linked to its assets (equipmentClass / applianceType / testIntervalMonths).
- *  - archive DELETES all of the model's assets/bulkAssets (org-filtered) then
- *    soft-archives (isActive=false).
+ *  - archive is a TRUE soft archive (isActive=false): the model's assets and bulk
+ *    assets are NOT touched (Phase 12, Q-S1). restore + an exact Undo are siblings.
  *  - bulkUpdateRates computes each new rate from the current value INSIDE the
  *    mutation (dailyRate auto-syncs defaultRentalPrice).
  */
@@ -251,7 +250,11 @@ export const updateNative = mutation({
       }
     }
 
-    await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
+    // Archive and Restore are the ONLY paths into and out of archived (each audited, each with an exact Undo).
+    if (a.isActive !== undefined && a.isActive !== (doc.isActive ?? true)) {
+      throw new ConvexError({ code: "USE_ARCHIVE", message: "Use Archive or Restore to change whether a model is archived." });
+    }
+    await ctx.db.patch(doc._id, { ...toDoc(a), isActive: doc.isActive, updatedAt: a.now });
 
     if (a.requiresTestAndTag) {
       await backfillTestTagAssetsCore(ctx, a.orgId, a.now);
@@ -279,33 +282,79 @@ export const updateNative = mutation({
   },
 });
 
+/**
+ * archiveNative — a TRUE soft archive (UX Phase 12, owner ruling Q-S1): the model is
+ * hidden from new quotes and pickers, and NOTHING else changes. Its assets and bulk
+ * assets stay, units out finish on their jobs, reservations hold, quotes are
+ * unchanged. (It used to hard-DELETE every asset and bulk asset of the model; that
+ * data-loss cascade is gone.) Audited with the exact-Undo snapshot; `restoreNative`
+ * is the verb back, and `undoArchiveNative` reverses either.
+ */
+async function setModelActive(
+  ctx: MutationCtx,
+  a: { id: string; orgId: string; now: number; actor: Actor; auditId: string },
+  active: boolean,
+) {
+  const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+  if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+  // Restore is the way back from archived only.
+  if (active && (doc.isActive ?? true)) {
+    throw new ConvexError({ code: "NOT_ARCHIVED", message: `Model ${doc.name} is not archived, so it can't be restored.` });
+  }
+  const diff = diffFields({ isActive: doc.isActive ?? true }, { isActive: active }, ["isActive"]);
+  if (!diff) return { id: a.id, undoable: false };
+  await ctx.db.patch(doc._id, { isActive: active, updatedAt: a.now });
+  await recordFieldEdit(ctx, {
+    orgId: a.orgId, entityType: "model", entityId: a.id, entityName: doc.name, auditId: a.auditId, actor: a.actor, now: a.now,
+    summary: `${active ? "Restored" : "Archived"} model ${doc.name}`, diff,
+  });
+  return { id: a.id, undoable: true };
+}
+
 export const archiveNative = mutation({
-  returns: v.object({ id: v.string() }),
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "model");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "model", "delete");
     const actor = await resolveActor(ctx, a.actor);
+    return setModelActive(ctx, { ...a, actor }, false);
+  },
+});
 
+/** Bring an archived model back (`Restore model`). `model:update`, audited, reversible. */
+export const restoreNative = mutation({
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    return setModelActive(ctx, { ...a, actor }, true);
+  },
+});
+
+/** The exact reverse of ONE archive or restore, from its own audit row (ids only). */
+export const undoArchiveNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "update");
+    const actor = await resolveActor(ctx, a.actor);
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
-    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
-
-    // Delete the model's assets + bulk assets (org-filtered — by_modelId is GLOBAL).
-    const assets = (await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
-      .filter((x) => x.organizationId === a.orgId);
-    const bulk = (await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
-      .filter((x) => x.organizationId === a.orgId);
-    // Delete + decrement the sharded dashboard counters (parity with the old
-    // api.assets.remove / api.bulkAssets.remove cascade, which bump on delete).
-    for (const x of assets) { await ctx.db.delete(x._id); await bumpCountersForTable(ctx, "assets", x, null); }
-    for (const x of bulk) { await ctx.db.delete(x._id); await bumpCountersForTable(ctx, "bulkAssets", x, null); }
-
-    // Soft archive.
-    await ctx.db.patch(doc._id, { isActive: false, updatedAt: a.now });
-
-    await logModel(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name: doc.name, summary: `Archived model ${doc.name}` });
-    return { id: a.id };
+    return undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "model", entityId: a.id, entityName: doc?.name ?? a.id, auditId: a.auditId, actor, now: a.now,
+      // `isActive` is absent on old rows and means active, so compare against the effective value.
+      load: async () => (doc && doc.organizationId === a.orgId ? { ...doc, isActive: doc.isActive ?? true } : null),
+      apply: async (d, plan) => {
+        const isActive = (plan.set.isActive as boolean | undefined) ?? true;
+        await ctx.db.patch(d._id, { isActive, updatedAt: a.now });
+      },
+    });
   },
 });
 
@@ -635,10 +684,15 @@ export const agentOps: AgentOpsAnnotations = {
   setReorderLevelsNative: { danger: "low", summary: "Set (or clear) the sale-stock reorder level of one or more models.", mcpTier: 2 },
   adjustSaleStockManyNative: { danger: "low", summary: "Adjust the new-stock sale pool of several models by a delta each (restock or correction).", mcpTier: 2 },
   undoSaleStockNative: { danger: "high", summary: "Exactly undo a recent manual sale-stock adjustment by its audit ids (refuses if the stock moved since)." },
-  // Delete/archive tier (§9) — also cascade-DELETES every asset + bulkAsset of
-  // this model (not just a soft archive of the model itself), so it's high on
-  // both grounds.
-  archiveNative: { danger: "high" },
+  // Delete/archive tier (§9): hides the model from new quotes and pickers. A soft
+  // archive now (it no longer deletes the model's assets); still `high` by tier.
+  archiveNative: {
+    danger: "high",
+    summary: "Archive a model: hides it from new quotes and pickers and refuses new job lines on it (MODEL_ARCHIVED). Its assets, existing lines, reservations and availability are NOT touched. Reversible with restoreNative or undoArchiveNative.",
+  },
+  // Puts an archived model (and so its gear) back on new quotes, so `high`.
+  restoreNative: { danger: "high", summary: "Restore an archived model so it can be added to jobs again." },
+  undoArchiveNative: { danger: "medium" },
   // A single model's stock count, reversible by an equal-and-opposite
   // adjustment — no asset/availability impact (that's `saleStock.ts`'s
   // FROM_RENTAL_STOCK primitives, which touch real assets and aren't

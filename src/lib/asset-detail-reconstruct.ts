@@ -162,12 +162,14 @@ export function reconstructAsset(bundle: AssetBundleData) {
     .sort((x, y) => (y.maintenanceRecord.createdAt?.getTime() ?? 0) - (x.maintenanceRecord.createdAt?.getTime() ?? 0))
     .slice(0, 20);
 
-  const tt = bundle.testTags[0];
+  // The active registration, else the newest one (a retired unit's rows are RETIRED/inactive).
+  const tt = bundle.testTags.find((t) => t.isActive !== false) ?? bundle.testTags[0];
   const testTagAsset = tt
     ? {
         id: tt.id,
         testTagId: tt.testTagId,
         status: tt.status ?? null,
+        isActive: tt.isActive ?? true,
         lastTestDate: toDate(tt.lastTestDate),
         nextDueDate: toDate(tt.nextDueDate),
       }
@@ -179,6 +181,8 @@ export function reconstructAsset(bundle: AssetBundleData) {
         name: bundle.model.name ?? "",
         manufacturer: bundle.model.manufacturer ?? null,
         requiresTestAndTag: bundle.model.requiresTestAndTag ?? false,
+        // Cost: ABSENT for a `noFinancials` key, so `null` here (never a zero).
+        replacementCost: bundle.model.replacementCost ?? null,
         specifications: bundle.model.specifications ?? null,
         category: bundle.category ? { id: bundle.category.id, name: bundle.category.name } : null,
         media: toMediaItems(bundle.modelMedia, fileMap),
@@ -208,6 +212,9 @@ export function reconstructAsset(bundle: AssetBundleData) {
     locationId: a.locationId ?? null,
     parentAssetId: a.parentAssetId ?? null,
     barcode: a.barcode ?? null,
+    // Held so an edit writes them back unchanged (the sheet sets every field it holds).
+    tags: a.tags ?? [],
+    images: a.images ?? [],
     notes: a.notes ?? null,
     isActive: a.isActive ?? true,
     purchaseDate: toDate(a.purchaseDate),
@@ -231,6 +238,8 @@ export function reconstructAsset(bundle: AssetBundleData) {
     lineItems,
     maintenanceLinks,
     testTagAsset,
+    // The health inputs the bundle derives server-side (service, checks, scans, repairs, Delete gate).
+    facts: bundle.facts,
     scanLogs: [] as never[],
   };
 }

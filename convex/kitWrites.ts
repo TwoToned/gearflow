@@ -16,6 +16,8 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { stampLocationMovement } from "./lib/locationMovement";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { kitCostGuard } from "./lib/gearCostRedact";
+import { KIT_COST_FIELDS } from "./lib/gearCostFields";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -278,6 +280,13 @@ async function assertTagFree(ctx: MutationCtx, orgId: string, tag: string, excep
   if (dup && dup.id !== exceptId) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" already exists` });
 }
 
+/** `set` / `clear` with the kit cost fields (`KIT_COST_FIELDS`) removed for a caller whose cost is hidden (a `noFinancials` key). */
+async function withoutHiddenKitCost<S extends Record<string, unknown>>(ctx: MutationCtx, set: S, clear: string[]): Promise<{ set: S; clear: string[] }> {
+  if (!(await kitCostGuard(ctx)).hidden) return { set, clear };
+  const kept = Object.fromEntries(Object.entries(set).filter(([f]) => !(KIT_COST_FIELDS as readonly string[]).includes(f))) as S;
+  return { set: kept, clear: clear.filter((f) => !(KIT_COST_FIELDS as readonly string[]).includes(f)) };
+}
+
 /**
  * The Kit sheet's save (UX Phase 14, 14b-2): `set` writes fields, `clear` empties them (the old `updateNative`
  * could not clear a field: an omitted arg leaves it alone). Only KIT_EDIT_FIELDS may be named, so status, the
@@ -294,18 +303,20 @@ export const editNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     const doc = await getKitByCuid(ctx, a.id);
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found: " + a.id);
-    const clears = a.clear.filter((f) => (KIT_EDIT_FIELDS as readonly string[]).includes(f) && f !== "name" && f !== "assetTag");
-    if (clears.length !== a.clear.length) throw new ConvexError("That field can't be cleared here");
-    assertKitFields(a.set);
-    if (a.set.assetTag && a.set.assetTag !== doc.assetTag) await assertTagFree(ctx, a.orgId, a.set.assetTag, a.id);
-    if (a.set.categoryId) await assertRefInOrg(ctx, "categories", a.set.categoryId, a.orgId);
-    if (a.set.locationId) await assertRefInOrg(ctx, "locations", a.set.locationId, a.orgId);
+    // What the kit COST to buy is a cost field: a `noFinancials` key can neither set nor clear it (the write follows the read).
+    const { set, clear } = await withoutHiddenKitCost(ctx, a.set, a.clear);
+    const clears = clear.filter((f) => (KIT_EDIT_FIELDS as readonly string[]).includes(f) && f !== "name" && f !== "assetTag");
+    if (clears.length !== clear.length) throw new ConvexError("That field can't be cleared here");
+    assertKitFields(set);
+    if (set.assetTag && set.assetTag !== doc.assetTag) await assertTagFree(ctx, a.orgId, set.assetTag, a.id);
+    if (set.categoryId) await assertRefInOrg(ctx, "categories", set.categoryId, a.orgId);
+    if (set.locationId) await assertRefInOrg(ctx, "locations", set.locationId, a.orgId);
 
-    const next: Record<string, unknown> = { ...doc, ...a.set };
+    const next: Record<string, unknown> = { ...doc, ...set };
     for (const f of clears) delete next[f];
     const diff = diffFields(doc, next, KIT_EDIT_FIELDS);
     if (!diff) return { id: a.id, changed: false };
-    const patch: Record<string, unknown> = { ...a.set, updatedAt: a.now };
+    const patch: Record<string, unknown> = { ...set, updatedAt: a.now };
     for (const f of clears) patch[f] = undefined;
     await ctx.db.patch(doc._id, patch);
     await stampLocationMovement(ctx, a.orgId, doc.locationId, (next.locationId as string | undefined) ?? undefined, a.now);

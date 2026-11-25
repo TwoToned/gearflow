@@ -457,17 +457,7 @@ export function ModelForm({ initialData, existingAssetCount = 0, existingBulkAss
                       )}
                     />
                   </SmartFormField>
-                  <div className="flex items-center justify-between rounded-[var(--r)] border border-line bg-paper-2/40 px-3.5 py-3">
-                    <div>
-                      <Label htmlFor="isActive">Active</Label>
-                      <p className="t-micro text-muted">Inactive models are hidden from asset creation.</p>
-                    </div>
-                    <Switch
-                      id="isActive"
-                      checked={v.isActive}
-                      onCheckedChange={(val) => form.setValue("isActive", val)}
-                    />
-                  </div>
+                  {/* Archive and Restore are verbs on the model page (each with its own Undo); not a switch here. */}
                   <div className="flex items-center justify-between rounded-[var(--r)] border border-line bg-paper-2/40 px-3.5 py-3">
                     <div>
                       <Label htmlFor="isContainer">Packing container</Label>

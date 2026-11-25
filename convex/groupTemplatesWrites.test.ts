@@ -289,6 +289,19 @@ describe("groupTemplatesWrites.applyNative", () => {
     });
   });
 
+  test("(a1) a template with an ARCHIVED model is refused with MODEL_ARCHIVED, writing nothing", async () => {
+    const t = makeT();
+    await seedBase(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      await ctx.db.patch(m!._id, { isActive: false });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args)).rejects.toThrow(/archived/);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first()).toBeNull();
+    });
+  });
+
   // #1249 — a model with NO daily/weekly rate has nothing to auto-price from, so
   // its line must land UNPRICED ("—"), not at an explicit $0. computeBlendedCharge
   // with both rates null returns `(dailyRate ?? 0) * totalDays` = 0, which used to

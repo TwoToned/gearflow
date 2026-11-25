@@ -153,3 +153,22 @@ describe("kitWrites.undoCreateNative", () => {
     await expect(t2.withIdentity(asUser).mutation(api.kitWrites.undoCreateNative, { orgId: ORG, id: "k1", auditId: "c1", now: NOW, actor: ACTOR })).rejects.toThrow(/can't be un-created/);
   });
 });
+
+describe("kitWrites.editNative and the kit cost line", () => {
+  test("a noFinancials key can edit a kit but can neither set nor clear what it cost to buy; a user session can", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+      await ctx.db.patch(k!._id, { purchasePrice: 400 });
+      await ctx.db.insert("apiKeys", { id: "key1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h", scopes: JSON.stringify(["*"]), isActive: true, actingUserId: "user_1", createdById: "user_1", noFinancials: true });
+    });
+    const asAgent = { subject: "user_1", orgId: ORG, akid: "key1" };
+    expect(await edit(t, { name: "Rack B", purchasePrice: 1 }, [], "ag1", asAgent)).toEqual({ id: "k1", changed: true });
+    expect(await kit(t)).toMatchObject({ name: "Rack B", purchasePrice: 400 }); // the price it sent was ignored
+    await edit(t, {}, ["purchasePrice"], "ag2", asAgent);
+    expect((await kit(t)).purchasePrice).toBe(400); // and it cannot clear it
+    await edit(t, { purchasePrice: 450 }, [], "u1");
+    expect((await kit(t)).purchasePrice).toBe(450); // a user session sets it
+  });
+});

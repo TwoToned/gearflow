@@ -383,6 +383,17 @@ describe("testTagRecordsWrites.createNative", () => {
     expect((await tta(t))?.status).toBe("FAILED");
   });
 
+  test("FAIL + REFERRED_TO_ELECTRICIAN on a RETIRED inventory asset leaves it RETIRED (the referral is still recorded)", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, { assetId: "as1" });
+    await t.run(async (ctx) => { await ctx.db.insert("assets", { id: "as1", organizationId: ORG, assetTag: "PA-1", modelId: "m", status: "RETIRED", isActive: false }); });
+    await create(t, {
+      visualInspectionResult: "FAIL", failureAction: "REFERRED_TO_ELECTRICIAN", failureNotes: "Burnt cord",
+      maintenanceId: "mnt1", maintenanceLinkId: "lnk1",
+    });
+    expect((await t.run(async (ctx) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "as1")).first()))).toMatchObject({ status: "RETIRED", isActive: false });
+    expect(await t.run(async (ctx) => ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "mnt1")).first())).not.toBeNull();
+  });
+
   test("rejects a non-member testedById", async () => {
     const t = makeT(); await seed(t); await seedAsset(t);
     await expect(create(t, { testedById: "user_ghost" })).rejects.toThrow(/not a member/i);

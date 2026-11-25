@@ -117,13 +117,11 @@ export const VALIDATION_PAIRS: ValidationPair[] = [
     name: "model",
     zod: modelSchema,
     convex: modelFields,
-    // WS6 #945: maintenanceIntervalDays was removed from the interactive
-    // create/edit form's Zod schema (superseded by serviceSchedules) but is
-    // deliberately LEFT wired in modelWrites.ts because CSV bulk import/export
-    // (src/server/csv.ts) still reads/writes this column via the generic
-    // convex/models.ts CRUD — migrating that surface is a separate follow-up.
-    // See the deprecation comment on convex/schema.ts's models.maintenanceIntervalDays.
-    allowConvexOnly: ["maintenanceIntervalDays"],
+    // WS6 #945: maintenanceIntervalDays is DEPRECATED (superseded by serviceSchedules; see
+    // convex/schema.ts's models.maintenanceIntervalDays) and no form field edits it. It is on BOTH
+    // sides again (modelSchema carries it as an optional pass-through) because the edit write treats
+    // an absent field as "clear it", so a stored value must round-trip through an edit (UX Phase 12).
+    // CSV bulk import/export (src/server/csv.ts) still reads/writes it too.
   },
   { name: "location", zod: locationSchema, convex: locationFields },
   { name: "supplier", zod: supplierSchema, convex: supplierFields },

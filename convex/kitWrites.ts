@@ -354,10 +354,28 @@ export const undoEditNative = mutation({
   },
 });
 
+/** Every table whose rows point at a kit by `kitId` (each has a `by_kitId` index): a kit any of them names is not "just created". */
+const KIT_REFERENCE_TABLES = [
+  "kitSerializedItems", "kitBulkItems", "projectLineItems", "kitMedia", "kitCheckItems",
+  "groupTemplateItems", "maintenanceRecords", "checkRecords", "assetScanLogs", "kitRevenueAllocations",
+] as const;
+
+/** Does ANY row (any org: the indexes are global and a cross-org row still means this id is in use) name this kit? */
+async function kitIsReferenced(ctx: MutationCtx, kitId: string): Promise<boolean> {
+  for (const table of KIT_REFERENCE_TABLES) {
+    const q = ctx.db.query(table) as unknown as {
+      withIndex: (n: "by_kitId", f: (b: { eq: (k: "kitId", v: string) => unknown }) => unknown) => { first: () => Promise<unknown> };
+    };
+    if (await q.withIndex("by_kitId", (b) => b.eq("kitId", kitId)).first()) return true;
+  }
+  return false;
+}
+
 /**
- * The exact Undo of `createNative` (ids only): removes the kit only while it is exactly as created (unedited, no
- * members, no job lines, no photos, no checks), by the person who created it, inside the 10-minute server window,
- * once. It deletes only the kit row it created.
+ * The exact Undo of `createNative` (ids only): removes the kit only while it is exactly as created (unedited, and
+ * nothing in `KIT_REFERENCE_TABLES` names it: no members, job lines, photos, checks, templates, maintenance,
+ * check records, scan history or revenue allocations), by the person who created it, inside the 10-minute server
+ * window, once. It deletes only the kit row it created.
  */
 export const undoCreateNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -379,14 +397,7 @@ export const undoCreateNative = mutation({
     const doc = await getKitByCuid(ctx, a.id);
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found");
     if (doc.updatedAt !== row.createdAt) throw new ConvexError("This kit was changed since: it can't be undone");
-    const [ser, blk, lines, media, checks] = await Promise.all([
-      ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
-      ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
-      ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
-      ctx.db.query("kitMedia").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
-      ctx.db.query("kitCheckItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
-    ]);
-    if (ser || blk || lines || media || checks) throw new ConvexError("This kit has members, jobs, photos or checks now, so it can't be undone");
+    if (await kitIsReferenced(ctx, a.id)) throw new ConvexError("This kit has members, jobs, photos, checks or history now, so it can't be undone");
     await ctx.db.delete(doc._id);
     await stampLocationMovement(ctx, a.orgId, doc.locationId, undefined, a.now);
     await writeActivityLog(ctx, {

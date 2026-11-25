@@ -85,6 +85,29 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   the header ⋯ item, the header's discussion count badge and Overview's blocking row all jump
   to it (`?tab=discussion`). `Blocking` holds prep and dispatch exactly as before.
   `?tab=work` (the old name) still resolves to this tab.
+- **Notes section** (`notes-section.tsx`, `note-card.tsx`): three cards with the AUDIENCE on
+  the label (Client notes · prints on the quote & invoice, Crew notes · prints on the call
+  sheet & runsheet, Internal notes · only us). Saves on blur or ⌘↵ (no Save button, no Undo:
+  the version menu is the way back) through `projectWrites.updateNotesNative`; an
+  `Unsaved` / `Saved · Sam · date` line is DERIVED from the `note_updated` activity events the
+  save writes (`collaboration.lastNoteSaves`; no stored `updatedBy`, and the event never
+  carries the note text). Client notes have a Preview that renders the same markup the
+  documents print. A `vN · live ▾` menu shows an earlier version's notes read-only
+  (`versionsRead.getVersion`); a viewer sees the text only.
+- **Crew notes print** at the top of the call sheet (a `CREW NOTES` block under the info block,
+  capped at 12 rows with a pointer back to the job; `crewNotesBlock` in
+  `src/lib/pdfme/templates/call-sheet-services.ts`) and of the Logistics run sheet print
+  (`print-runsheet.tsx`). Both read ONE helper, `src/lib/crew-notes-print.ts`.
+- **Files section** (`files-section.tsx`, `file-row.tsx`): the job's files from
+  `projectFiles.listForProject` with a category per file (the `ProjectMediaType` enum, guessed
+  from the name on upload, changed through `mediaWrites.setTypeNative`), uploader and date,
+  Open / Download / Rename (`mediaWrites.renameNative`, display name only) / Change category,
+  chips `All · Documents · Photos`, an always-on checkbox + `BulkBar`, a drop strip naming the
+  types and the 50 MB cap, and `Take a photo` on a phone. **Remove is a confirmed hard delete
+  of the stored file with NO Undo** (an Undo never deletes or restores stored bytes).
+  `Also on this job` (`projectFiles.alsoOnJob`) lists, read-only, the files that live on other
+  tabs (sent quote and issued invoice documents, sub-hire attachments, incident photos), each
+  with its origin and an open link, gated per source by `callerMayRead`.
 - **`/my-tasks`** (`src/app/(app)/my-tasks/page.tsx`) and the **My tasks** dashboard widget
   (`MyTasksWidget`).
 

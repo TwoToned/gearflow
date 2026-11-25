@@ -385,6 +385,33 @@ export const duplicateNative = mutation({
   },
 });
 
+const refuse = (code: string, message: string) => new ConvexError({ code, message });
+
+/** The duplicate's own audit snapshot, after the org / entity / once / window / author gates. */
+async function loadDuplicateSnapshot(ctx: MutationCtx, a: { id: string; orgId: string; auditId: string }, userId: string) {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  const snap = (row?.details as { duplicate?: { serverSavedAt: number; authorId: string; stamp: number } } | undefined)?.duplicate;
+  if (!row || row.organizationId !== a.orgId || row.entityType !== "model" || row.entityId !== a.id || !snap) {
+    throw refuse("NOT_FOUND", "That copy was not found, so it can't be undone.");
+  }
+  const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+  if (marker && marker.organizationId === a.orgId) throw refuse("ALREADY_UNDONE", "That copy was already undone.");
+  assertWithinUndoWindow(snap.serverSavedAt, Date.now(), "change");
+  if (snap.authorId !== userId) throw refuse("NOT_YOURS", "Only the person who made the copy can undo it.");
+  return snap;
+}
+
+/** Any unit, bulk stock, job line or sub-hire line on the model (these tables' `by_modelId` indexes are global, so only existence matters here). */
+async function modelHasDependents(ctx: MutationCtx, modelId: string): Promise<boolean> {
+  const found = await Promise.all([
+    ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("subHireItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+  ]);
+  return found.some((r) => r != null);
+}
+
 /**
  * The exact reverse of ONE duplicate, from its own audit row (ids only). Refuses, changing
  * nothing, unless: it is this org's copy, within the server-clock window, by the person who
@@ -399,25 +426,12 @@ export const undoDuplicateNative = mutation({
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, a.orgId, "model", "delete");
     const actor = await resolveActor(ctx, a.actor);
-    const refuse = (code: string, message: string): never => { throw new ConvexError({ code, message }); };
-    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
-    const snap = (row?.details as { duplicate?: { serverSavedAt: number; authorId: string; stamp: number } } | undefined)?.duplicate;
-    if (!row || row.organizationId !== a.orgId || row.entityType !== "model" || row.entityId !== a.id || !snap) {
-      return refuse("NOT_FOUND", "That copy was not found, so it can't be undone.");
-    }
-    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
-    if (marker && marker.organizationId === a.orgId) return refuse("ALREADY_UNDONE", "That copy was already undone.");
-    assertWithinUndoWindow(snap.serverSavedAt, Date.now(), "change");
-    if (snap.authorId !== actor.userId) return refuse("NOT_YOURS", "Only the person who made the copy can undo it.");
+    const snap = await loadDuplicateSnapshot(ctx, a, actor.userId);
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
-    if (!doc || doc.organizationId !== a.orgId) return refuse("NOT_FOUND", "That copy no longer exists.");
-    const inUse =
-      doc.updatedAt !== snap.stamp ||
-      !!(await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).first()) ||
-      !!(await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).first()) ||
-      !!(await ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).first()) ||
-      !!(await ctx.db.query("subHireItems").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).first());
-    if (inUse) return refuse("COPY_CHANGED", "The copy has been edited or used since, so it was kept.");
+    if (!doc || doc.organizationId !== a.orgId) throw refuse("NOT_FOUND", "That copy no longer exists.");
+    if (doc.updatedAt !== snap.stamp || (await modelHasDependents(ctx, a.id))) {
+      throw refuse("COPY_CHANGED", "The copy has been edited or used since, so it was kept.");
+    }
     await ctx.db.delete(doc._id);
     await writeActivityLog(ctx, {
       id: `undo:${a.auditId}`, organizationId: a.orgId, action: "DELETE", entityType: "model", entityId: a.id, entityName: doc.name,

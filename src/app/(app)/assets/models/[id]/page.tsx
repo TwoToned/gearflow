@@ -1,7 +1,7 @@
 "use client";
 // use-client: live Convex data via client subscription (useQuery) (R-8.1.1)
 
-import { use, useMemo, Suspense, useState } from "react";
+import { use, useEffect, useMemo, Suspense, useState } from "react";
 import Link from "next/link";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useServerQuery } from "@/hooks/use-server-query";
@@ -54,6 +54,12 @@ import { cn, focusRing } from "@/lib/utils";
 import { OUT_LABEL } from "@/lib/vocabulary";
 import { AssetSheet, type AssetSheetState } from "@/components/assets/asset-sheet";
 import { useCanDo } from "@/lib/use-permissions";
+import { ActionMenu } from "@/components/ui/action-menu";
+import { buildModelPageActions } from "@/lib/row-actions/model";
+import { useModelVerbs } from "@/hooks/use-model-verbs";
+import { modelLabels } from "@/lib/model-labels";
+import { ModelPrintLabelsDialog } from "@/components/assets/model-print-labels-dialog";
+import { MODEL_SAVED_EVENT } from "@/components/assets/model-sheet-host";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -95,13 +101,17 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
   const media = useMediaWrites("model");
 
-  const archiveMutation = useServerMutation({
-    mutationFn: () => modelWrites.archive(id),
-    onSuccess: () => {
-      toast.success("Model archived");
-      router.push("/assets/models");
-    },
-  });
+  // An edit saved from the model sheet (mounted in the assets layout) refreshes this one-shot read.
+  useEffect(() => {
+    const onSaved = (e: Event) => (e as CustomEvent<string>).detail === id && refetch();
+    window.addEventListener(MODEL_SAVED_EVENT, onSaved);
+    return () => window.removeEventListener(MODEL_SAVED_EVENT, onSaved);
+  }, [id, refetch]);
+  const verbs = useModelVerbs({ onChanged: () => void refetch(), onOpenModel: (to) => router.push(`/assets/models/${to}`) });
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const canCreateModel = useCanDo("model", "create");
+  const canUpdateModel = useCanDo("model", "update");
+  const canArchiveModel = useCanDo("model", "delete");
 
   const archiveBulkMutation = useServerMutation({
     mutationFn: (bulkId: string) => bulkWrites.archive(bulkId),
@@ -132,7 +142,6 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   const canEditAssets = useCanDo("asset", "update");
   // Standardized destructive confirmations.
-  const [archiveModelOpen, setArchiveModelOpen] = useState(false);
   const [forceReturnAssetId, setForceReturnAssetId] = useState<{
     id: string;
     tag: string;
@@ -171,6 +180,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     : null;
 
   const specs = (model.specifications as Record<string, string>) || {};
+  const labels = modelLabels(model.name, model.assets, model.bulkAssets);
 
   const photos = ((model.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const documents = ((model.media || []) as MediaItem[]).filter((m) => m.type !== "PHOTO");
@@ -377,33 +387,20 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </p>
               </div>
             </div>
-            <CanDo resource="model" action="update">
-              <div className="flex flex-wrap gap-2">
-                <Button variant="line" size="sm" asChild>
-                  <Link href={`/assets/registry/new?modelId=${model.id}&type=${model.assetType === "SERIALIZED" ? "serialized" : "bulk"}`}>
-                    <Plus className="h-4 w-4" />
-                    Create asset
-                  </Link>
-                </Button>
-                <Button variant="line" size="sm" asChild>
-                  <Link href={`/assets/models/${id}/edit`}>
-                    <Pencil className="h-4 w-4" />
-                    Edit
-                  </Link>
-                </Button>
-                {model.isActive && (
-                  <Button
-                    variant="line"
-                    size="sm"
-                    className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
-                    onClick={() => setArchiveModelOpen(true)}
-                  >
-                    <Archive className="h-4 w-4" />
-                    Archive
-                  </Button>
-                )}
-              </div>
-            </CanDo>
+            <ActionMenu
+              label="Model actions"
+              spec={buildModelPageActions(
+                { name: model.name, isActive: model.isActive, labelCount: labels.length },
+                {
+                  onNewAsset: canEditAssets ? () => router.push(`/assets/registry?new=${model.assetType === "SERIALIZED" ? "serialized" : "bulk"}&modelId=${model.id}`) : undefined,
+                  onEdit: canUpdateModel ? () => router.push(`/assets/models/${id}?edit-model=${id}`) : undefined,
+                  onDuplicate: canCreateModel ? () => void verbs.duplicate(model.id) : undefined,
+                  onPrintLabels: () => setLabelsOpen(true),
+                  onArchive: canArchiveModel ? () => void verbs.archive(model.id, model.name) : undefined,
+                  onRestore: canUpdateModel ? () => void verbs.restore(model.id, model.name) : undefined,
+                },
+              )}
+            />
           </div>
         </div>
 
@@ -893,18 +890,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
     </FadeIn>
     <AssetSheet state={assetSheet} onClose={() => router.replace(`/assets/models/${id}?tab=assets`)} />
-    <DeleteDialog
-      open={archiveModelOpen}
-      onOpenChange={setArchiveModelOpen}
-      title="Archive this model?"
-      description="The model is hidden from new quotes and the catalog. Existing assets remain. You can restore it from the archived view."
-      confirmLabel="Archive model"
-      onConfirm={() => {
-        archiveMutation.mutate();
-        setArchiveModelOpen(false);
-      }}
-      pending={archiveMutation.isPending}
-    />
+    <ModelPrintLabelsDialog open={labelsOpen} onOpenChange={setLabelsOpen} modelName={model.name} labels={labels} />
     <DeleteDialog
       open={!!forceReturnAssetId}
       onOpenChange={(open) => !open && setForceReturnAssetId(null)}

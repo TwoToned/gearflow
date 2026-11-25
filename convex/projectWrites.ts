@@ -44,6 +44,7 @@ import { removeLineItemCascadeCore } from "./projectLineItems";
 import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
 import { deleteAllForProjectCore } from "./projectCategories";
 import { liveRows, versionRows } from "./lib/versionScope";
+import { applyLineageAdd, applyVersionDeletePool } from "./lib/lineagePool";
 import { stampLocationMovement } from "./lib/locationMovement";
 import { listProjectVersions, createLiveVersionForProject } from "./lib/projectVersionState";
 
@@ -1013,6 +1014,10 @@ export const deleteNative = mutation({
       await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
     ).flat().filter((li) => li.organizationId === orgId);
 
+    // The new-stock pool is accounted per lineage: every sale line this cascade removes gives its stock back
+    // (once per lineage, whichever version holds it), before the rows go.
+    await applyVersionDeletePool(ctx, { orgId, projectId: id, rows: lineItems, actor, now });
+
     const checkedOutAssetIds: string[] = [];
     const checkedOutKitIds: string[] = [];
     for (const li of lineItems) {
@@ -1238,6 +1243,8 @@ type SrcLine = {
   groupName?: string; notes?: string; isOptional?: boolean; showSubhireOnDocs?: boolean;
   pricingMode?: string; childKind?: string; isKitChild?: boolean; parentLineItemId?: string;
   categoryId?: string; groupId?: string;
+  /** A SALE line's mode (NEW_STOCK / FROM_RENTAL_STOCK): carried by duplicate so the copy keeps its stock semantics. */
+  saleMode?: string;
   /** #1249 — the ROI opt-out, carried through duplicate/save-as-template. */
   excludeFromRoi?: boolean;
 };
@@ -1408,6 +1415,9 @@ export const duplicateNative = mutation({
         ...(newCatId ? { categoryId: newCatId } : {}),
         ...(newGroupId ? { groupId: newGroupId } : {}),
         ...(li.type ? { type: li.type } : {}),
+        // A SALE line keeps its mode: dropping it would turn a NEW_STOCK sale into a mode-less one that takes
+        // nothing from the pool (the copy oversells) and a FROM_RENTAL_STOCK one into an undisposed sale.
+        ...(li.type === "SALE" && li.saleMode ? { saleMode: li.saleMode } : {}),
         ...(li.modelId ? { modelId: li.modelId } : {}),
         ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
         ...(li.kitId ? { kitId: li.kitId } : {}),
@@ -1436,6 +1446,11 @@ export const duplicateNative = mutation({
         createdAt: now,
         updatedAt: now,
       } as Record<string, unknown> as never);
+      // A duplicated NEW_STOCK sale is a NEW lineage: it takes its quantity from the pool, exactly as `addNative` does.
+      if (li.type === "SALE" && li.saleMode === "NEW_STOCK") {
+        const copy = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", newParentId)).first();
+        if (copy) await applyLineageAdd(ctx, { orgId, line: copy, actor, now });
+      }
 
       for (const child of childrenByParent.get(li.id) ?? []) {
         const newChildId = createId();

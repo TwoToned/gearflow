@@ -177,6 +177,80 @@ describe("the pool is accounted per lineage: pool + reserved stays constant thro
   });
 });
 
+describe("every path that removes or copies sale lines keeps pool + reserved = physical", () => {
+  const lines = (t: T, versionId: string) =>
+    t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", versionId)).collect());
+  let n = 0;
+  const aid = () => `v${++n}`;
+  const total = async (t: T) => {
+    const r = await row(t);
+    return r.available + (r.reserved ?? NaN);
+  };
+
+  test("deleting a (cancelled) project gives every sale line's stock back, once per lineage across its versions", async () => {
+    const t = makeT();
+    await seed(t);
+    await addSale(t, { saleMode: "NEW_STOCK" }, 3);
+    await as(t).mutation(api.versions.createNative, { organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: aid(), now: NOW } as never); // a copy: same lineage
+    expect(await row(t)).toMatchObject({ available: POOL - 3, reserved: 3 });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { status: "CANCELLED" });
+    });
+    await as(t).mutation(api.projectWrites.deleteNative, { id: "p1", orgId: ORG, defaultLocationId: null, actor: ACTOR, auditId: aid(), now: NOW } as never);
+    const m = await t.run(async (ctx) => (await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "m1")).first())!.saleStockQuantity);
+    expect(m).toBe(POOL); // restored once, not twice, not zero times
+  });
+
+  test("copy of a non-live version, delete the original, Undo the copy: the lineage's stock goes back exactly when its last row leaves", async () => {
+    const t = makeT();
+    await seed(t);
+    const idA = await addSale(t, { saleMode: "NEW_STOCK" }, 3); // lineage A on live v1
+    const v2 = await as(t).mutation(api.versions.createNative, { organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: aid(), now: NOW } as never);
+    await as(t).mutation(api.versions.makeLiveNative, { organizationId: ORG, projectId: "p1", versionId: v2.id, actor: ACTOR, auditId: aid(), now: NOW } as never);
+    // Take the lineage off the live version: it now lives only on v1, a non-live version.
+    const [onV2] = (await lines(t, v2.id)).filter((l) => l.type === "SALE");
+    await as(t).mutation(api.lineItemWrites.removeNative, { id: onV2.id, orgId: ORG, actor: ACTOR, auditId: aid(), now: NOW } as never);
+    expect(await total(t)).toBe(POOL);
+    expect(await row(t)).toMatchObject({ available: POOL - 3, reserved: 3 });
+    // Copy the non-live v1 into v3, delete v1, then Undo the copy.
+    const v3 = await as(t).mutation(api.versions.createNative, { organizationId: ORG, projectId: "p1", fromVersionId: "v1", actor: ACTOR, auditId: "create-v3", now: NOW } as never);
+    expect((await lines(t, v3.id)).some((l) => l.lineageId === idA)).toBe(true);
+    await as(t).mutation(api.versions.deleteNative, { organizationId: ORG, projectId: "p1", versionId: "v1", actor: ACTOR, auditId: aid(), now: NOW } as never);
+    expect(await total(t)).toBe(POOL);
+    await as(t).mutation(api.versions.undoCreateNative, { organizationId: ORG, projectId: "p1", versionId: v3.id, createAuditId: "create-v3", actor: ACTOR, auditId: aid(), now: NOW } as never);
+    expect(await row(t)).toMatchObject({ available: POOL, reserved: 0 });
+  });
+
+  test("duplicating a job takes the copy's NEW_STOCK quantity from the pool, keeps its saleMode, and the invariant holds", async () => {
+    const t = makeT();
+    await seed(t);
+    const idA = await addSale(t, { saleMode: "NEW_STOCK" }, 3);
+    await as(t).mutation(api.projectWrites.duplicateNative, { sourceId: "p1", newId: "dup1", newProjectNumber: "P-DUP", newName: "Copy", orgId: ORG, orgDefaultTaxRate: null, now: NOW, actor: ACTOR, auditId: aid() } as never);
+    const copies = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", "m1")).collect());
+    const copy = copies.find((l) => l.projectId === "dup1")!;
+    expect(copy).toMatchObject({ type: "SALE", saleMode: "NEW_STOCK", quantity: 3 });
+    expect(copy.lineageId).not.toBe(idA); // a new add
+    expect(await row(t)).toMatchObject({ available: POOL - 6, reserved: 6 });
+    expect(await total(t)).toBe(POOL);
+  });
+});
+
+describe("a line that took stock from the pool cannot change type", () => {
+  test("SALE -> EQUIPMENT (set or clear) is refused with SALE_TYPE_LOCKED and the pool is untouched; a type that is not changing is fine", async () => {
+    const t = makeT();
+    await seed(t);
+    const id = await addSale(t, { saleMode: "NEW_STOCK" }, 3);
+    const patch = (set: Record<string, unknown>, clear: string[] = []) =>
+      as(t).mutation(api.lineItemWrites.patchNative, { id, orgId: ORG, set, clear, entityName: "SM58", allowOverbook: false, actor: ACTOR, auditId: `ty${Math.random()}`, now: NOW } as never);
+    await expect(patch({ type: "EQUIPMENT" })).rejects.toThrow(/SALE_TYPE_LOCKED|can't change its type/);
+    await expect(patch({}, ["type"])).rejects.toThrow(/SALE_TYPE_LOCKED|can't change its type/);
+    expect(await row(t)).toMatchObject({ available: POOL - 3, reserved: 3, onHand: POOL });
+    await patch({ type: "SALE", description: "same type is fine" });
+    expect(await row(t)).toMatchObject({ available: POOL - 3, reserved: 3 });
+  });
+});
+
 describe("the one predicate", () => {
   test("takesFromPool is what the write path decrements by; isReservedSaleLine adds only 'not out'", () => {
     const base = { type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", status: "CONFIRMED" };

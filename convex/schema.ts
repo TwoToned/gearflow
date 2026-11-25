@@ -583,6 +583,10 @@ export default defineSchema({
     // than migrating/dropping, to avoid a churny schema edit for an inert field.
     salePrice: v.optional(v.number()),
     saleStockQuantity: v.optional(v.number()),
+    // UX Phase 14 (D41, owner-approved 2026-11-24) — re-order point for the
+    // new-stock sale pool. Whole units >= 0. Absent = no reorder level set (never
+    // read as 0). `Reserved`/`On hand` are DERIVED (convex/lib/saleStockFacts.ts).
+    reorderLevel: v.optional(v.number()),
     weight: v.optional(v.number()),
     powerDraw: v.optional(v.number()),
     requiresTestAndTag: v.optional(v.boolean()),
@@ -1084,6 +1088,17 @@ export default defineSchema({
     parentId: v.optional(v.string()),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    // UX Phase 14 (D42/D78, owner-approved 2026-11-24). All optional, no backfill.
+    // Max stored items (assets + bulk lines + kits) the place is meant to hold. Absent
+    // = unset (the UI says "not set", never 0%). Whole number >= 1.
+    capacity: v.optional(v.number()),
+    // When this location's bin label was last printed (epoch ms). Absent = never printed.
+    labelPrintedAt: v.optional(v.number()),
+    // When an asset, bulk asset or kit last moved INTO or OUT OF this location (epoch ms),
+    // stamped by convex/lib/locationMovement.ts from every write that changes a stock
+    // row's locationId (guarded by locationMovementGuard.test.ts). Absent = no movement
+    // since this field shipped: printed "—", never guessed.
+    lastMovementAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

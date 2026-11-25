@@ -28,6 +28,8 @@ export function useKitWrites() {
   const removeSerM = useMutation(api.kitWrites.removeSerializedItemNative);
   const addBulkM = useMutation(api.kitWrites.addBulkItemNative);
   const removeBulkM = useMutation(api.kitWrites.removeBulkItemNative);
+  const markCompleteM = useMutation(api.kitWrites.markCompleteNative);
+  const undoMarkCompleteM = useMutation(api.kitWrites.undoMarkCompleteNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -69,6 +71,16 @@ export function useKitWrites() {
         actor: actor(), auditId: createId(), now: Date.now(),
       });
       return { id };
+    },
+    /** Clears the reported-missing marker. Returns the audit id the toast's Undo takes. */
+    markComplete: async (id: string): Promise<{ id: string; changed: boolean; auditId: string }> => {
+      const auditId = createId();
+      const r = await markCompleteM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() });
+      return { ...r, auditId };
+    },
+    /** Exactly reverses `markComplete` (ids only). */
+    undoMarkComplete: async (id: string, auditId: string): Promise<{ id: string }> => {
+      return await undoMarkCompleteM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() });
     },
     updateNotes: async (id: string, notes: string): Promise<{ ok: boolean }> => {
       const org = requireOrg();

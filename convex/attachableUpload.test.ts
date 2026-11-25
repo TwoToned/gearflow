@@ -6,8 +6,9 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
-import type { DatabaseReader } from "./_generated/server";
-import { ATTACH_UPLOAD_MAX_AGE_MS, FILE_HOLDERS, FINANCE_FOLDER_PREFIX, INVOICE_UPLOAD_FOLDER, assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
+import type { DatabaseReader, MutationCtx } from "./_generated/server";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { ATTACH_UPLOAD_MAX_AGE_MS, FILE_HOLDERS, NOT_FILE_HOLDERS, FINANCE_FOLDER_PREFIX, INVOICE_UPLOAD_FOLDER, assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
 
 type T = TestConvex<typeof schema>;
 const ORG = "org_1", OTHER = "org_2", USER = "user_1";
@@ -86,23 +87,37 @@ describe("isFileReferenced: every holder", () => {
     expect(await referenced(t, "f")).toBe(true);
   });
 
-  test("maintenance photos and attachments, and check photos, hold it by URL, thumbnail or storage id; an older record cannot", async () => {
+  test("maintenance photos and attachments hold it by URL, thumbnail or storage id, even on a record created BEFORE the file", async () => {
     const t = makeT();
-    await t.run(async (ctx) => { await ctx.db.insert("maintenanceRecords", { id: "old", organizationId: ORG, type: "REPAIR", title: "before", photos: ["/api/files/k_f"] } as never); });
+    // A record that existed before the file did, then PATCHED later to hold it (maintenanceWrites update does this).
+    await t.run(async (ctx) => { await ctx.db.insert("maintenanceRecords", { id: "old", organizationId: ORG, type: "REPAIR", title: "before", photos: [] } as never); });
     await addFile(t, "f", { thumb: "/api/files/k_f_thumb" });
-    expect(await referenced(t, "f")).toBe(false); // that record existed before the file did: it cannot hold it
-    await t.run(async (ctx) => { await ctx.db.insert("maintenanceRecords", { id: "m1", organizationId: ORG, type: "REPAIR", title: "x", photos: ["/api/files/k_f"] } as never); });
+    expect(await referenced(t, "f")).toBe(false);
+    await t.run(async (ctx) => { const r = (await ctx.db.query("maintenanceRecords").first())!; await ctx.db.patch(r._id, { photos: ["/api/files/k_f"] } as never); });
     expect(await referenced(t, "f")).toBe(true);
 
     const t2 = makeT(); await addFile(t2, "f", { thumb: "/api/files/k_f_thumb" });
     await t2.run(async (ctx) => { await ctx.db.insert("maintenanceRecords", { id: "m2", organizationId: ORG, type: "REPAIR", title: "x", attachments: ["/api/files/k_f_thumb"] } as never); });
     expect(await referenced(t2, "f")).toBe(true);
+  });
 
-    const t3 = makeT(); await addFile(t3, "f");
-    await t3.run(async (ctx) => {
+  test("check photos hold it (records created since the file; bounded, not claimed exact)", async () => {
+    const t = makeT(); await addFile(t, "f");
+    await t.run(async (ctx) => {
       await ctx.db.insert("checkRecords", { id: "cr", organizationId: ORG, context: "AD_HOC", checkItemId: "ci", checkItemLabelSnapshot: "l", checkItemTypeSnapshot: "PASS_FAIL", result: "FAIL", performedById: "u", photos: ["/api/files/k_f"] } as never);
     });
-    expect(await referenced(t3, "f")).toBe(true);
+    expect(await referenced(t, "f")).toBe(true);
+  });
+
+  test("fail closed: a maintenance set too large to read, or more check records than the cap, counts as held", async () => {
+    const t = makeT(); await addFile(t, "f");
+    await t.run(async (ctx) => { for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `m${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
+    expect(await referenced(t, "f")).toBe(true);
+    const t2 = makeT(); await addFile(t2, "f");
+    await t2.run(async (ctx) => {
+      for (let i = 0; i < 2001; i++) await ctx.db.insert("checkRecords", { id: `c${i}`, organizationId: ORG, context: "AD_HOC", checkItemId: "ci", checkItemLabelSnapshot: "l", checkItemTypeSnapshot: "PASS_FAIL", result: "PASS", performedById: "u" } as never);
+    });
+    expect(await referenced(t2, "f")).toBe(true);
   });
 
   test("a missing or foreign file is held by nothing, and another org's holder never counts against an org's own check", async () => {
@@ -116,14 +131,35 @@ describe("isFileReferenced: every holder", () => {
 
 describe("the holder registry", () => {
   test("every file-shaped field in the schema belongs to a registered holder", () => {
-    const FILE_FIELD = /(^fileId$|FileId$|FileIds$|^photos$|^attachments$)/;
+    const FILE_FIELD = /(^fileId$|FileId$|FileIds$|^photos$|^attachments$|^image$|^images$|^logo$|^avatar$)/;
     const found: string[] = [];
     for (const [table, def] of Object.entries(schema.tables)) {
       const fields = (def as unknown as { validator: { fields: Record<string, unknown> } }).validator.fields;
       for (const f of Object.keys(fields)) if (FILE_FIELD.test(f)) found.push(`${table}.${f}`);
     }
-    const registered = new Set<string>(FILE_HOLDERS);
+    const registered = new Set<string>([...FILE_HOLDERS, ...Object.keys(NOT_FILE_HOLDERS)]);
     expect(found.filter((h) => !registered.has(h)), "register these in FILE_HOLDERS and isFileReferenced").toEqual([]);
-    expect([...registered].filter((h) => !found.includes(h)), "FILE_HOLDERS names a field that no longer exists").toEqual([]);
+    expect([...registered].filter((h) => !found.includes(h)), "FILE_HOLDERS / NOT_FILE_HOLDERS names a field that no longer exists").toEqual([]);
+    for (const [field, reason] of Object.entries(NOT_FILE_HOLDERS)) expect(reason.length, `${field} needs a reason`).toBeGreaterThan(20);
+  });
+});
+
+describe("deleteStoredFileIfUnreferenced (the one remove rule)", () => {
+  test("deletes the file AND its thumbnail's stored record only when nothing holds it", async () => {
+    const t = makeT(); await addFile(t, "f", { thumb: "/api/files/k_f_thumb" });
+    await t.run(async (ctx) => { await ctx.db.insert("storedFiles", { storageId: "k_f_thumb", organizationId: ORG, folder: FOLDER }); });
+    await t.run(async (ctx) => { await ctx.db.insert("clientMedia", { id: "h", organizationId: ORG, clientId: "c", fileId: "f" }); });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).toBe(false); // held: survives
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f")).first())).not.toBeNull();
+    await t.run(async (ctx) => { await ctx.db.delete((await ctx.db.query("clientMedia").first())!._id); });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).toBe(true);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).toBeNull();
+    expect(await t.run(async (ctx) => ctx.db.query("storedFiles").collect())).toEqual([]); // the original and the thumbnail record
+  });
+
+  test("never deletes another org's file", async () => {
+    const t = makeT(); await addFile(t, "fx", { org: OTHER });
+    expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "fx"))).toBe(false);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).not.toBeNull();
   });
 });

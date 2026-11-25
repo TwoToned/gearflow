@@ -10,6 +10,7 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { stampLocationMovement } from "./lib/locationMovement";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
 import { bulkStatusForTotal } from "./lib/saleStock";
@@ -113,6 +114,7 @@ export const createNative = mutation({
       updatedAt: a.now,
     };
     await ctx.db.insert("bulkAssets", doc);
+    await stampLocationMovement(ctx, a.orgId, null, doc.locationId ?? null, a.now);
     await bumpCountersForTable(ctx, "bulkAssets", null, doc);
     await reserveAssetTagCounter(ctx, a.orgId, 1, a.now); // advance counter (parity)
 
@@ -175,6 +177,7 @@ export const updateNative = mutation({
     else delete merged.notes;
 
     await ctx.db.replace(doc._id, merged as typeof rest);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, a.locationId || null, a.now);
     await bumpCountersForTable(ctx, "bulkAssets", doc, merged);
 
     // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).

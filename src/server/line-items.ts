@@ -11,7 +11,7 @@ import { getProjectWindow } from "@/lib/project-window";
 import { getModelWithCategoryMap } from "@/lib/model-category-join";
 import { getAssetByAssetTag, getAssetsByOrg, getBulkAssetsByIds, type ConvexAsset, type ConvexBulkAsset } from "@/lib/assets-read";
 import { getProjectById, getProjectsByOrg } from "@/lib/projects-read";
-import { getKitById } from "@/lib/kits-read";
+import { getKitById, getKitBookingGate } from "@/lib/kits-read";
 import { getLocationById } from "@/lib/locations-read";
 import { stockBackedQty } from "../../convex/lib/stockBackedQty";
 import { modelCustomAccessoryKey } from "../../convex/lib/fulfillment";
@@ -313,8 +313,10 @@ export async function checkKitAvailability(
   }
 
   // Only block truly unavailable kits — checked out kits can still be added to future projects
-  if (kitAvailConvexKit.status === "IN_MAINTENANCE" || kitAvailConvexKit.status === "INCOMPLETE") {
-    return serialize({ available: false, conflictsWith: `Kit status: ${(kitAvailConvexKit.status as string).replace("_", " ")}` });
+  // D75: the DERIVED kit state (one helper, `convex/lib/kitState.ts`), not the stored status.
+  const kitGate = await getKitBookingGate(organizationId, kitId);
+  if (kitGate?.blocksBooking) {
+    return serialize({ available: false, conflictsWith: `Kit status: ${kitGate.key.replace("_", " ")}` });
   }
 
   const kitAvailAllProjects = await getProjectsByOrg(organizationId);

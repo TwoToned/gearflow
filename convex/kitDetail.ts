@@ -5,6 +5,8 @@ import { requireOrgPermission } from "./lib/auth";
 import { assetCostGuard, bulkAssetCostGuard, kitCostGuard } from "./lib/gearCostRedact";
 import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
 import { getKitByCuid } from "./lib/kits";
+import { loadKitStates } from "./lib/kitState";
+import { unlimitedBudget } from "./lib/readBudget";
 
 /**
  * BROWSER-facing composite for the KIT detail page (Phase 2 native reads). Returns
@@ -74,8 +76,13 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
     ? await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", kit.categoryId!)).unique()
     : null;
 
+  // The DERIVED state (convex/lib/kitState.ts): every surface that prints a kit's state prints this, never the stored status.
+  const states = await loadKitStates(ctx, orgId, [kit], Date.now(), unlimitedBudget());
+  const derived = states.get(kit.id);
+
   return {
     kit: (await kitCostGuard(ctx)).row(kit),
+    state: derived ? { key: derived.key, missing: derived.missing, booking: derived.booking, reportedMissing: derived.reportedMissing } : null,
     serializedItems: serialized,
     bulkItems: bulk,
     lineItems,

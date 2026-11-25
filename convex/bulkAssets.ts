@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { bulkAssetCostGuard } from "./lib/gearCostRedact";
@@ -273,6 +274,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireService(ctx);
     const _id = await ctx.db.insert("bulkAssets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", null, args);
     return _id;
   },
@@ -300,6 +302,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("bulkAssets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", null, args);
     return { _id, created: true };
   },
@@ -331,6 +334,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, safePatch.locationId, safePatch.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...safePatch });
     return doc._id;
   },
@@ -380,6 +384,7 @@ export const patchBulkAsset = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("bulkAssets not found: " + id);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, clear.includes("locationId") ? null : set.locationId, set.updatedAt ?? Date.now());
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
       await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...set });

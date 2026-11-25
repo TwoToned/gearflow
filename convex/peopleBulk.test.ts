@@ -40,8 +40,10 @@ const get = (t: T, table: "crewMembers" | "clients" | "suppliers", id: string) =
   t.run(async (ctx) => (await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first()) as Record<string, unknown> | null);
 type Kind = "crew" | "client" | "supplier";
 const items = (...ids: string[]) => ids.map((id) => ({ id, auditId: `au_${id}` }));
-const setActive = (t: T, kind: Kind, ids: string[], active: boolean, who = as(t)) =>
-  who.mutation(api.peopleBulkWrites.setActiveManyNative, { orgId: ORG, kind, items: items(...ids), active, todayMs: NOW, now: NOW, actor });
+// One audit id names ONE audit row (`assertAuditIdFree`: an Undo trusts the row with its id), so a second forward
+// write on the same record in one test needs its own `audit` suffix.
+const setActive = (t: T, kind: Kind, ids: string[], active: boolean, who = as(t), audit = "") =>
+  who.mutation(api.peopleBulkWrites.setActiveManyNative, { orgId: ORG, kind, items: items(...ids).map((i) => ({ ...i, auditId: i.auditId + audit })), active, todayMs: NOW, now: NOW, actor });
 const addTag = (t: T, kind: Kind, ids: string[], tag: string, who = as(t)) =>
   who.mutation(api.peopleBulkWrites.addTagManyNative, { orgId: ORG, kind, items: items(...ids), tag, now: NOW, actor });
 const undo = (t: T, kind: Kind, ids: string[], who = as(t)) =>
@@ -77,7 +79,7 @@ describe("deactivate / reactivate (crew)", () => {
   test("reactivate, and a viewer cannot do any of it", async () => {
     const t = makeT(); await seed(t);
     await setActive(t, "crew", ["a"], false);
-    const out = await setActive(t, "crew", ["a"], true);
+    const out = await setActive(t, "crew", ["a"], true, as(t), "_re");
     expect(out.changed).toHaveLength(1);
     const t2 = makeT(); await seed(t2, "viewer");
     await expect(setActive(t2, "crew", ["a"], false, as(t2, "viewer"))).rejects.toThrow();

@@ -50,8 +50,8 @@ that was guarded keeps the apostrophe.
 `CSVImportDialog` (`src/components/assets/csv-import-dialog.tsx`) — reusable file
 upload with progress bar and error display. Supports three modes via the `type`
 prop: `"models"`, `"assets"`, and `"rates"` (the rates-only import). The models
-table (`src/components/assets/model-table.tsx`) exposes an **Import Rates** button
-(gated on `model:update`) alongside Export/Import. Recommended flow: **Export →
+list (`src/components/assets/models-list.tsx`) exposes **Import rates…** in its page ⋯
+(gated on `model:update`) alongside Export CSV / Import CSV. Recommended flow: **Export →
 fill the rate columns in a spreadsheet → Import Rates**.
 
 ## Performance (Phase-3 DoD benchmark, 2026-07-17)

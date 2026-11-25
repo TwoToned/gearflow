@@ -15,6 +15,8 @@ import { copyPlanGraph, VERSIONED_PLAN_TABLES, MAX_CLONABLE_PLAN_ROWS } from "./
 import { versionRows } from "./lib/versionScope";
 import { pickPlanFields } from "./lib/versionPlanFields";
 import { loadVersionInOrgProject, performMakeLive } from "./lib/makeLiveCore";
+import { applyVersionDeletePool } from "./lib/lineagePool";
+import type { Doc } from "./_generated/dataModel";
 import { LABEL_BOUNDS } from "./projectVersionsWrites";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -386,6 +388,12 @@ export const deleteNative = mutation({
         message: `This version has ${total} plan rows — too many to delete in one transaction (max ${MAX_CLONABLE_PLAN_ROWS}).`,
       });
     }
+    // The new-stock pool is accounted per lineage: a row whose lineage lives on in another version restores
+    // nothing; one that was the lineage's last row gives its stock back (before the rows go).
+    const lineIdx = VERSIONED_PLAN_TABLES.indexOf("projectLineItems");
+    if (lineIdx >= 0) {
+      await applyVersionDeletePool(ctx, { orgId: organizationId, projectId, rows: rowsByTable[lineIdx] as Doc<"projectLineItems">[], actor, now });
+    }
     let deletedRows = 0;
     for (const rows of rowsByTable) {
       for (const row of rows) {
@@ -462,6 +470,12 @@ export const undoCreateNative = mutation({
       });
     }
 
+    // Per-lineage pool accounting (see deleteNative): the copy's rows leave, and any lineage that now has no row
+    // left gives its stock back. A copy of a lineage that lives on elsewhere restores nothing.
+    const undoLineIdx = VERSIONED_PLAN_TABLES.indexOf("projectLineItems");
+    if (undoLineIdx >= 0) {
+      await applyVersionDeletePool(ctx, { orgId: organizationId, projectId, rows: rowsByTable[undoLineIdx] as Doc<"projectLineItems">[], actor, now });
+    }
     for (const rows of rowsByTable) for (const row of rows) await ctx.db.delete(row._id);
     await ctx.db.delete(version._id);
     await writeActivityLog(ctx, {

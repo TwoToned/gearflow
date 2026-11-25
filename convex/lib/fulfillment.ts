@@ -25,6 +25,7 @@ import {
 } from "./lineItemUnits";
 import { bumpAssetCounters } from "./counters";
 import { nextStatusUnlessRetired } from "./assetRetire";
+import { stampLocationMovement } from "./locationMovement";
 import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./accessoryRelocation";
 
@@ -325,6 +326,7 @@ async function setAssetStatus(ctx: Ctx, assetId: string, wanted: string, locatio
   } else {
     await ctx.db.patch(a._id, { status: status as typeof a.status, locationId, updatedAt: Date.now() });
   }
+  await stampLocationMovement(ctx, a.organizationId, a.locationId, locationId, Date.now());
   // §3.6 dashboard counter: check-in / return status churn (CHECKED_OUT→AVAILABLE
   // etc.) flows through here, not warehouseOps.setAssetsStatus. isActive untouched.
   await bumpAssetCounters(ctx, a.organizationId, a, { isActive: a.isActive, status });

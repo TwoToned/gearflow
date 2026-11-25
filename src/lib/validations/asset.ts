@@ -115,6 +115,8 @@ export const locationSchema = z.object({
   parentId: z.string().nullable().optional(),
   notes: z.string().max(1000).optional(),
   tags: z.array(z.string()).default([]),
+  // D42/D78: how many stored items the place is meant to hold. Blank stays blank (never 0, never 0% full).
+  capacity: blankableNumber(z.number().int("Capacity must be a whole number").min(1, "Capacity must be 1 or more")).optional(),
 }).refine(
   (data) => (data.latitude != null) === (data.longitude != null),
   { message: "Both latitude and longitude must be provided together" }

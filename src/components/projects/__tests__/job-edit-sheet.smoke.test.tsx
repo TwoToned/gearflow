@@ -15,7 +15,9 @@ beforeAll(() => {
 });
 
 const replace = vi.fn();
-const update = vi.fn(async () => ({ id: "p1" }));
+const update = vi.fn(async (..._a: unknown[]) => ({ id: "p1", auditId: "a1" as string | undefined }));
+const undoUpdate = vi.fn(async (..._a: unknown[]) => {});
+const toastSuccess = vi.fn();
 let project: Record<string, unknown>;
 let impactRows: unknown[] = [];
 
@@ -34,7 +36,7 @@ vi.mock("@/lib/use-permissions", () => ({
   useCurrentRole: () => ({ isLoading: false, role: "member", permissions: {} }),
 }));
 const toastError = vi.fn();
-vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: (...a: unknown[]) => toastSuccess(...a) } }));
 vi.mock("@/hooks/use-server-mutation", () => ({
   useServerMutation: (o: { mutationFn: (d: unknown) => Promise<unknown>; onSuccess?: (r: unknown) => void; onError?: (e: Error) => void }) => ({
     mutate: async (d: unknown) => {
@@ -45,7 +47,7 @@ vi.mock("@/hooks/use-server-mutation", () => ({
 }));
 vi.mock("@/hooks/use-server-query", () => ({ useServerQuery: () => ({ data: undefined }) }));
 vi.mock("@/hooks/use-project-detail", () => ({ useProjectDetail: () => ({ data: project, isLoading: false }) }));
-vi.mock("@/hooks/use-native-project-writes", () => ({ useProjectWrites: () => ({ update }) }));
+vi.mock("@/hooks/use-native-project-writes", () => ({ useProjectWrites: () => ({ update, undoUpdate }) }));
 vi.mock("@/hooks/use-project-managers-writes", () => ({ useProjectManagerWrites: () => ({ set: vi.fn() }) }));
 vi.mock("@/hooks/use-project-lock", () => ({
   useProjectPricingLock: () => ({ loading: false, pricingLocked: true, canUnlockPricing: false, lock: vi.fn(), unlock: vi.fn() }),
@@ -73,6 +75,10 @@ beforeEach(() => {
   update.mockClear();
   replace.mockClear();
   toastError.mockClear();
+  toastSuccess.mockClear();
+  undoUpdate.mockReset();
+  undoUpdate.mockResolvedValue(undefined);
+  update.mockResolvedValue({ id: "p1", auditId: "a1" });
   canUpdate = true;
 });
 
@@ -142,5 +148,35 @@ describe("JobEditSheet", () => {
     render(<JobEditSheet projectId="p1" />);
     expect(await screen.findByText("Edit template")).toBeTruthy();
     expect(screen.queryByText("Discount (%)")).toBeNull();
+  });
+
+  it("the save toast offers an Undo that calls the server's exact one with the audit id", async () => {
+    render(<JobEditSheet projectId="p1" />);
+    fireEvent.change(await screen.findByPlaceholderText("e.g. Summer Festival 2026"), { target: { value: "Gala 2" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
+    const opts = toastSuccess.mock.calls[0][1] as { action: { label: string; onClick: () => Promise<void> } };
+    expect(opts.action.label).toBe("Undo");
+    await opts.action.onClick();
+    expect(undoUpdate).toHaveBeenCalledWith("p1", "a1");
+  });
+
+  it("a refused Undo surfaces the server's message", async () => {
+    undoUpdate.mockRejectedValue(new Error("Changed since"));
+    render(<JobEditSheet projectId="p1" />);
+    fireEvent.change(await screen.findByPlaceholderText("e.g. Summer Festival 2026"), { target: { value: "Gala 2" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
+    await (toastSuccess.mock.calls[0][1] as { action: { onClick: () => Promise<void> } }).action.onClick();
+    expect(toastError).toHaveBeenCalledWith("Changed since");
+  });
+
+  it("no Undo when the save returned no audit id", async () => {
+    update.mockResolvedValue({ id: "p1", auditId: undefined });
+    render(<JobEditSheet projectId="p1" />);
+    fireEvent.change(await screen.findByPlaceholderText("e.g. Summer Festival 2026"), { target: { value: "Gala 2" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
+    expect(toastSuccess.mock.calls[0][1]).toBeUndefined();
   });
 });

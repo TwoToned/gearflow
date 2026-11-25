@@ -277,6 +277,18 @@ the wizard's own menu).
   writes them. See [11-availability.md](./11-availability.md) for the full
   two-window design and `getProjectWindow`.
 
+### Edit-sheet Undo (UX Phase 9 follow-up)
+
+The edit sheet's Save toast offers **Undo**, backed by the exact, guarded
+`projectEditUndo.undoUpdateNative` (ids only: project + the save's `auditId`). `updateNative` writes ONE audit
+row carrying `details.fieldEdit` (before/after of only the changed fields, `lib/fieldEditUndo.ts`); the Undo
+reads that back and refuses as a whole, changing nothing, unless the caller is the author, it is inside the
+10-minute server-clock window, it has not already been undone, every changed field still holds what the save
+left (`CHANGED_SINCE`), and a restored locked money field (`discountPercent`/`taxRate`) is not on a
+pricing-locked job. Restoring a recalc input recalculates in the same transaction. The sheet offers no Undo
+when the manager set changed in the same Save (a separate write the Undo does not cover). The activity readers
+redact `details.fieldEdit` by field name with the same lists as `details.changes` (`lib/activityPay.ts`).
+
 ### Discount default cascade (QW-4 / #953)
 
 `Client.defaultDiscount` (`convex/schema.ts`) is a per-client default discount

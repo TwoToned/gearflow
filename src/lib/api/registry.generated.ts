@@ -37230,6 +37230,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectEditUndo.undoUpdateNative",
+    "module": "projectEditUndo",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "82d5a2a49fd0ded6",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo a job edit from the audit id its save returned: restores exactly the fields that edit changed, refusing if any changed since, outside the window, or by another user.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectEquipment.browserBundle",
     "module": "projectEquipment",
     "fn": "browserBundle",
@@ -66179,10 +66231,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1282,
-  agentReachable: 650,
+  total: 1283,
+  agentReachable: 651,
   queries: 457,
-  mutations: 825,
+  mutations: 826,
   agentReachableQueries: 321,
-  agentReachableMutations: 329,
+  agentReachableMutations: 330,
 } as const;

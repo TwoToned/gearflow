@@ -100,8 +100,11 @@ function EditForm({ project, close }: { project: EditableProject; close: () => v
       if (managersChanged) await managerWrites.set(project.id, managerIds);
       return result;
     },
-    onSuccess: () => {
-      toast.success(`${isTemplate ? "Template" : "Job"} updated: ${summary.join(", ")}`);
+    onSuccess: (result) => {
+      // The Undo is the server's exact one (ids only). Not offered when the manager set also changed: that is a
+      // separate write the Undo does not cover, so an Undo would claim more than it can restore.
+      const undo = managersChanged || !result.auditId ? undefined : { id: project.id, auditId: result.auditId };
+      announceEdit(`${isTemplate ? "Template" : "Job"} updated: ${summary.join(", ")}`, undo, projectWrites.undoUpdate);
       close();
     },
     onError: (e) => reportSaveError(form, e),
@@ -155,6 +158,27 @@ function GateDialog({ gate, pending }: { gate: ReturnType<typeof useDateMoveGate
       onCancel={gate.cancelPending}
     />
   );
+}
+
+/** The save toast, with an Undo that calls the server's exact one and says so when it refuses (changed since, window, another user). */
+function announceEdit(
+  message: string,
+  undo: { id: string; auditId: string } | undefined,
+  undoUpdate: (projectId: string, auditId: string) => Promise<void>,
+) {
+  toast.success(message, undo ? {
+    action: {
+      label: "Undo",
+      onClick: async () => {
+        try {
+          await undoUpdate(undo.id, undo.auditId);
+          toast.success("Change undone");
+        } catch (e) {
+          toast.error((e as Error).message);
+        }
+      },
+    },
+  } : undefined);
 }
 
 /** A field-tagged error (e.g. duplicate job code) lands on its input; anything else toasts. */

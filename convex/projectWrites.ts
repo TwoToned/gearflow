@@ -37,6 +37,7 @@ const blockedForwardLabel = (status: string): string =>
   `move this project to ${status.toLowerCase().replaceAll("_", " ")}`;
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { projectWriteFields } from "./projects";
@@ -477,7 +478,35 @@ async function isReplayOfCreate(
  */
 const RECALC_INPUT_FIELDS = ["taxRate", "discountPercent"] as const;
 
-async function recalcIfInputsWritten(
+/**
+ * The edit's ONE audit row. It carries the exact-Undo snapshot (`details.fieldEdit`: before/after of ONLY
+ * the fields that changed, `lib/fieldEditUndo.ts`), which `projectEditUndo.undoUpdateNative` reads back, ids
+ * only. The activity readers redact that snapshot by field name with the same lists as `details.changes`
+ * (`lib/activityPay.ts`), so no field is hand-picked here. A save that changed nothing writes a plain row.
+ */
+async function auditProjectEdit(
+  ctx: MutationCtx,
+  a: {
+    orgId: string; project: Doc<"projects">; setObj: Record<string, unknown>; clear: string[];
+    actor: { userId: string; userName: string }; auditId: string; now: number; summary: string;
+  },
+): Promise<void> {
+  const fields = [...Object.keys(a.setObj), ...a.clear].filter((f) => f !== "updatedAt");
+  const after = await ctx.db.get(a.project._id);
+  const diff = after ? diffFields(a.project as Record<string, unknown>, after as Record<string, unknown>, fields) : null;
+  const base = {
+    orgId: a.orgId, entityType: "project", entityId: a.project.id, entityName: a.project.projectNumber,
+    auditId: a.auditId, actor: a.actor, summary: a.summary, now: a.now, links: { projectId: a.project.id },
+  };
+  if (diff) return recordFieldEdit(ctx, { ...base, diff });
+  await writeActivityLog(ctx, {
+    id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project", entityId: a.project.id,
+    entityName: a.project.projectNumber, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary,
+    projectId: a.project.id, createdAt: a.now,
+  });
+}
+
+export async function recalcIfInputsWritten(
   ctx: MutationCtx,
   orgId: string,
   id: string,
@@ -615,18 +644,8 @@ export const updateNative = mutation({
     await recalcIfInputsWritten(ctx, orgId, id, setObj, clear, now);
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "project",
-      entityId: id,
-      entityName: project.projectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated project ${project.projectNumber} - ${name}`,
-      projectId: id,
-      createdAt: now,
+    await auditProjectEdit(ctx, {
+      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`,
     });
 
     return { id };

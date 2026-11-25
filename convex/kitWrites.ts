@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -15,6 +16,7 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { stampLocationMovement } from "./lib/locationMovement";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { assertWithinUndoWindow } from "./lib/undoWindow";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -176,7 +178,8 @@ export const createNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Created kit ${fields.assetTag} - ${fields.name}`,
-      details: { created: { assetTag: fields.assetTag, name: fields.name } },
+      // `serverSavedAt` lets the exact Undo (`undoCreateNative`) enforce its window on the server clock.
+      details: { kind: "kitCreate", serverSavedAt: Date.now(), created: { assetTag: fields.assetTag, name: fields.name } },
       kitId: fields.id,
       createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
     });
@@ -245,6 +248,141 @@ export const updateNative = mutation({
     });
 
     return { id };
+  },
+});
+
+/** The fields the Kit sheet writes, and so the only ones its Undo restores. Status is NOT here (D75). */
+const KIT_EDIT_FIELDS = ["assetTag", "name", "description", "categoryId", "condition", "locationId", "weight", "caseType", "caseDimensions", "notes", "purchaseDate", "purchasePrice", "tags", "checkMode", "xeroAccountCode"] as const;
+
+const kitEditSet = v.object({
+  assetTag: v.optional(v.string()),
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+  categoryId: v.optional(v.string()),
+  condition: v.optional(enums.AssetCondition),
+  locationId: v.optional(v.string()),
+  weight: v.optional(v.number()),
+  caseType: v.optional(v.string()),
+  caseDimensions: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  purchaseDate: v.optional(v.number()),
+  purchasePrice: v.optional(v.number()),
+  tags: v.optional(v.array(v.string())),
+  checkMode: v.optional(enums.KitCheckMode),
+  xeroAccountCode: v.optional(v.string()),
+});
+
+/** Refuses a tag another kit of this org already holds (an Undo restoring an old tag must not collide either). */
+async function assertTagFree(ctx: MutationCtx, orgId: string, tag: string, exceptId: string): Promise<void> {
+  const dup = await ctx.db.query("kits").withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", tag)).first();
+  if (dup && dup.id !== exceptId) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" already exists` });
+}
+
+/**
+ * The Kit sheet's save (UX Phase 14, 14b-2): `set` writes fields, `clear` empties them (the old `updateNative`
+ * could not clear a field: an omitted arg leaves it alone). Only KIT_EDIT_FIELDS may be named, so status, the
+ * photos and the flags are untouched. One field-edit audit row records the changed fields; the toast's Undo is
+ * `undoEditNative`. A save that changed nothing writes nothing and returns `changed: false`.
+ */
+export const editNative = mutation({
+  returns: v.object({ id: v.string(), changed: v.boolean() }),
+  args: { orgId: v.string(), id: v.string(), set: kitEditSet, clear: v.array(v.string()), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const doc = await getKitByCuid(ctx, a.id);
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found: " + a.id);
+    const clears = a.clear.filter((f) => (KIT_EDIT_FIELDS as readonly string[]).includes(f) && f !== "name" && f !== "assetTag");
+    if (clears.length !== a.clear.length) throw new ConvexError("That field can't be cleared here");
+    assertKitFields(a.set);
+    if (a.set.assetTag && a.set.assetTag !== doc.assetTag) await assertTagFree(ctx, a.orgId, a.set.assetTag, a.id);
+    if (a.set.categoryId) await assertRefInOrg(ctx, "categories", a.set.categoryId, a.orgId);
+    if (a.set.locationId) await assertRefInOrg(ctx, "locations", a.set.locationId, a.orgId);
+
+    const next: Record<string, unknown> = { ...doc, ...a.set };
+    for (const f of clears) delete next[f];
+    const diff = diffFields(doc, next, KIT_EDIT_FIELDS);
+    if (!diff) return { id: a.id, changed: false };
+    const patch: Record<string, unknown> = { ...a.set, updatedAt: a.now };
+    for (const f of clears) patch[f] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, (next.locationId as string | undefined) ?? undefined, a.now);
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: (next.assetTag as string) ?? doc.assetTag, auditId: a.auditId, actor, summary: `Updated kit ${doc.assetTag}`, diff, now: a.now, links: { kitId: a.id } });
+    return { id: a.id, changed: true };
+  },
+});
+
+/** The exact Undo of `editNative` (ids only; refuses if a changed field was edited again since, by another person, or after 10 minutes). */
+export const undoEditNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const named = await getKitByCuid(ctx, a.id);
+    await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: named?.assetTag ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (named && named.organizationId === a.orgId ? named : null),
+      apply: async (doc, plan) => {
+        const fields = [...Object.keys(plan.set), ...plan.clear];
+        if (fields.some((f) => !(KIT_EDIT_FIELDS as readonly string[]).includes(f))) throw new ConvexError("This change can't be undone");
+        if (typeof plan.set.assetTag === "string") await assertTagFree(ctx, a.orgId, plan.set.assetTag, a.id);
+        if (typeof plan.set.categoryId === "string") await assertRefInOrg(ctx, "categories", plan.set.categoryId, a.orgId);
+        if (typeof plan.set.locationId === "string") await assertRefInOrg(ctx, "locations", plan.set.locationId, a.orgId);
+        const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+        for (const f of plan.clear) patch[f] = undefined;
+        await ctx.db.patch(doc._id, patch);
+        if (fields.includes("locationId")) await stampLocationMovement(ctx, a.orgId, doc.locationId, (plan.set.locationId as string | undefined) ?? undefined, a.now);
+      },
+    });
+    return { id: a.id };
+  },
+});
+
+/**
+ * The exact Undo of `createNative` (ids only): removes the kit only while it is exactly as created (unedited, no
+ * members, no job lines, no photos, no checks), by the person who created it, inside the 10-minute server window,
+ * once. It deletes only the kit row it created.
+ */
+export const undoCreateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "delete");
+    const actor = await resolveActor(ctx, a.actor);
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+    const d = row?.details as { kind?: string; serverSavedAt?: number } | undefined;
+    if (!row || row.organizationId !== a.orgId || row.entityType !== "kit" || row.entityId !== a.id || row.action !== "CREATE" || d?.kind !== "kitCreate" || typeof d.serverSavedAt !== "number") {
+      throw new ConvexError("This kit can't be un-created");
+    }
+    if (row.userId !== actor.userId) throw new ConvexError("Only the person who created this kit can undo it");
+    assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+    if (marker && marker.organizationId === a.orgId) throw new ConvexError("This kit was already undone");
+    const doc = await getKitByCuid(ctx, a.id);
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found");
+    if (doc.updatedAt !== row.createdAt) throw new ConvexError("This kit was changed since: it can't be undone");
+    const [ser, blk, lines, media, checks] = await Promise.all([
+      ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
+      ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
+      ctx.db.query("projectLineItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
+      ctx.db.query("kitMedia").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
+      ctx.db.query("kitCheckItems").withIndex("by_kitId", (q) => q.eq("kitId", a.id)).first(),
+    ]);
+    if (ser || blk || lines || media || checks) throw new ConvexError("This kit has members, jobs, photos or checks now, so it can't be undone");
+    await ctx.db.delete(doc._id);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, undefined, a.now);
+    await writeActivityLog(ctx, {
+      id: `undo:${a.auditId}`, organizationId: a.orgId, action: "UNDO", entityType: "kit", entityId: a.id, entityName: doc.assetTag,
+      userId: actor.userId, userName: actor.userName, summary: `Undid the creation of kit ${doc.assetTag}`, details: { undoOf: a.auditId }, createdAt: a.now,
+    });
+    return { id: a.id };
   },
 });
 
@@ -549,6 +687,9 @@ export const agentOps: AgentOpsAnnotations = {
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
+  editNative: { danger: "medium", summary: "Edit a kit's own fields (set and clear); never its status, members or photos." },
+  undoEditNative: { danger: "high", summary: "Exactly undo a recent kit edit by its audit id (refuses if a changed field was edited again since)." },
+  undoCreateNative: { danger: "high", summary: "Exactly undo the creation of a kit by its audit id (refuses once it has members, jobs, photos, checks or edits)." },
   markCompleteNative: { danger: "medium", summary: "Clear a kit's reported-missing marker (Mark complete). The kit becomes bookable again." },
   undoMarkCompleteNative: { danger: "medium", summary: "Exactly undo a Mark complete by its audit id." },
   removeBulkItemNative: { danger: "medium" },

@@ -13,10 +13,11 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { CheckCircle2, Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
+import { CheckCircle2, Copy, Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
 import { announceListWrite } from "@/lib/list-write-toast";
+import { KitSheetHost } from "@/components/kits/kit-sheet-host";
 import { showError } from "@/lib/show-error";
 
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
@@ -246,6 +247,16 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   if (!kit) return <div className="py-20 text-center text-muted">Kit not found.</div>;
   /** The DERIVED state this page prints everywhere; the stored `status` is only the physical lifecycle. */
   const stateKey = kit.state?.key ?? kit.status;
+  /** The kit's own fields as the Kit sheet edits (or duplicates) them. */
+  const kitSheetInitial = {
+    id: kit.id, name: kit.name, assetTag: kit.assetTag, description: kit.description || undefined,
+    categoryId: kit.categoryId || undefined, condition: kit.condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
+    locationId: kit.locationId || undefined, weight: kit.weight ? Number(kit.weight) : undefined,
+    caseType: kit.caseType || undefined, caseDimensions: kit.caseDimensions || undefined, notes: kit.notes || undefined,
+    purchaseDate: kit.purchaseDate ?? undefined, purchasePrice: kit.purchasePrice ? Number(kit.purchasePrice) : undefined,
+    tags: (kit.tags as string[] | undefined) ?? [], checkMode: ((kit.checkMode as string) || "KIT_LEVEL") as "KIT_LEVEL" | "PER_ITEM",
+    xeroAccountCode: (kit.xeroAccountCode as string | undefined) || undefined,
+  };
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit as unknown as Parameters<typeof resolveKitPhotoUrl>[0], false);
@@ -488,12 +499,16 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   Force return
                 </Button>
               )}
-              <Button variant="line" size="sm" asChild>
-                <Link href={`/kits/${id}/edit`}>
-                  <Pencil className="h-4 w-4" />
-                  Edit
-                </Link>
+              <Button variant="line" size="sm" onClick={() => router.push(`/kits/${id}?edit=1`)}>
+                <Pencil className="h-4 w-4" />
+                Edit
               </Button>
+              <CanDo resource="kit" action="create">
+                <Button variant="line" size="sm" onClick={() => router.push(`/kits/${id}?copy=1`)}>
+                  <Copy className="h-4 w-4" />
+                  Duplicate
+                </Button>
+              </CanDo>
               <CanDo resource="kit" action="delete">
                 <Button
                   variant="line"
@@ -1095,6 +1110,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         router.push("/kits");
       }}
     />
+    <KitSheetHost mode="edit" kit={kitSheetInitial} />
+    <KitSheetHost mode="copy" kit={kitSheetInitial} />
     </RequirePermission>
   );
 }

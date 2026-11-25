@@ -248,7 +248,11 @@ export const updateNative = mutation({
       }
     }
 
-    await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
+    // Archive and Restore are the ONLY paths into and out of archived (each audited, each with an exact Undo).
+    if (a.isActive !== undefined && a.isActive !== (doc.isActive ?? true)) {
+      throw new ConvexError({ code: "USE_ARCHIVE", message: "Use Archive or Restore to change whether a model is archived." });
+    }
+    await ctx.db.patch(doc._id, { ...toDoc(a), isActive: doc.isActive, updatedAt: a.now });
 
     if (a.requiresTestAndTag) {
       await backfillTestTagAssetsCore(ctx, a.orgId, a.now);

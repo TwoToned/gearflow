@@ -25,6 +25,7 @@ import {
 } from "./lib/fulfillment";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
+import { assertModelNotArchived } from "./lib/modelArchive";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
@@ -1877,6 +1878,8 @@ export type QuickAddArgs = {
  *  write org-validates the client modelId/assetId/bulkAssetId BEFORE calling this
  *  (this core inserts them verbatim, as the trusted server always did). */
 export async function quickAddCore(ctx: Ctx, a: QuickAddArgs): Promise<{ id: string }> {
+    // A quick add puts a NEW line on the job, so an archived model is refused here too.
+    await assertModelNotArchived(ctx, a.organizationId, a.modelId);
     await assertTestTagAllowsCheckout(ctx, a.organizationId, {
       assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
     });

@@ -54,6 +54,7 @@ import { cn, focusRing } from "@/lib/utils";
 import { OUT_LABEL } from "@/lib/vocabulary";
 import { AssetSheet, type AssetSheetState } from "@/components/assets/asset-sheet";
 import { useCanDo } from "@/lib/use-permissions";
+import { useModelVerbs } from "@/hooks/use-model-verbs";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -95,13 +96,8 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   });
   const media = useMediaWrites("model");
 
-  const archiveMutation = useServerMutation({
-    mutationFn: () => modelWrites.archive(id),
-    onSuccess: () => {
-      toast.success("Model archived");
-      router.push("/assets/models");
-    },
-  });
+  // Archive and Restore stay on this page and each toast carries its own exact Undo (useModelVerbs).
+  const verbs = useModelVerbs({ onChanged: () => void refetch(), onOpenModel: (to) => router.push(`/assets/models/${to}`) });
 
   const archiveBulkMutation = useServerMutation({
     mutationFn: (bulkId: string) => bulkWrites.archive(bulkId),
@@ -133,6 +129,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const canEditAssets = useCanDo("asset", "update");
   // Standardized destructive confirmations.
   const [archiveModelOpen, setArchiveModelOpen] = useState(false);
+  const [restoreModelOpen, setRestoreModelOpen] = useState(false);
   const [forceReturnAssetId, setForceReturnAssetId] = useState<{
     id: string;
     tag: string;
@@ -391,15 +388,22 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     Edit
                   </Link>
                 </Button>
-                {model.isActive && (
-                  <Button
-                    variant="line"
-                    size="sm"
-                    className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
-                    onClick={() => setArchiveModelOpen(true)}
-                  >
-                    <Archive className="h-4 w-4" />
-                    Archive
+                {model.isActive ? (
+                  <CanDo resource="model" action="delete">
+                    <Button
+                      variant="line"
+                      size="sm"
+                      className="border-t-out/40 text-t-out hover:bg-out-soft hover:border-t-out"
+                      onClick={() => setArchiveModelOpen(true)}
+                    >
+                      <Archive className="h-4 w-4" />
+                      Archive
+                    </Button>
+                  </CanDo>
+                ) : (
+                  <Button variant="line" size="sm" onClick={() => setRestoreModelOpen(true)}>
+                    <RotateCcw className="h-4 w-4" />
+                    Restore
                   </Button>
                 )}
               </div>
@@ -897,13 +901,23 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       open={archiveModelOpen}
       onOpenChange={setArchiveModelOpen}
       title="Archive this model?"
-      description="The model is hidden from new quotes and the catalog. Existing assets remain. You can restore it from the archived view."
+      description="The model is hidden from new quotes and pickers, and no new job lines can use it. Its assets, existing lines, reservations and availability are not touched. You can restore it from this page."
       confirmLabel="Archive model"
       onConfirm={() => {
-        archiveMutation.mutate();
+        void verbs.archive(model.id, model.name);
         setArchiveModelOpen(false);
       }}
-      pending={archiveMutation.isPending}
+    />
+    <DeleteDialog
+      open={restoreModelOpen}
+      onOpenChange={setRestoreModelOpen}
+      title="Restore this model?"
+      description="The model comes back on new quotes and pickers, and job lines can use it again."
+      confirmLabel="Restore model"
+      onConfirm={() => {
+        void verbs.restore(model.id, model.name);
+        setRestoreModelOpen(false);
+      }}
     />
     <DeleteDialog
       open={!!forceReturnAssetId}

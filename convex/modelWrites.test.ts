@@ -95,6 +95,20 @@ describe("modelWrites", () => {
     ).rejects.toThrow(/not archived/);
   });
 
+  test("update never changes archived: isActive differing from the stored value is refused, an equal one is fine, and the flag survives the edit", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.modelWrites.createNative, base);
+    const upd = (extra: Record<string, unknown>, n: number) =>
+      t.withIdentity(asUser).mutation(api.modelWrites.updateNative, { ...base, now: NOW + n, auditId: `u${n}`, ...extra });
+    await expect(upd({ isActive: false }, 1)).rejects.toThrow(/Archive or Restore/);
+    expect((await model(t, "mdl1"))?.isActive).toBe(true);
+    await upd({ isActive: true, name: "Renamed" }, 2);
+    await t.withIdentity(asUser).mutation(api.modelWrites.archiveNative, { id: "mdl1", orgId: ORG, now: NOW + 3, actor, auditId: "ar" });
+    await expect(upd({ isActive: true }, 4)).rejects.toThrow(/Archive or Restore/);
+    await upd({ isActive: false, name: "Renamed again" }, 5); // an edit of an archived model leaves it archived
+    expect(await model(t, "mdl1")).toMatchObject({ name: "Renamed again", isActive: false });
+  });
+
   test("update: assetType flip rejected while conflicting active stock exists (own-org only)", async () => {
     const t = makeT(); await seedMember(t);
     await t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, assetType: "BULK" });

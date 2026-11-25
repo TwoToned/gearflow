@@ -12,12 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useSession } from "@/lib/auth-client";
+import { fromDateInput, toDateInput } from "@/lib/date-input";
 import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
 
 /** `2026-11-24` for an `<input type=date>` from epoch ms (local day). */
-const toInput = (ms: number | null | undefined) => (ms == null ? "" : new Date(ms).toISOString().slice(0, 10));
-const fromInput = (s: string) => new Date(`${s}T00:00:00.000Z`).getTime();
 
 export type HireMode = "return" | "extend";
 
@@ -34,7 +33,7 @@ export type HireMode = "return" | "extend";
  */
 function useHireDate(mode: HireMode | null, order: { id: string; returnDueDate: number | null }): [string, (next: string) => void] {
   const now = useStableNow();
-  const defaultValue = toInput(mode === "extend" ? (order.returnDueDate ?? now) + 24 * 60 * 60 * 1000 : now);
+  const defaultValue = toDateInput(mode === "extend" ? (order.returnDueDate ?? now) + 24 * 60 * 60 * 1000 : now);
   const editKey = `${mode ?? ""}|${order.id}|${order.returnDueDate ?? ""}`;
   const [edit, setEdit] = React.useState<{ key: string; value: string } | null>(null);
   return [edit?.key === editKey ? edit.value : defaultValue, (next) => setEdit({ key: editKey, value: next })];
@@ -65,8 +64,8 @@ export function HireDateDialog({
     const auditId = createId();
     try {
       const base = { id: order.id, orgId, now: Date.now(), actor: actor(), auditId };
-      if (mode === "return") await markReturned({ ...base, returnedDate: fromInput(value) });
-      else await extend({ ...base, returnDueDate: fromInput(value) });
+      if (mode === "return") await markReturned({ ...base, returnedDate: fromDateInput(value) });
+      else await extend({ ...base, returnDueDate: fromDateInput(value) });
       announceListWrite({
         title: mode === "return" ? `${order.orderNumber} marked returned` : `Hire on ${order.orderNumber} extended`,
         undoneTitle: "Undone",

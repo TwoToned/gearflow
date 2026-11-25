@@ -189,6 +189,36 @@ order from the app). Mirrors `subHireItems`' add/update/remove/reorder shape in
 - `useSupplierOrderWrites()` (`src/hooks/use-supplier-order-writes.ts`) wraps all
   four with `supplierOrderItemSchema.parse()` before submit.
 
+### Supplier Contacts, Documents and an order's Files (UX Phase 13, B3)
+
+Three org-scoped tables (owner-approved 2026-11-25), each `by_cuid` + `by_organizationId` (the org export
+and erasure sweep them as DIRECT tables) + one parent index: **`supplierContacts`** (`name`, `role`,
+`email`, `phone`, `notes`; cap 50 per supplier; the supplier's embedded `contactName/email/phone` stays and
+is the primary), **`supplierDocuments`** (`fileId`, `name`, `kind`, `expiryDate`, `notes`; cap 100) and
+**`supplierOrderFiles`** (`fileId`, `kind` PO / DOCKET / OTHER, `name`; cap 50 per order). The order's
+invoice keeps its own 1:1 slot (`invoiceFileId`), so there is no INVOICE kind; the Files tab lists the
+PO / docket / other files above the invoice slot. A document's **expiry state is derived on read**
+(`documentExpiry` in `convex/lib/supplierRecordCore.ts`: expired, or within 30 days) and shows as a status
+word on the row and a health row on the supplier's Overview; it is never stored.
+
+- **Reads** (`convex/supplierRecord.ts`): `contacts`, `documents`, `orderFiles`, each `supplier:read`,
+  parent fetched by the global `by_cuid` index and org-checked, every child row org-checked again, bounded
+  by the caps. **Files** are served by `/api/files/<key>`, which authorises by the caller's org: that is
+  exactly the reach of these reads because every built-in role holds `supplier:read`, so no separate download
+  route is needed (the crew documents of slice 3 do need one; they are personal).
+- **Writes** (`convex/supplierRecordWrites.ts`, `supplier:update`): per-row org re-check on the parent, the
+  row and the file. Every write toasts with an **exact server-side Undo** (ids only; author + server window +
+  once + still-as-left; `convex/lib/fieldEditUndo` for an edit, `convex/lib/rowOpUndo` for an add / remove).
+  **An Undo never deletes a stored file**: undoing an add detaches the row and the uploaded file stays; undoing
+  a contact removal re-creates the row from the audit snapshot. **Removing a document or an order file deletes
+  its stored bytes for good**, so it is a confirmed red verb with no Undo (the same rule as removing an
+  invoice).
+- **Cascades**: deleting a supplier removes its contacts and documents (bytes included); deleting an order
+  removes its files. The PII inventory lists all three tables.
+- **UI**: `src/components/suppliers/record/` (`people-tabs.tsx`, `order-files-panel.tsx`, `record-sheets.tsx`
+  on the shared `FormSheet`, `use-supplier-record-writes.ts`); Zod schemas in
+  `src/lib/validations/supplier-record.ts`.
+
 ### Supplier spend rollups (WS7 #946)
 `suppliers.detail` (`convex/suppliers.ts`) gains a `spend` object, shown on the
 supplier detail page's hero strip (headline "Spend" figure) and a dedicated

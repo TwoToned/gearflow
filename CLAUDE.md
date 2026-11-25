@@ -667,7 +667,11 @@ calls still exactly as created, never via `bulkDeleteNative` (that cascades to s
 Make live projects back, so skipping it silently reverts the job), invoices, contacts (never primary), media
 and work-item links; NOT activity history, stored PDFs or either Xero mapping; its Undo reverses exactly the
 recorded ids still where the merge left them. Record pages share `RecordShell` (DetailHeader, `?tab=` with an
-Overview fallback, a rail on every tab but Overview).
+Overview fallback, a rail on every tab but Overview). **Supplier Contacts / Documents and an order's Files**
+(B3, FEATUREDOCS/22): three small tables; an add is undone by DETACHING the row (an Undo never deletes a stored
+file), removing a document or order file deletes its bytes and is a confirmed verb with no Undo, and a
+document's expiry state is derived on read, never stored. A People list that reads a capped set reads it
+newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
 
 ### Project status advances itself — add a TRIGGER, never a second patch site
 `convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side

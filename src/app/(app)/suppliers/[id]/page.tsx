@@ -17,7 +17,10 @@ import { Facts, HealthRows, Headline, RecordRows, RecordShell, type HealthItem, 
 import { AddressDisplay } from "@/components/ui/address-display";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useServerQuery } from "@/hooks/use-server-query";
+import { ContactsTab, DocumentsTab, documentHealthItems, type ContactRow, type DocumentRow } from "@/components/suppliers/record/people-tabs";
+import { useSupplierRecordWrites } from "@/components/suppliers/record/use-supplier-record-writes";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useSupplierOrdersBySupplier } from "@/hooks/use-supplier-orders";
@@ -80,6 +83,9 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
     queryFn: () => convex.query(api.suppliers.subhiresPage, { orgId: orgId as string, supplierId: id, page: 1, pageSize: 50 }),
     enabled: !!supplier && !!orgId && isAuthenticated,
   });
+  const recordWrites = useSupplierRecordWrites(orgId);
+  const contacts = (useAuthedQuery(api.supplierRecord.contacts, orgId && supplier ? { orgId, supplierId: id } : "skip") ?? []) as ContactRow[];
+  const documents = (useAuthedQuery(api.supplierRecord.documents, orgId && supplier ? { orgId, supplierId: id } : "skip") ?? []) as DocumentRow[];
   const orders = useMemo(() => (ordersData?.orders ?? []) as unknown as OrderRow[], [ordersData]);
 
   if (isLoading) return <DetailPageSkeleton />;
@@ -112,9 +118,12 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
     ],
   };
 
-  const health: HealthItem[] = late.map(({ o, days }) => ({
-    key: o.id, tone: "error", text: `${o.orderNumber} return ${days}d overdue`, action: { label: "Extend or return", onSelect: () => router.push(`/suppliers/${id}/orders/${o.id}`) },
-  }));
+  const health: HealthItem[] = [
+    ...late.map(({ o, days }) => ({
+      key: o.id, tone: "error" as const, text: `${o.orderNumber} return ${days}d overdue`, action: { label: "Extend or return", onSelect: () => router.push(`/suppliers/${id}/orders/${o.id}`) },
+    })),
+    ...documentHealthItems(documents, now, () => router.push(`/suppliers/${id}?tab=documents`)),
+  ];
   const units = onHire.length;
 
   const overview = (
@@ -171,6 +180,14 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
         id: a.id, title: a.assetTag, href: `/assets/registry/${a.id}`, meta: [a.model?.name],
         status: { label: assetStatusLabels[a.status ?? ""] ?? a.status ?? "", intent: "neutral" } as StatusValue,
       }))} />,
+    },
+    {
+      value: "contacts", label: "Contacts", count: contacts.length,
+      panel: <ContactsTab contacts={contacts} canUpdate={canUpdate} onAdd={(v) => recordWrites.addContact(id, v)} onEdit={(cid, v) => recordWrites.updateContact(id, cid, v)} onRemove={(cid, label) => recordWrites.removeContact(id, cid, label)} />,
+    },
+    {
+      value: "documents", label: "Documents", count: documents.length,
+      panel: <DocumentsTab documents={documents} now={now} canUpdate={canUpdate} onAdd={(v, file) => recordWrites.addDocument(id, file, v)} onEdit={(did, v) => recordWrites.updateDocument(id, did, v)} onRemove={(did, name) => recordWrites.removeDocument(id, did, name)} />,
     },
     { value: "history", label: "History", panel: <ActivityTimeline entityType="supplier" entityId={id} limit={25} /> },
   ];

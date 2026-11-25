@@ -34,9 +34,12 @@ vi.mock("@/components/auth/require-permission", () => ({
 vi.mock("@/components/auth/permission-gate", () => ({
   CanDo: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+// The order's PO / docket / other files (B3) come from `supplierRecord.orderFiles` via useAuthedQuery.
+let orderFiles: unknown[] = [];
 vi.mock("convex/react", () => ({
   useMutation: () => vi.fn(async () => undefined),
 }));
+vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => orderFiles }));
 
 let orderDetail: unknown;
 vi.mock("@/hooks/use-supplier-orders", () => ({
@@ -97,9 +100,12 @@ describe("SupplierOrderDetailPage (smoke)", () => {
     expect(screen.getAllByText("TAG-1").length).toBeGreaterThan(0);
     lines.unmount();
     tab = "files";
+    orderFiles = [{ id: "of1", kind: "DOCKET", name: "Delivery docket", createdAt: 1, file: { id: "f9", fileName: "docket.pdf", fileSize: 1024, mimeType: "application/pdf", url: "/api/files/k9" } }];
     await renderPage();
     expect(screen.getAllByText("invoice.pdf").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Replace invoice").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Delivery docket").length).toBeGreaterThan(0); // a B3 order file sits above the invoice slot
+    orderFiles = [];
     tab = "";
   });
 

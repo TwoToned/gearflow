@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronRight, FileText, Upload, X, Loader2, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
+import { api } from "../../../../../../../convex/_generated/api";
 import { useSupplierOrderDetail } from "@/hooks/use-supplier-orders";
 import { useSupplierOrderWrites } from "@/hooks/use-supplier-order-writes";
 import { useServerMutation } from "@/hooks/use-server-mutation";
@@ -45,8 +46,12 @@ import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { Facts, HealthRows, Headline, RecordShell, type HealthItem, type RecordTab } from "@/components/people/record-shell";
 import { HireDateDialog, type HireMode } from "@/components/suppliers/orders/hire-dialogs";
 import { useStableNow } from "@/hooks/use-stable-now";
+import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { OrderFilesPanel, type OrderFileRow } from "@/components/suppliers/record/order-files-panel";
+import { useSupplierRecordWrites } from "@/components/suppliers/record/use-supplier-record-writes";
 import { useCanDo } from "@/lib/use-permissions";
 import { dayLabel } from "@/lib/list-views/people";
+import { fileSizeLabel } from "@/lib/file-size";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { isOnHire, orderHireState, returnLateDays } from "../../../../../../../convex/lib/orderHireState";
 
@@ -62,12 +67,6 @@ function toDateInputValue(ms: number | null | undefined): string {
 type OrderDetail = NonNullable<ReturnType<typeof useSupplierOrderDetail>>;
 
 const INVOICE_ACCEPT = "application/pdf,image/*,.doc,.docx,.xls,.xlsx";
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export default function SupplierOrderDetailPage({ params }: { params: Promise<{ id: string; orderId: string }> }) {
   return (
@@ -436,7 +435,7 @@ function InvoiceFile({
         >
           {invoice.fileName}
         </a>
-        <p className="text-caption text-muted">{formatFileSize(invoice.fileSize)}</p>
+        <p className="text-caption text-muted">{fileSizeLabel(invoice.fileSize)}</p>
       </div>
       <CanDo resource="supplier" action="update">
         <button
@@ -461,6 +460,8 @@ function OrderRecord({
   const canUpdate = useCanDo("supplier", "update");
   const canDelete = useCanDo("supplier", "delete");
   const now = useStableNow();
+  const recordWrites = useSupplierRecordWrites(orgId);
+  const orderFiles = (useAuthedQuery(api.supplierRecord.orderFiles, orgId ? { orgId, orderId } : "skip") ?? []) as OrderFileRow[];
   const [hire, setHire] = useState<HireMode | null>(null);
   const hireOrder = { type: order.type, status: order.status, returnDueDate: order.returnDueDate, returnedDate: order.returnedDate };
   const state = orderHireState(hireOrder);
@@ -515,7 +516,15 @@ function OrderRecord({
   const tabs: RecordTab[] = [
     { value: "overview", label: "Overview", panel: overview },
     { value: "lines", label: "Lines", count: order.items.length, panel: <div className="space-y-6"><LineItemsPanel items={order.items} /><LinkedAssetsPanel assets={order.assets} /></div> },
-    { value: "files", label: "Files", count: order.invoice ? 1 : 0, panel: <InvoiceSection order={order} orderId={orderId} /> },
+    {
+      value: "files", label: "Files", count: orderFiles.length + (order.invoice ? 1 : 0),
+      panel: (
+        <div className="space-y-8">
+          <OrderFilesPanel files={orderFiles} canUpdate={canUpdate} onAdd={(file, kind, name) => recordWrites.addOrderFile(orderId, file, kind, name)} onRemove={(id, label) => recordWrites.removeOrderFile(orderId, id, label)} />
+          <InvoiceSection order={order} orderId={orderId} />
+        </div>
+      ),
+    },
     { value: "history", label: "History", panel: <ActivityTimeline entityType="supplierOrder" entityId={orderId} limit={25} /> },
   ];
 

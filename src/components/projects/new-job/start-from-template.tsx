@@ -20,7 +20,7 @@ import { cn, focusRing } from "@/lib/utils";
  */
 interface Picked { id: string; name?: string }
 
-export function useTemplateApply(draftId: string | undefined) {
+export function useTemplateApply(draftId: string | undefined, adopt: (values: Record<string, unknown>) => void) {
   const writes = useTemplateWrites();
   const [picked, setPicked] = useState<Picked | null>(null);
   const [applied, setApplied] = useState<{ auditId: string } | null>(null);
@@ -30,7 +30,8 @@ export function useTemplateApply(draftId: string | undefined) {
     if (!draftId || !picked || applied || inFlight.current) return;
     inFlight.current = true;
     writes.apply(draftId, picked.id)
-      .then(({ auditId, lineCount }) => {
+      .then(({ auditId, lineCount, applied: filled }) => {
+        adopt(filled);
         setApplied({ auditId });
         toast.success(`Started from ${picked.name ?? "the template"}${lineCount ? `: ${lineCount} line${lineCount === 1 ? "" : "s"} added` : ""}`, {
           action: { label: "Undo", onClick: () => void clear(draftId, auditId) },
@@ -47,7 +48,8 @@ export function useTemplateApply(draftId: string | undefined) {
   /** The exact Undo; on a refusal (gear edited since, window passed) the template stays and the server's words are shown. */
   const clear = async (id: string, auditId: string) => {
     try {
-      await writes.undoApply(id, auditId);
+      const { restored } = await writes.undoApply(id, auditId);
+      adopt(restored);
       setApplied(null);
       setPicked(null);
     } catch (e) {

@@ -48,8 +48,8 @@ vi.mock("@/hooks/use-debounced-value", () => ({ useDebouncedValue: (v: unknown) 
 vi.mock("@/hooks/use-locations", () => ({ useLocations: () => [] }));
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: () => [] }));
 vi.mock("@/hooks/use-activation-milestones", () => ({ useActivationMilestones: () => undefined }));
-const applyT = vi.fn(async () => ({ id: "draft1", lineCount: 2, auditId: "ap1" }));
-const undoApplyT = vi.fn(async () => ({ removedLines: 2 }));
+const applyT = vi.fn(async (..._a: unknown[]) => ({ id: "draft1", lineCount: 2, auditId: "ap1", applied: {} as Record<string, unknown>, previous: {} as Record<string, unknown> }));
+const undoApplyT = vi.fn(async (..._a: unknown[]) => ({ removedLines: 2, restored: {} as Record<string, unknown> }));
 const TEMPLATES = [
   { id: "t1", number: "T-1", name: "Gala dinner", type: "CORPORATE", clientName: null, lineCount: 2, updatedAt: 3 },
   { id: "t2", number: "T-2", name: "Festival rig", type: "FESTIVAL", clientName: null, lineCount: 9, updatedAt: 2 },
@@ -237,6 +237,33 @@ describe("NewJobWizard", () => {
       nameIt();
       await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t2"));
       expect(applyT).toHaveBeenCalledTimes(1);
+    });
+
+    it("the form adopts what the apply wrote, so the next autosave keeps it (and the Undo restores the form)", async () => {
+      applyT.mockResolvedValueOnce({
+        id: "draft1", lineCount: 2, auditId: "ap1",
+        applied: { type: "FESTIVAL", description: "Ballroom", tags: ["gala", "mine"] }, previous: { type: null, description: null, tags: ["mine"] },
+      });
+      undoApplyT.mockResolvedValueOnce({ removedLines: 2, restored: { type: null, description: null, tags: ["mine"] } });
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      nameIt();
+      await screen.findByText("✓ Draft #2360 saved");
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      await user.click(await screen.findByText("Gala dinner · 2 lines"));
+      await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t1"));
+      await waitFor(() => expect((screen.getByPlaceholderText("Brief description of the job") as HTMLTextAreaElement).value).toBe("Ballroom"));
+      // The user's next edit autosaves: the saved baseline already holds the applied values, so nothing server-written is sent back stale.
+      update.mockClear();
+      fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Gala 2" } });
+      await waitFor(() => expect(update).toHaveBeenCalled());
+      const [, values, , saved] = update.mock.calls.at(-1) as unknown as [string, { type: string; description: string; tags: string[] }, boolean, { type: string; description: string; tags: string[] }];
+      expect(values).toMatchObject({ type: "FESTIVAL", description: "Ballroom", tags: ["gala", "mine"] });
+      expect(saved).toMatchObject({ type: "FESTIVAL", description: "Ballroom", tags: ["gala", "mine"] });
+      // Start from scratch undoes it and the form goes back to the draft's own values.
+      await user.click(screen.getByRole("button", { name: /Template: Gala dinner/ }));
+      await user.click(await screen.findByText("Start from scratch"));
+      await waitFor(() => expect((screen.getByPlaceholderText("Brief description of the job") as HTMLTextAreaElement).value).toBe(""));
     });
 
     it("a refused apply says why and clears the pick", async () => {

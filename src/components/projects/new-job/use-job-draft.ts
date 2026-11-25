@@ -9,6 +9,7 @@ import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useProject } from "@/hooks/use-projects";
 import { projectSchema, type ProjectFormValues } from "@/lib/validations/project";
+import { projectFormDefaults } from "@/components/projects/project-fields";
 
 /**
  * The wizard's draft (D24). The job row is written the first time it has a name,
@@ -113,10 +114,25 @@ export function useJobDraft({
     setPhase("none");
   }, []);
 
+  /**
+   * Take values the SERVER wrote onto the draft (a template apply or its Undo) into the form AND the saved
+   * baseline, so the next autosave diff does not see them as the user's edit and send the stale form value over
+   * them. `null` means the draft has none (the field's own default).
+   */
+  const adopt = useCallback((values: Record<string, unknown>) => {
+    const defaults = projectFormDefaults();
+    const taken: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(values)) {
+      taken[key] = value ?? (defaults as Record<string, unknown>)[key];
+      form.setValue(key as keyof ProjectFormValues, taken[key] as never, { shouldDirty: false });
+    }
+    if (savedRef.current) savedRef.current = { ...savedRef.current, ...taken } as ProjectFormValues;
+  }, [form]);
+
   /** The audit id the draft's create carried (read at click time; the server proves authorship with it). */
   const createAuditId = useCallback(() => mintedRef.current.auditId, []);
 
-  return { phase, draftId, number, flush, forget, createAuditId };
+  return { phase, draftId, number, flush, forget, adopt, createAuditId };
 }
 
 /** A code the org must type (no auto-number) is "not yet", not an error; a duplicate code lands on its field. */

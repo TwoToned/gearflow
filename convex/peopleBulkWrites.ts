@@ -58,16 +58,21 @@ async function bumpCrew(ctx: MutationCtx, kind: Kind, orgId: string, before: Row
   if (kind === "crew") await bumpCrewMemberCounters(ctx, orgId, before as never, { ...before, ...after } as never);
 }
 
+const GATE_CAP = 2000;
+const TOO_MANY = "too many records to check";
+
 /** Why this record must be skipped (named in the result), or null. Server-side per-row gates. */
 async function skipReason(ctx: MutationCtx, kind: Kind, orgId: string, row: Row, to: "off" | "on", todayMs: number): Promise<string | null> {
   if (to === "on") return null;
   if (kind === "crew") {
-    const { rows } = await collectCapped(ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", row.id)), 2000);
+    const { rows, truncated } = await collectCapped(ctx.db.query("crewAssignments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", row.id)), GATE_CAP);
+    if (truncated) return TOO_MANY; // an unreadable tail must never let Archive through
     const confirmed = rows.some((c) => c.organizationId === orgId && c.status === "CONFIRMED" && (c.endDate ?? c.startDate ?? todayMs) >= todayMs);
     return confirmed ? "has a confirmed call" : null;
   }
   if (kind === "client") {
-    const { rows } = await collectCapped(ctx.db.query("projects").withIndex("by_clientId", (q) => q.eq("clientId", row.id)), 2000);
+    const { rows, truncated } = await collectCapped(ctx.db.query("projects").withIndex("by_clientId", (q) => q.eq("clientId", row.id)), GATE_CAP);
+    if (truncated) return TOO_MANY;
     const open = rows.some((p) => p.organizationId === orgId && !p.isTemplate && !["COMPLETED", "INVOICED", "CANCELLED"].includes(p.status ?? ""));
     return open ? "has open jobs" : null;
   }
@@ -160,12 +165,17 @@ export const setActiveManyNative = mutation({
     const todayMs = Math.min(a.todayMs, Date.now() + 86_400_000);
     const to = a.active ? "on" : "off";
     const value = cfg.field === "status" ? (a.active ? "ACTIVE" : "INACTIVE") : a.active;
+    /** A crew row the list shows as inactive because of a legacy `isActive:false`, whatever its `status`. */
+    const legacyInactive = (row: Row) => a.kind === "crew" && row.isActive === false;
     const verb = a.kind === "crew" ? (a.active ? "Reactivated" : "Deactivated") : a.active ? "Reactivated" : "Archived";
     return runPatch(
-      ctx, { ...a, actor }, () => [cfg.field],
+      ctx, { ...a, actor }, (row) => (a.active && legacyInactive(row) ? [cfg.field, "isActive"] : [cfg.field]),
       (row) => {
-        const already = cfg.field === "status" ? (row.status ?? "ACTIVE") === value : (row.isActive ?? true) === value;
-        return already ? (a.active ? "already active" : "already inactive") : { [cfg.field]: value };
+        const already = cfg.field === "status" ? (row.status ?? "ACTIVE") === value && !legacyInactive(row) : (row.isActive ?? true) === value;
+        if (already) return a.active ? "already active" : "already inactive";
+        // The list shows a crew member with a legacy `isActive:false` as inactive whatever their status, so
+        // reactivating one clears that flag too (otherwise the row would read as inactive again).
+        return a.active && legacyInactive(row) ? { [cfg.field]: value, isActive: true } : { [cfg.field]: value };
       },
       (row) => `${verb} ${nameOf(row)}`,
       (row) => skipReason(ctx, a.kind, a.orgId, row, to, todayMs),

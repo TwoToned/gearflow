@@ -85,6 +85,44 @@ describe("deactivate / reactivate (crew)", () => {
   });
 });
 
+describe("gates and limits", () => {
+  test("a gate that cannot read every call SKIPS the row (fails closed), never lets Archive through", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { for (let i = 0; i < 2001; i++) await ctx.db.insert("crewAssignments", { id: `bulk${i}`, organizationId: ORG, projectId: "p", crewMemberId: "a", status: "PENDING", startDate: NOW });
+    });
+    const out = await setActive(t, "crew", ["a"], false);
+    expect(out.changed).toEqual([]);
+    expect(out.skipped).toEqual([{ id: "a", name: "a Crew", reason: "too many records to check" }]);
+    expect((await get(t, "crewMembers", "a"))?.status).toBe("ACTIVE");
+  });
+
+  test("a batch over the human cap is refused before anything is written", async () => {
+    const t = makeT(); await seed(t);
+    const ids = Array.from({ length: 501 }, (_, i) => `x${i}`);
+    await expect(setActive(t, "crew", ids, false)).rejects.toThrow();
+    await expect(addTag(t, "crew", ids, "vip")).rejects.toThrow();
+    expect((await get(t, "crewMembers", "a"))?.status).toBe("ACTIVE");
+  });
+
+  test("a repeated id changes once and writes ONE audit row", async () => {
+    const t = makeT(); await seed(t);
+    const out = await setActive(t, "crew", ["a", "a", "a"], false);
+    expect(out.changed).toHaveLength(1);
+    const logs = await t.run(async (ctx) => ctx.db.query("activityLogs").collect());
+    expect(logs.filter((l) => l.entityId === "a")).toHaveLength(1);
+  });
+
+  test("a crew member with a legacy isActive:false (status ACTIVE) can be reactivated, and the Undo restores it", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { const a = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "a")).first(); await ctx.db.patch(a!._id, { isActive: false }); });
+    const out = await setActive(t, "crew", ["a"], true);
+    expect(out.changed.map((c) => c.id)).toEqual(["a"]);
+    expect((await get(t, "crewMembers", "a"))?.isActive).toBe(true);
+    await undo(t, "crew", ["a"]);
+    expect((await get(t, "crewMembers", "a"))?.isActive).toBe(false);
+  });
+});
+
 describe("tags", () => {
   test("adds one tag per record, skips records that already have it, and Undo removes only what this write added", async () => {
     const t = makeT(); await seed(t);

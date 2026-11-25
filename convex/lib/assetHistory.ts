@@ -76,16 +76,23 @@ async function serialisedReason(ctx: QueryCtx, orgId: string, id: string): Promi
   ]);
   // (`projectLineItemUnits.parentUnitAssetId` has no index: an accessory unit under this
   // unit sits on a job line, which the JOB rule above already covers.)
-  if (inOrg(lines, orgId) || inOrg(units, orgId)) return "JOB";
-  if (inOrg(cases, orgId)) return "CASE";
-  if (await maintenanceInOrg(ctx, orgId, maint)) return "MAINTENANCE";
-  if (await hasTestRecord(ctx, orgId, tt)) return "TEST_AND_TAG";
-  if (checks.length > 0) return "CHECK";
-  if (inOrg(scans, orgId)) return "SCAN";
-  if (kit.length > 0) return "KIT";
-  if (inOrg(kids, orgId) || inOrg(bulkKids, orgId)) return "ACCESSORY";
-  if (await orderItemsInOrg(ctx, orgId, orderItems)) return "ORDER";
-  if (inOrg(media, orgId)) return "MEDIA";
+  return firstReason([
+    ["JOB", () => inOrg(lines, orgId) || inOrg(units, orgId)],
+    ["CASE", () => inOrg(cases, orgId)],
+    ["MAINTENANCE", () => maintenanceInOrg(ctx, orgId, maint)],
+    ["TEST_AND_TAG", () => hasTestRecord(ctx, orgId, tt)],
+    ["CHECK", () => checks.length > 0],
+    ["SCAN", () => inOrg(scans, orgId)],
+    ["KIT", () => kit.length > 0],
+    ["ACCESSORY", () => inOrg(kids, orgId) || inOrg(bulkKids, orgId)],
+    ["ORDER", () => orderItemsInOrg(ctx, orgId, orderItems)],
+    ["MEDIA", () => inOrg(media, orgId)],
+  ]);
+}
+
+/** The first rule that holds, in order; `null` = a bare row. */
+async function firstReason(rules: [AssetHistoryReason, () => boolean | Promise<boolean>][]): Promise<AssetHistoryReason | null> {
+  for (const [reason, holds] of rules) if (await holds()) return reason;
   return null;
 }
 
@@ -103,16 +110,17 @@ async function bulkReason(ctx: QueryCtx, orgId: string, id: string): Promise<Ass
     db.query("projectContainers").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
     db.query("modelBulkAccessories").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
   ]);
-  if (inOrg(lines, orgId) || inOrg(units, orgId)) return "JOB";
-  if (inOrg(cases, orgId)) return "CASE";
-  if (await maintenanceInOrg(ctx, orgId, maint)) return "MAINTENANCE";
-  if (await hasTestRecord(ctx, orgId, tt.filter((r) => r.organizationId === orgId))) return "TEST_AND_TAG";
-  if (inOrg(checks, orgId)) return "CHECK";
-  if (inOrg(scans, orgId)) return "SCAN";
-  if (inOrg(kit, orgId)) return "KIT";
-  if (inOrg(kids, orgId)) return "ACCESSORY";
-  if (inOrg(modelAcc, orgId)) return "MODEL_ACCESSORY";
-  return null;
+  return firstReason([
+    ["JOB", () => inOrg(lines, orgId) || inOrg(units, orgId)],
+    ["CASE", () => inOrg(cases, orgId)],
+    ["MAINTENANCE", () => maintenanceInOrg(ctx, orgId, maint)],
+    ["TEST_AND_TAG", () => hasTestRecord(ctx, orgId, tt)],
+    ["CHECK", () => inOrg(checks, orgId)],
+    ["SCAN", () => inOrg(scans, orgId)],
+    ["KIT", () => inOrg(kit, orgId)],
+    ["ACCESSORY", () => inOrg(kids, orgId)],
+    ["MODEL_ACCESSORY", () => inOrg(modelAcc, orgId)],
+  ]);
 }
 
 /** Links carry no org of their own: the record they point at does. */

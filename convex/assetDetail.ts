@@ -7,6 +7,19 @@ import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgPermission
 import { ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import { pick, FILE_META_FIELDS } from "./lib/dto";
 
+/** Last completed service and open repairs, from this unit's LINK rows (CHECKOFF rows are PM progress, not a job on it). */
+function maintenanceFacts(links: Doc<"maintenanceRecordAssets">[], all: Doc<"maintenanceRecords">[]) {
+  const linked = new Set(links.filter((l) => (l.kind ?? "LINK") === "LINK").map((l) => l.maintenanceRecordId));
+  const records = all.filter((r) => linked.has(r.id));
+  const done = records
+    .filter((r) => r.type === "PREVENTATIVE" && r.status === "COMPLETED" && r.completedDate != null)
+    .map((r) => r.completedDate!);
+  return {
+    lastServiceAt: done.length ? Math.max(...done) : null,
+    openRepairs: records.filter((r) => r.type === "REPAIR" && r.status !== "COMPLETED" && r.status !== "CANCELLED").length,
+  };
+}
+
 const CHECK_WINDOW = 30;
 const SCAN_WINDOW = 5;
 
@@ -38,16 +51,13 @@ async function readHealthFacts(
     assetHistoryReason(ctx, orgId, { assetId }),
   ]);
 
-  const linked = new Set(a.maintLinks.filter((l) => (l.kind ?? "LINK") === "LINK").map((l) => l.maintenanceRecordId));
-  const records = a.maintenanceRecords.filter((r) => linked.has(r.id));
-  const lastServiceAt = records
-    .filter((r) => r.type === "PREVENTATIVE" && r.status === "COMPLETED" && r.completedDate != null)
-    .reduce<number | null>((m, r) => Math.max(m ?? 0, r.completedDate!), null);
-  const openRepairs = records.filter((r) => r.type === "REPAIR" && r.status !== "COMPLETED" && r.status !== "CANCELLED").length;
-
+  const { lastServiceAt, openRepairs } = maintenanceFacts(a.maintLinks, a.maintenanceRecords);
   const prepOrReturn = checks.filter((c) => c.context === "PREP" || c.context === "RETURN");
-  const newestScan = scans.filter((s) => s.organizationId === orgId).reduce<number | null>((m, s) => Math.max(m ?? 0, s.scannedAt ?? 0), null);
-  const newestCheck = checks.reduce<number | null>((m, c) => Math.max(m ?? 0, c.performedAt ?? 0), null);
+  const newest = (xs: number[]) => (xs.length ? Math.max(...xs) : null);
+  const lastScanAt = newest([
+    ...scans.filter((s) => s.organizationId === orgId).map((s) => s.scannedAt ?? 0),
+    ...checks.map((c) => c.performedAt ?? 0),
+  ].filter((n) => n > 0));
 
   // Out on a job: the job's end date is when the unit is due back.
   const active = a.lineItems.find((li) => li.status === "CHECKED_OUT" && !li.returnedAt);
@@ -61,7 +71,7 @@ async function readHealthFacts(
     openRepairs,
     hasPrepOrReturnCheck: prepOrReturn.length > 0,
     lastCheckResult: prepOrReturn[0]?.result ?? null,
-    lastScanAt: Math.max(newestScan ?? 0, newestCheck ?? 0) || null,
+    lastScanAt,
     dueBackAt,
     /** The Delete gate, answered by the server's one rule (`assetHistoryReason`), the same one `deleteNative` enforces. */
     canDelete: history == null,

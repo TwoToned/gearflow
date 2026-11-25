@@ -1,5 +1,6 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { isFileReferenced } from "./attachableUpload";
 
 /**
  * Delete a `fileUploads` row, its `storedFiles` record and the stored bytes. The row is
@@ -18,4 +19,16 @@ export async function deleteStoredFile(ctx: MutationCtx, fileId: string, orgId: 
     // already gone — idempotent
   }
   await ctx.db.delete(file._id);
+}
+
+/**
+ * Delete a file's bytes ONLY when nothing holds it any more. Call it AFTER the caller's own row is deleted
+ * (or swapped away) in the same transaction, so `isFileReferenced` sees the world without that row. A
+ * legacy file that two rows share (or that a media row, an invoice or a photo array still holds) survives
+ * the removal of one of them. Returns whether the bytes were deleted.
+ */
+export async function deleteStoredFileIfUnreferenced(ctx: MutationCtx, orgId: string, fileId: string): Promise<boolean> {
+  if (await isFileReferenced(ctx.db, orgId, fileId)) return false;
+  await deleteStoredFile(ctx, fileId, orgId);
+  return true;
 }

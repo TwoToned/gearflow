@@ -6,7 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
-import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CONTACTS_PER_SUPPLIER, MAX_DOCUMENTS_PER_SUPPLIER } from "./lib/supplierRecordCore";
 
 /**
@@ -120,8 +120,8 @@ async function deleteSupplierPeople(ctx: MutationCtx, orgId: string, supplierId:
   for (const c of contacts.filter((x) => x.organizationId === orgId)) await ctx.db.delete(c._id);
   const docs = await ctx.db.query("supplierDocuments").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).take(MAX_DOCUMENTS_PER_SUPPLIER + 1);
   for (const d of docs.filter((x) => x.organizationId === orgId)) {
-    await deleteStoredFile(ctx, d.fileId, orgId);
     await ctx.db.delete(d._id);
+    await deleteStoredFileIfUnreferenced(ctx, orgId, d.fileId);
   }
 }
 

@@ -100,7 +100,7 @@ export const listPage = query({
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
     const cost = await bulkAssetCostGuard(ctx);
-    const sortBy = cost.sortBy(a.sortBy ?? "assetTag", "assetTag"); // a hidden cost column is not a sort key
+    const sortBy = cost.sort(a.sortBy); // an allow-list; a hidden cost column is not a sort key
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([

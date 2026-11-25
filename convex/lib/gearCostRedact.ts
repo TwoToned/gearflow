@@ -1,6 +1,13 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { getAuthContext, isAgentNoFinancials, redactFields } from "./auth";
-import { ASSET_COST_FIELDS, BULK_ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./gearCostFields";
+import {
+  ASSET_COST_FIELDS,
+  ASSET_SORT_KEYS,
+  BULK_ASSET_COST_FIELDS,
+  BULK_ASSET_SORT_KEYS,
+  MODEL_COST_FIELDS,
+  resolveSortKey,
+} from "./gearCostFields";
 
 /**
  * Per-read cost redaction for unit rows (what a unit COST to buy). A `noFinancials`
@@ -16,19 +23,19 @@ export interface GearCostGuard {
   row: <T extends Record<string, unknown>>(r: T) => T;
   /** Strips the model's cost columns from a model embedded in a unit row. */
   model: <T extends Record<string, unknown> | null>(m: T) => T;
-  /** `sortBy`, or `fallback` when it names a hidden cost column. */
-  sortBy: (sortBy: string, fallback: string) => string;
+  /** The sort key: `requested` when allow-listed (and not a hidden cost column), else the default `assetTag`. */
+  sort: (requested: string | undefined) => string;
 }
 
-async function guard(ctx: QueryCtx | MutationCtx, fields: readonly string[]): Promise<GearCostGuard> {
+async function guard(ctx: QueryCtx | MutationCtx, fields: readonly string[], sorts: readonly string[]): Promise<GearCostGuard> {
   const hidden = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
   return {
     hidden,
     row: (r) => (hidden ? redactFields(r, fields) : r),
     model: (m) => (hidden && m ? redactFields(m, MODEL_COST_FIELDS) : m),
-    sortBy: (s, fallback) => (hidden && fields.includes(s) ? fallback : s),
+    sort: (requested) => resolveSortKey(requested, sorts, hidden, "assetTag"),
   };
 }
 
-export const assetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, ASSET_COST_FIELDS);
-export const bulkAssetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, BULK_ASSET_COST_FIELDS);
+export const assetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, ASSET_COST_FIELDS, ASSET_SORT_KEYS);
+export const bulkAssetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, BULK_ASSET_COST_FIELDS, BULK_ASSET_SORT_KEYS);

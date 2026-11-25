@@ -83,6 +83,23 @@ describe("asset and bulk reads: purchase cost for a noFinancials key", () => {
     expect((reads[1] as { assets: { assetTag: string }[] }).assets.map((r) => r.assetTag)).toEqual(["A-1", "A-2"]); // fell back to tag order
   });
 
+  test("ordering: a member can sort by price asc and desc; a noFinancials key never gets price order, and an unknown key is not a sort key", async () => {
+    const t = await seed(true); // A-1 costs PURCHASE, A-2 costs 1: price order is the REVERSE of tag order
+    await seedBulk(t);
+    const tags = async (who: typeof asUser | typeof asAgent, sortBy: string, sortOrder: "asc" | "desc") =>
+      (await t.withIdentity(who).query(api.assets.listPage, { orgId: ORG, sortBy, sortOrder })).assets.map((r) => r.assetTag);
+    expect(await tags(asUser, "purchasePrice", "asc")).toEqual(["A-2", "A-1"]);
+    expect(await tags(asUser, "purchasePrice", "desc")).toEqual(["A-1", "A-2"]);
+    // redacted: falls back to the default (tag) sort in the requested direction, NOT price order
+    expect(await tags(asAgent, "purchasePrice", "asc")).toEqual(["A-1", "A-2"]);
+    expect(await tags(asAgent, "purchasePrice", "desc")).toEqual(["A-2", "A-1"]);
+    // not on the allow-list: ignored for everyone
+    expect(await tags(asUser, "notes", "asc")).toEqual(["A-1", "A-2"]);
+    const bulkTags = async (who: typeof asUser | typeof asAgent, sortBy: string) =>
+      (await t.withIdentity(who).query(api.bulkAssets.listPage, { orgId: ORG, sortBy })).bulkAssets.map((r) => r.assetTag);
+    expect(await bulkTags(asAgent, "purchasePricePerUnit")).toEqual(["B-1"]);
+  });
+
   test("a member still sees purchase cost", async () => {
     const t = await seed(true);
     await seedBulk(t);

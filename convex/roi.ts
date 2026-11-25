@@ -80,7 +80,7 @@ async function roiCostRedactor(ctx: QueryCtx): Promise<<T extends Record<string,
   return (row) => (hide ? redactFields(row, ROI_COST_FIELDS) : row);
 }
 
-type CostModel ={ defaultPurchasePrice?: number | null; replacementCost?: number | null } | null | undefined;
+type CostModel = { defaultPurchasePrice?: number | null; replacementCost?: number | null } | null | undefined;
 
 /**
  * One serialised asset's contribution to fleet cost: what we actually paid for it,

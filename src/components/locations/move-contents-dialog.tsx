@@ -5,6 +5,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { plural } from "@/lib/list-write-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export interface MoveSource {
@@ -16,6 +17,14 @@ export interface MoveSource {
 export interface MoveDestination {
   id: string;
   name: string;
+}
+
+/** `Moved 4 items to Van 2 · skipped 2: out on a job` (the list and the record page share it). */
+export function moveTitle(moved: number, toName: string, skipped: { reason: string; count: number }[]): string {
+  const base = `Moved ${plural(moved, "item")} to ${toName}`;
+  if (skipped.length === 0) return base;
+  const n = skipped.reduce((s, x) => s + x.count, 0);
+  return `${base} · skipped ${n} (${skipped.map((s) => `${s.count} ${s.reason}`).join(", ")})`;
 }
 
 /** Pure: the destinations on offer (every location that is not one of the sources). */

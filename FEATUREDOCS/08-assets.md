@@ -118,7 +118,30 @@ is no archived state; no Undo). Bulk: `Move contents n` and `Print bin labels n`
   patches), `lib/fulfillment.setAssetStatus`, `projectWrites` (kits freed on cancel), and Move contents.
 - `capacity` is a whole number >= 1 (`locationsWrites` create / update; update treats an absent value as
   "leave alone" and `null` as "clear", so a form that does not know the field never wipes it). It is set
-  from the location sheet in 14b-1.
+  from the location sheet.
+
+### Location sheet and record (UX Phase 14b-1, `/locations/[id]`)
+- **One sheet** (`src/components/locations/location-sheet.tsx`, on `FormSheet`) creates and edits: Identity
+  (name, type) · Place (parent search-first, excluding itself and everything beneath it; address; capacity,
+  blank = no limit) · More details (notes, tags, default for new assets; open on edit). Create offers
+  `Save and add another` (keeps parent and type). `LocationSheetHost` opens it from the URL: `?new=1` on
+  `/locations`, `?edit=1` on the record; `/locations/new` and `/locations/[id]/edit` are server redirects.
+  Closing drops the param (replace).
+- **Undo is exact and ids-only.** `locationsWrites.updateNative` returns `{ id, changed, undoable }` and records
+  the field diff through `convex/lib/fieldEditUndo.ts`; `undoUpdateNative` refuses if a changed field was
+  edited since, outside the 10-minute server window, for a non-author, or twice. A save that changed nothing
+  toasts "Nothing changed" with no Undo; one that changes `isDefault` offers none (it moves another
+  location's flag). `createNative` logs a snapshot; `undoCreateNative` removes the location only while it is
+  unedited, empty (no bins, contents or files), not the default and the author's. Both toasts share ONE
+  closure through `announceListWrite`.
+- `updateNative` refuses a parent that is the location itself or one of its own bins
+  (`assertNoParentCycle`).
+- **The record** (`locations.detail`) now also returns `capacity`, `fill`, `lastMovement`, `labelState` and,
+  per bin, its own stored count, capacity, fill, label state and last movement. Header: Edit and a ⋯ menu
+  (Move contents…, Print bin label, Delete…) built by the same `buildLocationActions` the list uses; the Notes
+  tab is gone (notes are a sheet field and show in the sidebar).
+- Deferred: put-away `Scan` primary and per-row `Move n to…` in Contents; the full `DetailHeader`/`TabStrip`
+  rebuild of the record page.
 
 ### Models list (UX Phase 14, `/assets/models`)
 A `ListPage` (`src/components/assets/models-list.tsx`, config in `src/lib/list-views/models.ts`) over

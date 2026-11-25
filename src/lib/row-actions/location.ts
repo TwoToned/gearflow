@@ -11,7 +11,8 @@ import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/ty
  */
 export interface LocationActionCtx {
   title: string;
-  onOpen: () => void;
+  /** Absent on the record page itself (you are already there). */
+  onOpen?: () => void;
   onEdit?: () => void;
   onMoveContents?: () => void;
   onPrintLabel?: () => void;
@@ -24,7 +25,7 @@ const compact = (entries: Entry[]): ActionItem[] => entries.filter((e): e is Act
 export function buildLocationActions(ctx: LocationActionCtx): ActionMenuSpec {
   return {
     items: compact([
-      { key: "open", label: "Open", group: "edit", icon: ExternalLink, onSelect: ctx.onOpen },
+      ctx.onOpen && { key: "open", label: "Open", group: "edit", icon: ExternalLink, onSelect: ctx.onOpen },
       ctx.onEdit && { key: "edit", label: "Edit", group: "edit", icon: Pencil, kbd: "E", onSelect: ctx.onEdit },
       ctx.onMoveContents && { key: "move", label: "Move contents…", group: "organise", icon: MoveRight, onSelect: ctx.onMoveContents },
       ctx.onPrintLabel && { key: "print", label: "Print bin label", group: "documents", icon: Printer, onSelect: ctx.onPrintLabel },

@@ -161,7 +161,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/clients/new": "create flow",
   "/crew/new": "create flow",
   "/kits/new": "create flow",
-  "/locations/new": "create flow",
+  "/locations/new": "redirect to the Location sheet (`/locations?new=1`, Phase 14)",
   "/projects/new": "create flow",
   "/projects/templates/new": "create flow",
   "/suppliers/new": "create flow",

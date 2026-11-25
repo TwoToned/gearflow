@@ -28145,6 +28145,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "locationsWrites.undoCreateNative",
+    "module": "locationsWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo the creation of a location by its audit id (refuses once it has bins, contents or files).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "locationsWrites.undoMoveContentsNative",
     "module": "locationsWrites",
     "fn": "undoMoveContentsNative",
@@ -28198,6 +28250,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "1d3043aa7896bae1",
     "stability": "tracks-app",
     "summary": "Exactly undo a recent Move contents by its audit id (puts back only rows the move left untouched).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.undoUpdateNative",
+    "module": "locationsWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo an edit of a location by its audit id (refuses if a changed field was edited again since).",
     "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
@@ -28297,7 +28401,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "eed50cd13f03a918",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "e1e8c17e7ffbded7",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -66757,10 +66861,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1293,
-  agentReachable: 661,
+  total: 1295,
+  agentReachable: 663,
   queries: 465,
-  mutations: 828,
+  mutations: 830,
   agentReachableQueries: 329,
-  agentReachableMutations: 332,
+  agentReachableMutations: 334,
 } as const;

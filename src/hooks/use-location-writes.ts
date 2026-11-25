@@ -22,6 +22,8 @@ export function useLocationWrites() {
   const updateM = useMutation(api.locationsWrites.updateNative);
   const notesM = useMutation(api.locationsWrites.updateNotesNative);
   const removeM = useMutation(api.locationsWrites.removeNative);
+  const undoCreateM = useMutation(api.locationsWrites.undoCreateNative);
+  const undoUpdateM = useMutation(api.locationsWrites.undoUpdateNative);
   const moveM = useMutation(api.locationsWrites.moveContentsNative);
   const undoMoveM = useMutation(api.locationsWrites.undoMoveContentsNative);
   const labelsM = useMutation(api.locationsWrites.setLabelsPrintedNative);
@@ -44,14 +46,27 @@ export function useLocationWrites() {
   });
 
   return {
-    create: async (data: LocationFormValues): Promise<{ id: string }> => {
+    /** Returns the audit id the toast's Undo takes (`undoCreate`). */
+    create: async (data: LocationFormValues): Promise<{ id: string; auditId: string }> => {
       const parsed = locationSchema.parse(data);
-      return await createM({ id: createId(), orgId: requireOrg(), ...fields(parsed), now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      const { id } = await createM({ id: createId(), orgId: requireOrg(), ...fields(parsed), capacity: parsed.capacity, now: Date.now(), actor: actor(), auditId });
+      return { id, auditId };
     },
-    update: async (id: string, data: LocationFormValues): Promise<{ id: string }> => {
+    /**
+     * `capacity` is sent as `null` when the sheet's field is blank (clears it); a caller that does not
+     * know the field (none now) would omit it and leave a stored capacity alone.
+     */
+    update: async (id: string, data: LocationFormValues): Promise<{ id: string; auditId: string; changed: boolean; undoable: boolean }> => {
       const parsed = locationSchema.parse(data);
-      return await updateM({ id, orgId: requireOrg(), ...fields(parsed), now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      const r = await updateM({ id, orgId: requireOrg(), ...fields(parsed), capacity: parsed.capacity ?? null, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
     },
+    /** Exactly reverses `create` (ids only; refused once the location has bins, contents, files or edits). */
+    undoCreate: async (id: string, auditId: string): Promise<{ id: string }> => undoCreateM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() }),
+    /** Exactly reverses `update` (ids only; refused if a changed field was edited again since). */
+    undoUpdate: async (id: string, auditId: string): Promise<{ id: string }> => undoUpdateM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() }),
     updateNotes: async (id: string, notes: string): Promise<void> => {
       await notesM({ id, orgId: requireOrg(), notes: notes || null, now: Date.now(), actor: actor() });
     },

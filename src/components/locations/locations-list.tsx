@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { api } from "../../../convex/_generated/api";
 import { BinLabelsDialog, type BinLabel } from "@/components/locations/bin-labels-dialog";
-import { MoveContentsDialog, type MoveSource } from "@/components/locations/move-contents-dialog";
+import { MoveContentsDialog, moveTitle, type MoveSource } from "@/components/locations/move-contents-dialog";
 import { ListPage } from "@/components/ui/list-page";
 import type { ListPrimary } from "@/components/ui/list-page-parts";
 import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
@@ -29,6 +29,7 @@ import {
   type LocationSource,
 } from "@/lib/list-views/locations";
 import { announceListWrite, plural } from "@/lib/list-write-toast";
+import { LocationSheetHost } from "@/components/locations/location-sheet-host";
 import { buildLocationActions, buildLocationBulkActions } from "@/lib/row-actions/location";
 import { showError } from "@/lib/show-error";
 import { useCanDo } from "@/lib/use-permissions";
@@ -38,14 +39,6 @@ import { toast } from "sonner";
 export function LocationsList() {
   const { data: activeOrg } = useActiveOrganization();
   return <LocationsListInner key={activeOrg?.id ?? "none"} orgId={activeOrg?.id} />;
-}
-
-/** `Moved 4 items to Van 2 · skipped 2: out on a job`. */
-function moveTitle(moved: number, toName: string, skipped: { reason: string; count: number }[]): string {
-  const base = `Moved ${plural(moved, "item")} to ${toName}`;
-  if (skipped.length === 0) return base;
-  const n = skipped.reduce((s, x) => s + x.count, 0);
-  return `${base} · skipped ${n} (${skipped.map((s) => `${s.count} ${s.reason}`).join(", ")})`;
 }
 
 function LocationsListInner({ orgId }: { orgId: string | undefined }) {
@@ -78,7 +71,8 @@ function LocationsListInner({ orgId }: { orgId: string | undefined }) {
   const sourcesFor = (ids: string[]): MoveSource[] => ids.flatMap((id) => (seen.current.get(id) ? [{ id, name: seen.current.get(id)!.name, stored: seen.current.get(id)!.stored }] : []));
   const labelsFor = (ids: string[]): BinLabel[] => ids.flatMap((id) => (seen.current.get(id) ? [{ id, name: seen.current.get(id)!.name, printed: seen.current.get(id)!.labelState === "printed" }] : []));
 
-  useKeyboardShortcut("n", () => canCreate && router.push("/locations/new"));
+  const openNew = () => router.push("/locations?new=1");
+  useKeyboardShortcut("n", () => canCreate && openNew());
 
   /** ONE guarded Undo closure per move (`announceListWrite`); the server leaves any row that moved on since. */
   const move = async (toId: string) => {
@@ -115,14 +109,14 @@ function LocationsListInner({ orgId }: { orgId: string | undefined }) {
       buildLocationActions({
         title: l.name,
         onOpen: () => router.push(`/locations/${l.id}`),
-        onEdit: canUpdate ? () => router.push(`/locations/${l.id}/edit`) : undefined,
+        onEdit: canUpdate ? () => router.push(`/locations/${l.id}?edit=1`) : undefined,
         onMoveContents: canMove ? () => setMoveFrom(sourcesFor([l.id])) : undefined,
         onPrintLabel: canUpdate ? () => setLabels(labelsFor([l.id])) : undefined,
         onDelete: canDelete ? () => void remove(l.id, l.name) : undefined,
       }),
     ),
   );
-  const primary: ListPrimary | undefined = canCreate ? { label: "New location", onSelect: () => router.push("/locations/new") } : undefined;
+  const primary: ListPrimary | undefined = canCreate ? { label: "New location", onSelect: openNew } : undefined;
 
   return (
     <>
@@ -151,6 +145,7 @@ function LocationsListInner({ orgId }: { orgId: string | undefined }) {
         empty={{ title: "No locations yet", description: "Warehouses, vehicles, venues and the bins inside them.", action: primary }}
         toolbarExtra={<UrlSavedViewsMenu tableId="locations" spec={LOCATIONS_SPEC} state={state} setState={setState} />}
       />
+      {canCreate && <LocationSheetHost mode="new" />}
       <MoveContentsDialog
         sources={moveFrom}
         destinations={(allLocations ?? []).map((l) => ({ id: l.id, name: l.name }))}

@@ -38,7 +38,9 @@ and unbookable too.
   `createNative` refuse to set the marker (only a MISSING return does) or clear it (only Mark complete does);
   re-saving a kit that carries it, unchanged, is fine. **Check-out refuses a kit reported missing**
   (`warehouseOps.checkoutKitPreflight`, shared by the single and batch deploy: `KIT_REPORTED_MISSING`, the same
-  derived-OR-marker state as `loadKitBookingGate`, for the kit and each nested kit). The booking gate only runs at
+  derived-OR-marker state as `loadKitBookingGate`, for the kit and each nested kit; the per-line deploy
+  `checkoutItemsCore`, which MCP `dispatch_gear` calls, runs the same check on a kit parent line, and the batch
+  report carries `code` beside `message`). The booking gate only runs at
   add-line, so a kit already booked on job B and then reported missing on job A's return would otherwise go out on
   B and have its marker overwritten; Mark complete is the way through.
 - **Reads are budgeted.** `kitsList.listPage` / `segmentCounts` draw every member, booking-line and

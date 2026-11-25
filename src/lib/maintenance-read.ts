@@ -312,9 +312,12 @@ export async function getMaintenanceTagsByOrg(
 const OPEN_MAINTENANCE_STATUSES = new Set<string>(OPEN_MAINTENANCE);
 
 /**
- * Count of open maintenance whose scheduled date has arrived (<= cutoffMs) —
- * the same due rule as `dashboardStats.bundle`. Operates on the mapped MaintenanceRecordRow
- * (scheduledDate is a Date | null; a null date never matches, like Prisma `lte`).
+ * Count of OPEN maintenance (any open status) whose scheduled date has arrived (<= cutoffMs): "due", an
+ * instant compare against a caller-chosen cutoff. This is NOT the overdue rule: OVERDUE (Home's maintenance
+ * line, the nav row, the Maintenance page, notifications) is `isOverdueMaintenance` / `overdueCutoff` in
+ * `convex/lib/maintenanceOpen.ts` (SCHEDULED / IN_PROGRESS, the scheduled DAY before today); use that for
+ * anything that says "overdue". Operates on the mapped MaintenanceRecordRow (scheduledDate is a Date | null;
+ * a null date never matches, like Prisma `lte`).
  */
 export function countDueMaintenance(
   records: MaintenanceRecordRow[],

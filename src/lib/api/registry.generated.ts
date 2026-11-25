@@ -42620,6 +42620,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projects.listTemplates",
+    "module": "projects",
+    "fn": "listTemplates",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "archived",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c077bbff2f4fd3ef",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Job templates (newest updated first, capped at 200 with `truncated`), each with its gear line count; pass archived to list archived ones.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projects.needsYouIds",
     "module": "projects",
     "fn": "needsYouIds",
@@ -45204,6 +45241,218 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.applyTemplateNative",
+    "module": "projectTemplateWrites",
+    "fn": "applyTemplateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "create"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "draftId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "templateId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fdccb5feb92e3ab7",
+    "returnsSha": "af533ba0b409713a",
+    "stability": "tracks-app",
+    "summary": "Copy a template's gear, tags, type, description and discount onto an empty draft enquiry; refuses a draft that already has gear.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.archiveTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "archiveTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f6d0d940e9d1feff",
+    "returnsSha": "f109c0de4a0c611c",
+    "stability": "tracks-app",
+    "summary": "Archive job templates (reversible: returns each audit id for the exact Undo); an archived template can then be deleted.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.unarchiveTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "unarchiveTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "items",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5878020390254e44",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo an archive of job templates, from the audit ids the archive returned.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.undoApplyTemplateNative",
+    "module": "projectTemplateWrites",
+    "fn": "undoApplyTemplateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "applyAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "75c61279ed6198e9",
+    "returnsSha": "e2e4cb5bd33c24c1",
+    "stability": "tracks-app",
+    "summary": "Undo applying a template to a draft: removes exactly what the apply made, refusing if anything was changed since.",
     "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
@@ -65930,10 +66179,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1277,
-  agentReachable: 645,
-  queries: 456,
-  mutations: 821,
-  agentReachableQueries: 320,
-  agentReachableMutations: 325,
+  total: 1282,
+  agentReachable: 650,
+  queries: 457,
+  mutations: 825,
+  agentReachableQueries: 321,
+  agentReachableMutations: 329,
 } as const;

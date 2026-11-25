@@ -1192,6 +1192,19 @@ export const deleteNative = mutation({
  * crew cascade and writes NO audit. Cascade: PM/tasks/services → grouping → line
  * items → projectModelRevenues → the project row (+ counter).
  */
+/**
+ * A template is archived first (`projectTemplateWrites.archiveTemplatesNative`, with an exact
+ * Undo); only an archived one may be deleted for real, which has no Undo.
+ */
+function assertArchivedTemplate(project: Doc<"projects">): void {
+  if (!project.isTemplate) {
+    throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
+  }
+  if (project.status !== "CANCELLED") {
+    throw new ConvexError({ code: "DELETE_GUARD", message: "Archive the template first; only an archived template can be deleted." });
+  }
+}
+
 export const deleteTemplateNative = mutation({
   returns: v.object({ success: v.boolean() }),
   args: {
@@ -1209,9 +1222,7 @@ export const deleteTemplateNative = mutation({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Template not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    if (!project.isTemplate) {
-      throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
-    }
+    assertArchivedTemplate(project);
 
     // Project managers / tasks (org-filtered inline deletes).
     const pms = (
@@ -1315,34 +1326,66 @@ type SrcLine = {
  * dup-guarded. A number clash on `newProjectNumber` throws (the caller supplies a
  * user-chosen code, not a retry loop).
  */
-export const duplicateNative = mutation({
-  returns: v.object({ id: v.string() }),
-  args: {
-    sourceId: v.string(),
-    newId: v.string(),
-    newProjectNumber: v.string(),
-    newName: v.string(),
-    orgId: v.string(),
-    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image.
-    // The rate is ALWAYS resolved in-mutation from orgSettings — a client value is
-    // never trusted (a browser caller could otherwise spoof a money-affecting tax
-    // rate on the duplicated project's recalculated totals).
-    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
-    now: v.number(),
-    actor: actorValidator,
-    auditId: v.string(),
-  },
-  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor: suppliedActor, auditId }) => {
-    await assertWritesEnabled(ctx, "project");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, orgId, "project", "create");
-    const actor = await resolveActor(ctx, suppliedActor);
+/** What `duplicateCore` made, by id, so `applyTemplateNative`'s Undo can remove exactly that. */
+export interface CopiedPlan {
+  categories: string[];
+  groups: string[];
+  lines: string[];
+  managers: string[];
+}
 
+interface DuplicateCoreArgs {
+  sourceId: string;
+  newId: string;
+  newProjectNumber: string;
+  newName: string;
+  orgId: string;
+  now: number;
+  actor: { userId: string; userName: string };
+  auditId: string;
+}
+
+/** Step 1 of a duplicate: the new project row and its live version (#1228). Returns the version id every copied row is stamped with. */
+async function insertDuplicateProject(ctx: MutationCtx, a: DuplicateCoreArgs, source: Doc<"projects">): Promise<string> {
+  const newProjectDocId = await ctx.db.insert("projects", {
+    id: a.newId,
+    organizationId: a.orgId,
+    projectNumber: a.newProjectNumber,
+    name: a.newName,
+    status: "ENQUIRY",
+    isTemplate: false,
+    ...duplicateProjectScalars(source),
+    createdAt: a.now,
+    updatedAt: a.now,
+  });
+  // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
+  // note). Every row inserted by the copy is stamped with THIS new version's id
+  // and a FRESH lineageId (a duplicate starts its own lineage — it does not
+  // inherit the source's).
+  return createLiveVersionForProject(ctx, {
+    orgId: a.orgId, projectId: a.newId, projectDocId: newProjectDocId, now: a.now, createdById: a.actor.userId,
+  });
+}
+
+/**
+ * The deep copy behind `duplicateNative` AND `applyTemplateNative` (R-3.1: one copy of
+ * how a plan is copied). With `into` the target project already exists (a wizard draft):
+ * its live version receives the copy and nothing else about the project row, its number
+ * or its audit is touched. The caller has checked permission and resolved the actor.
+ */
+export async function duplicateCore(
+  ctx: MutationCtx,
+  a: DuplicateCoreArgs,
+  into?: { versionId: string },
+): Promise<{ id: string; copied: CopiedPlan; source: Doc<"projects"> }> {
+  const { sourceId, newId, newProjectNumber, newName, orgId, now, actor, auditId } = a;
+  const copied: CopiedPlan = { categories: [], groups: [], lines: [], managers: [] };
+  {
     // newProjectNumber/newName are raw client strings — unlike create()/update() in
     // use-native-project-writes.ts, the duplicate() hook never runs them through
     // projectSchema.parse() first, so this is the ONLY bound check either ever gets
     // (R-8.6.2).
-    assertProjectFields({ name: newName, projectNumber: newProjectNumber });
+    if (!into) assertProjectFields({ name: newName, projectNumber: newProjectNumber });
 
     // Source project — org-checked (by_cuid is global).
     const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
@@ -1350,37 +1393,22 @@ export const duplicateNative = mutation({
       throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     }
 
-    // Dup-guard the client-minted project cuid (COLLECT all — a foreign-org
-    // collision must throw, not silently reuse another org's row).
-    const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
-    if (cuidMatches.length > 0) throw new ConvexError("Project already exists");
+    if (!into) {
+      // Dup-guard the client-minted project cuid (COLLECT all — a foreign-org
+      // collision must throw, not silently reuse another org's row).
+      const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
+      if (cuidMatches.length > 0) throw new ConvexError("Project already exists");
 
-    // Number clash (org-scoped @@unique guard) — a user-chosen code, so a hard error.
-    const clash = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", newProjectNumber))
-      .unique();
-    if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
+      // Number clash (org-scoped @@unique guard) — a user-chosen code, so a hard error.
+      const clash = await ctx.db
+        .query("projects")
+        .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", newProjectNumber))
+        .unique();
+      if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
+    }
 
-    // 1. New project row (children below reference its id).
-    const newProjectDocId = await ctx.db.insert("projects", {
-      id: newId,
-      organizationId: orgId,
-      projectNumber: newProjectNumber,
-      name: newName,
-      status: "ENQUIRY",
-      isTemplate: false,
-      ...duplicateProjectScalars(source),
-      createdAt: now,
-      updatedAt: now,
-    });
-    // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
-    // note). Every row inserted below is stamped with THIS new version's id and
-    // a FRESH lineageId (a duplicate starts its own lineage — it does not
-    // inherit the source's).
-    const newVersionId = await createLiveVersionForProject(ctx, {
-      orgId, projectId: newId, projectDocId: newProjectDocId, now, createdById: actor.userId,
-    });
+    // 1. New project row + live version (children below reference them), or the draft's own version.
+    const newVersionId = into ? into.versionId : await insertDuplicateProject(ctx, a, source);
 
     // 2. Categories (sorted) → catIdMap. LIVE-ONLY read of the source (#1228).
     const sourceCategories = (await liveRows(ctx, source, "projectCategories"))
@@ -1390,6 +1418,7 @@ export const duplicateNative = mutation({
     for (const cat of sourceCategories) {
       const nid = createId();
       catIdMap.set(cat.id, nid);
+      copied.categories.push(nid);
       await ctx.db.insert("projectCategories", {
         id: nid,
         organizationId: orgId,
@@ -1411,6 +1440,7 @@ export const duplicateNative = mutation({
     for (const group of sourceGroups) {
       const nid = createId();
       groupIdMap.set(group.id, nid);
+      copied.groups.push(nid);
       await ctx.db.insert("projectGroups", {
         id: nid,
         organizationId: orgId,
@@ -1461,6 +1491,7 @@ export const duplicateNative = mutation({
       }
 
       const newParentId = createId();
+      copied.lines.push(newParentId);
       await ctx.db.insert("projectLineItems", {
         id: newParentId,
         organizationId: orgId,
@@ -1501,6 +1532,7 @@ export const duplicateNative = mutation({
 
       for (const child of childrenByParent.get(li.id) ?? []) {
         const newChildId = createId();
+        copied.lines.push(newChildId);
         await ctx.db.insert("projectLineItems", {
           id: newChildId,
           organizationId: orgId,
@@ -1537,9 +1569,16 @@ export const duplicateNative = mutation({
     const sourcePMs = (
       await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
     ).filter((r) => r.organizationId === orgId);
+    // A draft may already have the managers its author picked: never add the same person twice.
+    const alreadyManaging = new Set(
+      into ? (await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", newId)).take(200)).map((r) => r.userId) : [],
+    );
     for (const pm of sourcePMs) {
+      if (alreadyManaging.has(pm.userId)) continue;
+      const pmId = createId();
+      copied.managers.push(pmId);
       await ctx.db.insert("projectManagers", {
-        id: createId(),
+        id: pmId,
         organizationId: orgId,
         projectId: newId,
         userId: pm.userId,
@@ -1552,22 +1591,51 @@ export const duplicateNative = mutation({
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, newId, orgId, orgDefaultTaxRate, now);
 
-    // CREATE audit for the new project (native path logs it atomically).
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "CREATE",
-      entityType: "project",
-      entityId: newId,
-      entityName: newProjectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Duplicated project ${source.projectNumber} to ${newProjectNumber} - ${newName}`,
-      projectId: newId,
-      createdAt: now,
-    });
+    // CREATE audit for the new project (native path logs it atomically). An apply onto a draft writes its own.
+    if (!into) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "CREATE",
+        entityType: "project",
+        entityId: newId,
+        entityName: newProjectNumber,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Duplicated project ${source.projectNumber} to ${newProjectNumber} - ${newName}`,
+        projectId: newId,
+        createdAt: now,
+      });
+    }
 
-    return { id: newId };
+    return { id: newId, copied, source };
+  }
+}
+
+export const duplicateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    sourceId: v.string(),
+    newId: v.string(),
+    newProjectNumber: v.string(),
+    newName: v.string(),
+    orgId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image.
+    // The rate is ALWAYS resolved in-mutation from orgSettings — a client value is
+    // never trusted (a browser caller could otherwise spoof a money-affecting tax
+    // rate on the duplicated project's recalculated totals).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor: suppliedActor, auditId }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const { id } = await duplicateCore(ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor, auditId });
+    return { id };
   },
 });
 

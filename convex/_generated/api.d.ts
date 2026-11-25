@@ -246,6 +246,7 @@ import type * as projectContainerPlanWrites from "../projectContainerPlanWrites.
 import type * as projectContainers from "../projectContainers.js";
 import type * as projectContainersWrites from "../projectContainersWrites.js";
 import type * as projectDraftWrites from "../projectDraftWrites.js";
+import type * as projectTemplateWrites from "../projectTemplateWrites.js";
 import type * as projectCosts from "../projectCosts.js";
 import type * as projectDetail from "../projectDetail.js";
 import type * as projectEquipment from "../projectEquipment.js";
@@ -578,6 +579,7 @@ declare const fullApi: ApiFromModules<{
   projectContainers: typeof projectContainers;
   projectContainersWrites: typeof projectContainersWrites;
   projectDraftWrites: typeof projectDraftWrites;
+  projectTemplateWrites: typeof projectTemplateWrites;
   projectCosts: typeof projectCosts;
   projectDetail: typeof projectDetail;
   projectEquipment: typeof projectEquipment;

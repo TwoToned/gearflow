@@ -88,6 +88,11 @@ async function undoTemplateEdits(
       orgId: a.orgId, entityType: "project", entityId: item.id, entityName: item.id, auditId: item.auditId, actor, now: a.now,
       load: () => loadTemplate(ctx, a.orgId, item.id),
       apply: async (doc, plan) => {
+        // Archive and restore only ever change `status`; a snapshot holding anything else is not ours to replay.
+        const touched = [...Object.keys(plan.set), ...plan.clear];
+        if (touched.some((f) => f !== "status")) {
+          throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone from here." });
+        }
         const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
         for (const f of plan.clear) patch[f] = undefined;
         await ctx.db.patch(doc._id, patch);

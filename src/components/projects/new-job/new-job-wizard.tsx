@@ -101,7 +101,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const avail = useWizardAvailability(orgId, draft.draftId, v.rentalStartDate as string | undefined, v.rentalEndDate as string | undefined, month);
   const shortLines = data.lines.filter((l) => (data.overbooked[l.id]?.overBy ?? 0) > 0).length;
   useClientParam(form);
-  const tpl = useTemplateApply(draft.draftId, draft.adopt);
+  const tpl = useTemplateApply(draft.draftId, draft.adopt, draft.flush);
   useTemplateParam(tpl.pick);
   const headingRef = useStepFocus(step);
 

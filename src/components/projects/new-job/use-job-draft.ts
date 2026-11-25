@@ -117,12 +117,16 @@ export function useJobDraft({
   /**
    * Take values the SERVER wrote onto the draft (a template apply or its Undo) into the form AND the saved
    * baseline, so the next autosave diff does not see them as the user's edit and send the stale form value over
-   * them. `null` means the draft has none (the field's own default).
+   * them. `null` means the draft has none (the field's own default). A field edited since the last save is skipped.
    */
   const adopt = useCallback((values: Record<string, unknown>) => {
     const defaults = projectFormDefaults();
     const taken: Record<string, unknown> = {};
+    const saved = savedRef.current as Record<string, unknown> | undefined;
+    const current = form.getValues() as Record<string, unknown>;
     for (const [key, value] of Object.entries(values)) {
+      // A field the user edited since the last save is theirs: never overwrite it with the server's value.
+      if (saved && JSON.stringify(current[key]) !== JSON.stringify(saved[key])) continue;
       taken[key] = value ?? (defaults as Record<string, unknown>)[key];
       form.setValue(key as keyof ProjectFormValues, taken[key] as never, { shouldDirty: false });
     }

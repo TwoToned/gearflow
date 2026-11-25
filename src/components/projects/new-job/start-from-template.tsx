@@ -20,7 +20,11 @@ import { cn, focusRing } from "@/lib/utils";
  */
 interface Picked { id: string; name?: string }
 
-export function useTemplateApply(draftId: string | undefined, adopt: (values: Record<string, unknown>) => void) {
+export function useTemplateApply(
+  draftId: string | undefined,
+  adopt: (values: Record<string, unknown>) => void,
+  flush: () => Promise<unknown>,
+) {
   const writes = useTemplateWrites();
   const [picked, setPicked] = useState<Picked | null>(null);
   const [applied, setApplied] = useState<{ auditId: string } | null>(null);
@@ -29,7 +33,8 @@ export function useTemplateApply(draftId: string | undefined, adopt: (values: Re
   useEffect(() => {
     if (!draftId || !picked || applied || inFlight.current) return;
     inFlight.current = true;
-    writes.apply(draftId, picked.id)
+    // Save what the user typed first: the server merges onto the saved draft, so nothing typed is lost.
+    flush().then(() => writes.apply(draftId, picked.id))
       .then(({ auditId, lineCount, applied: filled }) => {
         adopt(filled);
         setApplied({ auditId });
@@ -48,6 +53,7 @@ export function useTemplateApply(draftId: string | undefined, adopt: (values: Re
   /** The exact Undo; on a refusal (gear edited since, window passed) the template stays and the server's words are shown. */
   const clear = async (id: string, auditId: string) => {
     try {
+      await flush();
       const { restored } = await writes.undoApply(id, auditId);
       adopt(restored);
       setApplied(null);

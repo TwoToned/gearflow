@@ -490,3 +490,73 @@ describe("undoApplyTemplateNative guards", () => {
     expect(left.map((m) => m.id)).toEqual(["foreign-pm"]);
   });
 });
+
+// ─── the shared template Undo: scope, kind, size, and the restore Undo's own guards ───
+
+describe("undoTemplateEdits (unarchive / unrestore)", () => {
+  const undoArchive = (t: T, items: { id: string; auditId: string }[], who = asUser(), actor = ACTOR) =>
+    t.withIdentity(who).mutation(api.projectTemplateWrites.unarchiveTemplatesNative, { orgId: ORG, items, actor, now: NOW });
+  const unrestoreAs = (t: T, items: { id: string; auditId: string }[], who = asUser(), actor = ACTOR) =>
+    t.withIdentity(who).mutation(api.projectTemplateWrites.unrestoreTemplatesNative, { orgId: ORG, items, actor, now: NOW });
+  const restoreOne = async (t: T) => {
+    await seedMembers(t);
+    await seedTemplate(t, { id: "a", status: "CANCELLED" });
+    return (await t.withIdentity(asUser()).mutation(api.projectTemplateWrites.restoreTemplatesNative, { orgId: ORG, ids: ["a"], actor: ACTOR, auditId: "res", now: NOW })).restored;
+  };
+  const plant = (t: T, entityId: string, before: Record<string, unknown>, after: Record<string, unknown>) =>
+    t.run(async (ctx) => {
+      await ctx.db.insert("activityLogs", {
+        id: `plant-${entityId}`, organizationId: ORG, action: "UPDATE", entityType: "project", entityId, entityName: entityId,
+        userId: USER, userName: "Alice", summary: "planted", createdAt: NOW,
+        details: { fieldEdit: { before, after, serverSavedAt: Date.now(), authorId: USER } },
+      });
+    });
+
+  test("only `status` is ever replayed: a snapshot holding another field is refused, nothing written", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await seedTemplate(t, { id: "a" });
+    await plant(t, "a", { name: "Hacked" }, { name: "Template a" });
+    await expect(undoArchive(t, [{ id: "a", auditId: "plant-a" }])).rejects.toThrow(/can't be undone/);
+    const name = await t.run(async (ctx) => (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "a")).first())?.name);
+    expect(name).toBe("Template a");
+  });
+
+  test("a non-template project's audit id is refused", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "job", organizationId: ORG, projectNumber: "J", name: "Job", status: "CANCELLED", isTemplate: false, createdAt: NOW, updatedAt: NOW });
+    });
+    await plant(t, "job", { status: "ENQUIRY" }, { status: "CANCELLED" });
+    await expect(undoArchive(t, [{ id: "job", auditId: "plant-job" }])).rejects.toThrow(/no longer exists/);
+    const st = await t.run(async (ctx) => (await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "job")).first())?.status);
+    expect(st).toBe("CANCELLED");
+  });
+
+  test("the bulk-size cap holds in the shared Undo", async () => {
+    const t = makeT();
+    await seedMembers(t);
+    const items = Array.from({ length: 501 }, (_, i) => ({ id: `t${i}`, auditId: `aud${i}` }));
+    await expect(undoArchive(t, items)).rejects.toThrow(/limit/);
+    await expect(unrestoreAs(t, items)).rejects.toThrow(/limit/);
+  });
+
+  test("unrestore: only the author, only in the window, only once", async () => {
+    const t = makeT();
+    const restored = await restoreOne(t);
+    await expect(unrestoreAs(t, restored, asUser(OTHER), { userId: OTHER, userName: "Bob" })).rejects.toThrow(/Only the person/);
+    expect(await status(t, "a")).toBe("ENQUIRY");
+    const realNow = Date.now;
+    Date.now = () => realNow() + 11 * 60 * 1000;
+    try {
+      await expect(unrestoreAs(t, restored)).rejects.toThrow(/10 minutes/);
+    } finally {
+      Date.now = realNow;
+    }
+    expect(await status(t, "a")).toBe("ENQUIRY");
+    await unrestoreAs(t, restored);
+    expect(await status(t, "a")).toBe("CANCELLED");
+    await expect(unrestoreAs(t, restored)).rejects.toThrow(/already undone/);
+  });
+});

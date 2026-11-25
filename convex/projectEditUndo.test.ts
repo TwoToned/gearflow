@@ -9,6 +9,7 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { PROJECT_UPDATE_IMMUTABLE } from "./projectWrites";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -195,5 +196,90 @@ describe("projectEditUndo.undoUpdateNative", () => {
     await save(t, { clientId: "cOwn" }, "a1");
     await expect(undo(t, "a1")).rejects.toThrow();
     expect((await row(t))?.clientId).toBe("cOwn");
+  });
+
+  // ─── a snapshot is data, not a command: craft rows the edit sheet could never write ───
+
+  /** Plant a forward audit row exactly as `recordFieldEdit` would, authored by USER, "just now". */
+  const plant = (t: T, auditId: string, before: Record<string, unknown>, after: Record<string, unknown>) =>
+    t.run(async (ctx) => {
+      await ctx.db.insert("activityLogs", {
+        id: auditId, organizationId: ORG, action: "UPDATE", entityType: "project", entityId: "p1", entityName: "P1",
+        userId: USER, userName: "Alice", summary: "planted", createdAt: NOW,
+        details: { fieldEdit: { before, after, serverSavedAt: NOW, authorId: USER } },
+      });
+    });
+
+  const NEVER = [...PROJECT_UPDATE_IMMUTABLE, "status", "packerUserId", "id", "organizationId"];
+
+  test.each(NEVER.flatMap((k) => [[k, "set"], [k, "clear"]] as const))(
+    "never restores %s (%s form): refused whole, nothing written",
+    async (key, form) => {
+      const t = makeT();
+      await seed(t);
+      const current = (await row(t)) as Record<string, unknown>;
+      const now = (current[key] ?? null) as unknown;
+      // set form: the snapshot says it had a value before; clear form: it had none.
+      await plant(t, "x1", { [key]: form === "set" ? "something" : null }, { [key]: now });
+      await expect(undo(t, "x1")).rejects.toThrow(/never restores/);
+      expect(await row(t)).toEqual(current);
+      const marker = await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "undo:x1")).first());
+      expect(marker).toBeNull();
+    },
+  );
+
+  describe("restored references", () => {
+    async function seedRefs(t: T) {
+      await seed(t);
+      await t.run(async (ctx) => {
+        await ctx.db.insert("clients", { id: "cOwn1", organizationId: ORG, name: "One" });
+        await ctx.db.insert("clients", { id: "cOwn2", organizationId: ORG, name: "Two" });
+        await ctx.db.insert("locations", { id: "lOwn", organizationId: ORG, name: "Hall" });
+        await ctx.db.insert("locations", { id: "lForeign", organizationId: "org_2", name: "Theirs" });
+        await ctx.db.insert("clientContacts", { id: "ct1", organizationId: ORG, clientId: "cOwn1", name: "Ann" });
+        await ctx.db.insert("clientContacts", { id: "ctForeign", organizationId: "org_2", clientId: "cOwn1", name: "Theirs" });
+      });
+    }
+
+    test("a foreign locationId is refused", async () => {
+      const t = makeT();
+      await seedRefs(t);
+      await plant(t, "r1", { locationId: "lForeign" }, { locationId: null });
+      await expect(undo(t, "r1")).rejects.toThrow();
+      expect((await row(t))?.locationId).toBeUndefined();
+    });
+
+    test("a foreign clientContactId is refused", async () => {
+      const t = makeT();
+      await seedRefs(t);
+      await plant(t, "r1", { clientId: "cOwn1", clientContactId: "ctForeign" }, { clientId: null, clientContactId: null });
+      await expect(undo(t, "r1")).rejects.toThrow();
+      expect((await row(t))?.clientContactId).toBeUndefined();
+    });
+
+    test("a contact of a different client than the restored clientId is refused", async () => {
+      const t = makeT();
+      await seedRefs(t);
+      await plant(t, "r1", { clientId: "cOwn2", clientContactId: "ct1" }, { clientId: null, clientContactId: null });
+      await expect(undo(t, "r1")).rejects.toThrow();
+      const p = await row(t);
+      expect(p?.clientId).toBeUndefined();
+      expect(p?.clientContactId).toBeUndefined();
+    });
+
+    test("a contact restored with no client at all is refused", async () => {
+      const t = makeT();
+      await seedRefs(t);
+      await plant(t, "r1", { clientContactId: "ct1" }, { clientContactId: null });
+      await expect(undo(t, "r1")).rejects.toThrow();
+    });
+
+    test("valid references (own location, own client, that client's contact) restore", async () => {
+      const t = makeT();
+      await seedRefs(t);
+      await plant(t, "r1", { locationId: "lOwn", clientId: "cOwn1", clientContactId: "ct1" }, { locationId: null, clientId: null, clientContactId: null });
+      await undo(t, "r1");
+      expect(await row(t)).toMatchObject({ locationId: "lOwn", clientId: "cOwn1", clientContactId: "ct1" });
+    });
   });
 });

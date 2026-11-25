@@ -266,6 +266,27 @@ describe("NewJobWizard", () => {
       await waitFor(() => expect((screen.getByPlaceholderText("Brief description of the job") as HTMLTextAreaElement).value).toBe(""));
     });
 
+    it("a tag typed just before the pick is saved FIRST and survives the apply", async () => {
+      applyT.mockImplementationOnce(async () => ({
+        id: "draft1", lineCount: 2, auditId: "ap1", applied: { tags: ["typed", "gala"] }, previous: { tags: ["typed"] },
+      }));
+      const user = userEvent.setup();
+      render(<NewJobWizard />);
+      nameIt();
+      await screen.findByText("✓ Draft #2360 saved");
+      await user.type(screen.getByPlaceholderText("Add tags…"), "typed{Enter}");
+      update.mockClear();
+      await user.click(screen.getByRole("button", { name: "Start from template" }));
+      await user.click(await screen.findByText("Gala dinner · 2 lines"));
+      await waitFor(() => expect(applyT).toHaveBeenCalledWith("draft1", "t1"));
+      // The typed tag was written before the apply ran.
+      expect(update).toHaveBeenCalled();
+      expect(Math.min(...update.mock.invocationCallOrder)).toBeLessThan(applyT.mock.invocationCallOrder[0]);
+      expect((update.mock.calls[0] as unknown as [string, { tags: string[] }])[1].tags).toContain("typed");
+      expect(await screen.findByText("typed")).toBeTruthy();
+      expect(await screen.findByText("gala")).toBeTruthy();
+    });
+
     it("a refused apply says why and clears the pick", async () => {
       applyT.mockRejectedValueOnce(new Error("This draft already has gear"));
       const user = userEvent.setup();

@@ -52,6 +52,19 @@ describe("an edit cannot move an asset into or out of RETIRED", () => {
     await update(t, { status: "RETIRED", isActive: false, notes: "still retired" }, "e5"); // an edit of a retired unit may restate it
   });
 
+  test("a LEGACY row with isActive absent re-saved with isActive:true is not a change (absent means active)", async () => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", status: "AVAILABLE", condition: "GOOD", createdAt: NOW, updatedAt: NOW } as never);
+      await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", isActive: true, assetType: "BULK" } as never);
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: "ACTIVE", createdAt: NOW, updatedAt: NOW } as never);
+    });
+    await update(t, { isActive: true, notes: "saved" }, "l1");
+    expect(await getAsset(t)).toMatchObject({ notes: "saved" });
+    await expect(update(t, { isActive: false }, "l2")).rejects.toThrow(/Retire or Reinstate/); // absent is ACTIVE, so false IS a move
+    await t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.updateNative, { id: "b1", orgId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, status: "ACTIVE", isActive: true, actor: ME, auditId: "lb", now: NOW } as never);
+  });
+
   test("clear can't reinstate: status / isActive are never cleared, and a retired asset stays retired", async () => {
     const t = makeT();
     await seed(t);

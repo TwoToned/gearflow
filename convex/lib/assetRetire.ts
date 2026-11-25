@@ -4,7 +4,16 @@ import type { Doc } from "../_generated/dataModel";
 import { bumpAssetCounters } from "./counters";
 import { diffFields } from "./fieldEditUndo";
 
-type RetireFacts = { status?: string | null; isActive?: boolean | null };
+/**
+ * The status a status WRITER should store: `next`, unless the unit is RETIRED, which no writer
+ * overwrites (kit release, return correction, check-in, sale stock). Retire / Reinstate are the
+ * only doors; every low-level writer funnels its `status` through this so RETIRED stays one-way.
+ */
+export function nextStatusUnlessRetired<S extends string>(current: string | null | undefined, next: S): S | "RETIRED" {
+  return current === "RETIRED" ? "RETIRED" : next;
+}
+
+type RetireFacts ={ status?: string | null; isActive?: boolean | null };
 
 /**
  * Retire and Reinstate are the ONLY paths into and out of RETIRED (each has its gates, its

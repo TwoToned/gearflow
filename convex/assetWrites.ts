@@ -159,6 +159,12 @@ export const archiveNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
+    // A unit that is out on a job comes back first: retiring it would strand the job's hold on it, and the
+    // return / check-in would then have to un-retire it (RETIRED is one-way, no writer overwrites it).
+    if (asset.status === "CHECKED_OUT") {
+      throw new ConvexError({ code: "ASSET_CHECKED_OUT", message: `${asset.assetTag} is out on a job. Return it before retiring it.` });
+    }
+
     const { diff, testTags } = await retireAssetCore(ctx, orgId, asset, now);
 
     // The audit row IS the Undo's snapshot: asset fields before/after + the T&T rows the

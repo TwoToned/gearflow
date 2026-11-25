@@ -26,6 +26,7 @@ import {
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { assertModelNotArchived } from "./lib/modelArchive";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
@@ -549,10 +550,11 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
     });
   }
 }
-export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
+export async function setAssetsStatus(ctx: Ctx, assetIds: string[], wanted: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
   for (const id of assetIds) {
     const a = await assetByCuid(ctx, id);
     if (!a) continue;
+    const status = nextStatusUnlessRetired(a.status, wanted); // no warehouse movement reinstates a retired unit
     if (locationId != null) {
       await ctx.db.patch(a._id, { status: status as typeof a.status, locationId, updatedAt: now });
     } else if (clearLocIfNull) {

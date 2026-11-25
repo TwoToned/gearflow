@@ -9,6 +9,7 @@ import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
 import { assetCostGuard, bulkAssetCostGuard, kitCostGuard } from "./lib/gearCostRedact";
 import { costSortAllowed } from "./lib/gearCostFields";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -453,9 +454,10 @@ export async function releaseAsset(ctx: MutationCtx, assetId: string, now: numbe
   const asset = await getAssetDoc(ctx, assetId);
   if (!asset) return;
   const { _id, _creationTime, kitId: _k, ...rest } = asset;
-  await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now });
+  const status = nextStatusUnlessRetired(asset.status, "AVAILABLE"); // a retired member leaves the kit still retired
+  await ctx.db.replace(_id, { ...rest, status, updatedAt: now });
   // §3.6 dashboard counter: releasing a checked-out kit asset back to AVAILABLE.
-  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "AVAILABLE" });
+  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status });
 }
 
 export async function getAssetDoc(ctx: MutationCtx, id: string) {

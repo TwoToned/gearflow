@@ -264,7 +264,8 @@ export async function adjustBulkTotal(
     availableQuantity: availableAfter,
     updatedAt: args.now,
   };
-  if (totalAfter <= 0 || bulk.status === "OUT_OF_STOCK") patch.status = bulkStatusForTotal(totalAfter);
+  // A RETIRED row keeps its status: stock movement never reinstates it (Retire / Reinstate are the only doors).
+  if (bulk.status !== "RETIRED" && (totalAfter <= 0 || bulk.status === "OUT_OF_STOCK")) patch.status = bulkStatusForTotal(totalAfter);
 
   await ctx.db.patch(bulk._id, patch);
   await bumpBulkCounters(

@@ -153,3 +153,41 @@ describe("job bundles and the accessory picker: cost for a noFinancials key", ()
     expect(JSON.stringify(out[3])).toContain(String(UNIT_PRICE));
   });
 });
+
+describe("category detail and a supplier's assets: cost for a noFinancials key", () => {
+  async function seedCatalog(): Promise<T> {
+    const t = await seed();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", { id: "c1", organizationId: ORG, name: "Lighting" } as never);
+      for (const [table, id] of [["models", "m1"], ["kits", "k1"], ["assets", "a1"]] as const) {
+        const row = await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first();
+        await ctx.db.patch(row!._id, table === "assets" ? { supplierId: "s1" } : { categoryId: "c1" });
+      }
+    });
+    return t;
+  }
+  const reads = (t: T, who: Who) => {
+    const c = t.withIdentity(who);
+    return Promise.all([
+      c.query(api.categories.detail, { id: "c1", orgId: ORG }),
+      c.query(api.suppliers.assetsPage, { orgId: ORG, supplierId: "s1", page: 1, pageSize: 10 }),
+    ]);
+  };
+  const SENTINELS = [KIT_PRICE, UNIT_PRICE, REPLACEMENT, DEFAULT_PURCHASE];
+
+  test("no cost sentinel for the key; the rows are intact", async () => {
+    const t = await seedCatalog();
+    const [cat, sup] = await reads(t, asAgent);
+    for (const r of [cat, sup]) for (const s of SENTINELS) expect(JSON.stringify(r)).not.toContain(String(s));
+    expect((cat as { models: { name: string }[] }).models.map((m) => m.name)).toEqual(["Aura"]);
+    expect((sup as { assets: { assetTag: string }[] }).assets.map((a) => a.assetTag)).toEqual(["A-1"]);
+  });
+
+  test("a member still sees cost in both", async () => {
+    const t = await seedCatalog();
+    const [cat, sup] = await reads(t, asUser);
+    expect(JSON.stringify(cat)).toContain(String(REPLACEMENT));
+    expect(JSON.stringify(cat)).toContain(String(KIT_PRICE));
+    expect(JSON.stringify(sup)).toContain(String(UNIT_PRICE));
+  });
+});

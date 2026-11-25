@@ -1,6 +1,7 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { applyProjectAllocation } from "./allocation";
+import { marginExGst, taxableFrom } from "./margin";
 import { deriveBillingSummary } from "./billingDerivation";
 import { versionRows, resolveVersionId, resolveEffectiveProjectForVersion } from "./versionScope";
 
@@ -41,21 +42,6 @@ import { versionRows, resolveVersionId, resolveEffectiveProjectForVersion } from
 
 const round = (v: number): number => Math.round(v * 100) / 100;
 
-/** The taxable amount: subtotal less the discount. The ONE formula (recalc and the margin backfill). */
-export const taxableFrom = (subtotal: number, discountAmount: number): number => round(subtotal - discountAmount);
-
-/**
- * THE margin formula: EX GST, the taxable amount less every cost bucket. `total`
- * includes tax, which is not margin. `recalcProjectTotals` writes it; the margin
- * backfill (`backfillProjectMargin.ts`) recomputes it from the stored buckets
- * through this same function, so there is one definition.
- */
-export function marginExGst(
-  taxableAmount: number,
-  costs: { serviceCostTotal: number; labourCostTotal: number; subHireCostTotal: number; saleCostTotal: number },
-): number {
-  return round(taxableAmount - (costs.serviceCostTotal + costs.labourCostTotal + costs.subHireCostTotal + costs.saleCostTotal));
-}
 const num = (v: unknown): number => (v != null ? Number(v) : 0);
 
 /** First value > 0 in priority order — the "resolved unit cost" chain (WS11

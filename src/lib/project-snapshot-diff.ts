@@ -1,3 +1,5 @@
+import { marginFromStored } from "../../convex/lib/margin";
+
 /**
  * Pure diff logic for the #792 Versions/compare UI — snapshot↔current or
  * snapshot↔snapshot. Kept framework-free so it's unit-testable without
@@ -117,6 +119,10 @@ export function projectTotalsFromEntry(entry: SnapshotEntryLike | undefined): Fi
   return {
     subtotal: Number(entry.data.subtotal ?? 0),
     total: Number(entry.data.total ?? 0),
-    margin: entry.data.margin == null ? null : Number(entry.data.margin),
+    // A snapshot's STORED `margin` is whatever the formula was when it was taken (before the
+    // GST fix it was `total - costs`). History is never rewritten, so the margin is DERIVED
+    // from that snapshot's own buckets through the ONE formula, never read from `margin`.
+    // Absent when the read left the job cost out (`margin` absent) or the buckets are missing.
+    margin: entry.data.margin == null ? null : marginFromStored(entry.data),
   };
 }

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { marginExGst, taxableFrom } from "./lib/recalc";
+import { marginFromStored } from "./lib/margin";
 
 /**
  * One-off backfill for the GST margin fix (UX Phase 10): `projects.margin` used to
@@ -23,20 +23,16 @@ import { marginExGst, taxableFrom } from "./lib/recalc";
  */
 /** The right margin from the stored buckets, or `null` for a project never recalculated (nothing stored to correct). */
 function correctMargin(p: Doc<"projects">): number | null {
-  if (p.margin === undefined || p.subtotal === undefined) return null;
-  return marginExGst(taxableFrom(Number(p.subtotal), Number(p.discountAmount ?? 0)), {
-    serviceCostTotal: Number(p.serviceCostTotal ?? 0),
-    labourCostTotal: Number(p.labourCostTotal ?? 0),
-    subHireCostTotal: Number(p.subHireCostTotal ?? 0),
-    saleCostTotal: Number(p.saleCostTotal ?? 0),
-  });
+  if (p.margin === undefined) return null;
+  return marginFromStored(p);
 }
 
 export const backfillProjectMarginPage = internalMutation({
   args: { cursor: v.union(v.string(), v.null()), numItems: v.optional(v.number()) },
   returns: v.object({ scanned: v.number(), patched: v.number(), cursor: v.string(), isDone: v.boolean() }),
   handler: async (ctx, { cursor, numItems }) => {
-    const res = await ctx.db.query("projects").paginate({ cursor, numItems: numItems ?? 200 });
+    // Clamped: a mistyped page size must not read an unbounded page.
+    const res = await ctx.db.query("projects").paginate({ cursor, numItems: Math.min(Math.max(Math.floor(numItems ?? 200), 1), 500) });
     let patched = 0;
     for (const p of res.page) {
       const correct = correctMargin(p);

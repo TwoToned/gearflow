@@ -246,6 +246,21 @@ describe("Bulk stock: Retire Undo and the same gate", () => {
     expect(await bulk(t)).toMatchObject({ status: "ACTIVE", isActive: true });
   });
 
+  test("an edit has an exact Undo that restores the quantity AND what is available", async () => {
+    const t = makeT();
+    await seedBulk(t);
+    await t.run(async (ctx) => void (await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "Cable", assetType: "BULK", isActive: true } as never)));
+    const upd =(set: { totalQuantity: number }, auditId: string) =>
+      t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.updateNative, {
+        id: "b1", orgId: ORG, modelId: "m1", assetTag: "BK-1", status: "ACTIVE", isActive: true, tags: [], ...set, actor: ME, auditId, now: NOW,
+      });
+    expect((await upd({ totalQuantity: 8 }, "e1")).undoable).toBe(true);
+    expect(await bulk(t)).toMatchObject({ totalQuantity: 8, availableQuantity: 8 });
+    await t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.undoUpdateNative, { id: "b1", orgId: ORG, auditId: "e1", actor: ME, now: NOW });
+    expect(await bulk(t)).toMatchObject({ totalQuantity: 5, availableQuantity: 5 });
+    expect((await upd({ totalQuantity: 5 }, "e2")).undoable).toBe(false);
+  });
+
   test("a scan log blocks Delete", async () => {
     const t = makeT();
     await seedBulk(t);

@@ -566,7 +566,9 @@ export const updateNative = mutation({
     // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
     const after = { ...doc, ...setWithTs } as Record<string, unknown>;
     for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
-    const diff = diffFields(doc, after, EDIT_TRACKED_FIELDS);
+    // absent tags / images / custom fields == empty (the sheet always sends them), on BOTH sides
+    const emptyDefaults = (r: Record<string, unknown>) => ({ ...r, tags: r.tags ?? [], images: r.images ?? [], customFieldValues: r.customFieldValues ?? {} });
+    const diff = diffFields(emptyDefaults(doc), emptyDefaults(after), EDIT_TRACKED_FIELDS);
     if (diff) {
       await recordFieldEdit(ctx, {
         orgId, entityType: "asset", entityId: id, entityName: finalTag, auditId, actor, now,

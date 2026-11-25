@@ -123,7 +123,7 @@ export const createNative = mutation({
 });
 
 export const updateNative = mutation({
-  returns: v.object({ id: v.string() }),
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), ...bulkFields, now: v.number(), actor: actorValidator, auditId: v.string() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "bulkAsset");
@@ -173,8 +173,50 @@ export const updateNative = mutation({
     await ctx.db.replace(doc._id, merged as typeof rest);
     await bumpCountersForTable(ctx, "bulkAssets", doc, merged);
 
-    await logBulk(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, assetTag: a.assetTag, summary: `Updated bulk asset ${a.assetTag}` });
-    return { id: a.id };
+    // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
+    const diff = diffFields({ ...doc, tags: doc.tags ?? [] }, merged, BULK_EDIT_FIELDS); // absent tags == []
+    if (diff) {
+      await recordFieldEdit(ctx, {
+        orgId: a.orgId, entityType: "bulkAsset", entityId: a.id, entityName: a.assetTag, auditId: a.auditId, actor, now: a.now,
+        summary: `Updated bulk asset ${a.assetTag}`, diff,
+      });
+    } else {
+      await logBulk(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, assetTag: a.assetTag, summary: `Updated bulk asset ${a.assetTag}` });
+    }
+    return { id: a.id, undoable: diff != null };
+  },
+});
+
+/** The fields an edit can change and an Undo can restore (`availableQuantity` moves with the total). */
+const BULK_EDIT_FIELDS = [
+  "modelId", "assetTag", "totalQuantity", "availableQuantity", "purchasePricePerUnit",
+  "locationId", "status", "notes", "tags", "isActive",
+] as const;
+
+/** The exact reverse of ONE bulk `updateNative`, from its own audit row (ids only). */
+export const undoUpdateNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "bulkAsset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "bulkAsset", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    return undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "bulkAsset", entityId: a.id, entityName: doc?.assetTag ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (doc && doc.organizationId === a.orgId ? doc : null),
+      apply: async (d, plan) => {
+        const tag = plan.set.assetTag;
+        if (typeof tag === "string" && tag !== d.assetTag) {
+          const dup = await ctx.db.query("bulkAssets").withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", a.orgId).eq("assetTag", tag)).first();
+          if (dup && dup.id !== a.id) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" is used by another asset now.` });
+        }
+        const patch = { ...plan.set, ...Object.fromEntries(plan.clear.map((k) => [k, undefined])), updatedAt: a.now };
+        await ctx.db.patch(d._id, patch);
+        await bumpCountersForTable(ctx, "bulkAssets", d, { ...d, ...patch });
+      },
+    });
   },
 });
 
@@ -286,6 +328,7 @@ export const agentOps: AgentOpsAnnotations = {
   // Makes retired stock bookable again (stock-affecting), so `high`.
   reinstateNative: { danger: "high" },
   undoRetireNative: { danger: "medium" },
+  undoUpdateNative: { danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },

@@ -33,6 +33,7 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 const markerId = (createAuditId: string) => `undo:${createAuditId}`;
 const MAX_AUDIT_ROWS = 50;
+const MAX_DRAFT_MANAGERS = 200;
 
 type Args = { orgId: string; projectId: string; createAuditId: string; via: "undo" | "discard" };
 
@@ -80,7 +81,8 @@ async function contentReason(ctx: MutationCtx, orgId: string, project: Doc<"proj
 }
 
 async function deleteEmptyDraft(ctx: MutationCtx, orgId: string, project: Doc<"projects">): Promise<void> {
-  const managers = await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).collect();
+  // A draft's managers are a handful of org members; bounded, not a scan.
+  const managers = await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", project.id)).take(MAX_DRAFT_MANAGERS);
   for (const m of managers) if (m.organizationId === orgId) await ctx.db.delete(m._id);
   for (const ver of await listProjectVersions(ctx, orgId, project.id)) await ctx.db.delete(ver._id);
   await bumpProjectCounters(ctx, orgId, project, null);

@@ -107,6 +107,7 @@ const kitStatusIntent: Record<string, ColorIntent> = {
   RETIRED: "neutral",
   INCOMPLETE: "error",
   RESERVED: "warning",
+  UNKNOWN: "neutral",
 };
 
 const projectStatusIntent: Record<string, ColorIntent> = {

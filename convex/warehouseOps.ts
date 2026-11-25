@@ -581,16 +581,20 @@ export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: stri
  * `lastMovementAt` is stamped on both ends (convex/lib/locationMovement.ts).
  */
 async function patchKitStatusAt(ctx: Ctx, kit: Doc<"kits">, status: Doc<"kits">["status"], loc: string | null | undefined, now: number) {
-  await ctx.db.patch(kit._id, { status, ...(loc ? { locationId: loc } : {}), updatedAt: now });
+  // The "reported missing" marker (stored INCOMPLETE) survives a return to AVAILABLE: only Mark complete clears it.
+  const next = kit.status === "INCOMPLETE" && status === "AVAILABLE" ? "INCOMPLETE" : status;
+  await ctx.db.patch(kit._id, { status: next, ...(loc ? { locationId: loc } : {}), updatedAt: now });
   await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc || undefined, now);
 }
 
 /** Force-return a kit to AVAILABLE: at `loc` when there is one, otherwise with its location cleared. */
 async function releaseKitToLocation(ctx: Ctx, kit: Doc<"kits">, loc: string | null, now: number) {
-  if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
+  // A force-release frees the kit but keeps the "reported missing" marker: only Mark complete clears it.
+  const status = kit.status === "INCOMPLETE" ? "INCOMPLETE" : "AVAILABLE";
+  if (loc != null) await ctx.db.patch(kit._id, { status, locationId: loc, updatedAt: now });
   else {
     const { _id, _creationTime, locationId: _l, ...rest } = kit;
-    await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now });
+    await ctx.db.replace(_id, { ...rest, status, updatedAt: now });
   }
   await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc ?? null, now);
 }

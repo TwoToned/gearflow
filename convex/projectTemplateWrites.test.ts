@@ -172,7 +172,11 @@ describe("applyTemplateNative / undoApplyTemplateNative", () => {
   test("copies the template's gear onto the empty draft and fills type, tags, description and discount only where the draft has none", async () => {
     const t = makeT();
     await setup(t);
-    expect(await apply(t)).toEqual({ id: "d1", lineCount: 2 });
+    const applied = await apply(t);
+    expect(applied).toMatchObject({ id: "d1", lineCount: 2 });
+    // What the wizard form adopts: the scalars filled, and what the draft had before (null = none).
+    expect(applied.applied).toMatchObject({ type: "TOUR", description: "Ballroom", discountPercent: 5 });
+    expect(applied.previous).toMatchObject({ description: null, discountPercent: null, tags: ["mine"] });
     expect(await lineIds(t)).toHaveLength(2);
     const d = await draft(t);
     expect(d).toMatchObject({ type: "TOUR", description: "Ballroom", discountPercent: 5, name: "Draft", projectNumber: "P-1", status: "ENQUIRY" });
@@ -217,7 +221,9 @@ describe("applyTemplateNative / undoApplyTemplateNative", () => {
     const t = makeT();
     await setup(t);
     await apply(t);
-    expect(await undo(t)).toEqual({ removedLines: 2 });
+    const undone = await undo(t);
+    expect(undone.removedLines).toBe(2);
+    expect(undone.restored).toMatchObject({ description: null, discountPercent: null, tags: ["mine"] });
     expect(await lineIds(t)).toEqual([]);
     const d = await draft(t);
     expect(d).toMatchObject({ type: "OTHER", name: "Draft" });

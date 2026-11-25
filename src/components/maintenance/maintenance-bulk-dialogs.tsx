@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { plural } from "@/lib/list-write-toast";
 
 /** Pure: a `yyyy-mm-dd` date input value as local-midnight epoch ms, or null when blank or not a date. */
-export function dateInputMs(value: string): number | null {
+function dateInputMs(value: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [y, m, d] = value.split("-").map(Number);
   const ms = new Date(y, m - 1, d).getTime();

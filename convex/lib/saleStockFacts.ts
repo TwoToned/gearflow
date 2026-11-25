@@ -62,7 +62,7 @@ export type PoolRow = LineLike;
  * holds (a copy in another version is the same add, so it adds nothing). Out rows count here: the stock left
  * the pool when it was added, whether or not it has since left the building.
  */
-export function poolTakeByModel(rows: readonly PoolRow[]): Map<string, number> {
+function poolTakeByModel(rows: readonly PoolRow[]): Map<string, number> {
   const take = new Map<string, number>();
   for (const r of rows) {
     if (!takesFromPool(r)) continue;
@@ -144,15 +144,28 @@ export async function loadReservedByModel(
       budget.truncated = true;
       continue;
     }
-    // Per lineage: the pool-taking maximum, and whether any of its rows has left the building (then none of it is here).
-    const perLineage = new Map<string, { qty: number; out: boolean }>();
-    for (const line of rows) {
-      if (line.organizationId !== orgId || !takesFromPool(line)) continue;
-      const key = line.lineageId ?? line.id;
-      const cur = perLineage.get(key) ?? { qty: 0, out: false };
-      perLineage.set(key, { qty: Math.max(cur.qty, line.quantity ?? 0), out: cur.out || !isReservedSaleLine(line) });
-    }
-    reserved.set(modelId, [...perLineage.values()].reduce((n, l) => n + (l.out ? 0 : l.qty), 0));
+    reserved.set(modelId, reservedQty(rows.filter((r) => r.organizationId === orgId)));
   }
   return { reserved, truncated: budget.truncated };
+}
+
+interface LineageLine extends LineLike {
+  id: string;
+  lineageId?: string | null;
+}
+
+/**
+ * Pure: what the building still holds for one model's sale rows. Per lineage: the pool-taking maximum, and
+ * whether any of its rows has left the building (then none of it is here). Reads the same `takesFromPool`
+ * the write path decrements by, and the same per-lineage maximum `lineagePoolDelta` accounts the pool by.
+ */
+function reservedQty(rows: readonly LineageLine[]): number {
+  const perLineage = new Map<string, { qty: number; out: boolean }>();
+  for (const line of rows) {
+    if (!takesFromPool(line)) continue;
+    const key = line.lineageId ?? line.id;
+    const cur = perLineage.get(key) ?? { qty: 0, out: false };
+    perLineage.set(key, { qty: Math.max(cur.qty, line.quantity ?? 0), out: cur.out || !isReservedSaleLine(line) });
+  }
+  return [...perLineage.values()].reduce((n, l) => n + (l.out ? 0 : l.qty), 0);
 }

@@ -107,7 +107,7 @@ const STATUS_INTENT: Record<string, StatusValue["intent"]> = {
 const day = (ms: number) => formatDate(new Date(ms));
 const DASH: Fact = { kind: "text", label: "—" };
 
-export function maintenanceStatus(m: Pick<MaintenanceSource, "status" | "overdue">): StatusValue {
+function maintenanceStatus(m: Pick<MaintenanceSource, "status" | "overdue">): StatusValue {
   if (m.overdue) return { label: "Overdue", intent: "error" };
   return { label: maintenanceStatusLabels[m.status] ?? m.status, intent: STATUS_INTENT[m.status] ?? "neutral", outline: m.status === "CANCELLED" };
 }
@@ -129,7 +129,7 @@ function optionalFacts(m: MaintenanceSource): Record<string, Fact> {
   return out;
 }
 
-export function maintenanceFlags(m: Pick<MaintenanceSource, "result">): RowFlag[] {
+function maintenanceFlags(m: Pick<MaintenanceSource, "result">): RowFlag[] {
   return m.result === "FAIL" ? [{ label: "Failed", tone: "error" }] : [];
 }
 

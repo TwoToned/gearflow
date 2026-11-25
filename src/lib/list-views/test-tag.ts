@@ -106,7 +106,7 @@ const STATE_STATUS: Record<TestTagSource["state"], StatusValue> = {
   RETIRED: { label: "Retired", intent: "neutral", outline: true },
 };
 
-export const testTagStatus = (t: Pick<TestTagSource, "state">): StatusValue => STATE_STATUS[t.state];
+const testTagStatus =(t: Pick<TestTagSource, "state">): StatusValue => STATE_STATUS[t.state];
 
 const DASH: Fact = { kind: "text", label: "—" };
 const dateFact = (ms: number | null): Fact => (ms == null ? DASH : { kind: "text", label: formatDate(new Date(ms)) });

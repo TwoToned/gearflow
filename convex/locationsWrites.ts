@@ -89,9 +89,8 @@ export const createNative = mutation({
     if (dup) throw new ConvexError("Location already exists");
     // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
     if (a.parentId) await assertRefInOrg(ctx, "locations", a.parentId, a.orgId);
-    // The exact Undo of a create deletes by these ids: neither may name an existing row.
+    // The exact Undo of a create finds its row by the audit id: it must name no existing row (the id is checked above).
     await assertAuditIdFree(ctx, a.auditId);
-    if (await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("That location id is already in use");
     if (a.isDefault) await unsetOtherDefaults(ctx, a.orgId, undefined, a.now);
 
     await ctx.db.insert("locations", {

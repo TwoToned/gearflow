@@ -161,8 +161,9 @@ async function readMemberRows(ctx: QueryCtx, orgId: string, kitId: string, budge
     collectCapped(ctx.db.query("kitSerializedItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), room),
     collectCapped(ctx.db.query("kitBulkItems").withIndex("by_kitId", (q) => q.eq("kitId", kitId)), room),
   ]);
+  // The rows read are charged; when the budget (not the per-kit ceiling) cut the read short, the charge for the
+  // member lookups that follow cannot be met either, so `loadKitMembersOf` answers unknown (null) from there.
   budget.take(ser.rows.length + blk.rows.length);
-  if ((ser.truncated || blk.truncated) && room < MEMBER_ROWS_CAP) return unaffordable(budget);
   return { serRows: ser.rows.filter((r) => r.organizationId === orgId), blkRows: blk.rows.filter((r) => r.organizationId === orgId) };
 }
 

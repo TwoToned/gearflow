@@ -30,6 +30,13 @@ and unbookable too.
   ("Mark complete" in the row menu, gated as a kit edit, with an exact field-edit Undo through
   `fieldEditUndo`) clears it: a found asset set back to `AVAILABLE` does not. Legacy `INCOMPLETE` rows keep
   blocking exactly as before. A kit with the marker can still have items added, archived or deleted.
+- **Every surface prints the derived state.** The Kits list, the kit page (`kitDetail.bundle` carries `state`; header,
+  Status section) and the location record's kit list (`locations.detail`) all read `convex/lib/kitState.ts`; the
+  stored status is only the physical lifecycle. The kit page's header has `Mark complete` (absent without
+  `kit:update`, with the same Undo) and its status select no longer offers Incomplete (and is hidden while the kit
+  is reported missing). The kit sheet's Status is locked on a reported-missing kit. `kitWrites.updateNative` /
+  `createNative` refuse to set the marker (only a MISSING return does) or clear it (only Mark complete does);
+  re-saving a kit that carries it, unchanged, is fine.
 - **Reads are budgeted.** `kitsList.listPage` / `segmentCounts` draw every member, booking-line and
   member-count read from ONE per-call budget (`convex/lib/readBudget.ts`). A kit the budget cannot cover has
   `state: null` (the row prints a dash, never a guess), and the response says `truncated`. The strip is

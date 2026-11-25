@@ -107,7 +107,7 @@ async function shapeRow(ctx: QueryCtx, orgId: string, i: Doc<"testTagAssets">, s
     .withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", orgId).eq("testTagAssetId", i.id))
     .order("desc")
     .first();
-  const asset = i.assetId ? await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", i.assetId!)).first() : null;
+  const asset = await linkedAssetOf(ctx, orgId, i);
   return {
     id: i.id,
     testTagId: i.testTagId,
@@ -119,9 +119,16 @@ async function shapeRow(ctx: QueryCtx, orgId: string, i: Doc<"testTagAssets">, s
     lastTestDate: i.lastTestDate ?? null,
     nextDueDate: i.nextDueDate ?? null,
     tester: last?.testerName ?? null,
-    linkedAsset: asset && asset.organizationId === orgId ? { id: asset.id, assetTag: asset.assetTag } : null,
+    linkedAsset: asset,
     link: linkOf(i),
   };
+}
+
+/** The item's serialised asset (`by_cuid` is global: the org is re-checked), as the list prints it. */
+async function linkedAssetOf(ctx: QueryCtx, orgId: string, i: Doc<"testTagAssets">): Promise<{ id: string; assetTag: string } | null> {
+  if (!i.assetId) return null;
+  const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", i.assetId!)).first();
+  return asset && asset.organizationId === orgId ? { id: asset.id, assetTag: asset.assetTag } : null;
 }
 
 /** Strip counts for the Test and tag list. */

@@ -96,11 +96,7 @@ export const listPage = query({
     const { sortBy, dir } = effectiveSort(a.sortBy, a.sortOrder === "desc" ? -1 : 1, seesCost);
     const records = await collectCapped(ctx.db.query("maintenanceRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId)));
     const budget = new ReadBudget(SEARCH_JOIN_BUDGET);
-    const scoped: Doc<"maintenanceRecords">[] = [];
-    for (const r of records.rows) {
-      if (!inSegment(r, seg, now) || !matchesFilters(r, a)) continue;
-      if (!a.search || (await matchesSearchTerm(ctx, a.orgId, r, a.search, budget))) scoped.push(r);
-    }
+    const scoped = await scopeRecords(ctx, a.orgId, records.rows, { seg, now, filters: a, search: a.search }, budget);
     const key = SORT_KEYS[sortBy];
     const sorted = [...scoped].sort((x, y) => compareValues(key(x), key(y), dir) || x.title.localeCompare(y.title));
     const paged = paginateItems(sorted, a.page ?? 1, clampPageSize(a.pageSize ?? 25));
@@ -110,6 +106,22 @@ export const listPage = query({
     return { ...paged, items, truncated: records.truncated || budget.truncated };
   },
 });
+
+/** The records in the strip word that pass the filters and the search (the search may read links, within the budget). */
+async function scopeRecords(
+  ctx: QueryCtx,
+  orgId: string,
+  rows: Doc<"maintenanceRecords">[],
+  q: { seg: SegmentKey; now: number; filters: FilterArgs; search: string | undefined },
+  budget: ReadBudget,
+): Promise<Doc<"maintenanceRecords">[]> {
+  const out: Doc<"maintenanceRecords">[] = [];
+  for (const r of rows) {
+    if (!inSegment(r, q.seg, q.now) || !matchesFilters(r, q.filters)) continue;
+    if (!q.search || (await matchesSearchTerm(ctx, orgId, r, q.search, budget))) out.push(r);
+  }
+  return out;
+}
 
 /** Title, description and tags always; the linked asset tags and model names while the read budget lasts. */
 async function matchesSearchTerm(ctx: QueryCtx, orgId: string, r: Doc<"maintenanceRecords">, search: string, budget: ReadBudget): Promise<boolean> {

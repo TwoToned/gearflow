@@ -319,6 +319,14 @@ derived in ONE helper, `convex/lib/saleStockFacts.ts`, and a test pins that they
   honestly reads as reserved. An unset `saleMode` is not decremented today, so it is not counted. A line
   copied into another version is one add and counts once per lineage. The reads draw from one budget
   (`ReadBudget`); a model it could not cover shows `—` for Reserved and On hand, never 0.
+- **The pool is accounted PER LINEAGE** (`convex/lib/lineagePool.ts`, the pure `lineagePoolDelta` in
+  `saleStockFacts.ts`). A lineage is one logical sale line across versions: what it takes from the pool is the MAX
+  quantity over its `takesFromPool` rows, so a copy takes nothing more and deleting one copy while another still
+  holds the stock restores nothing. Add, patch (quantity or model), delete of a row and delete of a whole version
+  each apply exactly the change in that maximum; Reserved reads the same maximum (and is nothing for a lineage
+  with a row that has left the building). So `pool + reserved = physical stock` after every step except cancel
+  (still the logged follow-up: it restores nothing and keeps counting as reserved). `restoreSaleStockOnDelete` and
+  `applySaleStockOnPatch` go through `takesFromPool` too: one predicate on every path.
 - **On hand** = Available + Reserved, so `On hand − Reserved = Available` by construction.
 - **State**: `OUT` when Available ≤ 0 (a negative pool reads `Oversold n`), `LOW` when a reorder level is
   set and Available ≤ it. An unset `models.reorderLevel` is never read as 0.

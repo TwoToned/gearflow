@@ -8,6 +8,7 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import { setAssetsStatus } from "./warehouseOps";
 import { adjustBulkTotal } from "./lib/saleStock";
+import { returnLineUnits } from "./lib/fulfillment";
 import { nextStatusUnlessRetired } from "./lib/assetRetire";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
@@ -43,6 +44,7 @@ describe("Retire refuses a unit that is out", () => {
   test("a CHECKED_OUT unit is refused with a clear code and stays as it was; once returned it retires", async () => {
     const t = makeT();
     await seedAsset(t, { status: "CHECKED_OUT" });
+    await expect(retire(t)).rejects.toMatchObject({ data: { code: "ASSET_CHECKED_OUT" } }); // the code, not just the words
     await expect(retire(t)).rejects.toThrow(/Return it before retiring/);
     expect(await asset(t)).toMatchObject({ status: "CHECKED_OUT", isActive: true });
     const out = (await asset(t))!;
@@ -83,6 +85,23 @@ describe("no status writer reinstates a retired unit", () => {
     expect(await asset(t)).toMatchObject({ status: "RETIRED", isActive: false });
     await correct("u2");
     expect((await asset(t, "a2"))?.status).toBe("IN_MAINTENANCE"); // damaged -> maintenance, the unchanged behaviour
+  });
+
+  test("a return through fulfillment (returnLineUnits -> setAssetStatus) leaves a retired unit retired and returns a live one", async () => {
+    const t = makeT();
+    await seedAsset(t, { status: "RETIRED", isActive: false }); // legacy: retired while it was out
+    await seedAsset(t, { id: "a2", assetTag: "TAG-2", status: "CHECKED_OUT" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { id: "l1", organizationId: ORG, projectId: "p1", versionId: "v1", lineageId: "l1", type: "EQUIPMENT", modelId: "m1", status: "CHECKED_OUT", isKitChild: false, quantity: 2, sortOrder: 1 } as never);
+      await ctx.db.insert("projectLineItemUnits", { id: "u1", organizationId: ORG, lineItemId: "l1", ordinal: 1, assetId: "a1", status: "CHECKED_OUT" } as never);
+      await ctx.db.insert("projectLineItemUnits", { id: "u2", organizationId: ORG, lineItemId: "l1", ordinal: 2, assetId: "a2", status: "CHECKED_OUT" } as never);
+    });
+    const back = (assetId: string) =>
+      t.run((ctx) => returnLineUnits(ctx, { organizationId: ORG, projectId: "p1", lineItemId: "l1", assetId, returnCondition: "GOOD", userId: "u1", defaultLocationId: null }));
+    await back("a1");
+    await back("a2");
+    expect(await asset(t)).toMatchObject({ status: "RETIRED", isActive: false });
+    expect((await asset(t, "a2"))?.status).toBe("AVAILABLE");
   });
 
   test("a warehouse check-in (setAssetsStatus) leaves a retired unit retired and moves a live one", async () => {

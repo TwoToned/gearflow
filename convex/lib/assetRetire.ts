@@ -13,7 +13,7 @@ export function nextStatusUnlessRetired<S extends string>(current: string | null
   return current === "RETIRED" ? "RETIRED" : next;
 }
 
-type RetireFacts ={ status?: string | null; isActive?: boolean | null };
+type RetireFacts = { status?: string | null; isActive?: boolean | null };
 
 /**
  * Retire and Reinstate are the ONLY paths into and out of RETIRED (each has its gates, its

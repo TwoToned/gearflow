@@ -85,7 +85,7 @@ const PAGE_ITEMS: [PageVerb, PageItem, ((status: string) => boolean)?][] = [
   ["onPrintLabel", { key: "print", label: "Print label…", group: "documents", icon: Printer }],
   ["onForceReturn", { key: "force", label: "Force return…", group: "organise", icon: RotateCcw }, (s) => s === "CHECKED_OUT"],
   // A unit that is out comes back first (the server refuses ASSET_CHECKED_OUT), so Retire is absent while it is out.
-["onRetire", { key: "retire", label: "Retire…", group: "danger", icon: Archive, danger: true }, (s) => s !== "RETIRED" && s !== "CHECKED_OUT"],
+  ["onRetire", { key: "retire", label: "Retire…", group: "danger", icon: Archive, danger: true }, (s) => s !== "RETIRED" && s !== "CHECKED_OUT"],
   ["onReinstate", { key: "reinstate", label: "Reinstate…", group: "organise", icon: RotateCcw }, (s) => s === "RETIRED"],
 ];
 

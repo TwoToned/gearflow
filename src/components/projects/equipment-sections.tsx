@@ -69,6 +69,8 @@ export interface EquipmentHandlers {
   toggleLinePriceReveal: (item: LineItemData) => void;
   toggleLineDisclosure: (item: LineItemData) => void;
   toggleLineRoi: (item: LineItemData) => void;
+  /** Absent when the member cannot link tasks: the row then has no `Attach to a task…` action. */
+  attachToTask?: (item: LineItemData) => void;
   setMarker: (id: string, status: "needs_review" | "follow_up" | "resolved") => void;
   reportIssue: (item: LineItemData) => void;
   editInOrder: (subHireId: string) => void;
@@ -240,6 +242,7 @@ function lineRow(item: LineItemData, c: Ctx, where: LineWhere): LineRowData {
         onMoveToCategory: () => h.moveLineToCategory(item.id, where.catId),
         onMoveToGroup: () => h.moveLineToGroup(item.id, where.groupId),
         onEditAccessories: canEditAccessoryPlan(item) ? () => h.editAccessories(item) : undefined,
+        onAttachToTask: h.attachToTask ? () => h.attachToTask?.(item) : undefined,
         onSubHireShortfall: h.subHireShortfall && canSubHireShortfall(item, over) ? () => h.subHireShortfall?.(item, over!.overBy) : undefined,
         onMarker: (s) => h.setMarker(item.id, s),
         onReportIssue: item.status === "CHECKED_OUT" ? () => h.reportIssue(item) : undefined,

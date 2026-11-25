@@ -2,9 +2,14 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertStrLen } from "./lib/fieldGuards";
+import { emitProjectActivityEvent } from "./lib/activityEvents";
+import { ProjectMediaType as ProjectMediaTypeV } from "./lib/validators";
+import { assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
 
 /**
  * Native MEDIA write mutations (Phase 3 browser-direct — replaces the 6 *-media.ts
@@ -26,13 +31,15 @@ type MediaTable = "clientMedia" | "locationMedia" | "projectMedia" | "kitMedia" 
 type ParentTable = "clients" | "locations" | "projects" | "kits" | "assets" | "models";
 type Resource = "client" | "location" | "project" | "kit" | "asset" | "model";
 
-const CFG: Record<Kind, { table: MediaTable; fk: string; parentTable: ParentTable; parentIndex: string; resource: Resource; photo: boolean }> = {
-  client: { table: "clientMedia", fk: "clientId", parentTable: "clients", parentIndex: "by_clientId", resource: "client", photo: false },
-  location: { table: "locationMedia", fk: "locationId", parentTable: "locations", parentIndex: "by_locationId", resource: "location", photo: false },
-  project: { table: "projectMedia", fk: "projectId", parentTable: "projects", parentIndex: "by_projectId", resource: "project", photo: false },
-  kit: { table: "kitMedia", fk: "kitId", parentTable: "kits", parentIndex: "by_kitId", resource: "kit", photo: true },
-  asset: { table: "assetMedia", fk: "assetId", parentTable: "assets", parentIndex: "by_assetId", resource: "asset", photo: true },
-  model: { table: "modelMedia", fk: "modelId", parentTable: "models", parentIndex: "by_modelId", resource: "model", photo: true },
+// `folder` is the `/api/uploads` folder each kind's uploader sends (`MediaUploader`, the Files section):
+// the attach rule requires the file to have been uploaded for THIS kind.
+const CFG: Record<Kind, { table: MediaTable; fk: string; parentTable: ParentTable; parentIndex: string; resource: Resource; photo: boolean; folder: string }> = {
+  client: { table: "clientMedia", fk: "clientId", parentTable: "clients", parentIndex: "by_clientId", resource: "client", photo: false, folder: "clients" },
+  location: { table: "locationMedia", fk: "locationId", parentTable: "locations", parentIndex: "by_locationId", resource: "location", photo: false, folder: "locations" },
+  project: { table: "projectMedia", fk: "projectId", parentTable: "projects", parentIndex: "by_projectId", resource: "project", photo: false, folder: "projects" },
+  kit: { table: "kitMedia", fk: "kitId", parentTable: "kits", parentIndex: "by_kitId", resource: "kit", photo: true, folder: "kits" },
+  asset: { table: "assetMedia", fk: "assetId", parentTable: "assets", parentIndex: "by_assetId", resource: "asset", photo: true, folder: "assets" },
+  model: { table: "modelMedia", fk: "modelId", parentTable: "models", parentIndex: "by_modelId", resource: "model", photo: true, folder: "models" },
 };
 
 /** A media row — the fields we touch are common across all 6 media tables. */
@@ -57,6 +64,7 @@ async function assertParentInOrg(ctx: MutationCtx, cfg: (typeof CFG)[Kind], pare
   if (!parent || parent.organizationId !== orgId) throw new ConvexError("Parent not found");
 }
 
+
 async function guards(ctx: MutationCtx, kind: Kind, orgId: string) {
   await assertWritesEnabled(ctx, "media");
   await enforceBrowserWriteLimit(ctx);
@@ -73,6 +81,9 @@ export const addNative = mutation({
 
     const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
     if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
+    // THE shared attach rule (Phase 13): the caller's own recent upload, in this kind's upload folder, held by nothing.
+    const actor = await resolveActor(ctx, { userId: "", userName: "" });
+    await assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: actor.userId, fileId: a.fileId, folder: cfg.folder });
 
     const dup = await mediaByCuid(ctx, cfg, a.id);
     if (dup) throw new ConvexError("Media already exists");
@@ -86,48 +97,91 @@ export const addNative = mutation({
     if (cfg.photo) doc.isPrimary = isPrimary;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.db.insert(cfg.table, doc as any);
+    await emitFileEvent(ctx, a.kind, a.orgId, a.parentId, a.now, "file_added", `added file "${a.displayName ?? file.fileName}"`, a.id);
     return { id: a.id };
   },
 });
+
+/** The Activity rail for a JOB's file writes (UX Phase 10). Other kinds have no job feed. */
+async function emitFileEvent(ctx: MutationCtx, kind: Kind, orgId: string, parentId: string, now: number, action: string, summary: string, mediaId: string) {
+  if (kind !== "project") return;
+  const actor = await resolveActor(ctx, { userId: "", userName: "" });
+  await emitProjectActivityEvent(ctx, { orgId, projectId: parentId, actor, now, action, summary, targetType: "file", targetId: mediaId });
+}
+
+/**
+ * Remove ONE media row (org-checked) and, only when nothing else still holds the file, its
+ * stored bytes. Throws "Media not found" BEFORE any write, so a caller looping over several
+ * rows can skip a missing one without leaving a half-done removal behind.
+ */
+async function removeMediaRow(ctx: MutationCtx, kind: Kind, orgId: string, mediaId: string): Promise<void> {
+  const cfg = CFG[kind];
+  const media = await mediaByCuid(ctx, cfg, mediaId);
+  if (!media || media.organizationId !== orgId) throw new ConvexError("Media not found");
+  const parentId = media[cfg.fk] as string;
+  const wasPrimary = media.isPrimary ?? false;
+  const fileId = media.fileId;
+  const label = (media.displayName as string | undefined) ?? (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first())?.fileName ?? "a file";
+
+  await ctx.db.delete(media._id);
+  await emitFileEvent(ctx, kind, orgId, parentId, Date.now(), "file_removed", `removed file "${label}"`, mediaId);
+
+  // Delete the file (stored bytes + storedFiles record + thumbnail bytes + the fileUploads row)
+  // ONLY when nothing else still holds it. Org-check the file too (by_cuid is global).
+  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
+  // The bytes go only when nothing else holds the file once THIS row is gone (`isFileReferenced`, Phase 13).
+  if (file && file.organizationId === orgId && !(await isFileReferenced(ctx.db, orgId, fileId))) {
+    await deleteStored(ctx, file.storageKey);
+    if (file.thumbnailUrl) {
+      const thumb = storageIdFromUrl(file.thumbnailUrl);
+      if (thumb) await deleteStored(ctx, thumb);
+    }
+    await ctx.db.delete(file._id);
+  }
+
+  // Promote the next PHOTO if the removed one was primary (photo kinds only).
+  if (cfg.photo && wasPrimary && media.type === "PHOTO") {
+    const next = (await rowsByParent(ctx, cfg, parentId, orgId))
+      .filter((r) => r.type === "PHOTO")
+      .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))[0];
+    if (next) await ctx.db.patch(next._id, { isPrimary: true });
+  }
+}
 
 export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { kind: MediaKind, orgId: v.string(), mediaId: v.string() },
   handler: async (ctx, a) => {
     await guards(ctx, a.kind, a.orgId);
-    const cfg = CFG[a.kind];
-
-    const media = await mediaByCuid(ctx, cfg, a.mediaId);
-    if (!media || media.organizationId !== a.orgId) throw new ConvexError("Media not found");
-    const parentId = media[cfg.fk] as string;
-    const wasPrimary = media.isPrimary ?? false;
-    const fileId = media.fileId;
-
-    await ctx.db.delete(media._id);
-
-    // Delete the file: stored bytes + storedFiles record (replicating files.deleteFile)
-    // + thumbnail bytes + the fileUploads row. Unconditional (the 6 UI kinds never
-    // ref-count — that path stays on media-write.ts for subHire).
-    // Org-check the file too (by_cuid is global) — add enforces file.org == media.org,
-    // so this only guards against a corrupt/mismatched row deleting another org's file.
-    const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-    if (file && file.organizationId === a.orgId) {
-      await deleteStored(ctx, file.storageKey);
-      if (file.thumbnailUrl) {
-        const thumb = storageIdFromUrl(file.thumbnailUrl);
-        if (thumb) await deleteStored(ctx, thumb);
-      }
-      await ctx.db.delete(file._id);
-    }
-
-    // Promote the next PHOTO if the removed one was primary (photo kinds only).
-    if (cfg.photo && wasPrimary && media.type === "PHOTO") {
-      const next = (await rowsByParent(ctx, cfg, parentId, a.orgId))
-        .filter((r) => r.type === "PHOTO")
-        .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0))[0];
-      if (next) await ctx.db.patch(next._id, { isPrimary: true });
-    }
+    await removeMediaRow(ctx, a.kind, a.orgId, a.mediaId);
     return { id: a.mediaId };
+  },
+});
+
+/**
+ * Remove several media rows in ONE mutation (the Files bulk bar), by the same rule as
+ * `removeNative`: bytes go only for a file nothing else holds. A row that is not found
+ * (or another org's) is skipped and NAMED, never silent; the bulk size is capped by the
+ * verified identity (`assertBulkSizeOk`).
+ */
+export const removeManyNative = mutation({
+  returns: v.object({ removed: v.number(), skipped: v.array(v.object({ id: v.string(), why: v.string() })) }),
+  args: { kind: MediaKind, orgId: v.string(), mediaIds: v.array(v.string()) },
+  handler: async (ctx, a) => {
+    await guards(ctx, a.kind, a.orgId);
+    await assertBulkSizeOk(ctx, a.mediaIds.length);
+    let removed = 0;
+    const skipped: { id: string; why: string }[] = [];
+    for (const id of new Set(a.mediaIds)) {
+      try {
+        await removeMediaRow(ctx, a.kind, a.orgId, id);
+        removed++;
+      } catch (e) {
+        if (!(e instanceof ConvexError)) throw e;
+        skipped.push({ id, why: "not found" });
+      }
+    }
+    return { removed, skipped };
   },
 });
 
@@ -146,6 +200,56 @@ export const setPrimaryNative = mutation({
       if (r.id === a.mediaId) { if (!r.isPrimary) await ctx.db.patch(r._id, { isPrimary: true }); }
       else if (r.type === "PHOTO" && r.isPrimary) await ctx.db.patch(r._id, { isPrimary: false });
     }
+    return { id: a.mediaId };
+  },
+});
+
+/**
+ * Set the CATEGORY of one or more project files (UX Phase 10, spec §8c: a category
+ * per file, the `ProjectMediaType` enum). Project media only. Per-row org + parent
+ * check (`by_cuid` is global); a file that is not this job's is skipped and reported.
+ * One Activity event per call. Only `type` changes: no stored file is touched.
+ */
+export const setTypeNative = mutation({
+  returns: v.object({ updated: v.number(), skipped: v.number() }),
+  args: { orgId: v.string(), projectId: v.string(), mediaIds: v.array(v.string()), type: ProjectMediaTypeV, now: v.number() },
+  handler: async (ctx, a) => {
+    await guards(ctx, "project", a.orgId);
+    await assertBulkSizeOk(ctx, a.mediaIds.length);
+    const cfg = CFG.project;
+    await assertParentInOrg(ctx, cfg, a.projectId, a.orgId);
+    let updated = 0;
+    for (const id of a.mediaIds) {
+      const doc = await mediaByCuid(ctx, cfg, id);
+      if (!doc || doc.organizationId !== a.orgId || doc[cfg.fk] !== a.projectId) continue;
+      if (doc.type !== a.type) await ctx.db.patch(doc._id, { type: a.type });
+      updated++;
+    }
+    if (updated > 0) {
+      const actor = await resolveActor(ctx, { userId: "", userName: "" });
+      await emitProjectActivityEvent(ctx, {
+        orgId: a.orgId, projectId: a.projectId, actor, now: a.now, action: "file_updated", targetType: "file",
+        summary: `changed ${updated} ${updated === 1 ? "file" : "files"} to ${a.type.toLowerCase().replace(/_/g, " ")}`,
+      });
+    }
+    return { updated, skipped: a.mediaIds.length - updated };
+  },
+});
+
+/** Rename one project file (`displayName`, 1-200 chars). The stored file and its name on disk are untouched. */
+export const renameNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), projectId: v.string(), mediaId: v.string(), displayName: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await guards(ctx, "project", a.orgId);
+    const cfg = CFG.project;
+    const name = a.displayName.trim();
+    if (!name) throw new ConvexError("A file needs a name");
+    assertStrLen(name, "displayName", { max: 200 });
+    const doc = await mediaByCuid(ctx, cfg, a.mediaId);
+    if (!doc || doc.organizationId !== a.orgId || doc[cfg.fk] !== a.projectId) throw new ConvexError("Media not found");
+    await ctx.db.patch(doc._id, { displayName: name });
+    await emitFileEvent(ctx, "project", a.orgId, a.projectId, a.now, "file_updated", `renamed a file to "${name}"`, a.mediaId);
     return { id: a.mediaId };
   },
 });
@@ -180,3 +284,9 @@ function storageIdFromUrl(url: string): string | null {
   const idx = url.indexOf(prefix);
   return idx === -1 ? null : url.slice(idx + prefix.length);
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  setTypeNative: { summary: "Set the category of one or more project files (the ProjectMediaType enum). Changes only the category.", danger: "low", mcpTier: 3 },
+  renameNative: { summary: "Rename a project file's display name; the stored file is untouched.", danger: "low", mcpTier: 3 },
+  removeManyNative: { summary: "Remove several files from a job in one call; deletes the stored bytes of each file nothing else still holds. No Undo.", danger: "high", mcpTier: 3 },
+};

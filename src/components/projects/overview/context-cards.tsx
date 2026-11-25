@@ -5,6 +5,7 @@ import * as React from "react";
 import Link from "next/link";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useReadinessArgs } from "@/hooks/use-project-readiness";
 import { useNavItems } from "@/hooks/use-nav-items";
 import { useOpenJobEdit } from "@/hooks/use-open-job-edit";
 import { api } from "../../../../convex/_generated/api";
@@ -92,7 +93,7 @@ export function OverviewWhere({ project }: { project: ProjectContextProject }) {
 
 /** Crew count from the readiness read the page already holds (same args → one subscription). */
 function useCrewCounts(projectId: string, orgId: string | undefined, enabled: boolean) {
-  const readiness = useAuthedQuery(api.projectReadiness.forProject, orgId && enabled ? { orgId, projectId } : "skip");
+  const readiness = useAuthedQuery(api.projectReadiness.forProject, useReadinessArgs(projectId, orgId, enabled));
   return readiness ? { total: readiness.crew.activeCount, unconfirmed: readiness.crew.unconfirmedCount } : null;
 }
 

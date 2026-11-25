@@ -5,10 +5,12 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useStableNow } from "@/hooks/use-stable-now";
 import { api } from "../../../../convex/_generated/api";
 import { useInvoiceWrites } from "@/hooks/use-invoice-writes";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import {
+  clientDepositPercent,
   deriveInvoicingState,
   INVOICING_HEADLINE_LABEL,
   type InvoiceLike,
@@ -49,11 +51,12 @@ function deriveInvoicingView(
   invoices: unknown[] | undefined,
   client: { profileDepositPercent?: unknown; name?: unknown } | null | undefined,
   total: number | null,
+  now: number,
 ): InvoicingView | null {
   if (invoices === undefined || client === undefined) return null;
-  const depositPercent = (client?.profileDepositPercent as number | undefined) ?? 25;
+  const depositPercent = clientDepositPercent(client);
   return {
-    state: deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total),
+    state: deriveInvoicingState(invoices as InvoiceLike[], depositPercent, total, now),
     depositPercent,
     clientName: client?.name as string | undefined,
   };
@@ -200,7 +203,8 @@ export function InvoicingMoneyLine({ projectId, orgId, projectNumber, projectSta
   const client = useAuthedQuery(api.clients.getById, clientId ? { id: clientId } : "skip");
   const invoiceWrites = useInvoiceWrites();
 
-  const view = clientId ? deriveInvoicingView(invoices, client, total) : null;
+  const now = useStableNow();
+  const view = clientId ? deriveInvoicingView(invoices, client, total, now) : null;
 
   return (
     <div className="min-w-0">

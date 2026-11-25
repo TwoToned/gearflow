@@ -39,7 +39,8 @@ export type ReadinessCheckId =
   | "services"
   | "pricing"
   | "packing"
-  | "incidents";
+  | "incidents"
+  | "tasks";
 
 /**
  * Where a row's link goes — the surface that OWNS the fix. A tab key is the
@@ -48,7 +49,7 @@ export type ReadinessCheckId =
  * `discussion` opens the comments panel the header ⋯ opens.
  */
 export type ReadinessFix =
-  | { kind: "tab"; tab: "equipment" | "labour" | "packing" }
+  | { kind: "tab"; tab: "equipment" | "labour" | "packing" | "tasks" }
   | { kind: "edit" }
   | { kind: "warehouse" }
   | { kind: "discussion" };
@@ -66,7 +67,7 @@ export interface ReadinessCheck {
   fix?: ReadinessFix;
 }
 
-const TAB_FIX = (tab: "equipment" | "labour" | "packing"): ReadinessFix => ({ kind: "tab", tab });
+const TAB_FIX = (tab: "equipment" | "labour" | "packing" | "tasks"): ReadinessFix => ({ kind: "tab", tab });
 
 export interface ReadinessGearInput {
   hard: { modelName: string; qty: number }[];
@@ -107,6 +108,12 @@ interface ReadinessIncidentInput {
   truncated: boolean;
 }
 
+interface ReadinessTasksInput {
+  overdueCount: number;
+  /** The scan hit its cap; `overdueCount` is a floor. */
+  truncated: boolean;
+}
+
 export interface BuildChecksInput {
   hasWindow: boolean;
   /** Preformatted rental window, e.g. "12 – 16 Aug" — omitted when dateless. */
@@ -120,6 +127,12 @@ export interface BuildChecksInput {
   packing: ReadinessPackingInput;
   /** Absent on a pre-Phase-7 response shape: the row is dropped. */
   incidents?: ReadinessIncidentInput;
+  /**
+   * `projectReadiness.forProject`'s overdue-task count (UX Phase 10). `null` =
+   * the server was not sent a clock (reported as not checked); `undefined` = an
+   * older response shape, the row is dropped.
+   */
+  tasks?: ReadinessTasksInput | null;
   /** Open blocking discussions; `null` while the count is loading. */
   blockingCount?: number | null;
   /** The job's status — a row's words can depend on it (past prep, a blocker holds send-out, not prep). */
@@ -232,6 +245,30 @@ function discussionsCheck(blockingCount: number | null | undefined, status: stri
     actionLabel: "Open the discussion",
     fix: { kind: "discussion" },
   };
+}
+
+/**
+ * UX Phase 10 — overdue tasks. A late task does not stop gear leaving, so it is a
+ * `warning`, never `blocking`. No clock yet (`null`) is `unknown`, never a pass.
+ */
+function tasksCheck(tasks: ReadinessTasksInput | null | undefined): ReadinessCheck | null {
+  if (tasks === undefined) return null;
+  const fix = TAB_FIX("tasks");
+  if (tasks === null) return { id: "tasks", severity: "unknown", title: "Overdue tasks not checked yet", actionLabel: "Tasks", fix };
+  const n = tasks.overdueCount;
+  if (n === 0) {
+    if (!tasks.truncated) return { id: "tasks", severity: "pass", title: "No overdue tasks" };
+    return {
+      id: "tasks",
+      severity: "unknown",
+      title: "Overdue tasks not fully checked",
+      detail: "This job has more tasks than one check reads; the newest have none overdue.",
+      actionLabel: "Tasks",
+      fix,
+    };
+  }
+  const count = tasks.truncated ? `${n}+` : String(n);
+  return { id: "tasks", severity: "warning", title: `${count} overdue ${plural(n, "task")}`, actionLabel: "Open tasks", fix };
 }
 
 /** UX Phase 7 — open incidents on this job's gear (Report Issue / a check FAIL). */
@@ -381,6 +418,7 @@ export function buildReadinessChecks(input: BuildChecksInput): ReadinessCheck[] 
     crewCheck(input.crew),
     pricingCheck(input.pricing),
     packingCheck(input.packing),
+    tasksCheck(input.tasks),
     incidentsCheck(input.incidents),
   ].filter((c): c is ReadinessCheck => c !== null);
 }

@@ -20,7 +20,7 @@ import { useActiveOrganization } from "@/lib/auth-client";
 import { FadeIn } from "@/components/ui/motion";
 import { FormSkeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/layout/page-header";
-import type { ModelFormValues } from "@/lib/validations/model";
+import { modelToFormValues } from "@/lib/model-edit-values";
 
 export default function EditModelPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -53,39 +53,9 @@ function EditModelContent({ params }: { params: Promise<{ id: string }> }) {
     );
   }
 
-  const initialData: ModelFormValues & { id: string } = {
-    id: model.id,
-    name: model.name,
-    manufacturer: model.manufacturer || "",
-    modelNumber: model.modelNumber || "",
-    sku: model.sku || "",
-    categoryId: model.categoryId || "",
-    description: model.description || "",
-    image: model.image || "",
-    images: model.images,
-    manuals: model.manuals,
-    specifications: (model.specifications as Record<string, string>) || {},
-    customFields: (model.customFields as Record<string, string>) || {},
-    defaultRentalPrice: model.defaultRentalPrice ? Number(model.defaultRentalPrice) : undefined,
-    defaultPurchasePrice: model.defaultPurchasePrice ? Number(model.defaultPurchasePrice) : undefined,
-    replacementCost: model.replacementCost ? Number(model.replacementCost) : undefined,
-    weight: model.weight ? Number(model.weight) : undefined,
-    powerDraw: model.powerDraw || undefined,
-    requiresTestAndTag: model.requiresTestAndTag,
-    testAndTagIntervalDays: model.testAndTagIntervalDays || undefined,
-    defaultTestProfileId: model.defaultTestProfileId || undefined,
-    defaultEquipmentClass: model.defaultEquipmentClass || undefined,
-    defaultApplianceType: model.defaultApplianceType || undefined,
-    // maintenanceIntervalDays intentionally omitted — superseded by
-    // serviceSchedules (WS6 #945), removed from modelSchema/the form.
-    assetType: model.assetType,
-    barcodeLabelTemplate: model.barcodeLabelTemplate || "",
-    isActive: model.isActive,
-    isContainer: model.isContainer ?? false,
-    tags: model.tags ?? [],
-    xeroRentalAccountCode: model.xeroRentalAccountCode || undefined,
-    xeroSaleAccountCode: model.xeroSaleAccountCode || undefined,
-  };
+  // EVERY stored field, via the one mapper: the write treats an absent value as "clear it", so a
+  // form that forgot the rates or the sale price would wipe them on an unchanged save.
+  const initialData = modelToFormValues(model);
 
   return (
     <FadeIn>

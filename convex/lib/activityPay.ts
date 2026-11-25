@@ -16,12 +16,35 @@ const PAY_FIELDS: readonly string[] = [...MEMBER_RATE_FIELDS, ...ROLE_RATE_FIELD
 type WithDetails = { details?: unknown };
 export type ActivityRedactor = <R extends WithDetails>(row: R) => R;
 
+/** `without(obj)` minus the hidden keys; the same object when none were there. */
+function withoutKeys(obj: unknown, hidden: ReadonlySet<string>): unknown {
+  if (!obj || typeof obj !== "object") return obj;
+  const kept = Object.entries(obj as Record<string, unknown>).filter(([k]) => !hidden.has(k));
+  return kept.length === Object.keys(obj).length ? obj : Object.fromEntries(kept);
+}
+
+/**
+ * The exact-Undo snapshot (`details.fieldEdit`, `lib/fieldEditUndo.ts`) carries each changed field's
+ * before/after BY FIELD NAME, so the very same hidden lists drop it: a field a caller may not see is
+ * absent from the snapshot they read, and the Undo (which reads the stored row server-side) is unaffected.
+ */
+function dropFieldEdit(d: { fieldEdit?: unknown }, hidden: ReadonlySet<string>): { fieldEdit?: unknown } {
+  const fe = d.fieldEdit as { before?: unknown; after?: unknown } | undefined;
+  if (!fe || typeof fe !== "object") return d;
+  const before = withoutKeys(fe.before, hidden);
+  const after = withoutKeys(fe.after, hidden);
+  return before === fe.before && after === fe.after ? d : { ...d, fieldEdit: { ...fe, before, after } };
+}
+
 function dropChanges<R extends WithDetails>(row: R, hidden: ReadonlySet<string>): R {
-  const d = row.details as { changes?: unknown } | null | undefined;
-  if (!d || typeof d !== "object" || !Array.isArray(d.changes)) return row;
-  const changes = (d.changes as { field?: unknown }[]).filter((c) => !(typeof c?.field === "string" && hidden.has(c.field)));
-  if (changes.length === d.changes.length) return row;
-  return { ...row, details: { ...d, changes } };
+  const d = row.details as { changes?: unknown; fieldEdit?: unknown } | null | undefined;
+  if (!d || typeof d !== "object") return row;
+  let next: typeof d = dropFieldEdit(d, hidden);
+  if (Array.isArray(d.changes)) {
+    const changes = (d.changes as { field?: unknown }[]).filter((c) => !(typeof c?.field === "string" && hidden.has(c.field)));
+    if (changes.length !== d.changes.length) next = { ...next, changes };
+  }
+  return next === d ? row : { ...row, details: next };
 }
 
 /** The activity-row redactor for a caller, from its two answers. Identity when it sees both. */

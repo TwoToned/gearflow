@@ -112,4 +112,22 @@ describe("activity log: crew pay in field diffs is written, and redacted on read
     const noChanges = { details: { deleted: { name: "x" } } };
     expect(activityMoneyRedactor({ pay: false, jobCost: false })(noChanges)).toEqual(noChanges);
   });
+
+  test("the exact-Undo snapshot (details.fieldEdit) is redacted by the SAME lists, by field name", () => {
+    const fieldEdit = {
+      before: { name: "A", margin: 5, defaultDayRate: 100, discountPercent: 10 },
+      after: { name: "B", margin: 9, defaultDayRate: 120, discountPercent: 12 },
+      serverSavedAt: 1, authorId: "u",
+    };
+    const row = { details: { fieldEdit, changes: [{ field: "margin", from: 5, to: 9 }, { field: "name", from: "A", to: "B" }] } };
+    const seeAll = activityMoneyRedactor({ pay: true, jobCost: true })(row);
+    expect(seeAll).toBe(row);
+    const noJob = activityMoneyRedactor({ pay: true, jobCost: false })(row);
+    expect(noJob.details.fieldEdit.after).toEqual({ name: "B", defaultDayRate: 120, discountPercent: 12 });
+    expect(noJob.details.fieldEdit.before).toEqual({ name: "A", defaultDayRate: 100, discountPercent: 10 });
+    expect(noJob.details.changes.map((c) => c.field)).toEqual(["name"]);
+    const none = activityMoneyRedactor({ pay: false, jobCost: false })(row);
+    expect(Object.keys(none.details.fieldEdit.after)).toEqual(["name", "discountPercent"]); // sell-side discount stays
+    expect(row.details.fieldEdit.after.margin).toBe(9); // the stored row is never mutated
+  });
 });

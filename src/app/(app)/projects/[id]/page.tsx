@@ -32,6 +32,7 @@ import { VersionsTab } from "@/components/projects/versions/versions-tab";
 import { VersionOverlays } from "@/components/projects/versions/version-overlays";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
+import { JobEditSheet } from "@/components/projects/job-edit-sheet";
 import { JobTabRow } from "@/components/projects/job-tab-row";
 import { FinanceTabSlot } from "@/components/projects/job-tab-slots";
 import { JOB_TAB_KEYS, availableJobTabs, jobTabSection, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
@@ -326,6 +327,7 @@ export default function ProjectDetailPage({
 
           {/* The ONE Compare sheet and ONE Make-live dialog, for every entry point (R-3.1). */}
           {!isTemplate && orgId && <VersionOverlays />}
+          <JobEditSheet projectId={id} />
         </div>
         </ProjectVersionProvider>
       </FadeIn>

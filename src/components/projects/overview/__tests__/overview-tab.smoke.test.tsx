@@ -19,7 +19,11 @@ beforeAll(() => {
 });
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: vi.fn() }),
+  usePathname: () => "/projects/p1",
+  useSearchParams: () => new URLSearchParams("tab=overview"),
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...p}>
@@ -291,8 +295,11 @@ describe("Overview › When · Where · Who · Recent", () => {
     expect(facts.textContent).toContain("Priya Shah");
     expect(facts.textContent).toContain("PM Jayden Cole");
     expect(facts.textContent).toContain("2 unconfirmed");
-    expect(within(facts).getByRole("link", { name: "Edit dates" }).getAttribute("href")).toBe("/projects/p1/edit");
-    expect(within(facts).getByRole("link", { name: "Edit" }).getAttribute("href")).toBe("/projects/p1/edit");
+    // Both open the edit sheet in place (?edit=1), keeping the current tab.
+    await user.click(within(facts).getByRole("button", { name: "Edit dates" }));
+    expect(push).toHaveBeenLastCalledWith("/projects/p1?tab=overview&edit=1");
+    await user.click(within(facts).getByRole("button", { name: "Edit" }));
+    expect(push).toHaveBeenLastCalledWith("/projects/p1?tab=overview&edit=1");
     expect(within(facts).getByRole("link", { name: "directions" }).getAttribute("href")).toContain("google.com/maps");
     expect(within(facts).getByRole("link", { name: "priya@hilton.example" }).getAttribute("href")).toBe("mailto:priya@hilton.example");
 

@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useOpenJobEdit } from "@/hooks/use-open-job-edit";
 import { ChevronDown } from "lucide-react";
 
 import { DetailHeader } from "@/components/ui/detail-header";
@@ -275,6 +276,7 @@ export function JobHeader({
   useVersionsShortcut(onOpenVersions);
   useStatusConfetti(status, rootRef);
   const requestStatus = (next: string) => writes.requestStatus(status, next);
+  const openEdit = useOpenJobEdit();
 
   const props = jobHeaderProps({
     name: project.name,
@@ -289,7 +291,7 @@ export function JobHeader({
     on: {
       advance: requestStatus,
       useTemplate: () => setDupMode("duplicate"),
-      edit: () => router.push(`/projects/${id}/edit`),
+      edit: openEdit,
       openDocument: (type) => openTab(`/api/documents/${id}?type=${type}`),
       openLabel: (type: LabelDocType, labelId?: string) => openLabel(id, type, labelId),
       openCallSheet: () => setCallSheetOpen(true),

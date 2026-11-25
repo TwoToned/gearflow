@@ -128,4 +128,4 @@ function ListPageSkeleton({ rows = 8 }: { rows?: number }) {
   );
 }
 
-export { Skeleton, TableSkeleton, CardSkeleton, DetailPageSkeleton, FormSkeleton, ListPageSkeleton };
+export { Skeleton, CardSkeleton, DetailPageSkeleton, FormSkeleton, ListPageSkeleton };

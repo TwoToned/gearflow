@@ -372,6 +372,8 @@ export interface SupplierSource {
   isActive: boolean;
   openOrders: number;
   spendYtd?: number;
+  /** The read hit its cap, so `spendYtd` is a floor, not a total (shown as `at least`). */
+  spendPartial?: boolean;
   onHireOrders?: number;
   onHireUnits?: number;
   dueBackDay?: number | null;
@@ -384,7 +386,7 @@ export function supplierSubline(c: { open?: number; openOrders?: number; spendYt
   return joinDot([
     `${c.open ?? 0} with open orders`,
     c.openOrders == null ? undefined : `${c.openOrders} open orders`,
-    c.spendYtd == null ? undefined : `${wholeDollars(c.spendYtd)} this year`,
+    c.spendYtd == null ? undefined : `${c.truncated ? "at least " : ""}${wholeDollars(c.spendYtd)} this year`,
     c.truncated ? "counts may be incomplete" : undefined,
   ]);
 }
@@ -394,7 +396,7 @@ export function supplierRowOf(s: SupplierSource, menu?: ActionMenuSpec): LineRow
     openOrders: textFact(s.openOrders > 0 ? String(s.openOrders) : undefined),
     onHire: textFact(s.onHireUnits ? `${s.onHireUnits} unit${s.onHireUnits === 1 ? "" : "s"}` : undefined),
     dueBack: textFact(s.dueBackDay == null ? undefined : dayLabel(s.dueBackDay)),
-    spend: moneyFact(s.spendYtd), // absent without the job-cost line
+    spend: s.spendPartial && s.spendYtd != null ? textFact(`at least ${wholeDollars(s.spendYtd)}`) : moneyFact(s.spendYtd), // absent without the job-cost line
     phone: textFact(s.phone),
     accountNumber: textFact(s.accountNumber),
     email: textFact(s.email),
@@ -417,7 +419,7 @@ export function supplierRowOf(s: SupplierSource, menu?: ActionMenuSpec): LineRow
 function supplierCsvRow(s: SupplierSource, money: boolean): string[] {
   return [
     s.name, s.contactName ?? "", s.email ?? "", s.phone ?? "", s.accountNumber ?? "", String(s.openOrders), s.isActive ? "Active" : "Archived",
-    ...(money ? [csvNum(s.spendYtd)] : []), s.tags.join("; "),
+    ...(money ? [s.spendPartial && s.spendYtd != null ? `at least ${s.spendYtd}` : csvNum(s.spendYtd)] : []), s.tags.join("; "),
   ];
 }
 

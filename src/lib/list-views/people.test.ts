@@ -17,6 +17,7 @@ import {
   dayLabel,
   supplierColumns,
   supplierRowOf,
+  supplierSubline,
   suppliersCsv,
   type ClientSource,
   type CrewSource,
@@ -129,6 +130,14 @@ describe("exports go through the CSV formula guard", () => {
     expect(suppliersCsv([s]).split("\n")[0]).not.toContain("Spend");
     expect(suppliersCsv([{ ...s, spendYtd: 99 }]).split("\n")[0]).toContain("Spend YTD");
     expect(supplierRowOf({ ...s, spendYtd: 0 }).facts.spend).toEqual({ kind: "money", amount: null });
+  });
+  it("a truncated read shows spend as `at least`, never a confident total", () => {
+    const s: SupplierSource = { id: "s", name: "Scene", contactName: null, email: null, phone: null, accountNumber: null, tags: [], isActive: true, openOrders: 2 };
+    const partial = { ...s, spendYtd: 1200, spendPartial: true };
+    expect(supplierRowOf(partial).facts.spend).toEqual({ kind: "text", label: "at least $1,200" });
+    expect(supplierRowOf({ ...partial, spendPartial: false }).facts.spend).toEqual({ kind: "money", amount: 1200 });
+    expect(suppliersCsv([partial])).toContain("at least 1200");
+    expect(supplierSubline({ open: 1, openOrders: 2, spendYtd: 1200, truncated: 1 })).toContain("at least $1,200 this year");
   });
   it("dayLabel is UTC", () => {
     expect(dayLabel(Math.floor(Date.UTC(2026, 10, 24) / 86_400_000))).toBe("24 Nov");

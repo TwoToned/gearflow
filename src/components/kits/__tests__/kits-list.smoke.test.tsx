@@ -27,7 +27,7 @@ vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: org.id } }),
   useSession: () => ({ data: { user: { id: "user1", name: "Alice" } } }),
 }));
-vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true, useCurrentRole: () => ({ permissions: { kit: ["create", "read", "update"] } }) }));
 vi.mock("@/hooks/use-categories", () => ({
   useCategories: () => [{ id: "c1", name: "Backline" }],
   useCategoriesWithParent: () => [{ id: "c1", name: "Backline", parent: null }],

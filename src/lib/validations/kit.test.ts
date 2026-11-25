@@ -36,6 +36,29 @@ describe("kitSchema", () => {
     });
   });
 
+  describe("weight and purchasePrice: blank is blank, 0 is a value", () => {
+    const parse = (extra: Record<string, unknown>) => kitSchema.parse({ ...validMinimalKit, ...extra });
+
+    it("an empty box, null and absent are all blank (undefined), never 0", () => {
+      for (const blank of ["", null, undefined]) {
+        const k = parse({ weight: blank, purchasePrice: blank });
+        expect(k.weight).toBeUndefined();
+        expect(k.purchasePrice).toBeUndefined();
+      }
+      expect(parse({}).weight).toBeUndefined();
+    });
+
+    it("0, '0' and '0.00' are the number 0", () => {
+      expect(parse({ weight: 0, purchasePrice: 0 })).toMatchObject({ weight: 0, purchasePrice: 0 });
+      expect(parse({ weight: "0", purchasePrice: "0.00" })).toMatchObject({ weight: 0, purchasePrice: 0 });
+    });
+
+    it("a negative or non-numeric entry is rejected", () => {
+      expect(kitSchema.safeParse({ ...validMinimalKit, weight: -1 }).success).toBe(false);
+      expect(kitSchema.safeParse({ ...validMinimalKit, purchasePrice: "abc" }).success).toBe(false);
+    });
+  });
+
   describe("name (required, max 200)", () => {
     it("rejects missing name", () => {
       const result = kitSchema.safeParse({ assetTag: "KIT-001" });

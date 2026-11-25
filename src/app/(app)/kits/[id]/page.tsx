@@ -65,6 +65,7 @@ import {
 
 import { kitStatusLabels, lineItemStatusLabels, conditionLabels, formatLabel } from "@/lib/status-labels";
 import { formatDate } from "@/lib/formatters";
+import { kitSheetInitialOf, type KitSheetSource } from "@/lib/kit-sheet-initial";
 import { cn, focusRing, disabledState } from "@/lib/utils";
 import { OUT_LABEL } from "@/lib/vocabulary";
 
@@ -248,15 +249,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
   /** The DERIVED state this page prints everywhere; the stored `status` is only the physical lifecycle. */
   const stateKey = kit.state?.key ?? kit.status;
   /** The kit's own fields as the Kit sheet edits (or duplicates) them. */
-  const kitSheetInitial = {
-    id: kit.id, name: kit.name, assetTag: kit.assetTag, description: kit.description || undefined,
-    categoryId: kit.categoryId || undefined, condition: kit.condition as "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED",
-    locationId: kit.locationId || undefined, weight: kit.weight ? Number(kit.weight) : undefined,
-    caseType: kit.caseType || undefined, caseDimensions: kit.caseDimensions || undefined, notes: kit.notes || undefined,
-    purchaseDate: kit.purchaseDate ?? undefined, purchasePrice: kit.purchasePrice ? Number(kit.purchasePrice) : undefined,
-    tags: (kit.tags as string[] | undefined) ?? [], checkMode: ((kit.checkMode as string) || "KIT_LEVEL") as "KIT_LEVEL" | "PER_ITEM",
-    xeroAccountCode: (kit.xeroAccountCode as string | undefined) || undefined,
-  };
+  const kitSheetInitial = kitSheetInitialOf(kit as unknown as KitSheetSource);
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit as unknown as Parameters<typeof resolveKitPhotoUrl>[0], false);

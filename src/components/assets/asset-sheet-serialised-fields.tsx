@@ -18,7 +18,9 @@ type Lookups = ReturnType<typeof useAssetSheetLookups>;
 export type SheetDialogKey = "location" | "supplier" | "order";
 
 // SOLD is written only by the sale flow, never picked here (WS11 #950).
-const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RESERVED", "RETIRED", "LOST"] as const;
+// RETIRED is not a pick: Retire and Reinstate are its only paths (the server refuses the move). A retired
+// unit being edited still SHOWS its status (the SelectValue's own label) and saves it unchanged.
+const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RESERVED", "LOST"] as const;
 const CONDITION_ORDER = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 
 const modelOption = (m: Lookups["models"][number]) => ({ value: m.id, label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`, description: m.modelNumber || undefined });

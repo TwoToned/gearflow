@@ -97,7 +97,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const media = useMediaWrites("model");
 
   // Archive and Restore stay on this page and each toast carries its own exact Undo (useModelVerbs).
-  const verbs = useModelVerbs({ onChanged: () => void refetch(), onOpenModel: (to) => router.push(`/assets/models/${to}`) });
+  const verbs = useModelVerbs({ onChanged: () => void refetch() });
 
   const archiveBulkMutation = useServerMutation({
     mutationFn: (bulkId: string) => bulkWrites.archive(bulkId),

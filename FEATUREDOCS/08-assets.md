@@ -237,9 +237,28 @@ UX Phase 12 (§9d, D30-D34): a record page in the calm language of the job page.
 - **Move to…** is one field through `updateNative` (so it has the exact edit Undo);
   **Schedule service…** creates a scheduled PREVENTATIVE maintenance job (Undo:
   `undoCreate`); **Print label…** is a browser-print QR sheet (no PDF type).
-- Not built yet (deferred, listed in the PR): the 8-week lane strip on Availability,
-  bulk Mark done / Reschedule on Maintenance, bulk actions on Files, the `Changes`
-  filter beyond the activity feed.
+- Not built yet (deferred; the PR body carries the same table), each with its reason:
+
+  | Deferred | Why |
+  | --- | --- |
+  | 8-week lane strip on Availability | `BookingCalendar` already answers "is it free" and is the shared calendar; a second renderer is a design-system decision, not a Phase 12 one. |
+  | Bulk Mark done / Reschedule on Maintenance | No existing mutation backs a bulk verb (a row/bulk verb exists only if one does, `ListPage` rule); a new bulk write needs its own Undo. |
+  | Bulk actions on Files (`Download n`, `Set as photo`) | Same rule: no bulk media write exists, and `Set as photo` is single-select by definition. |
+  | History `Changes` filter beyond the activity feed | The feed is the only change source; a richer filter needs per-field audit rows the edit Undo does not write. |
+  | Next-tag hint on each model-picker result | The tag is reserved on save; peeking it per model would take one counter read per option. |
+  | Phone ⋯-as-bottom-sheet smoke test for the asset menu | `ActionMenu`'s phone sheet is covered by its own tests; the asset menu adds no phone-specific code. |
+  | Screenshots at 1440x900 and 390x844 | No live Convex backend in the build environment; taken against a local self-hosted Convex before merge. |
+
+- **Cost is absent, not zeroed, for a `noFinancials` key** across the whole gear surface:
+  `gearCostFields.ts` holds the ONE list per record (`MODEL_`, `ASSET_`, `BULK_ASSET_`,
+  `KIT_COST_FIELDS`); asset, bulk, kit, kit-picker, kit-detail, allocation and ROI reads go
+  through `gearCostRedact.ts` (or `redactFields` with the same lists), and a hidden cost column
+  is not a sort key. `convex/kitCostRedaction.test.ts` and `roiCostRedaction.test.ts` are the
+  sentinel sweeps. A new read that returns a unit, kit or model row joins them.
+- **Retire and Reinstate are the only paths** into and out of `RETIRED` (and Archive / Restore for
+  a model): `updateNative` refuses a status move into or out of `RETIRED` and any `isActive`
+  change (`USE_RETIRE` / `USE_ARCHIVE`); the edit sheets do not offer RETIRED as a status. A bulk
+  Reinstate takes its status from stock (`bulkStatusForTotal`: out of stock at zero).
 
 Bulk stock has no page of its own: `?type=bulk` forwards to its model's page.
 

@@ -12,6 +12,8 @@ import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
+import { bulkStatusForTotal } from "./lib/saleStock";
+import { assertNoRetireBypass } from "./lib/assetRetire";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 
 /**
@@ -134,6 +136,7 @@ export const updateNative = mutation({
 
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
+    assertNoRetireBypass(doc, a);
 
     if (a.assetTag !== doc.assetTag) {
       const dup = await ctx.db.query("bulkAssets")
@@ -251,7 +254,7 @@ export const deleteNative = mutation({
   },
 });
 
-/** Retire (`RETIRED`) or reinstate (`ACTIVE`) one bulk row, audited with the exact-Undo snapshot. */
+/** Retire (`RETIRED`) or reinstate (the stock-derived status) one bulk row, audited with the exact-Undo snapshot. */
 async function setBulkRetired(
   ctx: MutationCtx,
   a: { id: string; orgId: string; now: number; actor: Actor; auditId: string },
@@ -259,12 +262,12 @@ async function setBulkRetired(
 ) {
   const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
   if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
-  // Reinstate is the way back from RETIRED only. Nothing derives LOW_STOCK / OUT_OF_STOCK
-  // in the backend, so a reinstated row is ACTIVE; the status is never client-supplied.
+  // Reinstate is the way back from RETIRED only. The status it returns to is DERIVED from the
+  // stock (`bulkStatusForTotal`: out of stock at zero, else active), never hardcoded or client-supplied.
   if (!retired && doc.status !== "RETIRED") {
     throw new ConvexError({ code: "NOT_RETIRED", message: `Bulk asset ${doc.assetTag} is not retired, so it can't be reinstated.` });
   }
-  const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: "ACTIVE" as const };
+  const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: bulkStatusForTotal(doc.totalQuantity ?? 0) };
   const diff = diffFields(doc, { ...doc, ...set }, ["status", "isActive"]);
   if (!diff) return { id: a.id, undoable: false };
   await ctx.db.patch(doc._id, { ...set, updatedAt: a.now });

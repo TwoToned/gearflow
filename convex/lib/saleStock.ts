@@ -205,6 +205,15 @@ export async function unsellSerializedAsset(
 }
 
 /**
+ * The ONE derivation of a bulk row's stock-driven status: out of stock at zero, otherwise
+ * active. Sale/restore (`adjustBulkTotal`) and Reinstate (`bulkAssetsWrites`) both read it,
+ * so a reinstated empty row is never claimed ACTIVE.
+ */
+export function bulkStatusForTotal(totalQuantity: number): "ACTIVE" | "OUT_OF_STOCK" {
+  return totalQuantity <= 0 ? "OUT_OF_STOCK" : "ACTIVE";
+}
+
+/**
  * Sell-from-rental-stock, BULK: decrements `totalQuantity` AND `availableQuantity`
  * together, FLOORED at the currently-deployed quantity (`totalQuantity -
  * availableQuantity` — units out on a job right now can't be sold out from under
@@ -255,8 +264,7 @@ export async function adjustBulkTotal(
     availableQuantity: availableAfter,
     updatedAt: args.now,
   };
-  if (totalAfter <= 0) patch.status = "OUT_OF_STOCK";
-  else if (bulk.status === "OUT_OF_STOCK") patch.status = "ACTIVE";
+  if (totalAfter <= 0 || bulk.status === "OUT_OF_STOCK") patch.status = bulkStatusForTotal(totalAfter);
 
   await ctx.db.patch(bulk._id, patch);
   await bumpBulkCounters(

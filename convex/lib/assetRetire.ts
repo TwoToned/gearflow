@@ -1,7 +1,21 @@
+import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { bumpAssetCounters } from "./counters";
 import { diffFields } from "./fieldEditUndo";
+
+/**
+ * Retire and Reinstate are the ONLY paths into and out of RETIRED (each has its gates, its
+ * T&T handling and an exact Undo), and `isActive` follows them: an edit (serialised or bulk)
+ * may restate the stored values but never change them.
+ */
+export function assertNoRetireBypass(doc: { status?: string | null; isActive?: boolean | null }, set: { status?: string; isActive?: boolean }): void {
+  const statusMoves = set.status !== undefined && (set.status === "RETIRED") !== (doc.status === "RETIRED");
+  const activeMoves = set.isActive !== undefined && set.isActive !== (doc.isActive ?? true);
+  if (statusMoves || activeMoves) {
+    throw new ConvexError({ code: "USE_RETIRE", message: "Use Retire or Reinstate to move an asset into or out of retired." });
+  }
+}
 
 /** A linked T&T row as the retire found it (absent fields are `null`). */
 export interface RetiredTestTag {

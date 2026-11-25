@@ -9,7 +9,7 @@ import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
-import { retireAssetCore, type RetiredTestTag } from "./lib/assetRetire";
+import { assertNoRetireBypass, retireAssetCore, type RetiredTestTag } from "./lib/assetRetire";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { assertRefInOrg } from "./lib/orgRef";
@@ -51,6 +51,13 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
  * entirely (R-8.6.2). `assetTag` presence is checked separately by the dup-tag path;
  * only its length is a shared concern here.
  */
+/** The warranty rule, ONE copy: create checks the two it is given; update checks the EFFECTIVE pair (a patch that sets one is checked against the stored other). */
+function assertWarrantyOrder(purchaseDate: number | null | undefined, warrantyExpiry: number | null | undefined): void {
+  if (purchaseDate != null && warrantyExpiry != null && warrantyExpiry < purchaseDate) {
+    throw new ConvexError("Warranty can't end before the purchase date");
+  }
+}
+
 function assertAssetFields(f: {
   assetTag?: string;
   serialNumber?: string;
@@ -63,9 +70,7 @@ function assertAssetFields(f: {
   purchaseDate?: number;
   warrantyExpiry?: number;
 }): void {
-  if (f.purchaseDate != null && f.warrantyExpiry != null && f.warrantyExpiry < f.purchaseDate) {
-    throw new ConvexError("Warranty can't end before the purchase date");
-  }
+  assertWarrantyOrder(f.purchaseDate, f.warrantyExpiry);
   if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
   assertStrLen(f.serialNumber, "serialNumber", { max: 100 });
   assertStrLen(f.customName, "customName", { max: 200 });
@@ -519,6 +524,9 @@ export const updateNative = mutation({
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertAssetFields(set);
+    assertNoRetireBypass(doc, set);
+    const effective = (k: "purchaseDate" | "warrantyExpiry") => (clear.includes(k) ? undefined : (set[k] ?? doc[k]));
+    assertWarrantyOrder(effective("purchaseDate"), effective("warrantyExpiry"));
 
     // DUP GUARD only when the tag changed (mirrors updateAsset).
     if (set.assetTag && set.assetTag !== doc.assetTag) {

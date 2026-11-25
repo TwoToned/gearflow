@@ -150,6 +150,18 @@ describe("undoClientMergeNative", () => {
     await expect(undo(t)).rejects.toThrow(/already undone/);
   });
 
+  test("mergedInto skips a merge that was undone (the marker), and finds the live one after a re-merge", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await undo(t);
+    const setActiveFlag = (active: boolean) => t.run(async (ctx) => { const g = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", "gone")).first(); await ctx.db.patch(g!._id, { isActive: active }); });
+    await setActiveFlag(false);
+    expect(await as(t).query(api.clientMergeWrites.mergedInto, { orgId: ORG, id: "gone" })).toBeNull(); // the only merge on record was undone
+    await setActiveFlag(true);
+    await merge(t, { auditId: "aM2", receivedAuditId: "aR2", now: NOW + 5 });
+    expect(await as(t).query(api.clientMergeWrites.mergedInto, { orgId: ORG, id: "gone" })).toMatchObject({ id: "keep", forwardAuditId: "aM2" });
+  });
+
   test("another org cannot undo this org's merge, and a planted foreign id in the snapshot is never touched", async () => {
     const t = makeT(); await seed(t);
     await merge(t);

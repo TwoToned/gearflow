@@ -721,7 +721,6 @@ export const undoCreateManyNative = mutation({
 
     const kept: { id: string; crewMemberId: string; reason: string }[] = [];
     const projectIds = new Set<string>();
-    const serviceIds = new Set<string>();
     let removed = 0;
     for (const id of d.createdIds) {
       const doc = await ctx.db.query("crewAssignments").withIndex("by_cuid", (q) => q.eq("id", id)).first();
@@ -729,7 +728,6 @@ export const undoCreateManyNative = mutation({
       const reason = await whyCallStays(ctx, doc);
       if (reason) { kept.push({ id, crewMemberId: doc.crewMemberId, reason }); continue; }
       projectIds.add(doc.projectId);
-      if (doc.serviceId) serviceIds.add(doc.serviceId);
       await ctx.db.delete(doc._id);
       await bumpCountersForTable(ctx, "crewAssignments", doc, null);
       removed++;
@@ -737,7 +735,8 @@ export const undoCreateManyNative = mutation({
     const reasons = [...new Set(kept.map((k) => k.reason))];
     // Nothing removed: no marker, so the Undo can be retried once whatever kept the calls is resolved.
     if (removed === 0) return { removed, kept, reasons };
-    await recalcAfterBulkDelete(ctx, a.orgId, serviceIds, projectIds, a.now);
+    // No service recalc: a call attached to a service is KEPT (`whyCallStays`), so no removed call carries one; only the job's totals move.
+    await recalcAfterBulkDelete(ctx, a.orgId, new Set(), projectIds, a.now);
     await logAssignment(ctx, { orgId: a.orgId, actor, auditId: markerId, now: a.now, action: "UNDO", id: forward.entityId, name: forward.entityName, summary: `Undid assigning ${removed} crew call${removed === 1 ? "" : "s"}`, projectId: forward.projectId ?? undefined, details: { undoOf: a.forwardAuditId, kept } });
     return { removed, kept, reasons };
   },

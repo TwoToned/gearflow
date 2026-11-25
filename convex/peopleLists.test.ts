@@ -214,16 +214,32 @@ describe("supplier list: a capped orders read drops the OLDEST orders, never the
     await t.run(async (ctx) => {
       // The OLDEST row (inserted first) is a committed order this year; 5000 newer rows push it past the cap.
       await ctx.db.insert("supplierOrders", { id: "oldest", organizationId: ORG, supplierId: "s2", orderNumber: "OLD", type: "PURCHASE", status: "ORDERED", orderDate: day(-5), total: 700 });
-      for (let i = 0; i < 4999; i++) await ctx.db.insert("supplierOrders", { id: `fill${i}`, organizationId: ORG, supplierId: "s2", orderNumber: `F${i}`, type: "PURCHASE", status: "DRAFT" });
+      for (let i = 0; i < 4999; i++) await ctx.db.insert("supplierOrders", { id: `fill${i}`, organizationId: ORG, supplierId: "s2", orderNumber: `F${i}`, type: "PURCHASE", status: "DRAFT", orderDate: day(-2) });
       await ctx.db.insert("supplierOrders", { id: "newest", organizationId: ORG, supplierId: "s2", orderNumber: "NEW", type: "PURCHASE", status: "ORDERED", orderDate: day(-1), total: 100 });
     });
     const page = await as(t, asUser).query(api.peopleLists.supplierPage, { orgId: ORG, now: NOW, segment: "all" });
     const s2 = page.items.find((r) => r.id === "s2");
     expect(page.truncated).toBe(true);
     expect(s2?.spendYtd).toBe(100); // the newest counted; the dropped oldest (700) is not
-    expect(page.spendPartial).toBe(Date.now() >= Date.UTC(2026, 0, 1));
+    expect(page.spendPartial).toBe(true); // every order read is dated inside the year
     const counts = await as(t, asUser).query(api.peopleLists.supplierSegmentCounts, { orgId: ORG, now: NOW });
     expect(counts.truncated).toBe(1);
+  });
+});
+
+describe("supplier list: spendPartial uses the SAME key the spend does", () => {
+  test("a capped read that reached an order dated before the year is NOT partial", async () => {
+    const t = makeT();
+    await seed(t, "manager");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("supplierOrders", { id: "dropped", organizationId: ORG, supplierId: "s2", orderNumber: "D", type: "PURCHASE", status: "ORDERED", orderDate: day(-5), total: 9 });
+      // Still inside the cap: an order DATED last year (its creation time is irrelevant to spend).
+      await ctx.db.insert("supplierOrders", { id: "lastyear", organizationId: ORG, supplierId: "s2", orderNumber: "L", type: "PURCHASE", status: "ORDERED", orderDate: Date.UTC(2025, 5, 1), total: 5 });
+      for (let i = 0; i < 4999; i++) await ctx.db.insert("supplierOrders", { id: `fill${i}`, organizationId: ORG, supplierId: "s2", orderNumber: `F${i}`, type: "PURCHASE", status: "DRAFT", orderDate: day(-1) });
+    });
+    const page = await as(t, asUser).query(api.peopleLists.supplierPage, { orgId: ORG, now: NOW, segment: "all" });
+    expect(page.truncated).toBe(true);
+    expect(page.spendPartial).toBe(false); // the year is fully covered: only older history was dropped
   });
 });
 

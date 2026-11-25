@@ -1,9 +1,72 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { assetHistoryReason } from "./lib/assetHistory";
 import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgPermission } from "./lib/auth";
 import { ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import { pick, FILE_META_FIELDS } from "./lib/dto";
+
+const CHECK_WINDOW = 30;
+const SCAN_WINDOW = 5;
+
+/**
+ * The facts `assetHealth()` and the Overview read that are not already docs in the
+ * bundle (UX Phase 12). All bounded and org-checked; nothing is stored. `canDelete` is the
+ * server's own history rule (`assetHistoryReason`), so the Retire dialog's Delete
+ * button and `deleteNative` can never disagree.
+ */
+async function readHealthFacts(
+  ctx: QueryCtx,
+  orgId: string,
+  a: {
+    asset: Doc<"assets">;
+    modelId: string | null;
+    maintLinks: Doc<"maintenanceRecordAssets">[];
+    maintenanceRecords: Doc<"maintenanceRecords">[];
+    lineItems: Doc<"projectLineItems">[];
+    projects: Doc<"projects">[];
+  },
+) {
+  const assetId = a.asset.id;
+  const [schedules, checks, scans, history] = await Promise.all([
+    a.modelId
+      ? ctx.db.query("serviceSchedules").withIndex("by_organizationId_modelId", (q) => q.eq("organizationId", orgId).eq("modelId", a.modelId!)).take(20)
+      : Promise.resolve([]),
+    ctx.db.query("checkRecords").withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", assetId)).order("desc").take(CHECK_WINDOW),
+    ctx.db.query("assetScanLogs").withIndex("by_assetId", (q) => q.eq("assetId", assetId)).order("desc").take(SCAN_WINDOW),
+    assetHistoryReason(ctx, orgId, { assetId }),
+  ]);
+
+  const linked = new Set(a.maintLinks.filter((l) => (l.kind ?? "LINK") === "LINK").map((l) => l.maintenanceRecordId));
+  const records = a.maintenanceRecords.filter((r) => linked.has(r.id));
+  const lastServiceAt = records
+    .filter((r) => r.type === "PREVENTATIVE" && r.status === "COMPLETED" && r.completedDate != null)
+    .reduce<number | null>((m, r) => Math.max(m ?? 0, r.completedDate!), null);
+  const openRepairs = records.filter((r) => r.type === "REPAIR" && r.status !== "COMPLETED" && r.status !== "CANCELLED").length;
+
+  const prepOrReturn = checks.filter((c) => c.context === "PREP" || c.context === "RETURN");
+  const newestScan = scans.filter((s) => s.organizationId === orgId).reduce<number | null>((m, s) => Math.max(m ?? 0, s.scannedAt ?? 0), null);
+  const newestCheck = checks.reduce<number | null>((m, c) => Math.max(m ?? 0, c.performedAt ?? 0), null);
+
+  // Out on a job: the job's end date is when the unit is due back.
+  const active = a.lineItems.find((li) => li.status === "CHECKED_OUT" && !li.returnedAt);
+  const dueBackAt = active ? a.projects.find((p) => p.id === active.projectId)?.rentalEndDate ?? null : null;
+
+  return {
+    serviceSchedules: schedules
+      .filter((s) => s.isActive !== false)
+      .map((s) => ({ intervalMonths: s.intervalMonths, anchorDate: s.anchorDate })),
+    lastServiceAt,
+    openRepairs,
+    hasPrepOrReturnCheck: prepOrReturn.length > 0,
+    lastCheckResult: prepOrReturn[0]?.result ?? null,
+    lastScanAt: Math.max(newestScan ?? 0, newestCheck ?? 0) || null,
+    dueBackAt,
+    /** The Delete gate, answered by the server's one rule. `null` = a bare row (deletable). */
+    deleteBlockedBy: history,
+  };
+}
 
 /**
  * BROWSER-facing composite for the ASSET detail page (Phase 2 native reads).
@@ -82,7 +145,12 @@ async function readAssetDetail(ctx: QueryCtx, assetId: string, orgId: string) {
     pick(f, FILE_META_FIELDS),
   );
 
+  const facts = await readHealthFacts(ctx, orgId, {
+    asset, modelId: asset.modelId ?? null, maintLinks, maintenanceRecords, lineItems, projects,
+  });
+
   return {
+    facts,
     asset,
     model: model && model.organizationId === orgId ? model : null,
     category: category && category.organizationId === orgId ? category : null,

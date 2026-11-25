@@ -54,6 +54,20 @@ describe("assetHealth", () => {
     expect(health({ testTag: { status: "OVERDUE", nextDueDate: NOW - DAY } }).headline).toBe("Can't go out");
   });
 
+  test("test & tag: a retired registration, or one never tested, never passes (guarded inside assetHealth)", () => {
+    expect(row(health({ testTag: { status: "RETIRED", lastTestDate: NOW - DAY, nextDueDate: NOW + 300 * DAY } }), "testTag")).toMatchObject({ severity: "unknown", actionLabel: "Register" });
+    expect(row(health({ testTag: { status: "CURRENT", lastTestDate: null, nextDueDate: NOW + 300 * DAY } }), "testTag")?.severity).toBe("unknown");
+    expect(row(health({ testTag: { status: "CURRENT", nextDueDate: NOW + 300 * DAY } }), "testTag")?.severity).toBe("unknown");
+    expect(health({ testTag: { status: "CURRENT", lastTestDate: null, nextDueDate: NOW + 300 * DAY } }).headline).toBe("Nearly ready");
+    // an overdue unit still BLOCKS even with no recorded test date
+    expect(row(health({ testTag: { status: "OVERDUE", lastTestDate: null, nextDueDate: NOW - DAY } }), "testTag")?.severity).toBe("blocking");
+  });
+
+  test("condition: a check with no result is not checked, never a pass", () => {
+    expect(row(health({ checks: { lastResult: null, hasPrepOrReturn: true } }), "condition")?.severity).toBe("unknown");
+    expect(row(health({ checks: { lastResult: "NOTES_ONLY", hasPrepOrReturn: true } }), "condition")?.severity).toBe("pass");
+  });
+
   test("service: due from last + interval, else the anchor; overdue and soon warn", () => {
     expect(row(health({ service: { schedules: [{ intervalMonths: 1, anchorDate: NOW }], lastServiceAt: NOW - 90 * DAY } }), "service")?.severity).toBe("warning");
     expect(row(health({ service: { schedules: [{ intervalMonths: 12, anchorDate: NOW - 10 * DAY }], lastServiceAt: null } }), "service")).toMatchObject({ severity: "warning", title: "Service overdue 10 days" });

@@ -100,12 +100,16 @@ function testTagCheck(i: AssetHealthInput): HealthCheck | null {
   }
   const view = { actionLabel: "View", fix: { kind: "view-test-tag" } as const };
   if (tt.status === "FAILED") return { id: "testTag", severity: "blocking", title: "Test & tag failed", ...view };
+  // A retired registration is not a current one, whatever dates it still carries.
+  if (tt.status === "RETIRED") return { id: "testTag", severity: "unknown", title: "Test & tag not checked", detail: "registration retired", actionLabel: "Register", fix: { kind: "register-test-tag" } };
   if (tt.status === "NOT_YET_TESTED" || tt.nextDueDate == null) {
     return { id: "testTag", severity: "unknown", title: "Test & tag not checked", detail: "never tested", ...view };
   }
   const left = daysBetween(i.now, tt.nextDueDate);
   if (tt.nextDueDate < i.now) return { id: "testTag", severity: "blocking", title: `Test & tag overdue ${plural(-left, "day")}`, ...view };
   if (left <= WARN_DAYS) return { id: "testTag", severity: "warning", title: `Test & tag due in ${plural(left, "day")}`, ...view };
+  // Never a pass without a recorded test, however far off the due date is.
+  if (tt.lastTestDate == null) return { id: "testTag", severity: "unknown", title: "Test & tag not checked", detail: "never tested", ...view };
   return { id: "testTag", severity: "pass", title: "Test & tag current" };
 }
 
@@ -129,7 +133,8 @@ function conditionCheck(i: AssetHealthInput): HealthCheck {
   const tab = { actionLabel: "Checks", fix: { kind: "tab", tab: "checks" } as const };
   if (i.condition === "DAMAGED") return { id: "condition", severity: "blocking", title: "Damaged, needs repair", actionLabel: "Report", fix: { kind: "report-issue" } };
   if (i.condition === "POOR") return { id: "condition", severity: "warning", title: "Poor condition", ...tab };
-  if (!i.checks.hasPrepOrReturn) return { id: "condition", severity: "unknown", title: "Condition not checked", detail: "no prep or return check on record", ...tab };
+  // No check on record, or one with no result, is `not checked`, never a pass.
+  if (!i.checks.hasPrepOrReturn || i.checks.lastResult == null) return { id: "condition", severity: "unknown", title: "Condition not checked", detail: "no prep or return check on record", ...tab };
   if (i.checks.lastResult === "FAIL") return { id: "condition", severity: "warning", title: "Last check failed", ...tab };
   return { id: "condition", severity: "pass", title: "Condition checked" };
 }

@@ -76,6 +76,22 @@ describe("kit reads: cost for a noFinancials key", () => {
     expect(JSON.stringify(out[7])).toContain(String(KIT_PRICE));
   });
 
+  test("the kit allocation read: replacement cost AND the cost-ratio suggestion are absent for a noFinancials key, the saved split is not", async () => {
+    const t = await seed();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER } as never);
+      await ctx.db.insert("kitRevenueAllocations", { id: "ka1", organizationId: ORG, kitId: "k1", modelId: "m1", allocationPercent: 100 } as never);
+    });
+    const read = (who: Who) => t.withIdentity(who).query(api.kitAllocations.getKitAllocation, { orgId: ORG, kitId: "k1" });
+    const theirs = await read(asAgent);
+    expect(JSON.stringify(theirs)).not.toContain(String(REPLACEMENT));
+    expect("replacementCost" in theirs.rows[0]).toBe(false);
+    expect("suggestedPercent" in theirs.rows[0]).toBe(false);
+    expect(theirs.rows[0].allocationPercent).toBe(100);
+    const mine = await read(asUser);
+    expect(mine.rows[0]).toMatchObject({ replacementCost: REPLACEMENT, suggestedPercent: 100 });
+  });
+
   test("ordering: a member sorts kits by price; a noFinancials key falls back to tag order", async () => {
     const t = await seed(); // KIT-1 costs KIT_PRICE, KIT-2 costs 1: price order is the REVERSE of tag order
     const tags = async (who: Who) => (await t.withIdentity(who).query(api.kits.listPage, { orgId: ORG, sortBy: "purchasePrice" })).items.map((k) => k.assetTag);

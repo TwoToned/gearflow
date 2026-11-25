@@ -81,18 +81,19 @@ export const getKitAllocation = query({
       })),
     );
 
-    // What a model costs to replace is COST: ABSENT for a `noFinancials` key (the suggested % is a ratio, not money).
+    // What a model costs to replace is COST, and the suggested % is a RATIO of those costs (it reveals
+    // their relative size, and so does ordering by it): both are ABSENT for a `noFinancials` key, and the
+    // rows fall back to name order. The saved `allocationPercent` is the operator's own revenue split, not cost.
     const costHidden = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
     const rows = [...quantities]
       .map(([modelId, quantity]) => ({
         modelId,
         modelName: models.get(modelId)!.name,
-        ...(costHidden ? {} : { replacementCost: models.get(modelId)!.replacementCost }),
+        ...(costHidden ? {} : { replacementCost: models.get(modelId)!.replacementCost, suggestedPercent: suggested.get(modelId) ?? 0 }),
         quantity,
         allocationPercent: savedByModel.get(modelId) ?? null,
-        suggestedPercent: suggested.get(modelId) ?? 0,
       }))
-      .sort((a, b) => b.suggestedPercent - a.suggestedPercent || a.modelName.localeCompare(b.modelName));
+      .sort((a, b) => (b.suggestedPercent ?? 0) - (a.suggestedPercent ?? 0) || a.modelName.localeCompare(b.modelName));
 
     return {
       kitId,

@@ -138,102 +138,102 @@ export async function transitionProjectStatus(
     now: number;
   },
 ): Promise<{ id: string }> {
-    const id = project.id;
-    const from = project.status ?? "";
-    // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
-    // with the deleted server action). Only on an actual status change (template excluded above).
-    if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
-      await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
+  const id = project.id;
+  const from = project.status ?? "";
+  // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
+  // with the deleted server action). Only on an actual status change (template excluded above).
+  if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
+    await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
+  }
+
+  // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
+  // with the rest of the 4-tier lock system — #987 already made a client's
+  // stored document immutable regardless of project status, so a status
+  // revert out of COMPLETED/INVOICED needs no separate protection. A status
+  // change is always structural — never gated.
+
+  // #986 (decision 3): a project may not advance to CONFIRMED until a quote
+  // revision has been ACCEPTED — confirming a job the client never agreed to
+  // price is the failure the whole revision model exists to prevent.
+  // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
+  // or this project's own PM). #1230 drops the freeform justification text
+  // this override used to require — `logActivity` already records who/what/
+  // when on every write, so a permission check is the whole gate now.
+  // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
+  // project that is already CONFIRMED never re-prompts, and a later revision
+  // superseding the accepted one doesn't retroactively invalidate the status.
+  const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
+  if (confirmingWithoutQuote) {
+    await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
+  }
+
+  await ctx.db.patch(project._id, { status, updatedAt: now });
+  await bumpProjectCounters(ctx, orgId, project, { ...project, status });
+
+  // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
+  // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
+  // status patch above so the snapshot's own `project` entry carries the new
+  // status too (statusFrom/statusTo record the transition separately).
+  if (crossesIntoSnapshotStatus(from, status)) {
+    const patched = await ctx.db.get(project._id);
+    if (patched) {
+      await captureProjectSnapshot(ctx, {
+        orgId,
+        project: patched,
+        reason: status as "CONFIRMED" | "COMPLETED",
+        statusFrom: from,
+        statusTo: status,
+        actor,
+        now,
+      });
     }
+  }
 
-    // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
-    // with the rest of the 4-tier lock system — #987 already made a client's
-    // stored document immutable regardless of project status, so a status
-    // revert out of COMPLETED/INVOICED needs no separate protection. A status
-    // change is always structural — never gated.
+  // The whole rule (#1230, D-table): pricing locks when the project REACHES
+  // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
+  // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
+  // does NOT clear it (D57): "this job has a quote out" stays true; only a
+  // person lowers the flag, via `unlockPricingNative`.
+  let pricingJustLocked = false;
+  if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
+    await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
+    pricingJustLocked = true;
+  }
 
-    // #986 (decision 3): a project may not advance to CONFIRMED until a quote
-    // revision has been ACCEPTED — confirming a job the client never agreed to
-    // price is the failure the whole revision model exists to prevent.
-    // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
-    // or this project's own PM). #1230 drops the freeform justification text
-    // this override used to require — `logActivity` already records who/what/
-    // when on every write, so a permission check is the whole gate now.
-    // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
-    // project that is already CONFIRMED never re-prompts, and a later revision
-    // superseding the accepted one doesn't retroactively invalidate the status.
-    const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
-    if (confirmingWithoutQuote) {
-      await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
+  await writeActivityLog(ctx, {
+    id: auditId,
+    organizationId: orgId,
+    action: "STATUS_CHANGE",
+    entityType: "project",
+    entityId: id,
+    entityName: project.projectNumber,
+    userId: actor.userId,
+    userName: actor.userName,
+    summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
+    details: { changes: [{ field: "status", from, to: status }] },
+    metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
+    projectId: id,
+    createdAt: now,
+  });
+
+  // Fired only on an actual status change (folded from the server tail's
+  // `emitWebhookEvent("project.status_changed")`, now in the same transaction).
+  // Best-effort: a webhook read/insert failure must never roll back the status write.
+  if (emitSideEffects === true && from !== status) {
+    try {
+      await enqueueWebhookEvent(ctx, orgId, "project.status_changed", {
+        projectId: id,
+        projectNumber: project.projectNumber,
+        name: project.name,
+        from,
+        to: status,
+      }, now);
+    } catch {
+      // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
     }
+  }
 
-    await ctx.db.patch(project._id, { status, updatedAt: now });
-    await bumpProjectCounters(ctx, orgId, project, { ...project, status });
-
-    // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
-    // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
-    // status patch above so the snapshot's own `project` entry carries the new
-    // status too (statusFrom/statusTo record the transition separately).
-    if (crossesIntoSnapshotStatus(from, status)) {
-      const patched = await ctx.db.get(project._id);
-      if (patched) {
-        await captureProjectSnapshot(ctx, {
-          orgId,
-          project: patched,
-          reason: status as "CONFIRMED" | "COMPLETED",
-          statusFrom: from,
-          statusTo: status,
-          actor,
-          now,
-        });
-      }
-    }
-
-    // The whole rule (#1230, D-table): pricing locks when the project REACHES
-    // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
-    // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
-    // does NOT clear it (D57): "this job has a quote out" stays true; only a
-    // person lowers the flag, via `unlockPricingNative`.
-    let pricingJustLocked = false;
-    if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
-      await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
-      pricingJustLocked = true;
-    }
-
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "STATUS_CHANGE",
-      entityType: "project",
-      entityId: id,
-      entityName: project.projectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
-      details: { changes: [{ field: "status", from, to: status }] },
-      metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
-      projectId: id,
-      createdAt: now,
-    });
-
-    // Fired only on an actual status change (folded from the server tail's
-    // `emitWebhookEvent("project.status_changed")`, now in the same transaction).
-    // Best-effort: a webhook read/insert failure must never roll back the status write.
-    if (emitSideEffects === true && from !== status) {
-      try {
-        await enqueueWebhookEvent(ctx, orgId, "project.status_changed", {
-          projectId: id,
-          projectNumber: project.projectNumber,
-          name: project.name,
-          from,
-          to: status,
-        }, now);
-      } catch {
-        // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
-      }
-    }
-
-    return { id };
+  return { id };
 }
 
 export const updateStatusNative = mutation({

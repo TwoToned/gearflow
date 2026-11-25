@@ -153,6 +153,29 @@ describe("NewJobWizard", () => {
     expect(create).toHaveBeenCalledTimes(1);
   });
 
+  it("pins the in-flight guard: pressing Next twice while the draft write is pending flushes exactly as often as pressing it once", async () => {
+    /** Types a valid job, presses Next `presses` times while the create is pending, then lets it finish. */
+    const run = async (presses: number) => {
+      [create, update].forEach((m) => m.mockClear());
+      let release: (v: { id: string }) => void = () => {};
+      create.mockImplementationOnce(() => new Promise<{ id: string }>((r) => { release = r; }));
+      const { unmount } = render(<NewJobWizard />);
+      fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Slow draft" } });
+      fireEvent.change(document.querySelector('input[name="projectNumber"]') as HTMLInputElement, { target: { value: "P-90" } });
+      for (let i = 0; i < presses; i++) fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+      release({ id: "draft1" });
+      await waitFor(() => expect(screen.getByRole("button", { name: "What 0" }).getAttribute("aria-current")).toBe("step"));
+      const counts = { create: create.mock.calls.length, update: update.mock.calls.length };
+      unmount();
+      return counts;
+    };
+    const once = await run(1);
+    const twice = await run(2);
+    expect(once.create).toBe(1);
+    expect(twice).toEqual(once); // an unguarded second press would queue another flush: one more update
+  });
+
   it("Create as enquiry finishes the draft from step one without gear", async () => {
     render(<NewJobWizard />);
     fireEvent.change(screen.getByPlaceholderText(NAME), { target: { value: "Quick one" } });

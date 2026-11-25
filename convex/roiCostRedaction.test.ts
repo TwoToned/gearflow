@@ -35,6 +35,64 @@ const modelRoi = (t: T, who: typeof asUser | typeof asAgent) =>
   t.withIdentity(who).query(api.roi.getModelRoi, { orgId: ORG, modelId: "m1", statuses: ["COMPLETED"] });
 const inventory = (t: T, who: typeof asUser | typeof asAgent) => t.withIdentity(who).query(api.roi.fleetInventory, { orgId: ORG });
 
+const BULK_PRICE = 4242.42; // sentinel
+
+async function seedBulk(t: T) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "B-1", totalQuantity: 4, availableQuantity: 4, purchasePricePerUnit: BULK_PRICE, status: "ACTIVE", isActive: true } as never);
+    await ctx.db.insert("assets", { id: "a2", organizationId: ORG, modelId: "m1", assetTag: "A-2", status: "AVAILABLE", isActive: true, purchasePrice: 1, parentAssetId: "a1" } as never);
+  });
+}
+
+describe("asset and bulk reads: purchase cost for a noFinancials key", () => {
+  const every = (t: T, who: typeof asUser | typeof asAgent) => {
+    const c = t.withIdentity(who);
+    return Promise.all([
+      c.query(api.assets.list, { orgId: ORG }),
+      c.query(api.assets.listPage, { orgId: ORG, sortBy: "purchasePrice" }),
+      c.query(api.assets.listGallery, { orgId: ORG }),
+      c.query(api.assets.getById, { id: "a1" }),
+      c.query(api.assets.getByAssetTag, { organizationId: ORG, assetTag: "A-1" }),
+      c.query(api.assets.listByModel, { modelId: "m1", orgId: ORG }),
+      c.query(api.assets.listByModelIds, { orgId: ORG, modelIds: ["m1"] }),
+      c.query(api.assets.listByIds, { orgId: ORG, ids: ["a1"] }),
+      c.query(api.assets.listByParentAssetId, { parentAssetId: "a1", orgId: ORG }),
+      c.query(api.bulkAssets.list, { orgId: ORG }),
+      c.query(api.bulkAssets.listPage, { orgId: ORG, sortBy: "purchasePricePerUnit" }),
+      c.query(api.bulkAssets.getById, { id: "b1" }),
+      c.query(api.bulkAssets.getByAssetTag, { organizationId: ORG, assetTag: "B-1" }),
+      c.query(api.bulkAssets.listByModel, { modelId: "m1", orgId: ORG }),
+      c.query(api.bulkAssets.listByModelIds, { orgId: ORG, modelIds: ["m1"] }),
+      c.query(api.bulkAssets.listByIds, { orgId: ORG, ids: ["b1"] }),
+      c.query(api.models.detail, { id: "m1" }),
+    ]);
+  };
+
+  test("a noFinancials key: no sentinel anywhere, in any read, and the cost column is not a sort key", async () => {
+    const t = await seed(true);
+    await seedBulk(t);
+    const reads = await every(t, asAgent);
+    for (const [i, r] of reads.entries()) {
+      const json = JSON.stringify(r);
+      expect(json, `read #${i}`).not.toContain(String(PURCHASE));
+      expect(json, `read #${i}`).not.toContain(String(BULK_PRICE));
+      expect(json, `read #${i}`).not.toContain(String(REPLACEMENT));
+    }
+    // the rows themselves are intact
+    expect((reads[0] as { assetTag: string }[]).map((r) => r.assetTag).sort()).toEqual(["A-1", "A-2"]);
+    expect((reads[1] as { assets: { assetTag: string }[] }).assets.map((r) => r.assetTag)).toEqual(["A-1", "A-2"]); // fell back to tag order
+  });
+
+  test("a member still sees purchase cost", async () => {
+    const t = await seed(true);
+    await seedBulk(t);
+    const reads = await every(t, asUser);
+    expect(JSON.stringify(reads[0])).toContain(String(PURCHASE));
+    expect(JSON.stringify(reads[9])).toContain(String(BULK_PRICE));
+    expect(JSON.stringify(reads[16])).toContain(String(REPLACEMENT));
+  });
+});
+
 describe("asset detail bundle cost fields", () => {
   const bundle = (t: T, who: typeof asUser | typeof asAgent) => t.withIdentity(who).query(api.assetDetail.bundle, { assetId: "a1", orgId: ORG });
 

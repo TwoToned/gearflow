@@ -20,7 +20,10 @@ export interface NativeKitDetail {
   id: string;
   name: string;
   assetTag: string;
+  /** The STORED status (the physical lifecycle the warehouse writes); never print it as the kit's state. */
   status: string;
+  /** The DERIVED state every surface prints (`convex/lib/kitState.ts`); null only if it could not be read. */
+  state: KitBundleData["state"];
   condition: string;
   isActive: boolean;
   description: string | null;
@@ -157,6 +160,7 @@ export function reconstructKit(bundle: KitBundleData): NativeKitDetail {
     name: k.name,
     assetTag: k.assetTag,
     status: k.status ?? "AVAILABLE",
+    state: bundle.state,
     condition: k.condition ?? "NEW",
     isActive: k.isActive ?? true,
     description: k.description ?? null,

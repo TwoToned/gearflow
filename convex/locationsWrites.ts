@@ -243,7 +243,11 @@ export const undoUpdateNative = mutation({
       apply: async (doc, plan) => {
         const unsupported = [...Object.keys(plan.set), ...plan.clear].filter((f) => !(LOCATION_EDIT_FIELDS as readonly string[]).includes(f));
         if (unsupported.length > 0) throw new ConvexError("This change can't be undone");
-        if (typeof plan.set.parentId === "string") await assertRefInOrg(ctx, "locations", plan.set.parentId, a.orgId);
+        if (typeof plan.set.parentId === "string") {
+          await assertRefInOrg(ctx, "locations", plan.set.parentId, a.orgId);
+          // The tree may have changed since: restoring the old parent must not close a loop (A cleared, X moved under A, Undo sets A under X).
+          await assertNoParentCycle(ctx, a.orgId, doc.id, plan.set.parentId);
+        }
         const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
         for (const f of plan.clear) patch[f] = undefined;
         await ctx.db.patch(doc._id, patch);

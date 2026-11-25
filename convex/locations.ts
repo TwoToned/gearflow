@@ -4,6 +4,11 @@ import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/a
 import { binLabelState, locationFill } from "./lib/locationFacts";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { loadKitStates } from "./lib/kitState";
+import { ReadBudget } from "./lib/readBudget";
+
+/** Documents the record page's kit list may read to derive states (one budget; an uncovered kit prints its stored status). */
+const KIT_STATE_BUDGET = 3000;
 
 /**
  * Thin CRUD for Location (Convex table "locations"). GENERATED — Phase 2/5.
@@ -108,8 +113,10 @@ export const detail = query({
       .map((a) => ({ id: a.id, assetTag: a.assetTag, status: a.status ?? "AVAILABLE", model: a.modelId ? { name: modelName.get(a.modelId) ?? "" } : null }));
     const bulkOut = bulkHere.filter((b) => b.isActive !== false).sort(byTag).slice(0, 50)
       .map((b) => ({ id: b.id, assetTag: b.assetTag, status: b.status ?? "ACTIVE", model: b.modelId ? { name: modelName.get(b.modelId) ?? "" } : null }));
-    const kitsOut = kitsHere.filter((k) => k.isActive !== false).sort(byTag).slice(0, 50)
-      .map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: k.status ?? "AVAILABLE" }));
+    // A kit's state is DERIVED (convex/lib/kitState.ts): the record prints that, never the stored status.
+    const shownKits = kitsHere.filter((k) => k.isActive !== false).sort(byTag).slice(0, 50);
+    const kitStates = await loadKitStates(ctx, orgId, shownKits, Date.now(), new ReadBudget(KIT_STATE_BUDGET));
+    const kitsOut = shownKits.map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: kitStates.get(k.id)?.key ?? k.status ?? "AVAILABLE" }));
 
     const projectsOut = [];
     for (const p of [...projectsHere].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, 20)) {

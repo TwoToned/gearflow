@@ -54,6 +54,39 @@ export function isReservedSaleLine(line: LineLike): boolean {
   return takesFromPool(line) && !OUT_LINE_STATUSES.has(line.status ?? "");
 }
 
+/** The fields of a sale row the pool is accounted by. */
+export type PoolRow = LineLike;
+
+/**
+ * Pure: what a lineage takes from the pool, per model: the MAX quantity over its rows for which `takesFromPool`
+ * holds (a copy in another version is the same add, so it adds nothing). Out rows count here: the stock left
+ * the pool when it was added, whether or not it has since left the building.
+ */
+export function poolTakeByModel(rows: readonly PoolRow[]): Map<string, number> {
+  const take = new Map<string, number>();
+  for (const r of rows) {
+    if (!takesFromPool(r)) continue;
+    take.set(r.modelId!, Math.max(take.get(r.modelId!) ?? 0, r.quantity ?? 0));
+  }
+  return take;
+}
+
+/**
+ * Pure: the change in the pool when one lineage's rows go from `before` to `after`, per model, nonzero entries
+ * only. Positive = stock restored to the pool, negative = more taken. THE one helper every write path applies,
+ * so the pool and Reserved (which reads the same per-lineage maximum) cannot drift.
+ */
+export function lineagePoolDelta(before: readonly PoolRow[], after: readonly PoolRow[]): Map<string, number> {
+  const b = poolTakeByModel(before);
+  const a = poolTakeByModel(after);
+  const delta = new Map<string, number>();
+  for (const model of new Set([...b.keys(), ...a.keys()])) {
+    const d = (b.get(model) ?? 0) - (a.get(model) ?? 0);
+    if (d !== 0) delta.set(model, d);
+  }
+  return delta;
+}
+
 export type SaleStockState = "OK" | "LOW" | "OUT";
 
 export interface SaleStockFacts {
@@ -111,13 +144,15 @@ export async function loadReservedByModel(
       budget.truncated = true;
       continue;
     }
-    const perLineage = new Map<string, number>();
+    // Per lineage: the pool-taking maximum, and whether any of its rows has left the building (then none of it is here).
+    const perLineage = new Map<string, { qty: number; out: boolean }>();
     for (const line of rows) {
-      if (line.organizationId !== orgId || !isReservedSaleLine(line)) continue;
+      if (line.organizationId !== orgId || !takesFromPool(line)) continue;
       const key = line.lineageId ?? line.id;
-      perLineage.set(key, Math.max(perLineage.get(key) ?? 0, line.quantity ?? 0));
+      const cur = perLineage.get(key) ?? { qty: 0, out: false };
+      perLineage.set(key, { qty: Math.max(cur.qty, line.quantity ?? 0), out: cur.out || !isReservedSaleLine(line) });
     }
-    reserved.set(modelId, [...perLineage.values()].reduce((n, q) => n + q, 0));
+    reserved.set(modelId, [...perLineage.values()].reduce((n, l) => n + (l.out ? 0 : l.qty), 0));
   }
   return { reserved, truncated: budget.truncated };
 }

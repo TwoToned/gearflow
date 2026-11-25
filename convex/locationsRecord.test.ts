@@ -114,6 +114,27 @@ describe("Location edit and its exact Undo", () => {
     expect((await loc(t, "wh")).parentId).toBeUndefined();
   });
 
+  test("Undo refuses as a whole if restoring the old parent would close a loop", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("locations", { id: "x", organizationId: ORG, name: "X", type: "WAREHOUSE", tags: [], createdAt: 1, updatedAt: 1 });
+    });
+    // wh sits under x; an edit clears wh's parent (the audit row remembers x)...
+    await t.run(async (ctx) => {
+      const w = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", "wh")).first();
+      await ctx.db.patch(w!._id, { parentId: "x" });
+    });
+    await edit(t, {}, "p2");
+    // ...then x is moved under wh, so Undo (parent back to x) would make wh and x each other's parent.
+    await t.run(async (ctx) => {
+      const x = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", "x")).first();
+      await ctx.db.patch(x!._id, { parentId: "wh" }); // x now sits under wh
+    });
+    await expect(undoEdit(t, "p2")).rejects.toThrow(/inside itself/);
+    expect((await loc(t, "wh")).parentId).toBeUndefined();
+  });
+
   test("another org's location cannot be edited or undone", async () => {
     const t = makeT();
     await seed(t);
@@ -188,6 +209,20 @@ describe("locations.detail for the record page", () => {
     expect(d!.children).toEqual([
       expect.objectContaining({ id: "bin", stored: 2, capacity: 4, fill: 50, lastMovement: NOW, labelState: "printed" }),
     ]);
+  });
+
+  test("the kits stored here print their DERIVED state (a LOST member, the reported-missing marker), not the stored status", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "lost", organizationId: ORG, modelId: "m", assetTag: "L-1", status: "LOST", isActive: true });
+      await ctx.db.insert("kits", { id: "kA", organizationId: ORG, assetTag: "K-A", name: "Has a LOST member", status: "AVAILABLE", isActive: true, locationId: "wh" });
+      await ctx.db.insert("kitSerializedItems", { id: "ksA", organizationId: ORG, kitId: "kA", assetId: "lost", addedById: "u1" });
+      await ctx.db.insert("kits", { id: "kB", organizationId: ORG, assetTag: "K-B", name: "Reported missing", status: "INCOMPLETE", isActive: true, locationId: "wh" });
+      await ctx.db.insert("kits", { id: "kC", organizationId: ORG, assetTag: "K-C", name: "Fine", status: "AVAILABLE", isActive: true, locationId: "wh" });
+    });
+    const d = await t.withIdentity(asUser).query(api.locations.detail, { id: "wh", orgId: ORG });
+    expect(Object.fromEntries(d!.kits.map((k) => [k.assetTag, k.status]))).toEqual({ "K-A": "INCOMPLETE", "K-B": "INCOMPLETE", "K-C": "AVAILABLE" });
   });
 
   test("another org gets nothing", async () => {

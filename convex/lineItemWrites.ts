@@ -21,6 +21,7 @@ import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
 import { loadKitBookingGate } from "./lib/kitState";
 import { takesFromPool } from "./lib/saleStockFacts";
+import { applyLineageAdd, applyLineageDelete, applyLineagePatch } from "./lib/lineagePool";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -88,17 +89,11 @@ async function applySaleStockOnAdd(
   if (fields.type !== "SALE") return undefined;
 
   if (fields.saleMode === "NEW_STOCK") {
-    // The ONE predicate Reserved counts by (`convex/lib/saleStockFacts.ts`): they cannot drift.
+    // The ONE predicate Reserved counts by (`convex/lib/saleStockFacts.ts`), applied PER LINEAGE
+    // (`convex/lib/lineagePool.ts`): they cannot drift.
     if (takesFromPool(fields)) {
-      await adjustModelSaleStock(ctx, {
-        modelId: fields.modelId!,
-        orgId: args.orgId,
-        delta: -fields.quantity,
-        projectId: args.projectId,
-        lineItemId: args.lineItemId,
-        actor: args.actor,
-        now: args.now,
-      });
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", args.lineItemId)).first();
+      if (line) await applyLineageAdd(ctx, { orgId: args.orgId, line, actor: args.actor, now: args.now });
     }
     return undefined;
   }
@@ -156,22 +151,15 @@ async function applyFromRentalStockSale(
  */
 async function restoreSaleStockOnDelete(
   ctx: MutationCtx,
-  line: { type?: string; saleMode?: string; modelId?: string; quantity?: number; projectId: string },
+  line: Doc<"projectLineItems">,
   orgId: string,
-  lineItemId: string,
+  _lineItemId: string,
   actor: SaleActor,
   now: number,
 ): Promise<void> {
-  if (line.type !== "SALE" || line.saleMode !== "NEW_STOCK" || !line.modelId) return;
-  await adjustModelSaleStock(ctx, {
-    modelId: line.modelId,
-    orgId,
-    delta: line.quantity ?? 0,
-    projectId: line.projectId,
-    lineItemId,
-    actor,
-    now,
-  });
+  if (!takesFromPool(line)) return;
+  // Per lineage: deleting one copy while another still holds the stock restores nothing.
+  await applyLineageDelete(ctx, { orgId, line, actor, now });
 }
 
 /**
@@ -186,7 +174,7 @@ async function restoreSaleStockOnDelete(
 async function applySaleStockOnPatch(
   ctx: MutationCtx,
   args: {
-    doc: { type?: string; saleMode?: string; modelId?: string; projectId: string };
+    doc: Doc<"projectLineItems">;
     orgId: string;
     id: string;
     actor: SaleActor;
@@ -196,23 +184,11 @@ async function applySaleStockOnPatch(
     newQty: number;
   },
 ): Promise<void> {
-  const { doc, orgId, id, actor, now, newModelId, currentQty, newQty } = args;
+  const { doc, orgId, actor, now, newModelId, newQty } = args;
+  // The ONE predicate (`takesFromPool`): a row that took nothing before and takes nothing after is a no-op.
   if (doc.type !== "SALE" || doc.saleMode !== "NEW_STOCK") return;
-
-  const oldModelId = doc.modelId ?? null;
-  if (oldModelId && newModelId && oldModelId === newModelId) {
-    const delta = currentQty - newQty; // qty grew -> consume more (negative); shrank -> restore
-    if (delta !== 0) {
-      await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta, projectId: doc.projectId, lineItemId: id, actor, now });
-    }
-    return;
-  }
-  if (oldModelId) {
-    await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta: currentQty, projectId: doc.projectId, lineItemId: id, actor, now });
-  }
-  if (newModelId) {
-    await adjustModelSaleStock(ctx, { modelId: newModelId, orgId, delta: -newQty, projectId: doc.projectId, lineItemId: id, actor, now });
-  }
+  // Per lineage: a copy's quantity or model changing moves the pool only by the change in the lineage's maximum.
+  await applyLineagePatch(ctx, { orgId, doc, modelId: newModelId, quantity: newQty, actor, now });
 }
 
 /**

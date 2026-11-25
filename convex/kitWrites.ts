@@ -32,6 +32,16 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
 
 /**
+ * The stored `INCOMPLETE` is the "reported missing" marker (convex/lib/kitState.ts): a MISSING return sets it and
+ * ONLY `markCompleteNative` (with its audit row and Undo) clears it. A kit edit may neither set it nor clear it;
+ * re-saving a kit that already carries it, unchanged, is fine.
+ */
+function assertReportedMissingUntouched(stored: string | undefined, next: string | undefined): void {
+  if (next === "INCOMPLETE" && stored !== "INCOMPLETE") throw new ConvexError("A kit becomes Incomplete only when it is returned missing.");
+  if (stored === "INCOMPLETE" && next !== undefined && next !== "INCOMPLETE") throw new ConvexError("Use Mark complete to clear a kit that was reported missing.");
+}
+
+/**
  * Mirrors `kitSchema` (src/lib/validations/kit.ts) string-length + weight/price bounds —
  * `v.string()`/`v.number()` only enforce type, not these business constraints, so a
  * browser-direct caller bypassing `useKitWrites()`'s client Zod parse would otherwise
@@ -145,6 +155,7 @@ export const createNative = mutation({
     const dupId = await getKitByCuid(ctx, fields.id);
     if (dupId) throw new ConvexError("Kit already exists");
     assertKitFields(fields);
+    assertReportedMissingUntouched(undefined, fields.status);
 
     // Org-validate client-supplied FKs (by_cuid is GLOBAL — cross-org refs leak).
     if (fields.categoryId) await assertRefInOrg(ctx, "categories", fields.categoryId, fields.organizationId);
@@ -194,6 +205,7 @@ export const updateNative = mutation({
     if (!doc) throw new ConvexError("Kit not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertKitFields(patch);
+    assertReportedMissingUntouched(doc.status, patch.status);
 
     if (patch.assetTag && patch.assetTag !== doc.assetTag) {
       const dup = await ctx.db

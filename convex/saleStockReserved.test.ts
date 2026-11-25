@@ -118,6 +118,65 @@ describe("Reserved is exactly what the pool gave out", () => {
   });
 });
 
+describe("the pool is accounted per lineage: pool + reserved stays constant through every step", () => {
+  const lines = (t: T, versionId: string) =>
+    t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", versionId)).collect());
+  const physical = async (t: T) => {
+    const r = await row(t);
+    return r.available + (r.reserved ?? NaN);
+  };
+  let seq = 0;
+  const id = () => `seq${++seq}`;
+
+  test("add, copy to a version, patch either row, make live, delete a version, delete the last row", async () => {
+    const t = makeT();
+    await seed(t);
+    const idA = await addSale(t, { saleMode: "NEW_STOCK" }, 3);
+    expect(await physical(t)).toBe(POOL);
+
+    // Copy to v2 (copyPlanGraph): the SAME add, so it takes nothing more.
+    const v2 = await as(t).mutation(api.versions.createNative, { organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: id(), now: NOW } as never);
+    const [copy] = (await lines(t, v2.id)).filter((l) => l.type === "SALE");
+    expect(copy.lineageId).toBe(idA);
+    expect(await row(t)).toMatchObject({ available: POOL - 3, reserved: 3 });
+    expect(await physical(t)).toBe(POOL);
+
+    const patch = (lineId: string, quantity: number) =>
+      as(t).mutation(api.lineItemWrites.patchNative, { id: lineId, orgId: ORG, set: { quantity }, clear: [], entityName: "SM58", allowOverbook: false, actor: ACTOR, auditId: id(), now: NOW } as never);
+    await patch(idA, 5); // the lineage's maximum grows 3 -> 5
+    expect(await physical(t)).toBe(POOL);
+    expect(await row(t)).toMatchObject({ available: POOL - 5, reserved: 5 });
+    await patch(copy.id, 8); // the copy is now the larger one: 5 -> 8
+    expect(await physical(t)).toBe(POOL);
+    expect(await row(t)).toMatchObject({ available: POOL - 8, reserved: 8 });
+    await patch(copy.id, 2); // shrinking the copy: the original still holds 5
+    expect(await physical(t)).toBe(POOL);
+    expect(await row(t)).toMatchObject({ available: POOL - 5, reserved: 5 });
+
+    // Make v2 live, then delete the (now non-live) v1: the lineage lives on in v2.
+    await as(t).mutation(api.versions.makeLiveNative, { organizationId: ORG, projectId: "p1", versionId: v2.id, actor: ACTOR, auditId: id(), now: NOW } as never);
+    expect(await physical(t)).toBe(POOL);
+    await as(t).mutation(api.versions.deleteNative, { organizationId: ORG, projectId: "p1", versionId: "v1", actor: ACTOR, auditId: id(), now: NOW } as never);
+    expect(await physical(t)).toBe(POOL);
+    expect(await row(t)).toMatchObject({ available: POOL - 2, reserved: 2 }); // only the copy's 2 remain
+
+    // Deleting the last row of the lineage gives everything back.
+    await as(t).mutation(api.lineItemWrites.removeNative, { id: copy.id, orgId: ORG, actor: ACTOR, auditId: id(), now: NOW } as never);
+    expect(await row(t)).toMatchObject({ available: POOL, reserved: 0 });
+  });
+
+  test("deleting one copy while another still holds the stock restores nothing (the finding's example)", async () => {
+    const t = makeT();
+    await seed(t);
+    const idA = await addSale(t, { saleMode: "NEW_STOCK" }, 5);
+    const v2 = await as(t).mutation(api.versions.createNative, { organizationId: ORG, projectId: "p1", actor: ACTOR, auditId: id(), now: NOW } as never);
+    const [copy] = (await lines(t, v2.id)).filter((l) => l.type === "SALE");
+    await as(t).mutation(api.versions.deleteNative, { organizationId: ORG, projectId: "p1", versionId: v2.id, actor: ACTOR, auditId: id(), now: NOW } as never);
+    expect(await row(t)).toMatchObject({ available: POOL - 5, reserved: 5 }); // copy B gone, A still holds 5: pool unchanged
+    expect(copy.id).not.toBe(idA);
+  });
+});
+
 describe("the one predicate", () => {
   test("takesFromPool is what the write path decrements by; isReservedSaleLine adds only 'not out'", () => {
     const base = { type: "SALE", saleMode: "NEW_STOCK", modelId: "m1", status: "CONFIRMED" };

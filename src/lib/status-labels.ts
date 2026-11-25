@@ -31,6 +31,7 @@ export const kitStatusLabels: Record<string, string> = {
   IN_MAINTENANCE: "In maintenance",
   RETIRED: "Retired",
   INCOMPLETE: "Incomplete",
+  RESERVED: "Reserved",
 };
 
 // --- Project Status ---

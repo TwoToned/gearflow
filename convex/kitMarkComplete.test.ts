@@ -29,6 +29,7 @@ async function seed(t: T, status: "INCOMPLETE" | "AVAILABLE" = "INCOMPLETE") {
   });
 }
 const status = (t: T) => t.run(async (ctx) => (await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first())!.status);
+const status_ = status; // for tests whose own loop variable is called `status`
 const complete = (t: T, auditId = "mc1", who = asUser) =>
   t.withIdentity(who).mutation(api.kitWrites.markCompleteNative, { orgId: ORG, id: "k1", auditId, now: NOW, actor: ACTOR });
 const undo = (t: T, auditId = "mc1", who = asUser) =>
@@ -63,6 +64,46 @@ describe("kit Mark complete", () => {
     });
     await expect(undo(t)).rejects.toThrow(/changed since/);
     expect(await status(t)).toBe("CHECKED_OUT");
+  });
+
+  // The guard that makes Mark complete the ONLY way the marker clears: without it, any kit editor could flip a
+  // CHECKED_OUT or IN_MAINTENANCE kit to AVAILABLE through this mutation, or set the marker by hand.
+  test("Mark complete refuses a kit that is not reported missing, whatever its status: it never sets AVAILABLE on a CHECKED_OUT or IN_MAINTENANCE kit", async () => {
+    for (const status of ["CHECKED_OUT", "IN_MAINTENANCE", "RETIRED"] as const) {
+      const t = makeT();
+      await seed(t, "AVAILABLE");
+      await t.run(async (ctx) => {
+        const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+        await ctx.db.patch(k!._id, { status });
+      });
+      expect(await complete(t)).toEqual({ id: "k1", changed: false });
+      expect(await status_(t)).toBe(status);
+    }
+  });
+
+  test("a kit edit can neither set nor clear the marker; re-saving it unchanged is fine", async () => {
+    const t = makeT();
+    await seed(t, "INCOMPLETE");
+    const edit = (patch: Record<string, unknown>, id = "k1") =>
+      t.withIdentity(asUser).mutation(api.kitWrites.updateNative, { id, orgId: ORG, patch, actor: ACTOR, auditId: `u${Math.random()}`, now: NOW } as never);
+    await expect(edit({ status: "AVAILABLE" })).rejects.toThrow(/Mark complete/);
+    await edit({ status: "INCOMPLETE", name: "Cables 2" });
+    expect(await status_(t)).toBe("INCOMPLETE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("kits", { id: "k2", organizationId: ORG, assetTag: "K-2", name: "Other", status: "AVAILABLE", isActive: true });
+    });
+    await expect(edit({ status: "INCOMPLETE" }, "k2")).rejects.toThrow(/returned missing/);
+  });
+
+  test("the kit's undo needs kit:update, not just a session", async () => {
+    const t = makeT();
+    await seed(t);
+    await complete(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "m3", organizationId: ORG, userId: "viewer_1", role: "viewer" });
+    });
+    await expect(undo(t, "mc1", { subject: "viewer_1", orgId: ORG })).rejects.toThrow(/Forbidden|permission/);
+    expect(await status_(t)).toBe("AVAILABLE");
   });
 
   test("another org cannot mark it complete", async () => {

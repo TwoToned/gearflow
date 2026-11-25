@@ -1,7 +1,7 @@
 import { getConvexClient, withConvexReadRetry } from "@/lib/convex-client";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { OPEN_MAINTENANCE_STATUSES as OPEN_MAINTENANCE } from "../../convex/lib/maintenanceOpen";
+import { OPEN_MAINTENANCE_STATUSES as OPEN_MAINTENANCE, isOverdueMaintenance } from "../../convex/lib/maintenanceOpen";
 import type {
   MaintenanceStatus,
   MaintenanceType,
@@ -109,6 +109,15 @@ export function mapMaintenanceRecord(doc: ConvexMaintenanceDoc): MaintenanceReco
     createdAt: toDate(doc.createdAt) ?? new Date(doc._creationTime),
     updatedAt: toDate(doc.updatedAt) ?? new Date(doc._creationTime),
   };
+}
+
+/**
+ * The records that count as OVERDUE for a notification: the ONE rule (`convex/lib/maintenanceOpen.ts`,
+ * `isOverdueMaintenance` — the scheduled DAY is before today), the same as the Maintenance page, Home and the
+ * nav row. Work scheduled for today is due, not overdue.
+ */
+export function overdueMaintenanceRecords<T extends { status?: string | null; scheduledDate?: Date | null }>(rows: readonly T[], now: Date): T[] {
+  return rows.filter((m) => isOverdueMaintenance({ status: m.status, scheduledDate: m.scheduledDate?.getTime() }, now.getTime()));
 }
 
 export async function getMaintenanceRecordsByOrg(orgId: string): Promise<MaintenanceRecordRow[]> {
@@ -303,9 +312,12 @@ export async function getMaintenanceTagsByOrg(
 const OPEN_MAINTENANCE_STATUSES = new Set<string>(OPEN_MAINTENANCE);
 
 /**
- * Count of open maintenance whose scheduled date has arrived (<= cutoffMs) —
- * the same due rule as `dashboardStats.bundle`. Operates on the mapped MaintenanceRecordRow
- * (scheduledDate is a Date | null; a null date never matches, like Prisma `lte`).
+ * Count of OPEN maintenance (any open status) whose scheduled date has arrived (<= cutoffMs): "due", an
+ * instant compare against a caller-chosen cutoff. This is NOT the overdue rule: OVERDUE (Home's maintenance
+ * line, the nav row, the Maintenance page, notifications) is `isOverdueMaintenance` / `overdueCutoff` in
+ * `convex/lib/maintenanceOpen.ts` (SCHEDULED / IN_PROGRESS, the scheduled DAY before today); use that for
+ * anything that says "overdue". Operates on the mapped MaintenanceRecordRow (scheduledDate is a Date | null;
+ * a null date never matches, like Prisma `lte`).
  */
 export function countDueMaintenance(
   records: MaintenanceRecordRow[],

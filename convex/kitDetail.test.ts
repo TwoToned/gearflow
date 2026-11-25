@@ -67,6 +67,27 @@ describe("kitDetail.bundle — allowlist DTOs (§3.5)", () => {
     }
   });
 
+  test("the bundle carries the DERIVED state (a LOST member; the reported-missing marker), the page prints that", async () => {
+    const t = convexTest(schema, modules);
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "lost", organizationId: ORG, modelId: "m", assetTag: "L-1", status: "LOST", isActive: true });
+      await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "lost", addedById: "u1" });
+    });
+    const res = await t.withIdentity(asUser(ORG)).query(api.kitDetail.bundle, { kitId: "k1", orgId: ORG });
+    expect(res!.kit.status ?? "AVAILABLE").toBe("AVAILABLE");
+    expect(res!.state).toMatchObject({ key: "INCOMPLETE", reportedMissing: false });
+    expect(res!.state!.missing[0]).toMatchObject({ label: "L-1", why: "lost" });
+    await t.run(async (ctx) => {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+      await ctx.db.patch(k!._id, { status: "INCOMPLETE" });
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "lost")).first();
+      await ctx.db.patch(a!._id, { status: "AVAILABLE" });
+    });
+    const marker = await t.withIdentity(asUser(ORG)).query(api.kitDetail.bundle, { kitId: "k1", orgId: ORG });
+    expect(marker!.state).toMatchObject({ key: "INCOMPLETE", reportedMissing: true, missing: [] });
+  });
+
   test("files are projected to url-only — storageKey / uploadedById absent", async () => {
     const t = convexTest(schema, modules);
     await seed(t);

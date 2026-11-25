@@ -27,7 +27,7 @@ type T = ReturnType<typeof makeT>;
 
 /** Seed a kit (serialised member A-1, optional bulk member B-1 qty 3) and build
  *  its project line items + member units via the real createKitLineItem path. */
-async function seedKit(t: T, opts?: { bulk?: boolean }) {
+async function seedKit(t: T, opts?: { bulk?: boolean; bulkOnly?: boolean }) {
   await t.run(async (ctx) => {
     // #1228 — createKitLineItemCore now resolves the project's live version.
     await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, liveVersionId: "v-p1", createdAt: NOW, updatedAt: NOW });
@@ -35,7 +35,7 @@ async function seedKit(t: T, opts?: { bulk?: boolean }) {
     await ctx.db.insert("kits", { id: "k1", organizationId: ORG, assetTag: "KIT-1", name: "Lighting", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("models", { id: "m1", organizationId: ORG, name: "PAR", createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "A-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
-    await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
+    if (!opts?.bulkOnly) await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: USER });
     if (opts?.bulk) {
       await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "B-1", availableQuantity: 10, totalQuantity: 10, isActive: true });
       await ctx.db.insert("kitBulkItems", { id: "kb1", organizationId: ORG, kitId: "k1", bulkAssetId: "b1", quantity: 3, addedById: USER });
@@ -114,6 +114,20 @@ describe("kit per-unit — checkout / checkin", () => {
     const u = bulkUnit(await memberUnits(t));
     expect(u.status).toBe("RETURNED");
     expect(u.returnedQuantity).toBe(3);
+  });
+
+  test("a MISSING return writes the stored INCOMPLETE marker, so even a bulk-only kit (no LOST member) stays unbookable", async () => {
+    const t = makeT();
+    await seedKit(t, { bulk: true, bulkOnly: true });
+    await co(t);
+    await ci(t, "MISSING");
+    const kit = await t.run(async (ctx) => (await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first())!.status);
+    expect(kit).toBe("INCOMPLETE");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mm", organizationId: ORG, userId: USER, role: "member" });
+    });
+    const gate = await t.withIdentity({ subject: USER, orgId: ORG }).query(api.kitsList.bookingGate, { orgId: ORG, id: "k1" });
+    expect(gate).toMatchObject({ key: "INCOMPLETE", blocksBooking: true });
   });
 
   test("DAMAGED checkin records the condition on the unit", async () => {

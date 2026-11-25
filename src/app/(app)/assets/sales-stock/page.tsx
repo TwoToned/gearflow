@@ -2,23 +2,16 @@
 // use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
 
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ListPageLayout } from "@/components/layout/page-layouts";
+import { SalesStockList } from "@/components/assets/sales-stock-list";
 import { FadeIn } from "@/components/ui/motion";
-import { SalesStockTable } from "@/components/assets/sales-stock-table";
 
 export default function SalesStockPage() {
   return (
     <FadeIn>
-      {/* Gated on `model` (matches Fleet ROI's precedent) — restocking additionally
-          requires `model:update`, enforced per-row by the table's CanDo-gated
-          Restock button and re-checked server-side in adjustSaleStockNative. */}
+      {/* Gated on `model` (matches Fleet ROI's precedent). Adjusting stock additionally requires
+          `model:update`, enforced by the verb's CanDo gate and re-checked server-side. */}
       <RequirePermission resource="model" action="read">
-        <ListPageLayout
-          title="Sales Stock"
-          description="The new-stock sale pool for every model — independent of rental assets/bulk. Restock it as shipments come in."
-        >
-          <SalesStockTable />
-        </ListPageLayout>
+        <SalesStockList />
       </RequirePermission>
     </FadeIn>
   );

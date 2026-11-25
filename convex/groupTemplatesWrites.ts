@@ -15,6 +15,7 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
+import { loadKitBookingGate } from "./lib/kitState";
 import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billingDerivation";
 import { resolveLiveVersionIdForProject, resolveWriteVersionId, versionRows } from "./lib/versionScope";
 
@@ -533,8 +534,9 @@ export const applyNative = mutation({
         kitWarnings.push(`${label}: kit not found`);
         continue;
       }
-      if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
-        kitWarnings.push(`${label}: kit is ${kit.status.replace("_", " ").toLowerCase()}`);
+      const kitGate = await loadKitBookingGate(ctx, a.orgId, kit);
+      if (kitGate.blocksBooking) {
+        kitWarnings.push(`${label}: kit is ${kitGate.key.replace("_", " ").toLowerCase()}`);
         continue;
       }
       if (hasDates) {

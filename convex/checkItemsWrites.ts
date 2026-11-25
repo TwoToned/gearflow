@@ -4,10 +4,12 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { writeActivityLog } from "./lib/audit";
+import { createId } from "@paralleldrive/cuid2";
+import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { CheckItemType } from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { assertStrLen } from "./lib/fieldGuards";
+import { assertWithinUndoWindow } from "./lib/undoWindow";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -242,6 +244,11 @@ export const reorderModelCheckItemsNative = mutation({
   },
 });
 
+/** Is this id already a `modelCheckItems` row (any org: `by_cuid` is global)? */
+async function rowIdTaken(ctx: MutationCtx, id: string): Promise<boolean> {
+  return (await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", id)).first()) != null;
+}
+
 export const bulkAddCheckItemsToModelsNative = mutation({
   returns: v.object({ count: v.number(), modelNames: v.array(v.string()) }),
   args: { orgId: v.string(), modelIds: v.array(v.string()), checkItemIds: v.array(v.string()), rowIds: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -263,15 +270,21 @@ export const bulkAddCheckItemsToModelsNative = mutation({
 
     let rowIdx = 0;
     let created = 0;
+    const createdRows: { id: string; sortOrder: number }[] = [];
     for (const model of models) {
       const existing = (await ctx.db.query("modelCheckItems").withIndex("by_modelId", (q) => q.eq("modelId", model.id)).collect()).filter((r) => r.organizationId === a.orgId);
       const existingSet = new Set(existing.map((r) => r.checkItemId));
       let offset = existing.reduce((m, r) => Math.max(m, r.sortOrder ?? -1), -1) + 1;
       for (const checkItemId of checkItemIds) {
         if (!checkItemIdSet.has(checkItemId) || existingSet.has(checkItemId)) continue;
-        const rowId = a.rowIds[rowIdx++] ?? `${model.id}:${checkItemId}`;
-        await ctx.db.insert("modelCheckItems", { id: rowId, organizationId: a.orgId, modelId: model.id, checkItemId, sortOrder: offset++, createdAt: a.now });
+        // A caller-supplied id is honoured only if it names no existing row; otherwise (or with none) the
+        // server mints one. The Undo deletes rows by these ids, so it must never reach a row it did not create.
+        const wanted = a.rowIds[rowIdx++];
+        const rowId = wanted && !(await rowIdTaken(ctx, wanted)) ? wanted : createId();
+        const sortOrder = offset++;
+        await ctx.db.insert("modelCheckItems", { id: rowId, organizationId: a.orgId, modelId: model.id, checkItemId, sortOrder, createdAt: a.now });
         existingSet.add(checkItemId); // guard against any residual dup within this model
+        createdRows.push({ id: rowId, sortOrder });
         created++;
       }
     }
@@ -280,7 +293,61 @@ export const bulkAddCheckItemsToModelsNative = mutation({
     for (const model of models) {
       await log(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}-${model.id}`, now: a.now, action: "UPDATE", entityType: "model", entityId: model.id, entityName: model.name, summary: `Bulk assigned check items [${checkLabels}] to model "${model.name}"` });
     }
+    // The batch's own audit row: the exact Undo (`undoAssignChecksNative`) reads the rows it created from here.
+    await assertAuditIdFree(ctx, a.auditId);
+    await writeActivityLog(ctx, {
+      id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "model", entityId: models[0]?.id ?? "", entityName: `${models.length} models`,
+      userId: actor.userId, userName: actor.userName, summary: `Assigned ${checkItems.length} check item(s) to ${models.length} model(s) (${created} new)`,
+      details: { kind: "assignChecks", serverSavedAt: Date.now(), rows: createdRows } satisfies AssignChecksDetails, createdAt: a.now,
+    });
     return { count: created, modelNames: models.map((m) => m.name) };
+  },
+});
+
+interface AssignChecksDetails {
+  kind: "assignChecks";
+  serverSavedAt: number;
+  rows: { id: string; sortOrder: number }[];
+}
+
+const isAssignDetails = (d: unknown): d is AssignChecksDetails => {
+  const x = d as Partial<AssignChecksDetails> | null;
+  return !!x && x.kind === "assignChecks" && typeof x.serverSavedAt === "number" && Array.isArray(x.rows);
+};
+
+/**
+ * The exact Undo of `bulkAddCheckItemsToModelsNative` (ids only): removes exactly the assignment rows that
+ * call created, and only those still as it left them (same sort order). Refuses the whole call unless it is
+ * by the person who assigned, inside the 10-minute server-clock window, and the first undo. A check item
+ * itself is never deleted; rows reordered or removed since are left and counted.
+ */
+export const undoAssignChecksNative = mutation({
+  returns: v.object({ removed: v.number(), left: v.number() }),
+  args: { orgId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "checkItem");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "checkItem", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+    if (!row || row.organizationId !== a.orgId || !isAssignDetails(row.details)) throw new ConvexError("This assignment can't be undone");
+    if (row.userId !== actor.userId) throw new ConvexError("Only the person who assigned these checks can undo it");
+    assertWithinUndoWindow(row.details.serverSavedAt, Date.now(), "change");
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+    if (marker && marker.organizationId === a.orgId) throw new ConvexError("This assignment was already undone");
+
+    let removed = 0;
+    for (const r of row.details.rows) {
+      const doc = await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", r.id)).first();
+      if (!doc || doc.organizationId !== a.orgId || (doc.sortOrder ?? 0) !== r.sortOrder) continue;
+      await ctx.db.delete(doc._id);
+      removed++;
+    }
+    await writeActivityLog(ctx, {
+      id: `undo:${a.auditId}`, organizationId: a.orgId, action: "UPDATE", entityType: "model", entityId: row.entityId, entityName: row.entityName,
+      userId: actor.userId, userName: actor.userName, summary: `Undid an assignment of check items (${removed} removed)`, details: { undoOf: a.auditId, removed }, createdAt: a.now,
+    });
+    return { removed, left: row.details.rows.length - removed };
   },
 });
 
@@ -360,6 +427,7 @@ export const agentOps: AgentOpsAnnotations = {
   removeCheckItemFromModelNative: { danger: "medium" },
   reorderModelCheckItemsNative: { danger: "low" },
   bulkAddCheckItemsToModelsNative: { danger: "medium" }, // bulk, but additive/idempotent, not destructive
+  undoAssignChecksNative: { danger: "high", summary: "Exactly undo a recent bulk assignment of check items to models by its audit id." },
   addCheckItemToKitNative: { danger: "medium" },
   removeCheckItemFromKitNative: { danger: "medium" },
   reorderKitCheckItemsNative: { danger: "low" },

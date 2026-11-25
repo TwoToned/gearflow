@@ -113,7 +113,6 @@ export const NAV: readonly NavItem[] = [
   {
     key: "test-and-tag", label: "Test & Tag", url: "/test-and-tag", icon: "testTag", hue: "teal", group: 1, moreGroup: "gear", resource: "testTag", count: "testTagOverdue",
     subs: [
-      { key: "tt-registry", label: "Registry", url: "/test-and-tag/registry", icon: "registry", resource: "testTag" },
       // The Scan page's Test & tag mode (Phase 16); the old wizard route redirects here.
       { key: "tt-quick-test", label: "Quick Test", url: "/scan?mode=tt", icon: "quickTest", resource: "testTag" },
       { key: "tt-reports", label: "Reports", url: "/test-and-tag/reports", icon: "reports", resource: "reports" },
@@ -154,14 +153,15 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/test-and-tag/quick-test": "redirect to the Scan page's Test & tag mode (`/scan?mode=tt`, Phase 16)",
   "/crew/settings": "redirect to the Crew roles & rates sheet (`/crew/planner?sheet=roles`, Phase 15)",
   "/crew/timesheets": "the Crew page's Timesheets head word (D48); a deep link, not a sub-row",
-  "/maintenance/due": "a filter view reached from Maintenance",
+  "/maintenance/due": "service schedules and check-off, reached from Maintenance's page menu (moves into dialogs, 14a-3b)",
+  "/test-and-tag/registry": "redirect to the Test & tag list's All word (`/test-and-tag?seg=all`, Phase 14, D44)",
   "/maintenance/new": "create flow",
   "/assets/models/new": "create flow",
   "/assets/registry/new": "create flow",
   "/clients/new": "create flow",
   "/crew/new": "create flow",
   "/kits/new": "create flow",
-  "/locations/new": "create flow",
+  "/locations/new": "redirect to the Location sheet (`/locations?new=1`, Phase 14)",
   "/projects/new": "create flow",
   "/projects/templates/new": "create flow",
   "/suppliers/new": "create flow",

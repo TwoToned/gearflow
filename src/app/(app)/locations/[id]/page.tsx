@@ -8,7 +8,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import {
   Pencil,
-  Trash2,
   MapPin,
   Star,
   Package,
@@ -33,13 +32,20 @@ import { assetStatusLabels, bulkAssetStatusLabels, kitStatusLabels, projectStatu
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn, focusRing } from "@/lib/utils";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { useMediaWrites } from "@/hooks/use-media-writes";
-import { NotesEditor } from "@/components/ui/notes-editor";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DeleteDialog } from "@/components/ui/delete-dialog";
+import { ActionMenu } from "@/components/ui/action-menu";
+import { BinLabelsDialog } from "@/components/locations/bin-labels-dialog";
+import { LocationSheetHost } from "@/components/locations/location-sheet-host";
+import { MoveContentsDialog, moveTitle } from "@/components/locations/move-contents-dialog";
+import { useLocations } from "@/hooks/use-locations";
+import { useCanDo } from "@/lib/use-permissions";
+import { formatDate } from "@/lib/formatters";
+import { announceListWrite, plural } from "@/lib/list-write-toast";
+import { buildLocationActions } from "@/lib/row-actions/location";
+import { showError } from "@/lib/show-error";
 import { Badge } from "@/components/ui/badge";
 import { FadeIn } from "@/components/ui/motion";
 import { DetailLayout, DetailMain, DetailSidebar, SidebarSection } from "@/components/layout/page-layouts";
@@ -97,7 +103,35 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
     onError: (e) => toast.error(e.message),
   });
 
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const canUpdate = useCanDo("location", "update");
+  const canDelete = useCanDo("location", "delete");
+  const canAsset = useCanDo("asset", "update");
+  const canBulk = useCanDo("bulkAsset", "update");
+  const canKit = useCanDo("kit", "update");
+  const canMove = canUpdate && canAsset && canBulk && canKit;
+  const allLocations = useLocations(orgId);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [labelsOpen, setLabelsOpen] = useState(false);
+
+  /** ONE guarded Undo closure per move (the same shape as the list's); the server leaves any row that moved on. */
+  const move = async (toId: string) => {
+    const toName = allLocations?.find((l) => l.id === toId)?.name ?? "the new location";
+    try {
+      const r = await locWrites.moveContents([id], toId);
+      announceListWrite({
+        title: moveTitle(r.moved, toName, r.skipped),
+        undoneTitle: "Moved back",
+        performUndo: async () => {
+          const u = await locWrites.undoMoveContents(r.auditId);
+          return u.left > 0 ? `Put back ${plural(u.restored, "item")} · ${u.left} had moved on and stay where they are` : undefined;
+        },
+      });
+      refetch();
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not move the contents" });
+      throw e;
+    }
+  };
 
   // ── "What's here" — derived client-side from data already loaded ──────
   // Stored-here counts (serialised / bulk / kits) + how many of those units
@@ -333,25 +367,21 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
 
               {/* Action buttons (compact) */}
               <div className="flex flex-wrap items-center gap-2">
-                <CanDo resource="location" action="update">
-                  <Button variant="line" size="sm" asChild>
-                    <Link href={`/locations/${id}/edit`}>
-                      <Pencil className="h-4 w-4" />
-                      <span className="hidden sm:inline">Edit</span>
-                    </Link>
+                {canUpdate && (
+                  <Button variant="line" size="sm" onClick={() => router.push(`/locations/${id}?edit=1`)}>
+                    <Pencil className="h-4 w-4" />
+                    <span className="hidden sm:inline">Edit</span>
                   </Button>
-                </CanDo>
-                <CanDo resource="location" action="delete">
-                  <Button
-                    variant="line"
-                    size="sm"
-                    className="text-t-out hover:border-red hover:bg-primary hover:text-white"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    <span className="hidden sm:inline">Delete</span>
-                  </Button>
-                </CanDo>
+                )}
+                <ActionMenu
+                  label="Location actions"
+                  spec={buildLocationActions({
+                    title: location.name,
+                    onMoveContents: canMove ? () => setMoveOpen(true) : undefined,
+                    onPrintLabel: canUpdate ? () => setLabelsOpen(true) : undefined,
+                    onDelete: canDelete ? () => deleteMutation.mutate() : undefined,
+                  })}
+                />
               </div>
             </div>
 
@@ -376,7 +406,6 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   <TabsTrigger value="projects">
                     Jobs ({location._count?.projects || 0})
                   </TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
                   <TabsTrigger value="files">
                     Files ({location.media?.length || 0})
                   </TabsTrigger>
@@ -513,15 +542,6 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   )}
                 </TabsContent>
 
-                <TabsContent value="notes" className="mt-4">
-                  <NotesEditor
-                    initialNotes={location.notes || ""}
-                    onChanged={refetch}
-                    onSave={(notes) => locWrites.updateNotes(id, notes)}
-                    placeholder="Add notes about this location..."
-                  />
-                </TabsContent>
-
                 <TabsContent value="files" className="mt-4">
                   <MediaUploader
                     entityType="location"
@@ -562,6 +582,12 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                   )}
                 </SidebarSection>
 
+                {location.notes && (
+                  <SidebarSection title="Notes">
+                    <p className="whitespace-pre-wrap text-table-cell text-ink-2">{location.notes}</p>
+                  </SidebarSection>
+                )}
+
                 {/* Inventory — what lives here, by kind */}
                 <SidebarSection title="Inventory">
                   <div className="space-y-1.5 text-ui-text">
@@ -586,6 +612,19 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                       </div>
                       <span className="t-data font-medium text-ink tabular-nums">{location._count?.kits || 0}</span>
                     </div>
+                    {location.capacity != null && (
+                      <div className="flex justify-between border-t border-line pt-1.5">
+                        <span className="text-muted">Capacity</span>
+                        <span className="t-data font-medium text-ink tabular-nums">
+                          {here.stored} of {location.capacity}
+                          {location.fill != null ? ` · ${location.fill}%` : ""}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted">Last movement</span>
+                      <span className="t-data text-ink-2">{location.lastMovement != null ? formatDate(new Date(location.lastMovement)) : "—"}</span>
+                    </div>
                     {here.deployed > 0 && (
                       <div className="flex justify-between border-t border-line pt-1.5">
                         <div className="flex items-center gap-2 text-muted">
@@ -602,7 +641,7 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                 {location.children && location.children.length > 0 && (
                   <SidebarSection title={`Sub-locations (${location.children.length})`}>
                     <div className="space-y-1">
-                      {location.children.map((child: { id: string; name: string; _count?: { assets?: number; bulkAssets?: number } }) => (
+                      {location.children.map((child) => (
                         <Link
                           key={child.id}
                           href={`/locations/${child.id}`}
@@ -613,7 +652,8 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
                             <span className="truncate text-ink">{child.name}</span>
                           </div>
                           <span className="shrink-0 text-caption text-muted tabular-nums">
-                            {(child._count?.assets || 0) + (child._count?.bulkAssets || 0)} assets
+                            {child.stored}
+                            {child.capacity != null ? ` of ${child.capacity}${child.fill != null ? ` · ${child.fill}%` : ""}` : " items"}
                           </span>
                         </Link>
                       ))}
@@ -629,17 +669,36 @@ function LocationDetailContent({ params }: { params: Promise<{ id: string }> }) 
           </DetailLayout>
         </div>
       </FadeIn>
-      <DeleteDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title="Delete location?"
-        description="This permanently removes the location. Assets, kits, and jobs referencing it will be unlinked. This cannot be undone."
-        confirmLabel="Delete location"
-        onConfirm={() => {
-          deleteMutation.mutate();
-          setDeleteOpen(false);
+      {canUpdate && (
+        <LocationSheetHost
+          mode="edit"
+          location={{
+            id, name: location.name, address: location.address, latitude: location.latitude, longitude: location.longitude,
+            type: location.type, isDefault: location.isDefault, notes: location.notes, parentId: location.parent?.id ?? null,
+            tags: location.tags, capacity: location.capacity,
+          }}
+        />
+      )}
+      <MoveContentsDialog
+        sources={moveOpen ? [{ id, name: location.name, stored: here.stored }] : null}
+        destinations={(allLocations ?? []).map((l) => ({ id: l.id, name: l.name }))}
+        onClose={() => setMoveOpen(false)}
+        onMove={move}
+      />
+      <BinLabelsDialog
+        labels={labelsOpen ? [{ id, name: location.name, printed: location.labelState === "printed" }] : null}
+        origin={typeof window === "undefined" ? "" : window.location.origin}
+        onClose={() => setLabelsOpen(false)}
+        onPrinted={async (ids) => {
+          if (ids.length === 0) return;
+          try {
+            await locWrites.setLabelsPrinted(ids);
+            toast.success("Printed the bin label");
+            refetch();
+          } catch (e) {
+            showError(e, { fallbackTitle: "Could not record the print" });
+          }
         }}
-        pending={deleteMutation.isPending}
       />
     </>
   );

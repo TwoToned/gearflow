@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import { assertTestTagAllowsCheckout } from "./lib/testtag";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { type CheckInItem, type CheckInItemType, itemGroupKey, distributeReturn } from "./lib/bulkCheckin";
@@ -26,6 +27,7 @@ import {
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
+import { loadKitBookingGate } from "./lib/kitState";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
@@ -130,6 +132,7 @@ async function checkOutSerializedItem(
     await ctx.db.patch(unit._id, { status: "CHECKED_OUT", checkedOutAt: p.now, checkedOutById: p.userId, updatedAt: p.now });
   }
   await ctx.db.patch(asset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+  await stampLocationMovement(ctx, asset.organizationId, asset.locationId, p.projectLocationId || undefined, p.now);
   await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "CHECKED_OUT" });
   await scanLog(ctx, { organizationId: p.organizationId, assetId: p.targetAssetId, projectId: p.projectId, action: "CHECK_OUT", scannedById: p.userId, scannedAt: p.now, notes: p.notes ?? undefined });
   return "done";
@@ -219,6 +222,7 @@ async function deployAccessoryUnitRows(
     if (u.assetId) {
       if (accAsset) {
         await ctx.db.patch(accAsset._id, { status: "CHECKED_OUT", ...(p.projectLocationId ? { locationId: p.projectLocationId } : {}), updatedAt: p.now });
+        await stampLocationMovement(ctx, accAsset.organizationId, accAsset.locationId, p.projectLocationId || undefined, p.now);
         await bumpAssetCounters(ctx, accAsset.organizationId, accAsset, { isActive: accAsset.isActive, status: "CHECKED_OUT" });
       }
       assetsTouched.push(u.assetId);
@@ -406,6 +410,9 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
       if (!lineItem || lineItem.projectId !== a.projectId || lineItem.organizationId !== a.organizationId) {
         throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
       }
+      // The per-line deploy (MCP dispatch_gear, the floor's whole-line deploy) must not put a kit reported missing out
+      // either: the same refusal as the kit check-out preflight, for a kit parent line and its nested kits.
+      await assertKitLineNotReportedMissing(ctx, a.organizationId, lineItem);
       const targetAssetId = item.assetId || lineItem.assetId || null;
       let accessoryScopes: string[] | undefined;
       if (targetAssetId) {
@@ -549,9 +556,13 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
   }
 }
 export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
+  const moves = new LocationMovements();
+  let orgIdOfMoves: string | undefined;
   for (const id of assetIds) {
     const a = await assetByCuid(ctx, id);
     if (!a) continue;
+    // `lastMovementAt`: a set location moves it; a clear removes it; neither leaves it alone.
+    moves.record(a.locationId, locationId != null ? locationId : clearLocIfNull ? null : undefined);
     if (locationId != null) {
       await ctx.db.patch(a._id, { status: status as typeof a.status, locationId, updatedAt: now });
     } else if (clearLocIfNull) {
@@ -563,7 +574,33 @@ export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: stri
     // §3.6 dashboard counter: this is the choke point for warehouse status churn
     // (nearly every check-out/-in/force-return funnels here). isActive is untouched.
     await bumpAssetCounters(ctx, a.organizationId, a, { isActive: a.isActive, status });
+    orgIdOfMoves ??= a.organizationId;
   }
+  if (orgIdOfMoves) await moves.flush(ctx, orgIdOfMoves, now);
+}
+
+/**
+ * Patch a kit's status and, when `loc` is given, move it there (a falsy `loc` leaves its location
+ * alone). The ONE kit status+location patch for the check-out / check-in / de-prep paths, so
+ * `lastMovementAt` is stamped on both ends (convex/lib/locationMovement.ts).
+ */
+async function patchKitStatusAt(ctx: Ctx, kit: Doc<"kits">, status: Doc<"kits">["status"], loc: string | null | undefined, now: number) {
+  // The "reported missing" marker (stored INCOMPLETE) survives a return to AVAILABLE: only Mark complete clears it.
+  const next = kit.status === "INCOMPLETE" && status === "AVAILABLE" ? "INCOMPLETE" : status;
+  await ctx.db.patch(kit._id, { status: next, ...(loc ? { locationId: loc } : {}), updatedAt: now });
+  await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc || undefined, now);
+}
+
+/** Force-return a kit to AVAILABLE: at `loc` when there is one, otherwise with its location cleared. */
+async function releaseKitToLocation(ctx: Ctx, kit: Doc<"kits">, loc: string | null, now: number) {
+  // A force-release frees the kit but keeps the "reported missing" marker: only Mark complete clears it.
+  const status = kit.status === "INCOMPLETE" ? "INCOMPLETE" : "AVAILABLE";
+  if (loc != null) await ctx.db.patch(kit._id, { status, locationId: loc, updatedAt: now });
+  else {
+    const { _id, _creationTime, locationId: _l, ...rest } = kit;
+    await ctx.db.replace(_id, { ...rest, status, updatedAt: now });
+  }
+  await stampLocationMovement(ctx, kit.organizationId, kit.locationId, loc ?? null, now);
 }
 
 // ── Kit per-unit fulfillment (Phase 1) ───────────────────────────────────────
@@ -675,6 +712,35 @@ function kitBatchErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** The machine code of a thrown ConvexError (`{ code }`), so a batch report can carry it beside the message. */
+function kitBatchErrorCode(e: unknown): string | undefined {
+  const d = e instanceof ConvexError ? (e.data as unknown) : undefined;
+  const code = d && typeof d === "object" ? (d as { code?: unknown }).code : undefined;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** `assertKitsNotReportedMissing` for a kit PARENT line (top-level, `kitId`) and the kits nested under it; any other line is a no-op. */
+async function assertKitLineNotReportedMissing(ctx: Ctx, orgId: string, line: { id: string; kitId?: string; isKitChild?: boolean }): Promise<void> {
+  if (!line.kitId || line.isKitChild) return;
+  const nested = (await childLines(ctx, line.id, orgId)).filter((c) => c.kitId).map((c) => c.kitId!);
+  await assertKitsNotReportedMissing(ctx, orgId, [line.kitId, ...nested]);
+}
+
+/** Refuse check-out of a kit whose derived-OR-marker state is Incomplete (the same state `loadKitBookingGate` reads). */
+async function assertKitsNotReportedMissing(ctx: Ctx, orgId: string, kitIds: string[]): Promise<void> {
+  for (const id of kitIds) {
+    const kit = await kitByCuid(ctx, id);
+    if (!kit || kit.organizationId !== orgId) continue;
+    if ((await loadKitBookingGate(ctx, orgId, kit)).key !== "INCOMPLETE") continue;
+    throw new ConvexError({
+      code: "KIT_REPORTED_MISSING",
+      title: "Kit cannot be checked out",
+      message: `Kit ${kit.assetTag} was reported missing items.`,
+      hint: "Complete the kit's missing items (Mark complete on the kit) before it goes out.",
+    });
+  }
+}
+
 /** Pre-write validation for a kit checkout: composition parity (this kit + each
  *  nested kit) and the T&T preflight over their permanent composition. THROWS
  *  before any write, so a batch can run it per item and skip a drifted/blocked kit
@@ -683,6 +749,11 @@ async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLi
   const children = await childLines(ctx, kitLine.id, a.organizationId);
   const nestedKitChildren = children.filter((c) => c.kitId);
   const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+
+  // A kit reported missing (the stored marker, or a member missing) cannot go out: the booking gate only runs at
+  // add-line, so a kit already on this job could otherwise be deployed after a return elsewhere reported it
+  // missing, and the patch below would overwrite the marker.
+  await assertKitsNotReportedMissing(ctx, a.organizationId, [a.kitId, ...nestedKitIds]);
 
   // Parity: the project's kit snapshot (what we deploy) must match the live kit
   // definition (what T&T verifies) — for this kit and each nested kit.
@@ -726,7 +797,7 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     for (const nestedChild of nestedKitChildren) {
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, deployLine(gc));
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "CHECKED_OUT", loc, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", loc, false, a.now);
@@ -736,7 +807,7 @@ async function checkoutKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, l
     }
 
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(loc ? { locationId: loc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "CHECKED_OUT", loc, a.now);
 
 
     // Kit per-unit: flip member units CONFIRMED → CHECKED_OUT (unit rows only;
@@ -794,7 +865,7 @@ export async function checkoutKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
     const loc = project?.locationId ?? null;
     const succeeded: string[] = [];
-    const errors: { kitId: string; message: string }[] = [];
+    const errors: KitBatchResult["errors"] = [];
     const affected = new Set<string>();
     for (const kitId of a.kitIds) {
       const ka: KitOpArgs = { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now };
@@ -805,7 +876,8 @@ export async function checkoutKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise
       try {
         await checkoutKitPreflight(ctx, ka, kitLine);
       } catch (e) {
-        errors.push({ kitId, message: kitBatchErrorMessage(e) });
+        const code = kitBatchErrorCode(e);
+        errors.push({ kitId, message: kitBatchErrorMessage(e), ...(code ? { code } : {}) });
         continue;
       }
       const aff = await checkoutKitCore(ctx, ka, kitLine, loc);
@@ -826,6 +898,8 @@ export const checkoutKitsBatch = mutation({
 /** Core of checkinKit for ONE validated kit. `defaultLocationId` (org default) is
  *  passed so a batch resolves it once. Returns [kitId, ...nestedKitIds]. */
 async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLine, defaultLocationId: string | null): Promise<string[]> {
+    // D75 (review ruling): a MISSING return writes the stored INCOMPLETE marker again. A bulk-only kit has
+    // no LOST member to derive from, so the marker is what keeps it unbookable; only Mark complete clears it.
     const newKitStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "INCOMPLETE" : "AVAILABLE";
     const assetStatus = a.returnCondition === "DAMAGED" ? "IN_MAINTENANCE" : a.returnCondition === "MISSING" ? "LOST" : "AVAILABLE";
     const ret = { status: "RETURNED" as const, returnedQuantity: 1, returnedAt: a.now, returnedById: a.userId, returnCondition: a.returnCondition, updatedAt: a.now };
@@ -839,7 +913,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     for (const nestedChild of nestedKitChildren) {
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "CHECKED_OUT")) await ctx.db.patch(gc._id, ret);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, newKitStatus, defaultLocationId, a.now);
     }
 
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), assetStatus, defaultLocationId, true, a.now);
@@ -849,7 +923,7 @@ async function checkinKitCore(ctx: Ctx, a: KitCheckinArgs, kitLine: KitParentLin
     }
 
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: newKitStatus, ...(defaultLocationId ? { locationId: defaultLocationId } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, newKitStatus, defaultLocationId, a.now);
 
 
     // Kit per-unit: flip member units CHECKED_OUT → RETURNED (unit rows only),
@@ -1511,7 +1585,7 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
     for (const nestedChild of nestedKitChildren) {
       for (const gc of await childLines(ctx, nestedChild.id, a.organizationId)) await ctx.db.patch(gc._id, prepped);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "AVAILABLE", defLoc, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "AVAILABLE", defLoc, true, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -1519,7 +1593,7 @@ async function undeployKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, d
       await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "AVAILABLE", defLoc, true, a.now);
     }
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "AVAILABLE", ...(defLoc ? { locationId: defLoc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "AVAILABLE", defLoc, a.now);
 
 
     // Kit per-unit: member units CHECKED_OUT → CONFIRMED (re-packed), and reverse
@@ -1559,7 +1633,7 @@ export const undeployKit = mutation({
  * the client surfaces the error and the operator retries.) `defLoc` resolved once.
  */
 export type KitsBatchArgs = { organizationId: string; projectId: string; userId: string; kitIds: string[]; now: number };
-export type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string }[]; affectedKitIds: string[] };
+export type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string; code?: string }[]; affectedKitIds: string[] };
 
 /** Core batch Deployed → Prepped (per-kit org/project re-check, defLoc once). Shared. */
 export async function undeployKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise<KitBatchResult> {
@@ -1599,7 +1673,7 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
     for (const nestedChild of nestedKitChildren) {
       for (const gc of (await childLines(ctx, nestedChild.id, a.organizationId)).filter((g) => g.status === "RETURNED")) await ctx.db.patch(gc._id, deployed);
       const nk = await kitByCuid(ctx, nestedChild.kitId!);
-      if (nk) await ctx.db.patch(nk._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+      if (nk) await patchKitStatusAt(ctx, nk, "CHECKED_OUT", projLoc, a.now);
     }
     await setAssetsStatus(ctx, children.filter((c) => c.assetId).map((c) => c.assetId!), "CHECKED_OUT", projLoc, false, a.now);
     for (const nestedChild of nestedKitChildren) {
@@ -1607,7 +1681,7 @@ async function unreturnKitCore(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLine, p
       await setAssetsStatus(ctx, gcs.filter((g) => g.assetId).map((g) => g.assetId!), "CHECKED_OUT", projLoc, false, a.now);
     }
     const kit = await kitByCuid(ctx, a.kitId);
-    if (kit) await ctx.db.patch(kit._id, { status: "CHECKED_OUT", ...(projLoc ? { locationId: projLoc } : {}), updatedAt: a.now });
+    if (kit) await patchKitStatusAt(ctx, kit, "CHECKED_OUT", projLoc, a.now);
 
 
     // Kit per-unit: member units RETURNED → CHECKED_OUT. Clear the return stamps
@@ -1772,8 +1846,7 @@ async function restoreKitParentLine(
     kitsToRestore.add(nk);
     const k = await kitByCuid(ctx, nk);
     if (k) {
-      if (loc != null) await ctx.db.patch(k._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
-      else { const { _id, _creationTime, locationId: _l, ...rest } = k; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+      await releaseKitToLocation(ctx, k, loc, now);
     }
   }
   for (const c of children) if (c.status === "CHECKED_OUT") await ctx.db.patch(c._id, FORCE_RET(now));
@@ -1809,8 +1882,7 @@ export async function forceReturnKitCore(
     await cascadeKitAccessoriesIn(ctx, p.id, organizationId, { projectId: p.projectId, userId, defaultLocationId: loc, returnCondition: "GOOD" });
   }
 
-  if (loc != null) await ctx.db.patch(kit._id, { status: "AVAILABLE", locationId: loc, updatedAt: now });
-  else { const { _id, _creationTime, locationId: _l, ...rest } = kit; await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now }); }
+  await releaseKitToLocation(ctx, kit, loc, now);
 
   return [...kitsToRestore];
 }

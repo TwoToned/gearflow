@@ -26,6 +26,18 @@ describe("maintenanceTileCounts — the Maintenance page's four tiles", () => {
     expect(maintenanceTileCounts([{ scheduledDate: NOW - DAY }, { status: null }], NOW, 0)).toEqual({ open: 0, overdue: 0, inProgress: 0, completedSince: 0 });
   });
 
+  it("Overdue is about the scheduled DAY: today at any hour (even its first instant) is not overdue, the last instant of yesterday is", () => {
+    const afternoon = NOW + 15 * 60 * 60 * 1000; // 15:00 on the day NOW starts
+    const overdue = (scheduledDate: number, at = afternoon) => isOverdueMaintenance({ status: "SCHEDULED", scheduledDate }, at);
+    expect(overdue(NOW)).toBe(false); // rescheduled to today, midnight: due, not overdue
+    expect(overdue(NOW + 3_600_000)).toBe(false);
+    expect(overdue(afternoon - 1)).toBe(false);
+    expect(overdue(NOW - 1)).toBe(true); // 23:59:59.999 yesterday
+    expect(overdue(NOW - DAY)).toBe(true);
+    expect(overdue(NOW + DAY, NOW + DAY)).toBe(false); // read at the start of the NEXT day, that day's own date is still today
+    expect(overdue(NOW, NOW + DAY)).toBe(true); // ...and the day before is overdue once the next day starts
+  });
+
   it("a date exactly now is not yet overdue", () => {
     expect(maintenanceTileCounts([{ status: "SCHEDULED", scheduledDate: NOW }], NOW, 0).overdue).toBe(0);
   });

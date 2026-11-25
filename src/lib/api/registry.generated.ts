@@ -29392,9 +29392,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "f1d344b8c597797d",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Rename a project file's display name; the stored file is untouched.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -29518,9 +29518,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "bfc737267940a2a3",
     "returnsSha": "04471d174c91281a",
     "stability": "tracks-app",
-    "summary": null,
-    "danger": null,
-    "mcpTier": null,
+    "summary": "Set the category of one or more project files (the ProjectMediaType enum). Changes only the category.",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -37370,6 +37370,80 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectFiles.alsoOnJob",
+    "module": "projectFiles",
+    "fn": "alsoOnJob",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f75cf9c7cfef7f2e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Read-only list of the job's files that live on other tabs: quote and invoice PDFs, sub-hire attachments, incident photos (each only if the caller may read it).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectFiles.listForProject",
+    "module": "projectFiles",
+    "fn": "listForProject",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f75cf9c7cfef7f2e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A job's own files with who uploaded each and when (bounded).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -66187,10 +66261,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1282,
-  agentReachable: 648,
-  queries: 456,
+  total: 1284,
+  agentReachable: 650,
+  queries: 458,
   mutations: 826,
-  agentReachableQueries: 320,
+  agentReachableQueries: 322,
   agentReachableMutations: 328,
 } as const;

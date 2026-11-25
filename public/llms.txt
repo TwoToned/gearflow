@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (647 agent-reachable)
+## Operations (650 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -378,6 +378,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `collaboration.addComment` (mutation, scope: project:read)
 - `collaboration.getProjectBlockingSummary` (query, scope: project:read)
 - `collaboration.getReviewMarker` (query, scope: project:read)
+- `collaboration.lastNoteSaves` (query, scope: project:read)
 - `collaboration.listActivityEvents` (query, scope: project:read)
 - `collaboration.listBlockingForProjects` (query, scope: project:read)
 - `collaboration.listComments` (query, scope: project:read)
@@ -439,6 +440,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectCosts.operationalCosts` (query, scope: project:read)
 - `projectDetail.bundle` (query, scope: project:read)
 - `projectEquipment.browserBundle` (query, scope: project:read)
+- `projectFiles.alsoOnJob` (query, scope: project:read)
+- `projectFiles.listForProject` (query, scope: project:read)
 - `projectGroups.getById` (query, scope: project:read)
 - `projectGroups.listByProject` (query, scope: project:read)
 - `projectGroupsWrites.createGroupNative` (mutation, scope: project:manage_line_items)

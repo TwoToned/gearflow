@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { binLabelState, locationFill } from "./lib/locationFacts";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -91,10 +92,16 @@ export const detail = query({
     const parentRow = self.parentId ? locs.find((l) => l.id === self.parentId) : undefined;
     const parent = parentRow ? { id: parentRow.id, name: parentRow.name, address: parentRow.address ?? null, latitude: parentRow.latitude ?? null, longitude: parentRow.longitude ?? null } : null;
 
-    const children = [...childrenAll].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({
-      id: c.id, name: c.name,
-      _count: { assets: assets.filter((a) => a.locationId === c.id).length, bulkAssets: bulk.filter((b) => b.locationId === c.id).length },
-    }));
+    // Bins: each child with its own derived facts (capacity, fill, label state, last movement), the Bins tab's rows.
+    const children = [...childrenAll].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
+      const counts = { assets: assets.filter((a) => a.locationId === c.id).length, bulkAssets: bulk.filter((b) => b.locationId === c.id).length, kits: kits.filter((k) => k.locationId === c.id).length };
+      const stored = counts.assets + counts.bulkAssets + counts.kits;
+      return {
+        id: c.id, name: c.name, _count: counts, stored,
+        capacity: c.capacity ?? null, fill: locationFill(stored, c.capacity),
+        lastMovement: c.lastMovementAt ?? null, labelState: binLabelState(c.labelPrintedAt),
+      };
+    });
 
     const byTag = (a: { assetTag: string }, b: { assetTag: string }) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0);
     const assetsOut = assetsHere.filter((a) => a.isActive !== false).sort(byTag).slice(0, 50)
@@ -130,6 +137,8 @@ export const detail = query({
       address: self.address ?? null, latitude: self.latitude ?? null, longitude: self.longitude ?? null,
       type: self.type ?? "WAREHOUSE", isDefault: self.isDefault ?? false, parentId: self.parentId ?? null,
       notes: self.notes ?? null, tags: self.tags ?? [],
+      capacity: self.capacity ?? null, fill: locationFill(_count.assets + _count.bulkAssets + _count.kits, self.capacity),
+      lastMovement: self.lastMovementAt ?? null, labelState: binLabelState(self.labelPrintedAt),
       createdAt: new Date(self.createdAt ?? 0).toISOString(), updatedAt: new Date(self.updatedAt ?? 0).toISOString(),
       parent, children, assets: assetsOut, bulkAssets: bulkOut, kits: kitsOut, projects: projectsOut, media, _count,
     };

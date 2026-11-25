@@ -11,6 +11,7 @@ import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { applyMove, planMove, undoMove, type MovedRow } from "./lib/locationMove";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 
 /**
  * Native LOCATION write mutations (Phase 3 browser-direct — replaces createLocation/
@@ -98,13 +99,91 @@ export const createNative = mutation({
       capacity: a.capacity ?? undefined,
       createdAt: a.now, updatedAt: a.now,
     });
-    await logLocation(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: a.name, summary: `Created location ${a.name}` });
+    // `serverSavedAt` lets the exact Undo (`undoCreateNative`) enforce its window on the server clock.
+    const details: LocationCreateDetails = { kind: "locationCreate", serverSavedAt: Date.now(), setDefault: !!a.isDefault };
+    await logLocation(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: a.name, summary: `Created location ${a.name}`, details });
     return { id: a.id };
   },
 });
 
-export const updateNative = mutation({
+interface LocationCreateDetails {
+  kind: "locationCreate";
+  serverSavedAt: number;
+  /** The create cleared another location's default flag: that has no exact reverse, so no Undo. */
+  setDefault: boolean;
+}
+
+const isCreateDetails = (d: unknown): d is LocationCreateDetails => {
+  const x = d as Partial<LocationCreateDetails> | null;
+  return !!x && x.kind === "locationCreate" && typeof x.serverSavedAt === "number";
+};
+
+/** Fields a location edit (and so its exact Undo) covers. `isDefault` is deliberately not one: changing it moves ANOTHER location's flag. */
+const LOCATION_EDIT_FIELDS = ["name", "address", "latitude", "longitude", "type", "parentId", "notes", "tags", "capacity"] as const;
+
+/** A location may not be moved under itself or one of its own descendants. */
+async function assertNoParentCycle(ctx: MutationCtx, orgId: string, id: string, parentId: string | undefined): Promise<void> {
+  const seen = new Set<string>();
+  for (let cur = parentId; cur; ) {
+    if (cur === id) throw new ConvexError("A location can't be placed inside itself or one of its own bins");
+    if (seen.has(cur)) return; // a cycle already in the data: not this write's to fix
+    seen.add(cur);
+    const next = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", cur!)).first();
+    cur = next && next.organizationId === orgId ? next.parentId : undefined;
+  }
+}
+
+/**
+ * The exact Undo of `createNative` (ids only): refuses unless it is by the person who created the
+ * location, inside the 10-minute server-clock window, the first undo, and the location is exactly
+ * as created (untouched, no bins, nothing stored in it, no files) and did not take over the default flag.
+ */
+export const undoCreateNative = mutation({
   returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "location");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "location", "delete");
+    const actor = await resolveActor(ctx, a.actor);
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+    if (!row || row.organizationId !== a.orgId || row.entityType !== "location" || row.entityId !== a.id || row.action !== "CREATE" || !isCreateDetails(row.details)) {
+      throw new ConvexError("This location can't be un-created");
+    }
+    if (row.userId !== actor.userId) throw new ConvexError("Only the person who created this location can undo it");
+    assertWithinUndoWindow(row.details.serverSavedAt, Date.now(), "change");
+    if (row.details.setDefault) throw new ConvexError("This location took over as the default, so it can't be undone: edit it instead");
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+    if (marker && marker.organizationId === a.orgId) throw new ConvexError("This location was already undone");
+
+    const doc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Location not found");
+    if (doc.updatedAt !== row.createdAt) throw new ConvexError("This location was changed since: it can't be undone");
+    await assertLocationEmpty(ctx, a.orgId, a.id);
+    await ctx.db.delete(doc._id);
+    await writeActivityLog(ctx, {
+      id: `undo:${a.auditId}`, organizationId: a.orgId, action: "UNDO", entityType: "location", entityId: a.id, entityName: doc.name,
+      userId: actor.userId, userName: actor.userName, summary: `Undid the creation of ${doc.name}`, details: { undoOf: a.auditId }, createdAt: a.now,
+    });
+    return { id: a.id };
+  },
+});
+
+/** No bins, nothing stored here, no files. */
+async function assertLocationEmpty(ctx: MutationCtx, orgId: string, id: string): Promise<void> {
+  const [bin, asset, bulk, kit, media] = await Promise.all([
+    ctx.db.query("locations").withIndex("by_parentId", (q) => q.eq("parentId", id)).first(),
+    ctx.db.query("assets").withIndex("by_locationId", (q) => q.eq("locationId", id)).first(),
+    ctx.db.query("bulkAssets").withIndex("by_locationId", (q) => q.eq("locationId", id)).first(),
+    ctx.db.query("kits").withIndex("by_locationId", (q) => q.eq("locationId", id)).first(),
+    ctx.db.query("locationMedia").withIndex("by_locationId", (q) => q.eq("locationId", id)).first(),
+  ]);
+  const used = [bin, asset, bulk, kit, media].some((r) => r && r.organizationId === orgId);
+  if (used) throw new ConvexError("This location has bins, contents or files now: it can't be undone");
+}
+
+export const updateNative = mutation({
+  returns: v.object({ id: v.string(), changed: v.boolean(), undoable: v.boolean() }),
   args: { id: v.string(), orgId: v.string(), ...locationFields, now: v.number(), actor: actorValidator, auditId: v.string() },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "location");
@@ -117,17 +196,56 @@ export const updateNative = mutation({
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Location not found");
     // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
     if (a.parentId) await assertRefInOrg(ctx, "locations", a.parentId, a.orgId);
+    await assertNoParentCycle(ctx, a.orgId, a.id, a.parentId || undefined);
     if (a.isDefault) await unsetOtherDefaults(ctx, a.orgId, a.id, a.now);
 
     // Clears use `undefined` (schema optionals reject null).
-    await ctx.db.patch(doc._id, {
+    const fields = {
       name: a.name, address: a.address || undefined,
       latitude: a.latitude ?? undefined, longitude: a.longitude ?? undefined,
-      type: a.type ?? "WAREHOUSE", isDefault: a.isDefault ?? false,
-      parentId: a.parentId || undefined, notes: a.notes || undefined, tags: a.tags ?? [], updatedAt: a.now,
+      type: a.type ?? "WAREHOUSE", parentId: a.parentId || undefined, notes: a.notes || undefined, tags: a.tags ?? [],
       ...(a.capacity !== undefined ? { capacity: a.capacity ?? undefined } : {}),
+    };
+    const isDefault = a.isDefault ?? false;
+    // The exact-Undo snapshot: only the fields that changed (convex/lib/fieldEditUndo.ts).
+    const diff = diffFields(doc, { ...doc, ...fields }, LOCATION_EDIT_FIELDS);
+    await ctx.db.patch(doc._id, { ...fields, isDefault, updatedAt: a.now });
+    const defaultChanged = (doc.isDefault ?? false) !== isDefault;
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "location", entityId: a.id, entityName: a.name, auditId: a.auditId, actor, summary: `Updated location ${a.name}`, diff, now: a.now });
+    } else if (defaultChanged) {
+      await logLocation(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated location ${a.name}` });
+    }
+    // Changing the default flag also moves ANOTHER location's flag, which has no exact reverse: no Undo then.
+    return { id: a.id, changed: !!diff || defaultChanged, undoable: !!diff && !defaultChanged };
+  },
+});
+
+/**
+ * The exact Undo of `updateNative` (ids only), through `convex/lib/fieldEditUndo.ts`: refused as a whole by
+ * another person, past 10 minutes, already undone, or when any changed field was edited again since.
+ */
+export const undoUpdateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "location");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "location", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const named = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "location", entityId: a.id, entityName: named?.name ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (named && named.organizationId === a.orgId ? named : null),
+      apply: async (doc, plan) => {
+        const unsupported = [...Object.keys(plan.set), ...plan.clear].filter((f) => !(LOCATION_EDIT_FIELDS as readonly string[]).includes(f));
+        if (unsupported.length > 0) throw new ConvexError("This change can't be undone");
+        if (typeof plan.set.parentId === "string") await assertRefInOrg(ctx, "locations", plan.set.parentId, a.orgId);
+        const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+        for (const f of plan.clear) patch[f] = undefined;
+        await ctx.db.patch(doc._id, patch);
+      },
     });
-    await logLocation(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated location ${a.name}` });
     return { id: a.id };
   },
 });
@@ -302,6 +420,8 @@ export const agentOps: AgentOpsAnnotations = {
   setLabelsPrintedNative: { danger: "low", summary: "Record that the given locations' bin labels were printed." },
   createNative: { danger: "medium" },
   updateNative: { danger: "medium" },
+  undoCreateNative: { danger: "high", summary: "Exactly undo the creation of a location by its audit id (refuses once it has bins, contents or files)." },
+  undoUpdateNative: { danger: "high", summary: "Exactly undo an edit of a location by its audit id (refuses if a changed field was edited again since)." },
   // Notes-only patch — cosmetic, trivially reversible.
   updateNotesNative: { danger: "low" },
   // Delete = high (§9): irreversible from the API's point of view, even though

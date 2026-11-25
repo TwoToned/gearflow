@@ -34,10 +34,14 @@ export function RangeCalendar({
   value,
   onChange,
   className,
+  busyDays,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  /** Optional: a dot under each day another job has gear out; the value is the
+   *  day's title (which jobs). Keys are `yyyy-MM-dd`. Absent = no dots. */
+  busyDays?: ReadonlyMap<string, string>;
 }) {
   const [viewMonth, setViewMonth] = React.useState<Date>(
     () => startOfMonth(value.start ?? new Date()),
@@ -112,11 +116,13 @@ export function RangeCalendar({
             realLo && hi && isWithinInterval(day, { start: realLo, end: hi });
           const isEndpoint = isStart || isEnd;
           const single = realLo && hi && isSameDay(realLo, hi);
+          const busyTitle = busyDays?.get(format(day, "yyyy-MM-dd"));
 
           return (
             <button
               type="button"
               key={day.toISOString()}
+              title={busyTitle}
               onClick={() => handleClick(day)}
               onMouseEnter={() => setHover(day)}
               onMouseLeave={() => setHover(null)}
@@ -140,6 +146,9 @@ export function RangeCalendar({
               >
                 {format(day, "d")}
               </span>
+              {busyTitle ? (
+                <span data-busy-dot aria-label={busyTitle} className="pointer-events-none absolute bottom-0.5 left-1/2 size-1 -translate-x-1/2 rounded-full bg-warn" />
+              ) : null}
             </button>
           );
         })}

@@ -202,12 +202,32 @@ the wizard) with Job · Where · Money sections (no Money for a template).
   `details.fieldEdit` blob would carry the discount unredacted). Tracked for the
   Phase 9 follow-up.
 
-## Project Wizard (`src/components/projects/project-wizard.tsx`)
+## New job wizard (`src/components/projects/new-job/`, UX Phase 9)
 
-A 4-step wizard (Basics → Schedule → Site → Review) backs **create and template
-create** (edit moved to the sheet above; the wizard is being replaced by the
-three-step Phase 9 wizard). Routes:
-- `/projects/new` → `<ProjectWizard />` (create)
+`/projects/new` → `<NewJobWizard />`: three steps as words, **Who and when · What n ·
+Review** (no Site step, no helper rail). Step one is the shared `ProjectFields` (job +
+schedule), with Site, location and discount folded under it; a dates-and-availability
+line sits under the rental calendar (`projects.windowOverlap`: other jobs whose gear
+window overlaps, plus busy-day dots on the calendar via `RangeCalendar`'s optional
+`busyDays`; the gear line reads the draft's own lines).
+- **Draft (D24).** The job row is written the first time it has a valid name
+  (`useJobDraft`): an ordinary Enquiry through the normal create, the number allocated
+  in that mutation when the org auto-numbers, then kept in step with diff updates
+  (debounced, single-flight). `Create job` finishes the same row (a Quoting start goes
+  through the normal status path); `Create as enquiry` finishes from step one. An
+  abandoned wizard is just an empty Enquiry. `Discard draft…` (page ⋯, confirm) cancels
+  then deletes it (delete needs `project:delete`; without it the draft is only
+  cancelled); its Undo exists only for a draft with no lines.
+- **What** is the Equipment tab's own `EquipmentAddBar` and write path pointed at the
+  draft, plus the draft's lines (qty inline, price, `short n` / `unpriced`, ⋯, bulk
+  `Remove n`). Sub-hire, custom and sale lines are added from the job's Equipment tab.
+- `?clientId=` pre-picks the client; an org switch resets the wizard (the draft is left).
+- The e2e harness drives it with Next, Next, Create job.
+
+## Template create wizard (`src/components/projects/project-wizard.tsx`)
+
+The previous four-step wizard remains ONLY for template create until the templates
+slice replaces it (it no longer has a reachable edit mode). Route:
 - `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
 
 **Edit mode** is engaged by passing the `project` prop (the `getProject`/

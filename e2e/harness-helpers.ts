@@ -84,7 +84,7 @@ export async function createAssetForModel(page: Page, modelName: string): Promis
 }
 
 /** Create a project with every optional field left at its default —
- *  Basics -> Schedule -> Site -> Review, three plain "Continue" activations.
+ *  Who and when -> What -> Review, two plain "Next" activations then "Create job".
  *  Returns the new project's id. */
 export async function createProject(page: Page, projectName: string, code: string): Promise<string> {
   await page.goto("/projects/new");
@@ -100,11 +100,10 @@ export async function createProject(page: Page, projectName: string, code: strin
   // .focus()+Enter, not .click() — sidesteps a Playwright locator-retry race
   // against the wizard's step-transition unmount (see harness-revenue-path's
   // identical comment; the underlying action always succeeds either way).
-  await page.getByRole("button", { name: "Continue" }).focus();
+  // Who and when -> What -> Review: two "Next" activations (the draft is written at the first).
+  await page.getByRole("button", { name: "Next" }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Continue" }).focus();
-  await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Continue" }).focus();
+  await page.getByRole("button", { name: "Next" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Create job" }).focus();
   await page.keyboard.press("Enter");

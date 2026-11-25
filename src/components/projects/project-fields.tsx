@@ -132,19 +132,24 @@ function storedProjectDefaults(p: EditableProject): ProjectFormValues {
   };
 }
 
+const managerIdsOf = (p?: EditableProject) => (p?.projectManagers ?? []).map((pm) => pm.user.id);
+
 export type ProjectFieldsSection = "job" | "schedule" | "where" | "money";
 
 /** Everything the fields read (pickers' data, the discount lock, the manager set). */
 export function useProjectFieldsState({
-  form, project, orgId, isTemplate,
+  form, project, orgId, isTemplate, prefillCode,
 }: {
   form: UseFormReturn<ProjectFormValues>;
   project?: EditableProject;
   orgId: string | undefined;
   isTemplate: boolean;
+  /** The wizard turns this off: its draft allocates the number in the create
+   *  mutation (counter reserved atomically), so the field must stay blank until then. */
+  prefillCode?: boolean;
 }) {
   const isEditing = !!project;
-  const initialManagerIds = (project?.projectManagers ?? []).map((pm) => pm.user.id);
+  const initialManagerIds = managerIdsOf(project);
   const [managerIds, setManagerIds] = useState<string[]>(initialManagerIds);
 
   // #1230 — `discountPercent` is a LOCKED_PROJECT_FIELDS entry. Skipped on create.
@@ -166,7 +171,7 @@ export function useProjectFieldsState({
   const selectedClient = useClient(clientId || undefined);
   const discountTouchedRef = useDiscountPrefill(form, clientId, selectedClient, project?.clientId);
   const { clientContacts, contactOptions } = useClientContactState(form, clientId, orgId, project?.clientId);
-  useProjectCodePrefill(form, nextProjectNumber);
+  useProjectCodePrefill(form, nextProjectNumber, prefillCode);
 
   return {
     isEditing, isTemplate, initialManagerIds, managerIds, setManagerIds,
@@ -250,9 +255,9 @@ function useClientContactState(form: FormApi, clientId: string | undefined, orgI
 
 /** Pre-fill the project code from the org's next sequence so the (required)
  *  field is populated by default — the user accepts it or types their own. */
-function useProjectCodePrefill(form: FormApi, nextProjectNumber: string | null | undefined) {
+function useProjectCodePrefill(form: FormApi, nextProjectNumber: string | null | undefined, enabled?: boolean) {
   useEffect(() => {
-    if (nextProjectNumber && !form.getValues("projectNumber")) {
+    if (enabled !== false && nextProjectNumber && !form.getValues("projectNumber")) {
       form.setValue("projectNumber", nextProjectNumber);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,18 +267,20 @@ function useProjectCodePrefill(form: FormApi, nextProjectNumber: string | null |
 type ProjectFieldsState = ReturnType<typeof useProjectFieldsState>;
 
 export function ProjectFields({
-  form, state, sections,
+  form, state, sections, schedule,
 }: {
   form: UseFormReturn<ProjectFormValues>;
   state: ProjectFieldsState;
   sections: ProjectFieldsSection[];
+  /** The wizard's availability extras under the rental calendar. */
+  schedule?: { busyDays?: ReadonlyMap<string, string>; footer?: React.ReactNode };
 }) {
   const has = (s: ProjectFieldsSection) => sections.includes(s);
   return (
     <>
       {has("job") && <JobFields form={form} state={state} />}
       {has("money") && <MoneyFields form={form} state={state} />}
-      {has("schedule") && <ScheduleFields form={form} />}
+      {has("schedule") && <ScheduleFields form={form} busyDays={schedule?.busyDays} footer={schedule?.footer} />}
       {has("where") && <WhereFields form={form} state={state} />}
     </>
   );
@@ -483,7 +490,7 @@ function windowWarning(range: DateRange, projectRange: DateRange): string | unde
   return undefined;
 }
 
-function ScheduleFields({ form }: { form: UseFormReturn<ProjectFormValues> }) {
+function ScheduleFields({ form, busyDays, footer }: { form: UseFormReturn<ProjectFormValues>; busyDays?: ReadonlyMap<string, string>; footer?: React.ReactNode }) {
   const v = form.watch();
   const range: DateRange = { start: fromDateStr(v.rentalStartDate), end: fromDateStr(v.rentalEndDate) };
   const projectRange: DateRange = { start: fromDateStr(v.projectStartDate), end: fromDateStr(v.projectEndDate) };
@@ -509,7 +516,7 @@ function ScheduleFields({ form }: { form: UseFormReturn<ProjectFormValues> }) {
 
       <PresetChips range={range} onPick={setRange} />
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-        <RangeCalendar value={range} onChange={setRange} />
+        <RangeCalendar value={range} onChange={setRange} busyDays={busyDays} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
           <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-muted")}>{summary}</span>
           {lenLabel && (
@@ -517,6 +524,7 @@ function ScheduleFields({ form }: { form: UseFormReturn<ProjectFormValues> }) {
           )}
         </div>
       </div>
+      {footer}
 
       <Accordion type="single" collapsible defaultValue={projectRange.start ? "project-window" : undefined}>
         <AccordionItem value="project-window" className="border-line">

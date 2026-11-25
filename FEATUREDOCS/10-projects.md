@@ -253,6 +253,10 @@ the wizard's own menu).
 - **`New template…`** (`templates/new-template-sheet.tsx`): the shared `ProjectFields` job block in a
   `FormSheet` (name, type, tags, description, client, managers; no code, discount or dates); it creates
   the template through the ordinary create and opens its page, where gear is added.
+- **Deferred: Restore for archived templates.** An archived template can leave the Archived list only by
+  `Delete forever…`; the one way back is the delete's own Undo toast (`unarchiveTemplatesNative`, ids only,
+  10-minute window). A standing `Restore` action needs its own guarded write (not the ids-only Undo) and is
+  logged as a follow-up, unbuilt.
 
 ## Job fields
 

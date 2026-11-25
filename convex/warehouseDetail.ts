@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { jobCostRedactor } from "./lib/crewPayVisibility";
 import { getKitByCuid } from "./lib/kits";
+import { gearBundleCostGuard } from "./lib/gearCostRedact";
 import { liveRows } from "./lib/versionScope";
 
 
@@ -58,14 +59,16 @@ async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: stri
   const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]) =>
     arr.filter((d): d is T => d !== null && d.organizationId === orgId);
 
-  const models = inOrg(modelDocs);
+  // A `noFinancials` key never sees what the gear cost to own (sell rates stay): absent, never zeroed.
+  const cost = await gearBundleCostGuard(ctx);
+  const models = inOrg(modelDocs).map(cost.model);
   const refCategoryIds = uniq(models.map((m) => m.categoryId));
   const categoryDocs = await pr(
     refCategoryIds.map((id) => ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
   );
 
   // Referenced-only check-item counts (model + kit).
-  const kits = inOrg(kitDocs);
+  const kits = inOrg(kitDocs).map(cost.kit);
   const [modelCountEntries, kitCountEntries] = await Promise.all([
     Promise.all(
       models.map(async (m) => {
@@ -94,8 +97,8 @@ async function readWarehouseDetail(ctx: QueryCtx, projectId: string, orgId: stri
     project: (await jobCostRedactor(ctx, orgId))(project),
     lineItems,
     units,
-    assets: inOrg(assetDocs),
-    bulkAssets: inOrg(bulkDocs),
+    assets: inOrg(assetDocs).map(cost.asset),
+    bulkAssets: inOrg(bulkDocs).map(cost.bulk),
     kits,
     models,
     suppliers: inOrg(supplierDocs),

@@ -109,6 +109,20 @@ describe("modelWrites", () => {
     expect(await model(t, "mdl1")).toMatchObject({ name: "Renamed again", isActive: false });
   });
 
+  test("restoreNative needs model:update: a viewer is refused and the model stays archived", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.withIdentity(asUser).mutation(api.modelWrites.createNative, base);
+    await t.withIdentity(asUser).mutation(api.modelWrites.archiveNative, { id: "mdl1", orgId: ORG, now: NOW + 1, actor, auditId: "ar" });
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_userId", (q) => q.eq("userId", USER)).first();
+      await ctx.db.patch(m!._id, { role: "viewer" });
+    });
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 2, actor, auditId: "rs" }),
+    ).rejects.toThrow(/insufficient permissions/i);
+    expect((await model(t, "mdl1"))?.isActive).toBe(false);
+  });
+
   test("update: assetType flip rejected while conflicting active stock exists (own-org only)", async () => {
     const t = makeT(); await seedMember(t);
     await t.withIdentity(asUser).mutation(api.modelWrites.createNative, { ...base, assetType: "BULK" });

@@ -99,3 +99,57 @@ describe("kit reads: cost for a noFinancials key", () => {
     expect(await tags(asAgent)).toEqual(["KIT-1", "KIT-2"]);
   });
 });
+
+describe("job bundles and the accessory picker: cost for a noFinancials key", () => {
+  const SELL = 85.5; // a sell rate is not cost: it stays visible
+
+  async function seedJob(): Promise<T> {
+    const t = await seed();
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      await ctx.db.patch(m!._id, { dailyRate: SELL });
+      await ctx.db.insert("projects", { liveVersionId: "v-p1", id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, createdAt: 1, updatedAt: 1 } as never);
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: 1, createdById: USER } as never);
+      const line = (id: string, extra: Record<string, unknown>) =>
+        ctx.db.insert("projectLineItems", { versionId: "v-p1", lineageId: id, id, organizationId: ORG, projectId: "p1", status: "CONFIRMED", type: "EQUIPMENT", isKitChild: false, quantity: 1, sortOrder: 1, ...extra } as never);
+      await line("l1", { modelId: "m1", assetId: "a1" });
+      await line("l2", { modelId: "m1", bulkAssetId: "b1" });
+      await line("l3", { kitId: "k1" });
+    });
+    return t;
+  }
+
+  const bundles = (t: T, who: Who) => {
+    const c = t.withIdentity(who);
+    return Promise.all([
+      c.query(api.equipmentTab.bundle, { projectId: "p1", orgId: ORG }),
+      c.query(api.projectEquipment.browserBundle, { projectId: "p1", orgId: ORG }),
+      c.query(api.warehouseDetail.bundle, { projectId: "p1", orgId: ORG }),
+      c.query(api.assetAccessories.availableSerialized, { orgId: ORG, parentAssetId: "none" }),
+    ]);
+  };
+  const SENTINELS = [KIT_PRICE, UNIT_PRICE, BULK_PRICE, REPLACEMENT, DEFAULT_PURCHASE];
+
+  test("no cost sentinel in any of them; the sell rate and the rows are intact", async () => {
+    const t = await seedJob();
+    const out = await bundles(t, asAgent);
+    for (const [i, r] of out.entries()) {
+      for (const s of SENTINELS) expect(JSON.stringify(r), `read #${i}`).not.toContain(String(s));
+    }
+    for (const i of [0, 1, 2]) {
+      const b = out[i] as { assets: { assetTag: string }[]; models: { dailyRate?: number }[] };
+      expect(b.assets.map((a) => a.assetTag)).toEqual(["A-1"]);
+      expect(b.models[0].dailyRate).toBe(SELL);
+    }
+    expect((out[3] as { assetTag: string }[]).map((a) => a.assetTag)).toEqual(["A-1"]);
+  });
+
+  test("a member still sees cost in each of them", async () => {
+    const t = await seedJob();
+    const out = await bundles(t, asUser);
+    for (const i of [0, 1, 2]) {
+      for (const s of SENTINELS) expect(JSON.stringify(out[i]), `read #${i}`).toContain(String(s));
+    }
+    expect(JSON.stringify(out[3])).toContain(String(UNIT_PRICE));
+  });
+});

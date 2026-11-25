@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -33,6 +34,8 @@ export const listBySupplier = query({
   args: { orgId: v.string(), supplierId: v.string() },
   handler: async (ctx, { orgId, supplierId }) => {
     await requireOrgReadFor(ctx, orgId, "supplier");
+    // An order's money is the job-cost line: ABSENT (never zero) for a caller without it.
+    const showMoney = await canSeeJobCost(ctx, orgId);
     const orders = await ctx.db
       .query("supplierOrders")
       .withIndex("by_organizationId_supplierId", (q) => q.eq("organizationId", orgId).eq("supplierId", supplierId))
@@ -52,8 +55,10 @@ export const listBySupplier = query({
         orderNumber: o.orderNumber,
         type: o.type,
         status: o.status ?? "DRAFT",
+        returnDueDate: o.returnDueDate ?? null,
+        returnedDate: o.returnedDate ?? null,
         orderDate: o.orderDate ?? null,
-        total: o.total ?? null,
+        ...(showMoney ? { total: o.total ?? null } : {}),
         project,
         _count: { items: items.length },
       });
@@ -86,6 +91,8 @@ export const getDetail = query({
     await requireOrgReadFor(ctx, orgId, "supplier");
     const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!order || order.organizationId !== orgId) return null;
+    // An order's money is the job-cost line: ABSENT (never zero) for a caller without it.
+    const showMoney = await canSeeJobCost(ctx, orgId);
 
     const supplier = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", order.supplierId)).first();
 
@@ -104,8 +111,7 @@ export const getDetail = query({
         id: it.id,
         description: it.description,
         quantity: it.quantity ?? null,
-        unitPrice: it.unitPrice ?? null,
-        lineTotal: it.lineTotal ?? null,
+        ...(showMoney ? { unitPrice: it.unitPrice ?? null, lineTotal: it.lineTotal ?? null } : {}),
         notes: it.notes ?? null,
         sortOrder: it.sortOrder ?? null,
         model: model && model.organizationId === orgId ? { id: model.id, name: model.name } : null,
@@ -151,9 +157,9 @@ export const getDetail = query({
       orderDate: order.orderDate ?? null,
       expectedDate: order.expectedDate ?? null,
       receivedDate: order.receivedDate ?? null,
-      subtotal: order.subtotal ?? null,
-      taxAmount: order.taxAmount ?? null,
-      total: order.total ?? null,
+      returnDueDate: order.returnDueDate ?? null,
+      returnedDate: order.returnedDate ?? null,
+      ...(showMoney ? { subtotal: order.subtotal ?? null, taxAmount: order.taxAmount ?? null, total: order.total ?? null } : {}),
       notes: order.notes ?? null,
       createdAt: order.createdAt ?? null,
       updatedAt: order.updatedAt ?? null,

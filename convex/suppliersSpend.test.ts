@@ -145,8 +145,8 @@ describe("suppliers.detail — spend rollup (integration)", () => {
       await ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "sup1", createdById: USER, orderNumber: "SH-1", status: "CONFIRMED", totalCost: 500, totalCharge: 700, showOnDocs: false, supplierOrderId: "o1", createdAt: NOW });
     });
     const s = await t.withIdentity(asUser).query(api.suppliers.detail, { orgId: ORG, id: "sup1" });
-    expect(s.spend.totalSpend).toBe(550); // linked + RECEIVED → invoiced amount once
-    expect(s.spend.variance).toEqual({ total: 50, linkedCount: 1 });
+    expect(s.spend?.totalSpend).toBe(550); // linked + RECEIVED → invoiced amount once
+    expect(s.spend?.variance).toEqual({ total: 50, linkedCount: 1 });
     expect(s._count.orders).toBe(1);
   });
 });

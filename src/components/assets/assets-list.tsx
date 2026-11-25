@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AssetSheet, type AssetSheetState } from "@/components/assets/asset-sheet";
 import { useConvex, useConvexAuth } from "convex/react";
 import { toast } from "sonner";
 import { Download, Upload } from "lucide-react";
@@ -16,7 +17,7 @@ import { ListPage } from "@/components/ui/list-page";
 import type { ListFilterDef, ListPrimary } from "@/components/ui/list-page-parts";
 import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
 import { StatusWord } from "@/components/ui/status-word";
-import { useAssetWrites } from "@/hooks/use-asset-writes";
+import { useRetireAssets } from "@/hooks/use-retire-assets";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useCategories } from "@/hooks/use-categories";
 import { useListUrlState } from "@/hooks/use-list-url-state";
@@ -28,7 +29,6 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { runBulk } from "@/lib/bulk-run";
 import {
   ASSET_ITEM_HEADER,
   ASSET_ITEM_SORT_KEY,
@@ -155,18 +155,13 @@ function assetsPageMenu(kind: AssetKind, perms: Perms, openImport: () => void): 
   };
 }
 
-/** Retires each serialised asset through the existing `archiveNative`; no Undo (the asset leaves the active registry). */
-function useRetire(seen: React.MutableRefObject<Map<string, AssetSource>>) {
-  const writes = useAssetWrites();
-  const nameOf = (id: string) => seen.current.get(id)?.assetTag ?? id;
+/** Retires the rows through the shared closure (`useRetireAssets`): each write audited, ONE exact Undo for the selection. */
+function useRetire(seen: React.MutableRefObject<Map<string, AssetSource>>, kind: AssetKind) {
+  const { retireMany: retire } = useRetireAssets();
   async function retireMany(ids: string[]) {
-    const out = await runBulk(ids, {
-      name: nameOf,
-      gate: (id) => (seen.current.get(id)?.status === "RETIRED" ? "already retired" : null),
-      apply: async (id) => void (await writes.archive(id)),
-    });
-    const skipped = out.skipped.length > 0 ? ` · skipped ${out.skipped.map((s) => s.name).join(", ")}` : "";
-    toast.success(`Retired ${plural(out.done.length, "asset")}${skipped}`);
+    await retire(
+      ids.map((id) => ({ id, tag: seen.current.get(id)?.assetTag ?? id, kind, status: seen.current.get(id)?.status })),
+    );
   }
   return { retireMany };
 }
@@ -179,6 +174,8 @@ export function AssetsList() {
 
 function AssetsListInner({ orgId }: { orgId: string | undefined }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const opening = React.useRef(false);
   const now = useStableNow();
   const { state, setState } = useListUrlState(ASSETS_SPEC);
   useRememberedView(state, setState);
@@ -200,7 +197,7 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
   const [dialog, setDialog] = React.useState<Dialog>(null);
   const [importOpen, setImportOpen] = React.useState(false);
   const [modelSearch, setModelSearch] = React.useState("");
-  const { retireMany } = useRetire(seen);
+  const { retireMany } = useRetire(seen, kind);
   const lookups = useLookups(orgId);
 
   const rows = items.map((a) => {
@@ -209,7 +206,8 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
       { id: a.id, title: a.assetTag, kind, status: a.status },
       {
         onOpen: () => router.push(href),
-        onEdit: perms.update && kind === "serialized" ? () => router.push(`/assets/registry/${a.id}/edit`) : undefined,
+        // Edit is a sheet over the record: the unit's own page, or its model's page for bulk stock (D31, D62).
+        onEdit: perms.update ? () => router.push(kind === "serialized" ? `/assets/registry/${a.id}?edit=1` : `/assets/models/${a.modelId}?tab=assets&edit-asset=${a.id}`) : undefined,
         onRetire: perms.update ? () => void retireMany([a.id]) : undefined,
       },
     );
@@ -217,7 +215,13 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
     return { ...row, cells: { status: row.status && <StatusWord status={row.status} /> } };
   });
 
-  const goNew = () => router.push(`/assets/registry/new?type=${kind}`);
+  // Create is a sheet over this list: `?new=serialized|bulk` (+ `modelId`), also what `/assets/registry/new` redirects to.
+  const goNew = () => router.push(`/assets/registry?new=${kind}`);
+  const newParam = searchParams.get("new");
+  const sheet: AssetSheetState | null =
+    perms.create && (newParam === "serialized" || newParam === "bulk")
+      ? { mode: "create", kind: newParam, defaults: { modelId: searchParams.get("modelId") ?? undefined } }
+      : null;
   const primary: ListPrimary | undefined = perms.create ? { label: kind === "bulk" ? "New bulk asset" : "New asset", onSelect: goNew } : undefined;
   const filters: ListFilterDef[] = assetFilters(kind, { ...lookups, modelSearch: { value: modelSearch, onChange: setModelSearch } });
 
@@ -263,6 +267,13 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
         importOpen={importOpen}
         setImportOpen={setImportOpen}
         retireMany={retireMany}
+      />
+      <AssetSheet
+        state={sheet}
+        onClose={() => { if (!opening.current) router.replace("/assets/registry"); opening.current = false; }}
+        // `Create asset` opens the new unit (every check reads `not checked` there); `Save and add another` stays.
+        onSaved={(r) => { if (!r.again && r.kind === "serialized") { opening.current = true; router.push(`/assets/registry/${r.id}`); } }}
+        onImportCsv={() => { router.replace("/assets/registry"); setImportOpen(true); }}
       />
     </>
   );

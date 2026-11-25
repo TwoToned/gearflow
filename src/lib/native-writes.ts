@@ -32,10 +32,23 @@ const ASSET_WRITE_ERROR_MAP: Record<
   string,
   { title: string; message: string; hint?: string }
 > = {
-  ASSET_IN_USE: {
+  // The ONE delete gate (convex/lib/assetHistory.ts): a job, a kit, accessories, maintenance, a test,
+  // a check or a scan each block it, and the mutation's own message names which.
+  ASSET_HAS_HISTORY: {
     title: "Cannot delete",
-    message: "This asset is referenced by job line items.",
-    hint: "Archive it instead so the history stays intact.",
+    message: "This asset has history, so deleting it would destroy that record.",
+    hint: "Retire it instead so the history stays intact.",
+  },
+  // Retire / Reinstate are the only paths into and out of retired, archived (assets, bulk stock, models).
+  USE_RETIRE: {
+    title: "Use Retire or Reinstate",
+    message: "An edit can't move an asset into or out of retired.",
+    hint: "Use Retire or Reinstate from the asset's menu.",
+  },
+  USE_ARCHIVE: {
+    title: "Use Archive or Restore",
+    message: "An edit can't change whether a model is archived.",
+    hint: "Use Archive or Restore from the model's menu.",
   },
   ASSET_IN_KIT: {
     // Shared code across the asset-DELETE path (convex/assetWrites.ts) and the line-item

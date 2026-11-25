@@ -157,7 +157,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/test-and-tag/registry": "redirect to the Test & tag list's All word (`/test-and-tag?seg=all`, Phase 14, D44)",
   "/maintenance/new": "create flow",
   "/assets/models/new": "create flow",
-  "/assets/registry/new": "create flow",
+  "/assets/registry/new": "redirect to the Assets list's create sheet (`/assets/registry?new=serialized|bulk`, Phase 12)",
   "/clients/new": "create flow",
   "/crew/new": "create flow",
   "/kits/new": "create flow",

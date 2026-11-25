@@ -1,7 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgReadFor } from "./lib/auth";
+import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgReadFor } from "./lib/auth";
+import { MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { liveRows } from "./lib/versionScope";
 
@@ -68,6 +69,17 @@ const countableStatuses = (requested: readonly string[]): Set<string> =>
  * long-standing "a zero replacement cost is unknown, not free capital" rule
  * (src/lib/roi.test.ts), now applied uniformly to every field in the fallback chain. */
 const positiveCost = (v: number | null | undefined): number | null => (v != null && v > 0 ? v : null);
+
+/**
+ * What the model owns the capital for is COST, and a `noFinancials` API key must never
+ * see it (the page's `Show cost & payback` is only a UI default; the server is the
+ * authority, R-9.3). The keys are ABSENT, never zeroed, so nothing can be back-solved.
+ */
+const ROI_COST_FIELDS = ["fleetCost", ...MODEL_COST_FIELDS] as const;
+async function roiCostRedactor(ctx: QueryCtx): Promise<<T extends Record<string, unknown>>(row: T) => T> {
+  const hide = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
+  return (row) => (hide ? redactFields(row, ROI_COST_FIELDS) : row);
+}
 
 type CostModel = { defaultPurchasePrice?: number | null; replacementCost?: number | null } | null | undefined;
 
@@ -194,7 +206,8 @@ export const getModelRoi = query({
     const revenueCents = projects.reduce((s, p) => s + Math.round(p.revenue * 100), 0);
     const capital = await fleetCapitalFor(ctx, orgId, modelId, model);
 
-    return {
+    const redact = await roiCostRedactor(ctx);
+    return redact({
       modelId,
       modelName: model?.name ?? "Unknown model",
       replacementCost: model?.replacementCost ?? null,
@@ -203,7 +216,7 @@ export const getModelRoi = query({
       revenue: revenueCents / 100,
       projects,
       truncated: rollupsTruncated || capital.truncated,
-    };
+    });
   },
 });
 
@@ -435,20 +448,21 @@ export const fleetInventory = query({
       costRaw.set(b.modelId, (costRaw.get(b.modelId) ?? 0) + rate * qty);
     }
 
+    const redact = await roiCostRedactor(ctx);
     return {
       rows: models
         .filter((m) => m.isActive !== false)
         .map((m) => {
           const unitsOwned = units.get(m.id) ?? 0;
           const raw = costRaw.get(m.id) ?? 0;
-          return {
+          return redact({
             modelId: m.id,
             modelName: m.name,
             manufacturer: m.manufacturer ?? null,
             categoryId: m.categoryId ?? null,
             fleetCost: unitsOwned > 0 && raw > 0 ? raw : null,
             unitsOwned,
-          };
+          });
         }),
       truncated:
         models.length === MODEL_CAP ||

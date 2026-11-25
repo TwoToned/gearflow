@@ -22,9 +22,9 @@ import { z } from "zod";
  */
 export const blankableNumber = (
   schema: z.ZodType<number, number>,
-): z.ZodType<number | undefined, string | number | null | undefined> =>
+): z.ZodOptional<z.ZodType<number | undefined, string | number | null | undefined>> =>
   z.optional(
     z
       .union([z.literal(""), z.null(), z.coerce.number().pipe(schema)])
       .transform((v) => (v === "" || v === null ? undefined : v)),
-  ) as unknown as z.ZodType<number | undefined, string | number | null | undefined>;
+  ) as unknown as z.ZodOptional<z.ZodType<number | undefined, string | number | null | undefined>>;

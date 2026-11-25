@@ -42,6 +42,7 @@ import {
 } from "./lib/billingDerivation";
 import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
 import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
+import { assertModelNotArchived } from "./lib/modelArchive";
 import {
   adjustModelSaleStock,
   sellSerializedAssetForSale,
@@ -642,6 +643,8 @@ export const patchNative = mutation({
     // patchNative was missing this entirely, letting a browser-direct caller point a
     // line at another org's model/asset/bulkAsset/category/group/supplier.
     if (setObj.modelId) await assertRefInOrg(ctx, "models", setObj.modelId as string, orgId);
+    // Only a CHANGE of model is a new pick: an existing line on a since-archived model stays editable.
+    if (setObj.modelId && setObj.modelId !== doc.modelId) await assertModelNotArchived(ctx, orgId, setObj.modelId as string);
     if (setObj.assetId) await assertRefInOrg(ctx, "assets", setObj.assetId as string, orgId);
     if (setObj.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", setObj.bulkAssetId as string, orgId);
     if (setObj.groupId) await assertRefInOrg(ctx, "projectGroups", setObj.groupId as string, orgId);
@@ -1575,6 +1578,7 @@ export const addNative = mutation({
     // org's; the service-token read path resolves these with no org re-check). Same
     // block as addLineItemSmartNative, plus supplierId (validated by neither add path before).
     if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.modelId) await assertModelNotArchived(ctx, organizationId, fields.modelId);
     if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
     if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
     if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);
@@ -2459,6 +2463,7 @@ export const addLineItemSmartNative = mutation({
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another org's).
     if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.modelId) await assertModelNotArchived(ctx, organizationId, fields.modelId);
     if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
     if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
     if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);

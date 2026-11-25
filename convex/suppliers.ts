@@ -5,6 +5,7 @@ import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/a
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { gearBundleCostGuard } from "./lib/gearCostRedact";
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 
@@ -236,7 +237,8 @@ export const assetsPage = query({
     const total = filtered.length;
     const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
     const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m])); // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
-    return { assets: rows.map((a) => ({ ...a, model: a.modelId ? models.get(a.modelId) ?? null : null })), total };
+    const cost = await gearBundleCostGuard(ctx); // what the gear cost to buy is absent for a `noFinancials` key
+    return { assets: rows.map((a) => ({ ...cost.asset(a), model: cost.model(a.modelId ? models.get(a.modelId) ?? null : null) })), total };
   },
 });
 

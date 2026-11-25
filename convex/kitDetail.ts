@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
+import { assetCostGuard, bulkAssetCostGuard, kitCostGuard } from "./lib/gearCostRedact";
 import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
 import { getKitByCuid } from "./lib/kits";
 import { loadKitStates } from "./lib/kitState";
@@ -50,8 +51,11 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
   ]);
   const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]) =>
     arr.filter((d): d is T => d !== null && d.organizationId === orgId);
-  const assets = inOrg(assetDocs);
-  const bulkAssets = inOrg(bulkDocs);
+  // A `noFinancials` key never sees what a member unit cost (absent, never zeroed).
+  const assetCost = await assetCostGuard(ctx);
+  const bulkCost = await bulkAssetCostGuard(ctx);
+  const assets = inOrg(assetDocs).map(assetCost.row);
+  const bulkAssets = inOrg(bulkDocs).map(bulkCost.row);
 
   const refModelIds = uniq([...assets.map((a) => a.modelId), ...bulkAssets.map((b) => b.modelId)]);
   const refProjectIds = uniq([...lineItems.map((r) => r.projectId), ...scanLogs.map((r) => r.projectId)]);
@@ -77,7 +81,7 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
   const derived = states.get(kit.id);
 
   return {
-    kit,
+    kit: (await kitCostGuard(ctx)).row(kit),
     state: derived ? { key: derived.key, missing: derived.missing, booking: derived.booking, reportedMissing: derived.reportedMissing } : null,
     serializedItems: serialized,
     bulkItems: bulk,
@@ -86,7 +90,7 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
     media,
     assets,
     bulkAssets,
-    models: inOrg(modelDocs),
+    models: inOrg(modelDocs).map(assetCost.model),
     projects: inOrg(projectDocs),
     // Allowlist DTOs (§3.5): the kit page needs only the scanner's { id, name } and
     // the media file URLs — never `users` PII (email/role/…) or the file storageKey.

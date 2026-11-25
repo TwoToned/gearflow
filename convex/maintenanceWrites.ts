@@ -104,7 +104,7 @@ async function fetchOrgAsset(
  * Mark assets IN_MAINTENANCE, but ONLY if currently AVAILABLE (the load-bearing
  * guard — mirrors the Prisma `where: { status: AVAILABLE }`). Per-row org re-check.
  */
-async function holdAssets(
+export async function holdAssets(
   ctx: MutationCtx,
   orgId: string,
   assetIds: string[],
@@ -196,7 +196,7 @@ type AssetDisposition = "RETURN_TO_SERVICE" | "KEEP_OUT_OF_SERVICE" | "RETIRE";
  * matching archiveNative) — the record-level "Updated maintenance record" audit
  * covers everything else.
  */
-async function applyAssetDispositions(
+export async function applyAssetDispositions(
   ctx: MutationCtx,
   orgId: string,
   dispositions: { assetId: string; disposition: AssetDisposition }[],
@@ -240,7 +240,7 @@ async function applyAssetDispositions(
  * Filters out WS6 CHECKOFF rows — a recurring-PM progress row sharing this
  * record's id is never a hold/release link (see maintenanceRecordAssetKind.ts).
  */
-async function existingLinks(ctx: MutationCtx, recordId: string) {
+export async function existingLinks(ctx: MutationCtx, recordId: string) {
   return (
     await ctx.db
       .query("maintenanceRecordAssets")

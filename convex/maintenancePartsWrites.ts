@@ -2,10 +2,9 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { requireOrgPermission, resolveActor } from "./lib/auth";
+import { requireOrgPermission } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { loadMaintenanceRecord, maintenanceWritePrelude } from "./lib/maintenanceRecordAccess";
 import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
@@ -65,11 +64,7 @@ function assertPartFields(f: PartSet): void {
 
 const fieldsOf = (p: Record<string, unknown>): PartFields => Object.fromEntries(PART_FIELDS.map((f) => [f, (p[f] ?? null) as FieldValue]));
 
-async function loadRecord(ctx: MutationCtx, orgId: string, recordId: string): Promise<Doc<"maintenanceRecords">> {
-  const rec = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", recordId)).first();
-  if (!rec || rec.organizationId !== orgId) throw new ConvexError("Maintenance record not found");
-  return rec;
-}
+const loadRecord = loadMaintenanceRecord;
 
 /** The part (by_cuid is global: it must be this org's AND this record's). */
 async function loadPart(ctx: MutationCtx, orgId: string, recordId: string, partId: string): Promise<Doc<"maintenanceParts"> | null> {
@@ -88,12 +83,7 @@ async function partsOf(ctx: MutationCtx, orgId: string, recordId: string): Promi
   return rows.filter((r) => r.organizationId === orgId);
 }
 
-async function prelude(ctx: MutationCtx, orgId: string, actor: { userId: string; userName: string }) {
-  await assertWritesEnabled(ctx, "maintenance");
-  await enforceBrowserWriteLimit(ctx);
-  await requireOrgPermission(ctx, orgId, "maintenance", "update");
-  return resolveActor(ctx, actor);
-}
+const prelude = maintenanceWritePrelude;
 
 /** ONE audit row on the record with the op's snapshot, and the record's `updatedAt` bumped (a worked-on record is not "untouched"). */
 async function recordPartOp(
@@ -124,7 +114,7 @@ export const addNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { orgId: v.string(), recordId: v.string(), id: v.string(), part: partSet, actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
-    const actor = await prelude(ctx, a.orgId, a.actor);
+    const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
     const name = a.part.name?.trim();
     if (!name) throw new ConvexError({ code: "INVALID_FIELD", message: "A part needs a name." });
@@ -147,7 +137,7 @@ export const editNative = mutation({
   returns: v.object({ id: v.string(), changed: v.boolean() }),
   args: { orgId: v.string(), recordId: v.string(), id: v.string(), set: partSet, clear: v.array(v.string()), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
-    const actor = await prelude(ctx, a.orgId, a.actor);
+    const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
     const part = await requirePart(ctx, a.orgId, a.recordId, a.id);
     const seesCost = await canSeeJobCost(ctx, a.orgId);
@@ -182,7 +172,7 @@ export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { orgId: v.string(), recordId: v.string(), id: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
-    const actor = await prelude(ctx, a.orgId, a.actor);
+    const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
     const part = await requirePart(ctx, a.orgId, a.recordId, a.id);
     const before = fieldsOf(part);
@@ -202,7 +192,7 @@ export const markArrivedNative = mutation({
   returns: v.object({ id: v.string(), changed: v.boolean(), advanced: v.boolean() }),
   args: { orgId: v.string(), recordId: v.string(), id: v.string(), arrivedAt: v.number(), actor: actorValidator, auditId: v.string(), now: v.number() },
   handler: async (ctx, a) => {
-    const actor = await prelude(ctx, a.orgId, a.actor);
+    const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
     const part = await requirePart(ctx, a.orgId, a.recordId, a.id);
     assertNumRange(a.arrivedAt, "arrived", {});
@@ -261,7 +251,7 @@ export const undoNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { orgId: v.string(), recordId: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
   handler: async (ctx, a) => {
-    const actor = await prelude(ctx, a.orgId, a.actor);
+    const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
     const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
     if (!row || row.organizationId !== a.orgId || row.entityType !== "maintenance" || row.entityId !== a.recordId) throw refuse("NOT_FOUND", "That change was not found, so it can't be undone.");

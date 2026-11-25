@@ -29706,6 +29706,187 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "maintenanceLifecycleWrites.completeNative",
+    "module": "maintenanceLifecycleWrites",
+    "fn": "completeNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "completedDate",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "dispositions",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "labour",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "nextDueDate",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "result",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fa376ada80d4e243",
+    "returnsSha": "de41a6d1a4a33e2c",
+    "stability": "tracks-app",
+    "summary": "Complete a maintenance job: result, date, labour, next due, and a per-asset disposition (defaults from the result; Retire is terminal).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceLifecycleWrites.reopenNative",
+    "module": "maintenanceLifecycleWrites",
+    "fn": "reopenNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1b5be13d9916835f",
+    "returnsSha": "de41a6d1a4a33e2c",
+    "stability": "tracks-app",
+    "summary": "Reopen a completed maintenance job (back to In progress; released assets go back on hold).",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceLifecycleWrites.undoNative",
+    "module": "maintenanceLifecycleWrites",
+    "fn": "undoNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c1c43ac6b872f27b",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent Complete or Reopen by its audit id (refuses if the job or an asset it moved changed since).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "maintenanceList.listPage",
     "module": "maintenanceList",
     "fn": "listPage",
@@ -71452,10 +71633,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1379,
-  agentReachable: 741,
+  total: 1382,
+  agentReachable: 744,
   queries: 487,
-  mutations: 892,
+  mutations: 895,
   agentReachableQueries: 351,
-  agentReachableMutations: 390,
+  agentReachableMutations: 393,
 } as const;

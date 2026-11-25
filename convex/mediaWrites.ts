@@ -63,9 +63,26 @@ async function assertParentInOrg(ctx: MutationCtx, cfg: (typeof CFG)[Kind], pare
 
 /** Another row of this media table that already points at the file (its `by_fileId` index is global; the file is org-checked by the caller). */
 async function otherRowsForFile(ctx: MutationCtx, cfg: (typeof CFG)[Kind], fileId: string, exceptId?: string): Promise<boolean> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rows = (await ctx.db.query(cfg.table).withIndex("by_fileId" as any, (q: any) => q.eq("fileId", fileId)).take(2)) as MediaRow[];
+  const rows = await mediaRowsByFile(ctx, cfg.table, fileId);
   return rows.some((r) => r.id !== exceptId);
+}
+
+/** Up to two rows of one media table pointing at a file (each table has its own typed `by_fileId` index). */
+async function mediaRowsByFile(ctx: MutationCtx, table: MediaTable, fileId: string): Promise<{ id: string }[]> {
+  switch (table) {
+    case "clientMedia":
+      return ctx.db.query("clientMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+    case "locationMedia":
+      return ctx.db.query("locationMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+    case "projectMedia":
+      return ctx.db.query("projectMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+    case "kitMedia":
+      return ctx.db.query("kitMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+    case "assetMedia":
+      return ctx.db.query("assetMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+    case "modelMedia":
+      return ctx.db.query("modelMedia").withIndex("by_fileId", (q) => q.eq("fileId", fileId)).take(2);
+  }
 }
 
 /**

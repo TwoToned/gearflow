@@ -6,7 +6,7 @@
 // My tasks tick + Undo, and the role gating of Needs attention reads.
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DEFAULT_DASHBOARD_LAYOUT } from "@/lib/dashboard-widgets";
 import { rolePermissions } from "@/lib/permissions";
@@ -183,7 +183,9 @@ describe("Home (smoke)", () => {
   });
 
   it("opens the page ⋯: Warehouse, Add gear and Customise… (desktop)", async () => {
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     await user.click(screen.getByRole("button", { name: "Home actions" }));
     const menu = await screen.findByRole("menu");
@@ -194,7 +196,9 @@ describe("Home (smoke)", () => {
   });
 
   it("Customise… swaps + New job for Done, Add widget and Reset layout; Reset toasts an Undo", async () => {
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     await user.click(screen.getByRole("button", { name: "Home actions" }));
     await user.click(await screen.findByRole("menuitem", { name: "Customise…" }));
@@ -207,12 +211,23 @@ describe("Home (smoke)", () => {
     await user.click(screen.getByLabelText("Hide My tasks"));
     expect(lastToast()?.[0]).toBe("My tasks hidden · Add widget brings it back");
     expect(screen.queryByLabelText("Hide My tasks")).toBeNull();
-    await lastToast()?.[1]?.action?.onClick();
+    await act(async () => {
+      await lastToast()?.[1]?.action?.onClick();
+    });
     await waitFor(() => expect(screen.getByLabelText("Hide My tasks")).toBeDefined());
 
     // A stat tile is being arranged, not opened: no link while customising.
     expect(screen.queryByRole("link", { name: /^Active jobs:/ })).toBeNull();
     expect(screen.getAllByText("Active jobs").length).toBeGreaterThan(0);
+  });
+
+  // Split from the test above: each one renders the whole board once, so each gets its own
+  // time budget instead of one test doing two full customise round trips (CI load stretched it).
+  it("Customise…: Add widget lists only what is off the board; Reset on an unchanged board is a no-op; Done restores + New job", async () => {
+    const user = userEvent.setup({ delay: null });
+    render(<DashboardPage />);
+    await user.click(screen.getByRole("button", { name: "Home actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Customise…" }));
 
     // Add widget lists only what is off the board.
     await user.click(screen.getByRole("button", { name: /Add widget/ }));
@@ -229,7 +244,9 @@ describe("Home (smoke)", () => {
 
   it("phone: the ⋯ sheet has no Customise and says so; + New job is a sticky bar", async () => {
     m.isMobile = true;
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     // One + New job: the sticky bar (portaled above the bottom nav), not the header button.
     const sticky = screen.getAllByRole("link", { name: /New job/ });
@@ -242,7 +259,9 @@ describe("Home (smoke)", () => {
   });
 
   it("My tasks: the row ⋯ opens with Open and Mark done; Mark done is the same write as the tick", async () => {
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     await user.click(screen.getByRole("button", { name: "Send revised quote actions" }));
     const menu = await screen.findByRole("menu");
@@ -253,7 +272,9 @@ describe("Home (smoke)", () => {
 
   it("My tasks: a role without work/project update has NO tick and NO Mark done (absent, not disabled)", async () => {
     m.permissions = rolePermissions.viewer as Record<string, string[]>;
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     expect(screen.getByText("Send revised quote")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Complete Send revised quote" })).toBeNull();
@@ -263,7 +284,9 @@ describe("Home (smoke)", () => {
   });
 
   it("My tasks: the tick completes with the /my-tasks write and Undo is the EXACT ids-only undo of that write", async () => {
-    const user = userEvent.setup();
+    // `delay: null` drops user-event's per-action macrotask yield: each step of this heavy page
+    // otherwise waits a timer turn, which is what stretched the Customise test past 5 s under load.
+    const user = userEvent.setup({ delay: null });
     render(<DashboardPage />);
     expect(screen.getByText("3d overdue")).toBeDefined();
     await user.click(screen.getByRole("button", { name: "Complete Send revised quote" }));

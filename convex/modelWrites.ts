@@ -450,9 +450,12 @@ export const adjustSaleStockNative = mutation({
 export const agentOps: AgentOpsAnnotations = {
   // Delete/archive tier (§9): hides the model from new quotes and pickers. A soft
   // archive now (it no longer deletes the model's assets); still `high` by tier.
-  archiveNative: { danger: "high" },
+  archiveNative: {
+    danger: "high",
+    summary: "Archive a model: hides it from new quotes and pickers and refuses new job lines on it (MODEL_ARCHIVED). Its assets, existing lines, reservations and availability are NOT touched. Reversible with restoreNative or undoArchiveNative.",
+  },
   // Puts an archived model (and so its gear) back on new quotes, so `high`.
-  restoreNative: { danger: "high" },
+  restoreNative: { danger: "high", summary: "Restore an archived model so it can be added to jobs again." },
   undoArchiveNative: { danger: "medium" },
   // A single model's stock count, reversible by an equal-and-opposite
   // adjustment — no asset/availability impact (that's `saleStock.ts`'s

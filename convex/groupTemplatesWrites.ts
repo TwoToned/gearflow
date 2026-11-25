@@ -17,6 +17,7 @@ import { getKitByCuid } from "./lib/kits";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
 import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billingDerivation";
 import { resolveLiveVersionIdForProject, resolveWriteVersionId, versionRows } from "./lib/versionScope";
+import { assertModelNotArchived } from "./lib/modelArchive";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -475,6 +476,7 @@ export const applyNative = mutation({
       if (!item.modelId) continue;
       const model = await getModel(item.modelId);
       if (!model) continue; // parity: server dropped items whose model didn't resolve
+      await assertModelNotArchived(ctx, a.orgId, item.modelId); // a template apply puts NEW lines on the job
       const quantity = item.quantity ?? 1;
       // #1249 — the SAME rate guard `addLineItemSmartNative` applies before it
       // auto-prices. computeBlendedCharge with both rates null returns

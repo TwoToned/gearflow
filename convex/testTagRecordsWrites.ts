@@ -30,6 +30,7 @@ import {
   type TestTagSaveDetails,
 } from "./lib/testTagUndo";
 import { deleteMaintenanceWithLinks, requireUntouchedMaintenance } from "./lib/undoMaintenance";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
 
 /**
  * Native TEST-TAG-RECORD write state machine (Phase 3 browser-direct — replaces
@@ -477,9 +478,11 @@ async function referToElectrician(ctx: MutationCtx, a: CreateArgs, asset: Doc<"t
     .unique();
   if (!invAsset || invAsset.organizationId !== a.orgId) throw new ConvexError("Linked asset not found");
   const invBefore = invAssetSnapshot(invAsset);
-  await ctx.db.patch(invAsset._id, { status: "IN_MAINTENANCE", updatedAt: a.now });
+  // A retired unit keeps RETIRED (no status writer reinstates it); a referral can still be recorded against it.
+  const referredStatus = nextStatusUnlessRetired(invAsset.status, "IN_MAINTENANCE");
+  await ctx.db.patch(invAsset._id, { status: referredStatus, updatedAt: a.now });
   return {
-    inventory: { id: invAsset.id, before: invBefore, after: { status: "IN_MAINTENANCE", updatedAt: a.now } },
+    inventory: { id: invAsset.id, before: invBefore, after: { status: referredStatus, updatedAt: a.now } },
     createdMaintenanceId: created ? maintenanceId : null,
     referralMaintenanceId: maintenanceId,
     createdLinkId,

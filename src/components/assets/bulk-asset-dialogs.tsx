@@ -76,7 +76,6 @@ export function BulkEditDialog({
               <option value="CHECKED_OUT">{OUT_LABEL}</option>
               <option value="IN_MAINTENANCE">In maintenance</option>
               <option value="RESERVED">Reserved</option>
-              <option value="RETIRED">Retired</option>
               <option value="LOST">Lost</option>
             </select>
           </div>

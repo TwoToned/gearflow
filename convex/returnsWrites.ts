@@ -16,6 +16,7 @@ import { syncLineItemRollup, assetStatusFromReturnCondition } from "./lib/fulfil
 import { distributeReturn, type CheckInItem } from "./lib/bulkCheckin";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { resolveLiveVersionIdForProject } from "./lib/versionScope";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
 
 /**
  * Org-wide returns-station writes (issue #944 WS5) — the project-less scan/batch
@@ -475,11 +476,12 @@ export const correctReturnConditionNative = mutation({
       if (unit.status !== "RETURNED") throw new ConvexError("Item has not been returned yet");
       await ctx.db.patch(unit._id, { returnCondition: a.returnCondition, returnNotes: a.notes || unit.returnNotes, updatedAt: a.now });
       if (unit.assetId) {
-        const newStatus = assetStatusFromReturnCondition(a.returnCondition);
         const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", unit!.assetId!)).first();
         // Skip an asset that has since gone out again (another job) — correcting
         // an old return must not flip a live asset to AVAILABLE/IN_MAINTENANCE.
+        // A RETIRED asset keeps its status (nextStatusUnlessRetired): a correction never reinstates it.
         if (asset && asset.organizationId === a.orgId && asset.status !== "CHECKED_OUT") {
+          const newStatus = nextStatusUnlessRetired(asset.status, assetStatusFromReturnCondition(a.returnCondition));
           await ctx.db.patch(asset._id, { status: newStatus, updatedAt: a.now });
           // Keep the dashboard counters in step with the status change.
           await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: newStatus });

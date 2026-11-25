@@ -3,6 +3,7 @@ import { query, mutation } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { gearBundleCostGuard } from "./lib/gearCostRedact";
 
 /**
  * Thin CRUD for Category (Convex table "categories"). GENERATED — Phase 2/5.
@@ -114,6 +115,7 @@ export const detail = query({
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name))
       .map((c) => ({ ...c, _count: { models: mk.get(c.id)?.models ?? 0, kits: mk.get(c.id)?.kits ?? 0, children: childCounts.get(c.id) ?? 0 } }));
 
+    const cost = await gearBundleCostGuard(ctx); // kit and model cost is absent for a `noFinancials` key
     const catKits = kits.filter((k) => k.categoryId === id).sort((a, b) => a.name.localeCompare(b.name));
     const kitsOut = [];
     for (const k of catKits) {
@@ -124,7 +126,7 @@ export const detail = query({
       // by_kitId is a global index — org-filter the member rows (defense-in-depth).
       const serN = ser.filter((r) => r.organizationId === orgId).length;
       const bulkN = bulk.filter((r) => r.organizationId === orgId).length;
-      kitsOut.push({ ...k, _count: { serializedItems: serN, bulkItems: bulkN } });
+      kitsOut.push({ ...cost.kit(k), _count: { serializedItems: serN, bulkItems: bulkN } });
     }
 
     const modelsOut = models
@@ -132,7 +134,7 @@ export const detail = query({
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((m) => {
         const p = photo.get(m.id);
-        return { ...m, _count: { assets: assetCount.get(m.id) ?? 0 }, media: p ? [{ url: p.url, thumbnailUrl: p.thumbnailUrl }] : [] };
+        return { ...cost.model(m), _count: { assets: assetCount.get(m.id) ?? 0 }, media: p ? [{ url: p.url, thumbnailUrl: p.thumbnailUrl }] : [] };
       });
 
     const ownCounts = mk.get(id) ?? { models: 0, kits: 0 };

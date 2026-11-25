@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { blankableNumber } from "@/lib/validations/blankable";
+
+import { blankableNumber } from "./blankable";
 
 export const assetSchema = z.object({
   modelId: z.string().min(1, "Model is required"),
@@ -9,7 +10,7 @@ export const assetSchema = z.object({
   status: z.enum(["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "LOST", "RESERVED", "SOLD"]).default("AVAILABLE"),
   condition: z.enum(["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"]).default("NEW"),
   purchaseDate: z.union([z.literal(""), z.coerce.date()]).optional().transform(v => v === "" ? undefined : v),
-  purchasePrice: z.union([z.literal(""), z.coerce.number().min(0)]).optional().transform(v => v === "" ? undefined : v),
+  purchasePrice: blankableNumber(z.number().min(0)),
   purchaseSupplier: z.string().max(200).optional(),
   supplierId: z.string().optional(),
   purchaseOrderNumber: z.string().max(100).optional(),
@@ -22,6 +23,11 @@ export const assetSchema = z.object({
   images: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),
+}).superRefine((v, ctx) => {
+  // Warranty can't end before the purchase (§9d.4). Both are optional dates by now.
+  if (v.purchaseDate && v.warrantyExpiry && v.warrantyExpiry.getTime() < v.purchaseDate.getTime()) {
+    ctx.addIssue({ code: "custom", path: ["warrantyExpiry"], message: "Warranty can't end before the purchase date" });
+  }
 });
 
 export type AssetFormValues = z.input<typeof assetSchema>;
@@ -30,7 +36,7 @@ export const bulkAssetSchema = z.object({
   modelId: z.string().min(1, "Model is required"),
   assetTag: z.string().min(1, "Asset tag is required").max(50),
   totalQuantity: z.coerce.number().int().min(0, "Quantity must be 0 or more").default(0),
-  purchasePricePerUnit: z.coerce.number().min(0).optional(),
+  purchasePricePerUnit: blankableNumber(z.number().min(0)),
   locationId: z.string().optional(),
   status: z.enum(["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK", "RETIRED"]).default("ACTIVE"),
   notes: z.string().max(2000).optional(),
@@ -39,6 +45,11 @@ export const bulkAssetSchema = z.object({
 });
 
 export type BulkAssetFormValues = z.input<typeof bulkAssetSchema>;
+
+/** Creating bulk stock needs at least one on hand (an edit may take it to 0: out of stock). */
+export const bulkAssetCreateSchema = bulkAssetSchema.extend({
+  totalQuantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+});
 
 // ─── Child assets / accessories ──────────────────────────────────────────────
 

@@ -154,7 +154,7 @@ describe("assetWrites.archiveNative", () => {
       expect(tt?.status).toBe("RETIRED");
       expect(tt?.isActive).toBe(false);
       const log = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "log1")).first();
-      expect(log?.summary).toMatch(/Archived asset/);
+      expect(log?.summary).toMatch(/Retired asset/);
     });
   });
 
@@ -191,7 +191,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
     ).rejects.toThrow(/insufficient permissions/i);
   });
 
-  test("blocked when referenced by a project line item (ASSET_IN_USE)", async () => {
+  test("blocked when it has been on a project line item (ASSET_HAS_HISTORY: JOB)", async () => {
     const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
@@ -199,10 +199,10 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
     });
     await expect(
       t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, deleteArgs),
-    ).rejects.toThrow(/referenced by project line items/i);
+    ).rejects.toThrow(/been on a job/i);
   });
 
-  test("blocked when the asset is a kit member (ASSET_IN_KIT)", async () => {
+  test("blocked when the asset is a kit member (ASSET_HAS_HISTORY: KIT)", async () => {
     const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {
@@ -213,7 +213,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
     ).rejects.toThrow(/part of a kit/i);
   });
 
-  test("blocked when the asset has accessory children (ASSET_HAS_ACCESSORIES)", async () => {
+  test("blocked when the asset has accessory children (ASSET_HAS_HISTORY: ACCESSORY)", async () => {
     const t = makeT();
     await seedAsset(t);
     await t.run(async (ctx) => {

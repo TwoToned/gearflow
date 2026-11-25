@@ -24,6 +24,7 @@ import {
   type UnitLike,
 } from "./lineItemUnits";
 import { bumpAssetCounters } from "./counters";
+import { nextStatusUnlessRetired } from "./assetRetire";
 import { stampLocationMovement } from "./locationMovement";
 import { resolveLiveVersionIdForProject, versionRows } from "./versionScope";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./accessoryRelocation";
@@ -314,9 +315,10 @@ function worstReturnCondition(prev: ReturnCondition | null | undefined, next: Re
   return RETURN_CONDITION_SEVERITY[prev] >= RETURN_CONDITION_SEVERITY[next] ? prev : next;
 }
 
-async function setAssetStatus(ctx: Ctx, assetId: string, status: string, locationId: string | null) {
+async function setAssetStatus(ctx: Ctx, assetId: string, wanted: string, locationId: string | null) {
   const a = await assetDocByCuid(ctx, assetId);
   if (!a) return;
+  const status = nextStatusUnlessRetired(a.status, wanted); // a check-in never reinstates a retired unit
   // locationId may be cleared: patch can't set undefined, so replace when clearing.
   if (locationId === null) {
     const { _id, _creationTime, locationId: _drop, ...rest } = a;

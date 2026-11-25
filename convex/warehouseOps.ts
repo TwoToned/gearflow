@@ -26,6 +26,8 @@ import {
 } from "./lib/fulfillment";
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
+import { assertModelNotArchived } from "./lib/modelArchive";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
 import { loadKitBookingGate } from "./lib/kitState";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
@@ -555,12 +557,13 @@ async function assertKitCompositionParity(ctx: Ctx, kitLineId: string, kitId: st
     });
   }
 }
-export async function setAssetsStatus(ctx: Ctx, assetIds: string[], status: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
+export async function setAssetsStatus(ctx: Ctx, assetIds: string[], wanted: string, locationId: string | null, clearLocIfNull: boolean, now: number) {
   const moves = new LocationMovements();
   let orgIdOfMoves: string | undefined;
   for (const id of assetIds) {
     const a = await assetByCuid(ctx, id);
     if (!a) continue;
+    const status = nextStatusUnlessRetired(a.status, wanted); // no warehouse movement reinstates a retired unit
     // `lastMovementAt`: a set location moves it; a clear removes it; neither leaves it alone.
     moves.record(a.locationId, locationId != null ? locationId : clearLocIfNull ? null : undefined);
     if (locationId != null) {
@@ -1949,6 +1952,8 @@ export type QuickAddArgs = {
  *  write org-validates the client modelId/assetId/bulkAssetId BEFORE calling this
  *  (this core inserts them verbatim, as the trusted server always did). */
 export async function quickAddCore(ctx: Ctx, a: QuickAddArgs): Promise<{ id: string }> {
+    // A quick add puts a NEW line on the job, so an archived model is refused here too.
+    await assertModelNotArchived(ctx, a.organizationId, a.modelId);
     await assertTestTagAllowsCheckout(ctx, a.organizationId, {
       assetIds: a.assetId ? [a.assetId] : [], bulkAssetIds: a.bulkAssetId ? [a.bulkAssetId] : [],
     });

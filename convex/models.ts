@@ -1,6 +1,8 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
+import { MODEL_COST_FIELDS } from "./lib/gearCostFields";
+import { assetCostGuard, bulkAssetCostGuard } from "./lib/gearCostRedact";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -8,7 +10,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *  unit — cost data, distinct from the model's own RENTAL rates (`dailyRate`
  *  etc.), which are the sell price an agent needs to operate (quoting/booking)
  *  and stay visible regardless of the `noFinancials` flag. */
-const MODEL_COST_FIELDS = ["replacementCost", "defaultPurchasePrice"] as const;
+// (the list lives in ./lib/gearCostFields, shared with the asset detail read)
 
 /**
  * Thin CRUD for Model (Convex table "models"). GENERATED — Phase 2/5.
@@ -119,19 +121,21 @@ export const detail = query({
       location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
     });
 
+    const assetCost = await assetCostGuard(ctx);
+    const bulkCost = await bulkAssetCostGuard(ctx);
     // Active assets + bulk assets for this model (assetTag ASC), org-re-checked.
     const byAssetTag = (a: { assetTag: string }, b: { assetTag: string }) => a.assetTag.localeCompare(b.assetTag);
     const assetsRaw = await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect();
     const assets = assetsRaw
       .filter((a) => a.organizationId === orgId && a.isActive !== false)
       .sort(byAssetTag)
-      .map((a) => attachLoc({ ...a, locationId: a.locationId ?? null, status: a.status ?? "AVAILABLE" }));
+      .map((a) => attachLoc({ ...assetCost.row(a), locationId: a.locationId ?? null, status: a.status ?? "AVAILABLE" }));
     const bulkRaw = await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", id)).collect();
     const bulkAssets = bulkRaw
       .filter((b) => b.organizationId === orgId && b.isActive !== false)
       .sort(byAssetTag)
       .map((b) => attachLoc({
-        ...b,
+        ...bulkCost.row(b),
         locationId: b.locationId ?? null,
         status: b.status ?? "ACTIVE",
         availableQuantity: b.availableQuantity ?? 0,

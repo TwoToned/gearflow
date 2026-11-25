@@ -23,6 +23,11 @@ export const assetSchema = z.object({
   images: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
   tags: z.array(z.string()).default([]),
+}).superRefine((v, ctx) => {
+  // Warranty can't end before the purchase (§9d.4). Both are optional dates by now.
+  if (v.purchaseDate && v.warrantyExpiry && v.warrantyExpiry.getTime() < v.purchaseDate.getTime()) {
+    ctx.addIssue({ code: "custom", path: ["warrantyExpiry"], message: "Warranty can't end before the purchase date" });
+  }
 });
 
 export type AssetFormValues = z.input<typeof assetSchema>;
@@ -40,6 +45,11 @@ export const bulkAssetSchema = z.object({
 });
 
 export type BulkAssetFormValues = z.input<typeof bulkAssetSchema>;
+
+/** Creating bulk stock needs at least one on hand (an edit may take it to 0: out of stock). */
+export const bulkAssetCreateSchema = bulkAssetSchema.extend({
+  totalQuantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
+});
 
 // ─── Child assets / accessories ──────────────────────────────────────────────
 

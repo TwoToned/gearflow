@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-import { assetSchema, bulkAssetSchema } from "./asset";
+import { assetSchema, bulkAssetCreateSchema, bulkAssetSchema } from "./asset";
 import { modelSchema } from "./model";
 
 // UX Phase 12 (§9d.4, §9e.3): a blank optional money box is blank, never a real $0.
@@ -22,6 +22,16 @@ describe("blank money stays blank", () => {
     expect(modelSchema.safeParse({ name: "X", dailyRate: "-1" }).success).toBe(false);
     expect(modelSchema.safeParse({ name: "X", dailyRate: "abc" }).success).toBe(false);
     expect(modelSchema.safeParse({ name: "X", powerDraw: "1.5" }).success).toBe(false);
+  });
+
+  it("a warranty can't end before the purchase; bulk stock is created with at least 1", () => {
+    const base = { modelId: "m", assetTag: "A" };
+    expect(assetSchema.safeParse({ ...base, purchaseDate: "2026-06-01", warrantyExpiry: "2026-05-31" }).success).toBe(false);
+    expect(assetSchema.safeParse({ ...base, purchaseDate: "2026-06-01", warrantyExpiry: "2026-06-01" }).success).toBe(true);
+    expect(assetSchema.safeParse({ ...base, warrantyExpiry: "2026-05-31" }).success).toBe(true);
+    expect(bulkAssetCreateSchema.safeParse({ modelId: "m", assetTag: "B", totalQuantity: 0 }).success).toBe(false);
+    expect(bulkAssetCreateSchema.safeParse({ modelId: "m", assetTag: "B", totalQuantity: "3" }).success).toBe(true);
+    expect(bulkAssetSchema.safeParse({ modelId: "m", assetTag: "B", totalQuantity: 0 }).success).toBe(true);
   });
 
   it("asset purchase price and bulk price per unit", () => {

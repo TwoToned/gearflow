@@ -60,7 +60,12 @@ function assertAssetFields(f: {
   notes?: string;
   barcode?: string;
   purchasePrice?: number;
+  purchaseDate?: number;
+  warrantyExpiry?: number;
 }): void {
+  if (f.purchaseDate != null && f.warrantyExpiry != null && f.warrantyExpiry < f.purchaseDate) {
+    throw new ConvexError("Warranty can't end before the purchase date");
+  }
   if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
   assertStrLen(f.serialNumber, "serialNumber", { max: 100 });
   assertStrLen(f.customName, "customName", { max: 200 });

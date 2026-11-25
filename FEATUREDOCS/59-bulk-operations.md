@@ -20,7 +20,7 @@ selection checkboxes (hover-reveal + a select-all), and a `BulkBar`.
 |---|---|---|
 | **Services** (`services-panel.tsx`) | Set status · Delete | `bulkUpdateServiceStatus` → `projectServicesWrites.bulkUpdateServiceStatusNative`; `bulkDeleteProjectServices` → `projectServicesWrites.bulkDeleteServicesNative` (unlink+cascade line item, remove service, cascade crew assignments) |
 | **Crew** (`crew-panel.tsx`) | Set status · Remove | `bulkUpdateAssignmentStatus` → `crewAssignmentsWrites.bulkStatusNative`; `bulkDeleteAssignments` → `crewAssignmentsWrites.bulkDeleteNative` (`crew` update/delete gated; leading checkbox column threaded through `PhaseGroup`) |
-| **Tasks** (`tasks-panel.tsx`) | Move to status · Priority · Delete | `bulkUpdateProjectTasks` → `projectTasksWrites.bulkUpdateNative`; `bulkDeleteProjectTasks` → `projectTasksWrites.bulkDeleteNative` |
+| **Tasks** (`tasks-notes/tasks-section.tsx`, `task-bulk.ts`) | Assign · Due · Mark done · Delete (confirms; exact Undo) | `bulkUpdateProjectTasks` → `projectTasksWrites.bulkUpdateNative`; `bulkDeleteProjectTasks` → `projectTasksWrites.bulkDeleteNative` |
 
 All batch actions follow the same shape: one bulk Convex mutation that loops
 inside a single transaction, then one recalc per affected project (where totals

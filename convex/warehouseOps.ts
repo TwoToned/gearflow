@@ -27,6 +27,7 @@ import {
 import { isRelocatedAccessoryUnit, parentContainerResolver } from "./lib/accessoryRelocation";
 import { nextOrdinal } from "./lib/lineItemUnits";
 import { getKitByCuid as kitByCuid } from "./lib/kits";
+import { loadKitBookingGate } from "./lib/kitState";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
 
 /**
@@ -708,6 +709,21 @@ function kitBatchErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** Refuse check-out of a kit whose derived-OR-marker state is Incomplete (the same state `loadKitBookingGate` reads). */
+async function assertKitsNotReportedMissing(ctx: Ctx, orgId: string, kitIds: string[]): Promise<void> {
+  for (const id of kitIds) {
+    const kit = await kitByCuid(ctx, id);
+    if (!kit || kit.organizationId !== orgId) continue;
+    if ((await loadKitBookingGate(ctx, orgId, kit)).key !== "INCOMPLETE") continue;
+    throw new ConvexError({
+      code: "KIT_REPORTED_MISSING",
+      title: "Kit cannot be checked out",
+      message: `Kit ${kit.assetTag} was reported missing items.`,
+      hint: "Complete the kit's missing items (Mark complete on the kit) before it goes out.",
+    });
+  }
+}
+
 /** Pre-write validation for a kit checkout: composition parity (this kit + each
  *  nested kit) and the T&T preflight over their permanent composition. THROWS
  *  before any write, so a batch can run it per item and skip a drifted/blocked kit
@@ -716,6 +732,11 @@ async function checkoutKitPreflight(ctx: Ctx, a: KitOpArgs, kitLine: KitParentLi
   const children = await childLines(ctx, kitLine.id, a.organizationId);
   const nestedKitChildren = children.filter((c) => c.kitId);
   const nestedKitIds = nestedKitChildren.map((c) => c.kitId!) as string[];
+
+  // A kit reported missing (the stored marker, or a member missing) cannot go out: the booking gate only runs at
+  // add-line, so a kit already on this job could otherwise be deployed after a return elsewhere reported it
+  // missing, and the patch below would overwrite the marker.
+  await assertKitsNotReportedMissing(ctx, a.organizationId, [a.kitId, ...nestedKitIds]);
 
   // Parity: the project's kit snapshot (what we deploy) must match the live kit
   // definition (what T&T verifies) — for this kit and each nested kit.

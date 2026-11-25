@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   Handshake,
+  ListChecks,
   Pencil,
   Puzzle,
   RefreshCw,
@@ -49,6 +50,8 @@ export interface GearLineActionCtx {
   onMoveToCategory?: () => void;
   onMoveToGroup?: () => void;
   onEditAccessories?: () => void;
+  /** `Attach to a task…` (UX Phase 10 Slice E): present only for a caller who may link tasks. */
+  onAttachToTask?: () => void;
   /** Present only on a line that is short of stock (the `Short n` flag): opens the sub-hire sheet. */
   onSubHireShortfall?: () => void;
   onMarker?: (status: "needs_review" | "follow_up" | "resolved") => void;
@@ -74,6 +77,7 @@ function editItems(ctx: GearLineActionCtx): Entry[] {
 
 function organiseItems(ctx: GearLineActionCtx): Entry[] {
   return [
+    ctx.onAttachToTask && { key: "attach-task", label: "Attach to a task…", group: "organise", icon: ListChecks, onSelect: ctx.onAttachToTask },
     ctx.onSubHireShortfall && {
       key: "sub-hire-shortfall", label: "Sub-hire shortfall", group: "organise", icon: Truck, onSelect: ctx.onSubHireShortfall,
     },

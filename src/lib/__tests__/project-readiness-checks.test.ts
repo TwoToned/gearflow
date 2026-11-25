@@ -390,3 +390,22 @@ describe("ordering and summary", () => {
     expect(s.allClear).toBe(false);
   });
 });
+
+describe("overdue tasks check (UX Phase 10)", () => {
+  test("overdue tasks warn (never block) and link to the Tasks & notes tab", () => {
+    const c = byId(buildReadinessChecks(input({ tasks: { overdueCount: 2, truncated: false } })), "tasks");
+    expect(c.severity).toBe("warning");
+    expect(c.title).toBe("2 overdue tasks");
+    expect(c.fix).toEqual({ kind: "tab", tab: "tasks" });
+  });
+
+  test("none overdue passes; a truncated scan with none is unknown, never a pass", () => {
+    expect(byId(buildReadinessChecks(input({ tasks: { overdueCount: 0, truncated: false } })), "tasks").severity).toBe("pass");
+    expect(byId(buildReadinessChecks(input({ tasks: { overdueCount: 0, truncated: true } })), "tasks").severity).toBe("unknown");
+  });
+
+  test("no clock yet is unknown; an older response shape drops the row", () => {
+    expect(byId(buildReadinessChecks(input({ tasks: null })), "tasks").severity).toBe("unknown");
+    expect(buildReadinessChecks(input({})).some((c) => c.id === "tasks")).toBe(false);
+  });
+});

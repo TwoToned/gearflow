@@ -649,6 +649,30 @@ on one document — which is also why `buildFinanceLines` needs no counterpart
 (the group still bills as one line). Kit parents are excluded, and expand
 (warehouse) mode ignores the flag entirely — packers need the full list.
 
+### People lists and records (UX Phase 13) — one renderer, derived facts, server-side exact Undos
+`/crew`, `/clients`, `/suppliers` are three configs (`src/lib/list-views/people.ts`) of ONE `PeopleList`
+(`src/components/people/`) over `ListPage`; the crew manager dashboard and the client / supplier stat tiles
+are gone (their numbers are strip counts). Reads are `convex/peopleLists.ts`; everything derived is a pure
+`convex/lib/{crewListFacts,clientListFacts,orderHireState}.ts` function, **never stored**: crew status
+(Unconfirmed > On a job > Available, "this week" = the next 7 days, undated live calls included), client open
+jobs / quoted / outstanding, an order's `On hire` / `Returned` (from `returnedDate`; `returnDueDate` is the
+supplier's date and `Extend hire` never touches a sub-hire's `hireEnd`). A pay or money field is **absent,
+never zero, never a sort key** below its line (`canSeeCrewPay` for the crew rate; `canSeeJobCost` for client
+quoted / outstanding / lifetime and supplier spend, cost, margin). **Every People bulk write has a SERVER-side
+exact Undo** built on `convex/lib/fieldEditUndo` (`peopleBulkWrites.{addTagMany,setActiveMany,undoMany}Native`,
+`crewAssignmentsWrites.undoCreateManyNative`): ids only, author + server window + once + compare-and-set, keeps
+and names anything that changed since. `Assign to job` creates unsent PENDING calls; its Undo deletes only
+calls still exactly as created, never via `bulkDeleteNative` (that cascades to shifts and time entries).
+**Client Merge** (`convex/clientMergeWrites.ts`) moves jobs, their `projectVersions.clientId` (a plan field
+Make live projects back, so skipping it silently reverts the job), invoices, contacts (never primary), media
+and work-item links; NOT activity history, stored PDFs or either Xero mapping; its Undo reverses exactly the
+recorded ids still where the merge left them. Record pages share `RecordShell` (DetailHeader, `?tab=` with an
+Overview fallback, a rail on every tab but Overview). **Supplier Contacts / Documents and an order's Files**
+(B3, FEATUREDOCS/22): three small tables; an add is undone by DETACHING the row (an Undo never deletes a stored
+file), removing a document or order file deletes its bytes and is a confirmed verb with no Undo, and a
+document's expiry state is derived on read, never stored. A People list that reads a capped set reads it
+newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
+
 ### Project status advances itself — add a TRIGGER, never a second patch site
 `convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
 effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
@@ -826,6 +850,8 @@ reverse writes for the exact ids it touched (`markUnreadManyNative`, `undismissM
   derive from) and only `kitWrites.markCompleteNative` clears it. The physical statuses (`CHECKED_OUT`,
   `IN_MAINTENANCE`, `RETIRED`) stay stored and win. Every "can this kit go on a job" gate uses
   `loadKitBookingGate` (Convex) or `kitsList.bookingGate` (server actions); never re-test the stored value.
+  Check-out has its own gate on the same state (`checkoutKitPreflight` → `KIT_REPORTED_MISSING`), because the
+  add-line gate cannot see a kit reported missing AFTER it was booked.
 - **A list read that fans out per row draws from ONE `ReadBudget`** (`convex/lib/readBudget.ts`): a row the budget
   cannot cover returns `null` (printed as a dash) and the response sets `truncated`. A list's sort is an explicit
   allow-list with no generic field fallback, and a cost key from a caller who cannot see cost falls back to the

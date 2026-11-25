@@ -252,8 +252,11 @@ them). Those cycles also feed the separate, model-level `modelsDueForService` li
 **Open / overdue — ONE definition** (`convex/lib/maintenanceOpen.ts`, UX Phase 11):
 the holding statuses (AWAITING_PARTS, IN_PROGRESS, QA — the asset stays in
 MAINTENANCE, read by `maintenanceWrites`), open = SCHEDULED + holding, overdue =
-SCHEDULED / IN_PROGRESS with `scheduledDate < now` (`isOverdueMaintenance`; awaiting
-parts or in QA is held, not late). A record with no status is neither (the server's
+SCHEDULED / IN_PROGRESS with the scheduled DAY before today (`isOverdueMaintenance`,
+cutoff `overdueCutoff(now)` = start of the UTC day, so work scheduled for today is due,
+not overdue; the notification bell and the notification emails use it through
+`overdueMaintenanceRecords` in `src/lib/maintenance-read.ts`; awaiting parts or in QA is
+held, not late). A record with no status is neither (the server's
 status-index reads can't see it). This page's tiles are `maintenanceTileCounts` and its
 row `Overdue` badge is `isOverdueMaintenance`; Home's `maintenanceDue`
 (`dashboardStats.bundle`), the phone More sheet's `Maintenance 20 open · 5 overdue`

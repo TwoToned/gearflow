@@ -7904,6 +7904,376 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/clientMergeWrites.mergeClientsNative": {
+      "post": {
+        "operationId": "clientMergeWrites.mergeClientsNative",
+        "summary": "clientMergeWrites.mergeClientsNative (mutation)",
+        "description": "Requires scope: client:update or invoice:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "loserId": {
+                        "type": "string"
+                      },
+                      "receivedAuditId": {
+                        "type": "string"
+                      },
+                      "survivorId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "loserId",
+                      "receivedAuditId",
+                      "survivorId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/clientMergeWrites.mergePreview": {
+      "post": {
+        "operationId": "clientMergeWrites.mergePreview",
+        "summary": "clientMergeWrites.mergePreview (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "loserId": {
+                        "type": "string"
+                      },
+                      "survivorId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "loserId",
+                      "survivorId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/clientMergeWrites.mergedInto": {
+      "post": {
+        "operationId": "clientMergeWrites.mergedInto",
+        "summary": "clientMergeWrites.mergedInto (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/clientMergeWrites.undoClientMergeNative": {
+      "post": {
+        "operationId": "clientMergeWrites.undoClientMergeNative",
+        "summary": "clientMergeWrites.undoClientMergeNative (mutation)",
+        "description": "Requires scope: client:update or invoice:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/clientRecord.clientAccount": {
+      "post": {
+        "operationId": "clientRecord.clientAccount",
+        "summary": "clientRecord.clientAccount (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "clientId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "clientId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/clientWrites.archiveManyNative": {
       "post": {
         "operationId": "clientWrites.archiveManyNative",
@@ -9005,6 +9375,76 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "entityId",
                       "targetId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/collaboration.lastNoteSaves": {
+      "post": {
+        "operationId": "collaboration.lastNoteSaves",
+        "summary": "collaboration.lastNoteSaves (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "projectId"
                     ],
                     "additionalProperties": false
                   }
@@ -11071,6 +11511,93 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/crewAssignmentsWrites.createManyNative": {
+      "post": {
+        "operationId": "crewAssignmentsWrites.createManyNative",
+        "summary": "crewAssignmentsWrites.createManyNative (mutation)",
+        "description": "Requires scope: crew:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "endDate": {
+                        "type": "number"
+                      },
+                      "items": {
+                        "type": "array"
+                      },
+                      "projectId": {
+                        "type": "string"
+                      },
+                      "startDate": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/crewAssignmentsWrites.createNative": {
       "post": {
         "operationId": "crewAssignmentsWrites.createNative",
@@ -11377,6 +11904,83 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "ids",
                       "stamp"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/crewAssignmentsWrites.undoCreateManyNative": {
+      "post": {
+        "operationId": "crewAssignmentsWrites.undoCreateManyNative",
+        "summary": "crewAssignmentsWrites.undoCreateManyNative (mutation)",
+        "description": "Requires scope: crew:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId"
                     ],
                     "additionalProperties": false
                   },
@@ -30377,6 +30981,450 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/peopleLists.clientPage": {
+      "post": {
+        "operationId": "peopleLists.clientPage",
+        "summary": "peopleLists.clientPage (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {},
+                      "typeIn": {
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.clientSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.clientSegmentCounts",
+        "summary": "peopleLists.clientSegmentCounts (query)",
+        "description": "Requires scope: client:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "client"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.crewPage": {
+      "post": {
+        "operationId": "peopleLists.crewPage",
+        "summary": "peopleLists.crewPage (query)",
+        "description": "Requires scope: crew:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "departmentIn": {
+                        "type": "array"
+                      },
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "roleIn": {
+                        "type": "array"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {},
+                      "statusIn": {
+                        "type": "array"
+                      },
+                      "typeIn": {
+                        "type": "array"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.crewSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.crewSegmentCounts",
+        "summary": "peopleLists.crewSegmentCounts (query)",
+        "description": "Requires scope: crew:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "crew"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.supplierPage": {
+      "post": {
+        "operationId": "peopleLists.supplierPage",
+        "summary": "peopleLists.supplierPage (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {}
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/peopleLists.supplierSegmentCounts": {
+      "post": {
+        "operationId": "peopleLists.supplierSegmentCounts",
+        "summary": "peopleLists.supplierSegmentCounts (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/projectCategories.getById": {
       "post": {
         "operationId": "projectCategories.getById",
@@ -31870,6 +32918,146 @@ export const OPENAPI_DOCUMENT = {
                         "type": "string"
                       },
                       "versionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectFiles.alsoOnJob": {
+      "post": {
+        "operationId": "projectFiles.alsoOnJob",
+        "summary": "projectFiles.alsoOnJob (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectFiles.listForProject": {
+      "post": {
+        "operationId": "projectFiles.listForProject",
+        "summary": "projectFiles.listForProject (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
                         "type": "string"
                       }
                     },
@@ -36158,6 +37346,382 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/projectTaskLinks.listForProject": {
+      "post": {
+        "operationId": "projectTaskLinks.listForProject",
+        "summary": "projectTaskLinks.listForProject (query)",
+        "description": "Requires scope: project:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "project"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTaskLinksWrites.linkNative": {
+      "post": {
+        "operationId": "projectTaskLinksWrites.linkNative",
+        "summary": "projectTaskLinksWrites.linkNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "linkedId": {
+                        "type": "string"
+                      },
+                      "linkedKind": {},
+                      "taskId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "linkedId",
+                      "linkedKind",
+                      "taskId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTaskLinksWrites.undoLinkNative": {
+      "post": {
+        "operationId": "projectTaskLinksWrites.undoLinkNative",
+        "summary": "projectTaskLinksWrites.undoLinkNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTaskLinksWrites.undoUnlinkNative": {
+      "post": {
+        "operationId": "projectTaskLinksWrites.undoUnlinkNative",
+        "summary": "projectTaskLinksWrites.undoUnlinkNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTaskLinksWrites.unlinkNative": {
+      "post": {
+        "operationId": "projectTaskLinksWrites.unlinkNative",
+        "summary": "projectTaskLinksWrites.unlinkNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/projectTasks.assignees": {
       "post": {
         "operationId": "projectTasks.assignees",
@@ -36812,6 +38376,302 @@ export const OPENAPI_DOCUMENT = {
                     },
                     "required": [
                       "orderedIds"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTasksWrites.restoreDeletedNative": {
+      "post": {
+        "operationId": "projectTasksWrites.restoreDeletedNative",
+        "summary": "projectTasksWrites.restoreDeletedNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "ids"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTasksWrites.undoCreateNative": {
+      "post": {
+        "operationId": "projectTasksWrites.undoCreateNative",
+        "summary": "projectTasksWrites.undoCreateNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTasksWrites.undoReorderNative": {
+      "post": {
+        "operationId": "projectTasksWrites.undoReorderNative",
+        "summary": "projectTasksWrites.undoReorderNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "projectId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/projectTasksWrites.undoUpdateNative": {
+      "post": {
+        "operationId": "projectTasksWrites.undoUpdateNative",
+        "summary": "projectTasksWrites.undoUpdateNative (mutation)",
+        "description": "Requires scope: work:update or project:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "ids": {
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "ids"
                     ],
                     "additionalProperties": false
                   },
@@ -45529,6 +47389,168 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/supplierOrdersWrites.extendHireNative": {
+      "post": {
+        "operationId": "supplierOrdersWrites.extendHireNative",
+        "summary": "supplierOrdersWrites.extendHireNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "returnDueDate": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "returnDueDate"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierOrdersWrites.markReturnedNative": {
+      "post": {
+        "operationId": "supplierOrdersWrites.markReturnedNative",
+        "summary": "supplierOrdersWrites.markReturnedNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "returnedDate": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "returnedDate"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/supplierOrdersWrites.removeInvoiceNative": {
       "post": {
         "operationId": "supplierOrdersWrites.removeInvoiceNative",
@@ -45553,6 +47575,87 @@ export const OPENAPI_DOCUMENT = {
                       }
                     },
                     "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierOrdersWrites.undoHireChangeNative": {
+      "post": {
+        "operationId": "supplierOrdersWrites.undoHireChangeNative",
+        "summary": "supplierOrdersWrites.undoHireChangeNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId",
                       "id"
                     ],
                     "additionalProperties": false
@@ -45642,6 +47745,1247 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "id",
                       "status"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecord.contacts": {
+      "post": {
+        "operationId": "supplierRecord.contacts",
+        "summary": "supplierRecord.contacts (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecord.documents": {
+      "post": {
+        "operationId": "supplierRecord.documents",
+        "summary": "supplierRecord.documents (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecord.orderFiles": {
+      "post": {
+        "operationId": "supplierRecord.orderFiles",
+        "summary": "supplierRecord.orderFiles (query)",
+        "description": "Requires scope: supplier:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "orderId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "orderId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.addContactNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.addContactNative",
+        "summary": "supplierRecordWrites.addContactNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "email": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "phone": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.addDocumentNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.addDocumentNative",
+        "summary": "supplierRecordWrites.addDocumentNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "expiryDate": {
+                        "type": "number"
+                      },
+                      "fileId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fileId",
+                      "name",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.addOrderFileNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.addOrderFileNative",
+        "summary": "supplierRecordWrites.addOrderFileNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "fileId": {
+                        "type": "string"
+                      },
+                      "kind": {},
+                      "name": {
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fileId",
+                      "kind",
+                      "orderId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.removeContactNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.removeContactNative",
+        "summary": "supplierRecordWrites.removeContactNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "contactId": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contactId",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.removeDocumentNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.removeDocumentNative",
+        "summary": "supplierRecordWrites.removeDocumentNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "documentId": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "documentId",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.removeOrderFileNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.removeOrderFileNative",
+        "summary": "supplierRecordWrites.removeOrderFileNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "fileRowId": {
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fileRowId",
+                      "orderId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.undoContactRowNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.undoContactRowNative",
+        "summary": "supplierRecordWrites.undoContactRowNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.undoDocumentAddNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.undoDocumentAddNative",
+        "summary": "supplierRecordWrites.undoDocumentAddNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.undoOrderFileAddNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.undoOrderFileAddNative",
+        "summary": "supplierRecordWrites.undoOrderFileAddNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      },
+                      "orderId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId",
+                      "orderId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.undoRowEditNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.undoRowEditNative",
+        "summary": "supplierRecordWrites.undoRowEditNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "forwardAuditId": {
+                        "type": "string"
+                      },
+                      "kind": {},
+                      "rowId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "forwardAuditId",
+                      "kind",
+                      "rowId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.updateContactNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.updateContactNative",
+        "summary": "supplierRecordWrites.updateContactNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "contactId": {
+                        "type": "string"
+                      },
+                      "email": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "phone": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contactId",
+                      "supplierId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/supplierRecordWrites.updateDocumentNative": {
+      "post": {
+        "operationId": "supplierRecordWrites.updateDocumentNative",
+        "summary": "supplierRecordWrites.updateDocumentNative (mutation)",
+        "description": "Requires scope: supplier:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "supplier"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "documentId": {
+                        "type": "string"
+                      },
+                      "expiryDate": {
+                        "type": "number"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "string"
+                      },
+                      "supplierId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "documentId",
+                      "name",
+                      "supplierId"
                     ],
                     "additionalProperties": false
                   },

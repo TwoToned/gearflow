@@ -29,6 +29,7 @@ import {
 } from "./lib/projectLocks";
 import { captureProjectSnapshot } from "./lib/projectSnapshots";
 import { hasAcceptedQuote } from "./lib/quoteState";
+import { emitProjectActivityEvent } from "./lib/activityEvents";
 
 /** Forward status transitions that a project's open BLOCKING comments must gate
  *  (parity with src/server/projects.ts BLOCKED_FORWARD_PROJECT_STATUSES). */
@@ -73,6 +74,9 @@ const autoNumberValidator = v.object({
   padding: v.number(),
   parts: v.object({ year: v.number(), month: v.number(), day: v.number() }),
 });
+/** How the Activity rail names a note field (never its text). */
+const NOTE_LABEL = { crewNotes: "crew notes", internalNotes: "internal notes", clientNotes: "client notes" } as const;
+
 const NOTES_FIELD = v.union(
   v.literal("crewNotes"),
   v.literal("internalNotes"),
@@ -312,6 +316,13 @@ export const updateNotesNative = mutation({
       summary: `Updated ${field} on project ${project.projectNumber}`,
       projectId: id,
       createdAt: now,
+    });
+    // The Activity rail + the notes card's "Saved · Sam · Thu 6 Nov" line (derived from
+    // this event; no stored `updatedBy`). It names the field only: NEVER the note text, which
+    // for Internal notes must not reach a feed everyone with job read can see.
+    await emitProjectActivityEvent(ctx, {
+      orgId, projectId: id, actor, now, action: "note_updated", targetType: "notes", targetId: field,
+      summary: `updated the ${NOTE_LABEL[field]}`, metadata: { field },
     });
 
     return { id };

@@ -49,6 +49,8 @@ it directly in place of the real functions.
 ## Media Join Tables
 `ModelMedia`, `AssetMedia`, `KitMedia`, `ProjectMedia`, `ClientMedia`, `LocationMedia` — each links entity to `FileUpload` with `type`, `isPrimary`, `displayName`, `sortOrder`.
 
+A job's files are on the Tasks & notes tab's Files section (UX Phase 10, FEATUREDOCS/50): category change and rename are `mediaWrites.setTypeNative` / `renameNative`; Remove deletes the stored file and has no Undo.
+
 ## Components
 - **MediaUploader** (`src/components/media/media-uploader.tsx`) — Bulk upload + primary marking. Manual drag-to-reorder was removed (`chore/remove-pdf-builder-and-dnd`, `@dnd-kit` dropped); media keeps its existing `sortOrder`. The `onReorder` prop is retained on the interface but unused.
 - **MediaThumbnail** (`src/components/media/media-thumbnail.tsx`) — Image with fallback placeholder

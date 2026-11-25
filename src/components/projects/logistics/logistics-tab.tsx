@@ -195,7 +195,7 @@ function LogisticsBody({ projectId, data }: { projectId: string; data: Data }) {
         <ListFooter m={m} data={data} />
       </div>
       <PhoneBar m={m} data={data} />
-      <PrintRunsheet title={String(data.project?.name ?? "Job")} services={data.services} site={m.site} />
+      <PrintRunsheet title={String(data.project?.name ?? "Job")} services={data.services} site={m.site} crewNotes={(data.project?.crewNotes as string | null | undefined) ?? null} />
       <LogisticsDialogs
         p={{
           projectId, orgId: data.orgId, projectStatus: data.project?.status as string | undefined, schedule: m.schedule, site: m.where, contact: { name: m.site.contactName, phone: m.site.contactPhone },

@@ -16,7 +16,6 @@ import { WidgetCount } from "@/components/dashboard/widget-chrome";
 import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
 import { taskDueText } from "@/lib/home-rows";
-import type { ProjectTaskStatus } from "@/lib/project-tasks";
 import { cn, focusRing } from "@/lib/utils";
 
 type OpenTask = NonNullable<ReturnType<typeof useNativeMyOpenTasks>>[number];
@@ -36,9 +35,9 @@ function taskHref(t: OpenTask): string {
 function useCompleteTask() {
   const writes = useProjectTaskWrites();
   return async (t: OpenTask) => {
-    const prior: ProjectTaskStatus = t.status;
+    let done: { changed: boolean; auditId: string };
     try {
-      await writes.update(t.id, { status: "DONE" });
+      done = await writes.update(t.id, { status: "DONE" });
     } catch (e) {
       showError(e, { fallbackTitle: "Couldn't complete the task" });
       return;
@@ -46,7 +45,12 @@ function useCompleteTask() {
     announceListWrite({
       title: `Done · “${t.title}”`,
       undoneTitle: `“${t.title}” is open again`,
-      performUndo: () => writes.update(t.id, { status: prior }),
+      // Exact Undo: ids only, the server restores from the forward write's own audit row.
+      performUndo: done.changed
+        ? async () => {
+            await writes.undoUpdate(done.auditId, [t.id]);
+          }
+        : undefined,
     });
   };
 }

@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 469 | 333 | 132 | 2 | 2 |
-| Mutations | 836 | 340 | 485 | 0 | 11 |
-| **Total** | **1305** | **673** | **617** | **2** | **13** |
+| Queries | 485 | 349 | 132 | 2 | 2 |
+| Mutations | 869 | 367 | 485 | 0 | 17 |
+| **Total** | **1354** | **716** | **617** | **2** | **19** |
 
-<!-- reachability-floor: 673 -->
+<!-- reachability-floor: 716 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 111 |
-| `medium` | 159 |
-| `low` | 70 |
+| `high` | 121 |
+| `medium` | 168 |
+| `low` | 78 |
 
 ## Modules with no agent-reachable operation
 
@@ -78,7 +78,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `emails` | 1 |
 | `financeArtifacts` | 5 |
 | `globalSearch` | 1 |
-| `mediaWrites` | 4 |
+| `mediaWrites` | 7 |
 | `miraConversations` | 4 |
 | `miraKeys` | 2 |
 | `miraMessages` | 4 |
@@ -94,6 +94,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `parity` | 1 |
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
+| `peopleBulkWrites` | 3 |
 | `projectNumberSequences` | 7 |
 | `projectVersionsWrites` | 1 |
 | `repairOrphanedGroupLines` | 1 |

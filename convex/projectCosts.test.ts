@@ -65,6 +65,22 @@ describe("projectCosts.operationalCosts", () => {
     expect(r.marginPercent).toBeCloseTo(78.5, 5);
   });
 
+  test("the net margin is EX GST: $11,000 inc $1,000 GST less $5,000 costs is $5,000 / 50%", async () => {
+    const t = makeT();
+    await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", {
+        id: "p1", organizationId: ORG, projectNumber: "P-1", name: "Job",
+        total: 11000, taxAmount: 1000, subtotal: 10000, serviceCostTotal: 5000, labourCostTotal: 0, subHireCostTotal: 0,
+        createdAt: NOW, updatedAt: NOW, liveVersionId: "v-p1",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+    });
+    const r = await t.withIdentity(asUser).query(api.projectCosts.operationalCosts, { projectId: "p1", orgId: ORG });
+    expect(r.netMargin).toBe(5000);
+    expect(r.marginPercent).toBeCloseTo(50, 5);
+  });
+
   test("WS11 (#950): saleRevenue/saleCostTotal read straight off the project row, and saleCostTotal counts toward netMargin", async () => {
     const t = makeT();
     await seedMember(t);

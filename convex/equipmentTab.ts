@@ -3,6 +3,7 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
 import { getKitByCuid } from "./lib/kits";
+import { gearBundleCostGuard } from "./lib/gearCostRedact";
 import { resolveVersionId, versionRows } from "./lib/versionScope";
 
 /**
@@ -130,7 +131,9 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string,
   const inOrg = <T extends { organizationId?: string | null }>(arr: (T | null)[]) =>
     arr.filter((d): d is T => d !== null && d.organizationId === orgId);
 
-  const models = inOrg(modelDocs);
+  // A `noFinancials` key never sees what the gear cost to own (sell rates stay): absent, never zeroed.
+  const cost = await gearBundleCostGuard(ctx);
+  const models = inOrg(modelDocs).map(cost.model);
   const suppliers = inOrg(supplierDocs);
 
   // Categories referenced by the (in-org) models, point-read by id.
@@ -148,9 +151,9 @@ async function readEquipmentTab(ctx: QueryCtx, projectId: string, orgId: string,
     subHires,
     subHireGroups,
     subHireItems,
-    assets: inOrg(assetDocs),
-    bulkAssets: inOrg(bulkDocs),
-    kits: inOrg(kitDocs),
+    assets: inOrg(assetDocs).map(cost.asset),
+    bulkAssets: inOrg(bulkDocs).map(cost.bulk),
+    kits: inOrg(kitDocs).map(cost.kit),
     models,
     suppliers,
     orgCategories: inOrg(categoryDocs),

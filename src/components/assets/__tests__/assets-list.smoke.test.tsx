@@ -33,7 +33,9 @@ vi.mock("@/hooks/use-locations", () => ({ useLocations: () => [{ id: "l1", name:
 vi.mock("@/hooks/use-categories", () => ({ useCategories: () => [{ id: "c1", name: "Lighting" }] }));
 vi.mock("@/hooks/use-models", () => ({ useModels: () => [{ id: "m1", name: "Par 64" }] }));
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: () => ["blue"] }));
-vi.mock("@/hooks/use-asset-writes", () => ({ useAssetWrites: () => ({ archive: vi.fn(async () => ({ ok: true })) }) }));
+vi.mock("@/hooks/use-retire-assets", () => ({
+  useRetireAssets: () => ({ retireMany: vi.fn(async () => ({ done: [], skipped: [] })), reinstateMany: vi.fn() }),
+}));
 vi.mock("@/hooks/use-warehouse-writes", () => ({ useWarehouseWrites: () => ({ bulkForceReturnAssets: vi.fn() }) }));
 vi.mock("@/hooks/use-server-query", () => ({ useServerQuery: () => ({ data: { assetPhotos: {}, modelPhotos: {} } }) }));
 vi.mock("convex/react", () => ({

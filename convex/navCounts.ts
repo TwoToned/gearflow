@@ -8,7 +8,8 @@ import type { Resource } from "./lib/permissionsCore";
 import { readCounterValues } from "./dashboardCounters";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
-import { OPEN_MAINTENANCE_STATUSES, OVERDUE_MAINTENANCE_STATUSES, type OpenMaintenanceStatus } from "./lib/maintenanceOpen";
+import { deriveTestTagState } from "./lib/testTagListState";
+import { OPEN_MAINTENANCE_STATUSES, OVERDUE_MAINTENANCE_STATUSES, overdueCutoff, type OpenMaintenanceStatus } from "./lib/maintenanceOpen";
 
 /**
  * The phone More sheet's row counts (UX Phase 11, §6d.6, S4): `Assets 605`,
@@ -76,12 +77,16 @@ async function assetsCount(ctx: QueryCtx, orgId: string): Promise<NavCount | nul
   return { value: c.activeAssets + c.bulkQuantity, truncated: false };
 }
 
-async function testTagOverdueCount(ctx: QueryCtx, orgId: string): Promise<NavCount> {
+/**
+ * Overdue = THE derived definition (`convex/lib/testTagListState.ts`), the Test and tag list's own Overdue word,
+ * never the stored OVERDUE the cron writes (it lags). A due date in the past, not retired, not failed.
+ */
+async function testTagOverdueCount(ctx: QueryCtx, orgId: string, now: number): Promise<NavCount> {
   const rows = await ctx.db
     .query("testTagAssets")
-    .withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", "OVERDUE"))
+    .withIndex("by_organizationId_nextDueDate", (q) => q.eq("organizationId", orgId).gt("nextDueDate", MIN_TS).lt("nextDueDate", now))
     .take(NAV_COUNT_CAP + 1);
-  return capped(rows, (r) => r.isActive !== false);
+  return capped(rows, (r) => deriveTestTagState(r, now, 0) === "OVERDUE");
 }
 
 /** Open and overdue = the ONE definitions (lib/maintenanceOpen.ts), the Maintenance page's own Open and Overdue tiles. */
@@ -95,7 +100,7 @@ async function maintenanceCount(ctx: QueryCtx, orgId: string, now: number): Prom
     ctx.db
       .query("maintenanceRecords")
       .withIndex("by_organizationId_status_scheduledDate", (q) =>
-        q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
+        q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", overdueCutoff(now)),
       )
       .take(NAV_COUNT_CAP + 1);
   const [opens, lates] = await Promise.all([Promise.all(OPEN_MAINTENANCE_STATUSES.map(open)), Promise.all(OVERDUE_MAINTENANCE_STATUSES.map(late))]);
@@ -132,7 +137,7 @@ export const get = query({
         return counted(ctx, orgId, "asset", () => assetsCount(ctx, orgId));
       case "testTagOverdue":
         await requireOrgReadFor(ctx, orgId, "testTag");
-        return counted(ctx, orgId, "testTag", () => testTagOverdueCount(ctx, orgId));
+        return counted(ctx, orgId, "testTag", () => testTagOverdueCount(ctx, orgId, now));
       case "maintenance":
         await requireOrgReadFor(ctx, orgId, "maintenance");
         return counted(ctx, orgId, "maintenance", () => maintenanceCount(ctx, orgId, now));

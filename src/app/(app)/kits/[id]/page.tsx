@@ -13,9 +13,11 @@ import { useServerQuery } from "@/hooks/use-server-query";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useConvex, useConvexAuth } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
+import { CheckCircle2, Pencil, Plus, Trash2, X, ScanBarcode, RotateCcw, ChevronRight, Package, Boxes } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "sonner";
+import { announceListWrite } from "@/lib/list-write-toast";
+import { showError } from "@/lib/show-error";
 
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useMediaWrites } from "@/hooks/use-media-writes";
@@ -163,6 +165,21 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
+  /** Clears the reported-missing marker (the ONLY way it clears); the toast's Undo is the one exact server call. */
+  const markComplete = async () => {
+    try {
+      const r = await kitWrites.markComplete(id);
+      if (!r.changed) return void toast("This kit was already complete");
+      announceListWrite({
+        title: `Marked ${kit?.assetTag ?? "the kit"} complete`,
+        undoneTitle: "Reported missing again",
+        performUndo: async () => void (await kitWrites.undoMarkComplete(id, r.auditId)),
+      });
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not mark the kit complete" });
+    }
+  };
+
   const forceReturnMutation = useServerMutation({
     mutationFn: () => warehouseWrites.forceReturnKit(id),
     onSuccess: () => {
@@ -227,6 +244,8 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   if (isLoading) return <DetailPageSkeleton />;
   if (!kit) return <div className="py-20 text-center text-muted">Kit not found.</div>;
+  /** The DERIVED state this page prints everywhere; the stored `status` is only the physical lifecycle. */
+  const stateKey = kit.state?.key ?? kit.status;
 
   const kitPhotos = ((kit.media || []) as MediaItem[]).filter((m) => m.type === "PHOTO");
   const kitPhotoUrl = resolveKitPhotoUrl(kit as unknown as Parameters<typeof resolveKitPhotoUrl>[0], false);
@@ -437,7 +456,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="t-page-title text-ink">{kit.name || kit.assetTag}</h1>
-                <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
+                <StatusIndicator category="kit" value={stateKey} label={kitStatusLabels[stateKey] || formatLabel(stateKey)} />
                 <Badge status="neutral" className="t-mono">{kit.assetTag}</Badge>
               </div>
               <p className="mt-1 text-caption text-muted">
@@ -451,6 +470,12 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
           {/* Action buttons */}
           <CanDo resource="kit" action="update">
             <div className="flex flex-wrap gap-2">
+              {kit.state?.reportedMissing && (
+                <Button variant="line" size="sm" onClick={() => void markComplete()}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Mark complete
+                </Button>
+              )}
               {kit.status === "CHECKED_OUT" && (
                 <Button
                   variant="line"
@@ -781,27 +806,26 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <DetailSidebar>
             {/* Status */}
             <SidebarSection title="Status">
-              <CanDo
-                resource="kit"
-                action="update"
-                fallback={
-                  <div className="flex items-center gap-2">
-                    <StatusIndicator category="kit" value={kit.status} label={kitStatusLabels[kit.status] || formatLabel(kit.status)} />
-                  </div>
-                }
-              >
-                <NativeSelect
-                  value={kit.status}
-                  onChange={(e) => statusMutation.mutate(e.target.value)}
-                  disabled={statusMutation.isPending}
-                >
-                  <option value="AVAILABLE">Available</option>
-                  <option value="CHECKED_OUT">{OUT_LABEL}</option>
-                  <option value="IN_MAINTENANCE">In maintenance</option>
-                  <option value="RETIRED">Retired</option>
-                  <option value="INCOMPLETE">Incomplete</option>
-                </NativeSelect>
-              </CanDo>
+              {/* The kit's state is DERIVED (Incomplete / Reserved / Available); the select below is only the physical
+                  lifecycle. Incomplete is never an option: a MISSING return sets it and only Mark complete clears it. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusIndicator category="kit" value={stateKey} label={kitStatusLabels[stateKey] || formatLabel(stateKey)} />
+                {(kit.state?.missing.length ?? 0) > 0 && <span className="text-caption text-t-out">{kit.state!.missing.length} missing</span>}
+              </div>
+              {stateKey !== "INCOMPLETE" && (
+                <CanDo resource="kit" action="update">
+                  <NativeSelect
+                    value={kit.status}
+                    onChange={(e) => statusMutation.mutate(e.target.value)}
+                    disabled={statusMutation.isPending}
+                  >
+                    <option value="AVAILABLE">Available</option>
+                    <option value="CHECKED_OUT">{OUT_LABEL}</option>
+                    <option value="IN_MAINTENANCE">In maintenance</option>
+                    <option value="RETIRED">Retired</option>
+                  </NativeSelect>
+                </CanDo>
+              )}
               <StatusIndicator category="condition" value={kit.condition} label={conditionLabels[kit.condition] || formatLabel(kit.condition)} />
             </SidebarSection>
 

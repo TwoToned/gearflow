@@ -289,6 +289,19 @@ describe("groupTemplatesWrites.applyNative", () => {
     });
   });
 
+  test("(a1) a template with an ARCHIVED model is refused with MODEL_ARCHIVED, writing nothing", async () => {
+    const t = makeT();
+    await seedBase(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "m1")).first();
+      await ctx.db.patch(m!._id, { isActive: false });
+    });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args)).rejects.toThrow(/archived/);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projectGroups").withIndex("by_cuid", (q) => q.eq("id", "grpNew")).first()).toBeNull();
+    });
+  });
+
   // #1249 — a model with NO daily/weekly rate has nothing to auto-price from, so
   // its line must land UNPRICED ("—"), not at an explicit $0. computeBlendedCharge
   // with both rates null returns `(dailyRate ?? 0) * totalDays` = 0, which used to
@@ -312,6 +325,20 @@ describe("groupTemplatesWrites.applyNative", () => {
       expect(mLine?.lineTotal).toBeUndefined();
       expect(mLine?.priceBreakdown).toBeUndefined();
     });
+  });
+
+  test("(b2) D75: a kit with a LOST member is skipped as incomplete; a legacy stored INCOMPLETE with every member present is skipped too", async () => {
+    for (const [stored, memberStatus, skipped] of [["AVAILABLE", "LOST", true], ["INCOMPLETE", "AVAILABLE", true]] as const) {
+      const t = makeT();
+      await seedBase(t, { kitStatus: stored });
+      await t.run(async (ctx) => {
+        await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m1", assetTag: "S-1", status: memberStatus, isActive: true });
+        await ctx.db.insert("kitSerializedItems", { id: "ks1", organizationId: ORG, kitId: "k1", assetId: "a1", addedById: "u1" });
+      });
+      const res = await t.withIdentity(asUser(ORG)).mutation(api.groupTemplatesWrites.applyNative, args);
+      if (skipped) expect(res.kitWarnings[0]).toMatch(/K1: kit is incomplete/i);
+      else expect(res.kitWarnings).toEqual([]);
+    }
   });
 
   test("(b) IN_MAINTENANCE kit skipped with a warning; model line still created", async () => {

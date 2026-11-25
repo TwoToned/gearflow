@@ -8,6 +8,7 @@ import { writeActivityLog } from "./lib/audit";
 import { adjustBulkAvailability } from "./lib/inventory";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { stampLocationMovement } from "./lib/locationMovement";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -93,6 +94,7 @@ export const addSerializedNative = mutation({
       ...(a.notes ? { notes: a.notes } : {}),
       updatedAt: a.now,
     });
+    await stampLocationMovement(ctx, a.orgId, child.locationId, parent.locationId ?? undefined, a.now);
     await logAccessory(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, parentId: parent.id, entityName: parent.assetTag, summary: `Attached accessory ${child.assetTag} to ${parent.assetTag}`, details: { accessory: { childAssetId: child.id, childTag: child.assetTag } } });
     return { id: child.id };
   },

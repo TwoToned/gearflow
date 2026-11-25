@@ -566,7 +566,8 @@ describe("projectWrites.updateNative", () => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.siteContactEmail).toBe("crew@example.com");
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
+    // A second forward write needs its own audit id (`assertAuditIdFree`: an Undo trusts the row with its id).
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, auditId: "log2", set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
   });
   test("rejects crewNotes/internalNotes/clientNotes over the 5000-char bound", async () => {
     const t = makeT();
@@ -633,7 +634,7 @@ describe("projectWrites.updateNative", () => {
       // Switch clients WITHOUT touching clientContactId — the stale cc1 pick must
       // not silently carry over onto c2's documents.
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
+        ...uargs, auditId: "log2", set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBe("c2");
@@ -648,7 +649,7 @@ describe("projectWrites.updateNative", () => {
         ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
       });
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { updatedAt: NOW + 1 }, clear: ["clientId"],
+        ...uargs, auditId: "log2", set: { updatedAt: NOW + 1 }, clear: ["clientId"],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBeUndefined();
@@ -978,10 +979,11 @@ describe("projectWrites.deleteNative", () => {
 describe("projectWrites.deleteTemplateNative", () => {
   const targs = { id: "t1", orgId: ORG, actor: ACTOR, now: NOW };
 
-  async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true) {
+  // A template is archived (status CANCELLED) before it can be deleted for real.
+  async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true, status = "CANCELLED") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, status: status as "CANCELLED", createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("projectVersions", { id: "v-t1", organizationId: ORG, projectId: "t1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectLineItems", { versionId: "v-t1", lineageId: "tli1", id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "tpm1", organizationId: ORG, projectId: "t1", userId: USER, addedAt: NOW });
@@ -990,6 +992,15 @@ describe("projectWrites.deleteTemplateNative", () => {
       await ctx.db.insert("projectModelRevenues", { id: "tpmr1", organizationId: ORG, projectId: "t1", modelId: "model1", allocatedRevenue: 0, updatedAt: NOW });
     });
   }
+
+  test("refuses a template that is not archived first (the delete guard)", async () => {
+    const t = makeT();
+    await seedTemplate(t, "owner", true, "ENQUIRY");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteTemplateNative, targs)).rejects.toThrow(/Archive the template first/);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "t1")).first()).not.toBeNull();
+    });
+  });
 
   test("deletes a template + its lines/grouping/rollup (no audit)", async () => {
     const t = makeT();

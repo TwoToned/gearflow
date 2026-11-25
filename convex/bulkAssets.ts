@@ -2,8 +2,10 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
+import { bulkAssetCostGuard } from "./lib/gearCostRedact";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -21,10 +23,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const cost = await bulkAssetCostGuard(ctx);
+    const rows = await ctx.db
       .query("bulkAssets")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: deliberate reactive full-org read (perf-convex-efficiency-2026-06.md); accepted R-9.8 tradeoff for live updates — revisit with paginated reactivity if per-org rows grow large — see docs/exceptions.md R-8.3.3
       .collect();
+    return rows.map(cost.row);
   },
 });
 
@@ -33,7 +37,7 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "bulkAsset"); // Phase 2 read bootstrap (#998)
-    return doc;
+    return doc ? (await bulkAssetCostGuard(ctx)).row(doc) : doc;
   },
 });
 
@@ -96,7 +100,8 @@ export const listPage = query({
     const isActive = a.isActive ?? true;
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    const sortBy = a.sortBy ?? "assetTag";
+    const cost = await bulkAssetCostGuard(ctx);
+    const sortBy = cost.sort(a.sortBy); // an allow-list; a hidden cost column is not a sort key
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([
@@ -134,19 +139,21 @@ export const listPage = query({
     const bulkAssets = pageRows.map((b) => {
       const model = modelMap.get(b.modelId) ?? null;
       return {
-        id: b.id,
-        organizationId: b.organizationId,
-        modelId: b.modelId,
-        assetTag: b.assetTag,
-        totalQuantity: b.totalQuantity ?? 0,
-        availableQuantity: b.availableQuantity ?? 0,
-        purchasePricePerUnit: b.purchasePricePerUnit ?? null,
+        ...cost.row({
+          id: b.id,
+          organizationId: b.organizationId,
+          modelId: b.modelId,
+          assetTag: b.assetTag,
+          totalQuantity: b.totalQuantity ?? 0,
+          availableQuantity: b.availableQuantity ?? 0,
+          purchasePricePerUnit: b.purchasePricePerUnit ?? null,
+        }),
         locationId: b.locationId ?? null,
         status: b.status ?? "ACTIVE",
         notes: b.notes ?? null,
         tags: b.tags ?? [],
         isActive: b.isActive ?? true,
-        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        model: model ? { ...cost.model(model), category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
         location: b.locationId ? locationMap.get(b.locationId) ?? null : null,
       };
     });
@@ -188,10 +195,11 @@ export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
     await requireOrgReadFor(ctx, organizationId, "bulkAsset"); // Phase 5 domain slice (#1001)
-    return await ctx.db
+    const doc = await ctx.db
       .query("bulkAssets")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
       .unique();
+    return doc ? (await bulkAssetCostGuard(ctx)).row(doc) : doc;
   },
 });
 
@@ -200,10 +208,11 @@ export const listByModel = query({
   handler: async (ctx, { modelId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "bulkAsset"); // Phase 5 domain slice (#1001)
     // by_modelId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    const cost = await bulkAssetCostGuard(ctx);
     return (await ctx.db
       .query("bulkAssets")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
-      .collect()).filter((r) => r.organizationId === orgId);
+      .collect()).filter((r) => r.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -221,7 +230,8 @@ export const listByModelIds = query({
     const groups = await Promise.all(
       unique.map((mid) => ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
     );
-    return groups.flat().filter((b) => b.organizationId === orgId);
+    const cost = await bulkAssetCostGuard(ctx);
+    return groups.flat().filter((b) => b.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -239,7 +249,8 @@ export const listByIds = query({
     const docs = await Promise.all(
       unique.map((id) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
     );
-    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+    const cost = await bulkAssetCostGuard(ctx);
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -263,6 +274,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireService(ctx);
     const _id = await ctx.db.insert("bulkAssets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", null, args);
     return _id;
   },
@@ -290,6 +302,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("bulkAssets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", null, args);
     return { _id, created: true };
   },
@@ -321,6 +334,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, safePatch.locationId, safePatch.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...safePatch });
     return doc._id;
   },
@@ -370,6 +384,7 @@ export const patchBulkAsset = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("bulkAssets not found: " + id);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, clear.includes("locationId") ? null : set.locationId, set.updatedAt ?? Date.now());
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
       await bumpCountersForTable(ctx, "bulkAssets", doc, { ...doc, ...set });

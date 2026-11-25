@@ -23,8 +23,14 @@ export function useModelWrites() {
   const createM = useMutation(api.modelWrites.createNative);
   const updateM = useMutation(api.modelWrites.updateNative);
   const archiveM = useMutation(api.modelWrites.archiveNative);
+  const restoreM = useMutation(api.modelWrites.restoreNative);
+  const undoArchiveM = useMutation(api.modelWrites.undoArchiveNative);
   const bulkRatesM = useMutation(api.modelWrites.bulkUpdateRatesNative);
+  const undoFieldEditsM = useMutation(api.modelWrites.undoModelFieldEditsNative);
+  const setReorderM = useMutation(api.modelWrites.setReorderLevelsNative);
   const adjustSaleStockM = useMutation(api.modelWrites.adjustSaleStockNative);
+  const adjustSaleStockManyM = useMutation(api.modelWrites.adjustSaleStockManyNative);
+  const undoSaleStockM = useMutation(api.modelWrites.undoSaleStockNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -47,18 +53,59 @@ export function useModelWrites() {
       await updateM({ id, orgId: org, ...parsed, now: Date.now(), actor: actor(), auditId: createId() });
       return { id };
     },
-    archive: async (id: string): Promise<{ id: string }> => {
+    /** Soft archive (assets stay). `auditId` is the handle `undoArchive` takes. */
+    archive: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
       const org = requireOrg();
-      return await archiveM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      const r = await archiveM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    restore: async (id: string): Promise<{ id: string; undoable: boolean; auditId: string }> => {
+      const org = requireOrg();
+      const auditId = createId();
+      const r = await restoreM({ id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    /** The exact reverse of one archive / restore, from its own audit row (ids only). */
+    undoArchive: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
+      const org = requireOrg();
+      return await undoArchiveM({ id, orgId: org, auditId, now: Date.now(), actor: actor() });
     },
     bulkUpdateRates: async (
       modelIds: string[],
       rateType: "dailyRate" | "weeklyRate" | "monthlyRate" | "salePrice",
       operation: "set" | "multiply" | "increase_percent",
       value: number,
-    ): Promise<{ count: number }> => {
+    ): Promise<{ count: number; auditIds: string[] }> => {
       const org = requireOrg();
       return await bulkRatesM({ orgId: org, modelIds, rateType, operation, value, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Exactly reverses a bulk rate edit or a reorder-level change (ids only; refused if a field changed since). */
+    undoModelFieldEdits: async (auditIds: string[]): Promise<{ restored: number }> => {
+      return await undoFieldEditsM({ orgId: requireOrg(), auditIds, now: Date.now(), actor: actor() });
+    },
+    /** `level` null clears it (an unset reorder level is never 0). Returns the audit ids of the models that changed. */
+    setReorderLevels: async (entries: { id: string; level: number | null }[]): Promise<{ auditIds: string[]; count: number }> => {
+      return await setReorderM({ orgId: requireOrg(), entries, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** The same whole-number `delta` on each model (UX Phase 14): returns each write's audit id for ONE exact Undo. */
+    adjustSaleStockMany: async (modelIds: string[], delta: number, reason?: string): Promise<{ auditIds: string[]; count: number }> => {
+      const org = requireOrg();
+      const auditIds = modelIds.map(() => createId());
+      await adjustSaleStockManyM({
+        orgId: org,
+        adjustments: modelIds.map((id) => ({ id, delta })),
+        reason,
+        now: Date.now(),
+        actor: actor(),
+        auditIds,
+      });
+      return { auditIds, count: modelIds.length };
+    },
+    /** Exactly reverses `adjustSaleStockMany` (ids only; the server refuses if the stock moved since). */
+    undoSaleStock: async (auditIds: string[]): Promise<{ restored: number }> => {
+      const org = requireOrg();
+      return await undoSaleStockM({ orgId: org, auditIds, now: Date.now(), actor: actor() });
     },
     adjustSaleStock: async (id: string, delta: number, reason?: string): Promise<{ id: string; saleStockQuantity: number }> => {
       const org = requireOrg();

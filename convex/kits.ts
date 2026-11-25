@@ -4,11 +4,15 @@ import { query, mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { bumpAssetCounters } from "./lib/counters";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { adjustBulkAvailability } from "./lib/inventory";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
+import { nextStatusUnlessRetired } from "./lib/assetRetire";
+import { assetCostGuard, bulkAssetCostGuard, kitCostGuard } from "./lib/gearCostRedact";
+import { costSortAllowed } from "./lib/gearCostFields";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -25,10 +29,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "kit"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const cost = await kitCostGuard(ctx);
+    const rows = await ctx.db
       .query("kits")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive catalog read (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
       .collect();
+    return rows.map(cost.row);
   },
 });
 
@@ -37,7 +43,7 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await getKitByCuid(ctx, id);
     await requireOrgReadDocFor(ctx, doc, "kit"); // Phase 2 read bootstrap (#998)
-    return doc;
+    return doc && (await kitCostGuard(ctx)).row(doc);
   },
 });
 
@@ -68,7 +74,10 @@ export const listPage = query({
     await requireOrgReadFor(ctx, a.orgId, "kit"); // Phase 5 domain slice (#1001)
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    const sortBy = a.sortBy ?? "assetTag";
+    const cost = await kitCostGuard(ctx);
+    // A hidden cost column is not a sort key (its ORDER would leak); everyone else sorts as before.
+    const requestedSort = a.sortBy ?? "assetTag";
+    const sortBy = costSortAllowed(requestedSort, cost.hidden) ? requestedSort : "assetTag";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, categories, locations] = await Promise.all([
@@ -102,7 +111,7 @@ export const listPage = query({
     const { items: pageRows, total, totalPages } = paginateItems(sorted, page, pageSize);
 
     const items = pageRows.map((k) => ({
-      ...k,
+      ...cost.row(k),
       category: k.categoryId ? categoryMap.get(k.categoryId) ?? null : null,
       location: k.locationId ? locationMap.get(k.locationId) ?? null : null,
     }));
@@ -214,10 +223,11 @@ export const listByIds = query({
     await requireOrgReadFor(ctx, orgId, "kit"); // Phase 5 domain slice (#1001)
     const unique = [...new Set(ids)];
     if (unique.length > 1000) throw new ConvexError("kits.listByIds: too many ids (max 1000)");
+    const cost = await kitCostGuard(ctx);
     const docs = await Promise.all(
       unique.map((id) => getKitByCuid(ctx, id)),
     );
-    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -235,10 +245,11 @@ export const availableAssets = query({
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
+    const cost = await assetCostGuard(ctx);
     return assets
       .filter((a) => a.isActive !== false && (a.status ?? "AVAILABLE") === "AVAILABLE" && (a.kitId ?? null) === null && (!modelId || a.modelId === modelId))
       .sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0))
-      .map((a) => ({ ...a, model: a.modelId ? modelMap.get(a.modelId) ?? null : null }));
+      .map((a) => ({ ...cost.row(a), model: cost.model(a.modelId ? modelMap.get(a.modelId) ?? null : null) }));
   },
 });
 
@@ -256,10 +267,11 @@ export const availableBulkAssets = query({
       ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(), // r9.8-ok: bounded per-org catalog map (enrichment) — see docs/exceptions.md R-8.3.3
     ]);
     const modelMap = new Map(models.map((m) => [m.id, m]));
+    const cost = await bulkAssetCostGuard(ctx);
     return bulk
       .filter((b) => b.isActive !== false && (b.status ?? "ACTIVE") === "ACTIVE" && (b.availableQuantity ?? 0) > 0)
       .sort((a, b) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0))
-      .map((b) => ({ ...b, model: b.modelId ? modelMap.get(b.modelId) ?? null : null }));
+      .map((b) => ({ ...cost.row(b), model: cost.model(b.modelId ? modelMap.get(b.modelId) ?? null : null) }));
   },
 });
 
@@ -267,10 +279,11 @@ export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
     await requireOrgReadFor(ctx, organizationId, "kit"); // Phase 5 domain slice (#1001)
-    return await ctx.db
+    const kit = await ctx.db
       .query("kits")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
       .unique();
+    return kit && (await kitCostGuard(ctx)).row(kit);
   },
 });
 
@@ -305,7 +318,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     await requireService(ctx);
-    return await ctx.db.insert("kits", args);
+    const _id = await ctx.db.insert("kits", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
+    return _id;
   },
 });
 
@@ -343,6 +358,7 @@ export const createIfMissing = mutation({
     const existing = await getKitByCuid(ctx, args.id);
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("kits", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     return { _id, created: true };
   },
 });
@@ -385,6 +401,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, safePatch.locationId, safePatch.updatedAt ?? Date.now());
     return doc._id;
   },
 });
@@ -417,7 +434,8 @@ export const remove = mutation({
 export async function getKitGuarded(ctx: MutationCtx, kitId: string, organizationId: string) {
   const kit = await getKitByCuid(ctx, kitId);
   if (!kit || kit.organizationId !== organizationId) throw new ConvexError("Kit not found");
-  if (kit.status !== "AVAILABLE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
+  // A stored INCOMPLETE is ignored (D75: incompleteness is derived), so a kit can still be completed.
+  if (kit.status !== "AVAILABLE" && kit.status !== "INCOMPLETE") throw new ConvexError("Items can only be added to/removed from AVAILABLE kits");
   return kit;
 }
 
@@ -435,6 +453,7 @@ export async function assignAssetToKit(
     const { _id, _creationTime, locationId: _l, ...rest } = asset;
     await ctx.db.replace(_id, { ...rest, kitId, updatedAt: now });
   }
+  await stampLocationMovement(ctx, asset.organizationId, asset.locationId, kitLocationId ?? null, now);
 }
 
 /** Release an asset back to inventory (kitId cleared, status AVAILABLE). */
@@ -442,9 +461,10 @@ export async function releaseAsset(ctx: MutationCtx, assetId: string, now: numbe
   const asset = await getAssetDoc(ctx, assetId);
   if (!asset) return;
   const { _id, _creationTime, kitId: _k, ...rest } = asset;
-  await ctx.db.replace(_id, { ...rest, status: "AVAILABLE", updatedAt: now });
+  const status = nextStatusUnlessRetired(asset.status, "AVAILABLE"); // a retired member leaves the kit still retired
+  await ctx.db.replace(_id, { ...rest, status, updatedAt: now });
   // §3.6 dashboard counter: releasing a checked-out kit asset back to AVAILABLE.
-  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status: "AVAILABLE" });
+  await bumpAssetCounters(ctx, asset.organizationId, asset, { isActive: asset.isActive, status });
 }
 
 export async function getAssetDoc(ctx: MutationCtx, id: string) {

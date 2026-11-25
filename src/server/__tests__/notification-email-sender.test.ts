@@ -34,7 +34,11 @@ vi.mock("@/lib/convex-client", () => ({ getConvexClient: vi.fn(async () => conve
 vi.mock("@/lib/models-read", () => ({ getModelMap: vi.fn(async () => new Map()) }));
 vi.mock("@/lib/projects-read", () => ({ getProjectsByOrg: vi.fn(async () => []) }));
 vi.mock("@/lib/assets-read", () => ({ getAssetsByOrg: vi.fn(async () => []) }));
-vi.mock("@/lib/maintenance-read", () => ({ getMaintenanceRecordsByOrg: vi.fn(async () => []) }));
+// The record READ is stubbed; the overdue rule is the real one (the thing under test below).
+vi.mock("@/lib/maintenance-read", async () => ({
+  ...(await vi.importActual<typeof import("@/lib/maintenance-read")>("@/lib/maintenance-read")),
+  getMaintenanceRecordsByOrg: vi.fn(async () => []),
+}));
 vi.mock("@/lib/maintenance-record-asset-read", () => ({ getMaintenanceAssetLinksByRecordIds: vi.fn(async () => []) }));
 vi.mock("@/lib/crew-scheduling-read", () => ({
   getCrewAssignmentsByOrg: vi.fn(async () => []),
@@ -112,6 +116,30 @@ function seedExpiringQuote(daysLeft: number) {
     },
   ];
 }
+
+describe("sendNotificationEmails — overdue maintenance uses the ONE overdue rule (the scheduled DAY is before today)", () => {
+  const rec = (id: string, title: string, scheduledMs: number, status = "SCHEDULED") => ({ id, title, status, scheduledDate: new Date(scheduledMs) });
+
+  it("work scheduled earlier TODAY is not emailed as overdue; work scheduled yesterday is", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW_MS); // 2023-11-14T22:13:20Z
+    try {
+      const { getMaintenanceRecordsByOrg } = await import("@/lib/maintenance-read");
+      vi.mocked(getMaintenanceRecordsByOrg).mockResolvedValueOnce([
+        rec("m_today", "Same-day service", NOW_MS - 3 * 60 * 60 * 1000),
+        rec("m_midnight", "Midnight service", Math.floor(NOW_MS / DAY) * DAY),
+        rec("m_yday", "Yesterday service", NOW_MS - DAY),
+      ] as never);
+      await sendNotificationEmails();
+      const html = sendEmailMock.mock.calls.map((c) => c[0].html).join("\n");
+      expect(html).toContain("Yesterday service");
+      expect(html).not.toContain("Same-day service");
+      expect(html).not.toContain("Midnight service");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 
 describe("sendNotificationEmails — quote_expiring audience gate (#1225, D4)", () => {
   it("emails the invoice:read recipient but not one whose role carries no invoice access", async () => {

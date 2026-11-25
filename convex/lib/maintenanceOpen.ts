@@ -33,13 +33,25 @@ export function isOpenMaintenance(status: string | null | undefined): boolean {
  */
 export const OVERDUE_MAINTENANCE_STATUSES = ["SCHEDULED", "IN_PROGRESS"] as const satisfies readonly OpenMaintenanceStatus[];
 
-/** Overdue (above), with a scheduled date strictly before `now`. Undated work, or work with no status, is never overdue. */
+const DAY_MS = 86_400_000;
+
+/**
+ * The instant before which a scheduled date counts as past: the START of today (UTC day). Overdue is about the
+ * scheduled DAY, not an instant compare, so work scheduled for today, even at midnight, is due, not overdue,
+ * until tomorrow. (Org-timezone days are a logged follow-up; the one place to change is here.) Every overdue
+ * read, index range and tile uses this, so they cannot disagree.
+ */
+export function overdueCutoff(now: number): number {
+  return Math.floor(now / DAY_MS) * DAY_MS;
+}
+
+/** Overdue (above), with a scheduled DAY strictly before today. Undated work, or work with no status, is never overdue. */
 export function isOverdueMaintenance(r: { status?: string | null; scheduledDate?: number | null }, now: number): boolean {
   return (
     r.status != null &&
     (OVERDUE_MAINTENANCE_STATUSES as readonly string[]).includes(r.status) &&
     typeof r.scheduledDate === "number" &&
-    r.scheduledDate < now
+    r.scheduledDate < overdueCutoff(now)
   );
 }
 

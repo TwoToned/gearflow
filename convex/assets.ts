@@ -2,11 +2,13 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation, type QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireOrgPermission, requireService } from "./lib/auth";
 import { bumpCountersForTable } from "./lib/counters";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assetInSegment, dueAssetMap, parseAssetSegment } from "./lib/assetAttention";
 import { resolveNow } from "./lib/projectSegments";
+import { assetCostGuard } from "./lib/gearCostRedact";
 
 /**
  * Thin CRUD for Asset (Convex table "assets"). GENERATED — Phase 2/5.
@@ -26,10 +28,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "asset"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const cost = await assetCostGuard(ctx);
+    const rows = await ctx.db
       .query("assets")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: cross-domain server-read helper (getAssetsByOrg/getMappedAssetsByOrg), not a browser subscription — see docs/exceptions.md R-8.3.3
       .collect();
+    return rows.map(cost.row);
   },
 });
 
@@ -79,7 +83,8 @@ export const listPage = query({
     const isActive = segment === "retired" ? false : (a.isActive ?? true);
     const page = a.page ?? 1;
     const pageSize = a.pageSize ?? 25;
-    const sortBy = a.sortBy ?? "assetTag";
+    const cost = await assetCostGuard(ctx);
+    const sortBy = cost.sort(a.sortBy); // an allow-list; a hidden cost column is not a sort key
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
 
     const [rows, models, categories, locations] = await Promise.all([
@@ -127,8 +132,8 @@ export const listPage = query({
     const assets = pageRows.map((r) => {
       const model = modelMap.get(r.modelId) ?? null;
       return {
-        ...r,
-        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        ...cost.row(r),
+        model: model ? { ...cost.model(model), category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
         location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
       };
     });
@@ -246,11 +251,12 @@ export const listGallery = query({
       String(modelNameFor(x.modelId) ?? "").localeCompare(String(modelNameFor(y.modelId) ?? ""), undefined, { sensitivity: "base" }),
     );
 
+    const cost = await assetCostGuard(ctx);
     return sorted.map((r) => {
       const model = modelMap.get(r.modelId) ?? null;
       return {
-        ...r,
-        model: model ? { ...model, category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
+        ...cost.row(r),
+        model: model ? { ...cost.model(model), category: model.categoryId ? categoryMap.get(model.categoryId) ?? null : null } : null,
         location: r.locationId ? locationMap.get(r.locationId) ?? null : null,
       };
     });
@@ -305,7 +311,7 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "asset"); // Phase 2 read bootstrap (#998)
-    return doc;
+    return doc ? (await assetCostGuard(ctx)).row(doc) : doc;
   },
 });
 
@@ -313,10 +319,11 @@ export const getByAssetTag = query({
   args: { organizationId: v.string(), assetTag: v.string() },
   handler: async (ctx, { organizationId, assetTag }) => {
     await requireOrgReadFor(ctx, organizationId, "asset"); // Phase 5 domain slice (#1001)
-    return await ctx.db
+    const doc = await ctx.db
       .query("assets")
       .withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", organizationId).eq("assetTag", assetTag))
       .unique();
+    return doc ? (await assetCostGuard(ctx)).row(doc) : doc;
   },
 });
 
@@ -325,10 +332,11 @@ export const listByModel = query({
   handler: async (ctx, { modelId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "asset"); // Phase 2 read bootstrap (#998)
     // by_modelId is a GLOBAL index — filter to the caller's org (cross-tenant guard).
+    const cost = await assetCostGuard(ctx);
     return (await ctx.db
       .query("assets")
       .withIndex("by_modelId", (q) => q.eq("modelId", modelId))
-      .collect()).filter((r) => r.organizationId === orgId);
+      .collect()).filter((r) => r.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -346,7 +354,8 @@ export const listByModelIds = query({
     const groups = await Promise.all(
       unique.map((mid) => ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", mid)).collect()),
     );
-    return groups.flat().filter((a) => a.organizationId === orgId);
+    const cost = await assetCostGuard(ctx);
+    return groups.flat().filter((a) => a.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -368,7 +377,8 @@ export const listByIds = query({
     const docs = await Promise.all(
       unique.map((id) => ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique()),
     );
-    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId);
+    const cost = await assetCostGuard(ctx);
+    return docs.filter((d): d is NonNullable<typeof d> => d !== null && d.organizationId === orgId).map(cost.row);
   },
 });
 
@@ -407,6 +417,7 @@ export const create = mutation({
   handler: async (ctx, args) => {
     await requireService(ctx);
     const _id = await ctx.db.insert("assets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "assets", null, args);
     return _id;
   },
@@ -466,6 +477,7 @@ export const createMany = mutation({
         .first();
       if (dup) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", tag: a.assetTag });
       await ctx.db.insert("assets", a);
+      await stampLocationMovement(ctx, a.organizationId, null, a.locationId ?? null, a.updatedAt ?? Date.now());
       await bumpCountersForTable(ctx, "assets", null, a);
       ids.push(a.id);
     }
@@ -510,6 +522,7 @@ export const createIfMissing = mutation({
     const existing = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", args.id)).unique();
     if (existing) return { _id: existing._id, created: false };
     const _id = await ctx.db.insert("assets", args);
+    await stampLocationMovement(ctx, args.organizationId, null, args.locationId ?? null, args.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "assets", null, args);
     return { _id, created: true };
   },
@@ -556,6 +569,7 @@ export const update = mutation({
     const safePatch = { ...patch };
     delete safePatch.organizationId;
     await ctx.db.patch(doc._id, safePatch);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, safePatch.locationId, safePatch.updatedAt ?? Date.now());
     await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...safePatch });
     return doc._id;
   },
@@ -622,6 +636,7 @@ export const patchAsset = mutation({
     await requireService(ctx);
     const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     if (!doc) throw new ConvexError("assets not found: " + id);
+    await stampLocationMovement(ctx, doc.organizationId, doc.locationId, clear.includes("locationId") ? null : set.locationId, set.updatedAt ?? Date.now());
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, set);
       await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...set });
@@ -656,9 +671,11 @@ export const bulkUpdate = mutation({
     await requireService(ctx);
     const cl = clear ?? [];
     let n = 0;
+    const moves = new LocationMovements();
     for (const id of ids) {
       const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
       if (!doc || doc.organizationId !== organizationId) continue;
+      moves.record(doc.locationId, cl.includes("locationId") ? null : set.locationId);
       if (cl.length === 0) {
         await ctx.db.patch(doc._id, set);
         await bumpCountersForTable(ctx, "assets", doc, { ...doc, ...set });
@@ -674,6 +691,7 @@ export const bulkUpdate = mutation({
       }
       n++;
     }
+    await moves.flush(ctx, organizationId, set.updatedAt ?? Date.now());
     return n;
   },
 });
@@ -716,8 +734,9 @@ export const listByParentAssetId = query({
   args: { parentAssetId: v.string(), orgId: v.string() },
   handler: async (ctx, { parentAssetId, orgId }) => {
     await requireOrgReadFor(ctx, orgId, "asset"); // Phase 5 domain slice (#1001)
+    const cost = await assetCostGuard(ctx);
     return (await ctx.db.query("assets").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", parentAssetId)).collect())
-      .filter((r) => r.organizationId === orgId);
+      .filter((r) => r.organizationId === orgId).map(cost.row);
   },
 });
 

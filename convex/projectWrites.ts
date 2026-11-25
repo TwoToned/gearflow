@@ -38,6 +38,7 @@ const blockedForwardLabel = (status: string): string =>
   `move this project to ${status.toLowerCase().replaceAll("_", " ")}`;
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { bumpProjectCounters } from "./lib/counters";
 import * as enums from "./lib/validators";
 import { projectWriteFields } from "./projects";
@@ -46,6 +47,8 @@ import { removeLineItemCascadeCore } from "./projectLineItems";
 import { deleteCrewAssignmentCascadeCore } from "./crewAssignments";
 import { deleteAllForProjectCore } from "./projectCategories";
 import { liveRows, versionRows } from "./lib/versionScope";
+import { applyLineageAdd, applyVersionDeletePool } from "./lib/lineagePool";
+import { stampLocationMovement } from "./lib/locationMovement";
 import { listProjectVersions, createLiveVersionForProject } from "./lib/projectVersionState";
 
 /**
@@ -142,102 +145,102 @@ export async function transitionProjectStatus(
     now: number;
   },
 ): Promise<{ id: string }> {
-    const id = project.id;
-    const from = project.status ?? "";
-    // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
-    // with the deleted server action). Only on an actual status change (template excluded above).
-    if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
-      await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
+  const id = project.id;
+  const from = project.status ?? "";
+  // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
+  // with the deleted server action). Only on an actual status change (template excluded above).
+  if (from !== status && BLOCKED_FORWARD_STATUSES.has(status)) {
+    await assertNoBlockingCommentsInMutation(ctx, orgId, id, { actionLabel: blockedForwardLabel(status) });
+  }
+
+  // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
+  // with the rest of the 4-tier lock system — #987 already made a client's
+  // stored document immutable regardless of project status, so a status
+  // revert out of COMPLETED/INVOICED needs no separate protection. A status
+  // change is always structural — never gated.
+
+  // #986 (decision 3): a project may not advance to CONFIRMED until a quote
+  // revision has been ACCEPTED — confirming a job the client never agreed to
+  // price is the failure the whole revision model exists to prevent.
+  // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
+  // or this project's own PM). #1230 drops the freeform justification text
+  // this override used to require — `logActivity` already records who/what/
+  // when on every write, so a permission check is the whole gate now.
+  // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
+  // project that is already CONFIRMED never re-prompts, and a later revision
+  // superseding the accepted one doesn't retroactively invalidate the status.
+  const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
+  if (confirmingWithoutQuote) {
+    await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
+  }
+
+  await ctx.db.patch(project._id, { status, updatedAt: now });
+  await bumpProjectCounters(ctx, orgId, project, { ...project, status });
+
+  // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
+  // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
+  // status patch above so the snapshot's own `project` entry carries the new
+  // status too (statusFrom/statusTo record the transition separately).
+  if (crossesIntoSnapshotStatus(from, status)) {
+    const patched = await ctx.db.get(project._id);
+    if (patched) {
+      await captureProjectSnapshot(ctx, {
+        orgId,
+        project: patched,
+        reason: status as "CONFIRMED" | "COMPLETED",
+        statusFrom: from,
+        statusTo: status,
+        actor,
+        now,
+      });
     }
+  }
 
-    // #1230: the HARD_LOCKED tier (and its revert-out-of gate) is deleted along
-    // with the rest of the 4-tier lock system — #987 already made a client's
-    // stored document immutable regardless of project status, so a status
-    // revert out of COMPLETED/INVOICED needs no separate protection. A status
-    // change is always structural — never gated.
+  // The whole rule (#1230, D-table): pricing locks when the project REACHES
+  // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
+  // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
+  // does NOT clear it (D57): "this job has a quote out" stays true; only a
+  // person lowers the flag, via `unlockPricingNative`.
+  let pricingJustLocked = false;
+  if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
+    await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
+    pricingJustLocked = true;
+  }
 
-    // #986 (decision 3): a project may not advance to CONFIRMED until a quote
-    // revision has been ACCEPTED — confirming a job the client never agreed to
-    // price is the failure the whole revision model exists to prevent.
-    // Overridable by `canUnlockPricing`'s audience (D42 — owner/admin/manager,
-    // or this project's own PM). #1230 drops the freeform justification text
-    // this override used to require — `logActivity` already records who/what/
-    // when on every write, so a permission check is the whole gate now.
-    // Deliberately only on an actual transition INTO CONFIRMED: re-saving a
-    // project that is already CONFIRMED never re-prompts, and a later revision
-    // superseding the accepted one doesn't retroactively invalidate the status.
-    const confirmingWithoutQuote = from !== status && status === "CONFIRMED" && !(await hasAcceptedQuote(ctx, orgId, id, now));
-    if (confirmingWithoutQuote) {
-      await requireCanUnlockPricing(ctx, orgId, id, actor.userId);
+  await writeActivityLog(ctx, {
+    id: auditId,
+    organizationId: orgId,
+    action: "STATUS_CHANGE",
+    entityType: "project",
+    entityId: id,
+    entityName: project.projectNumber,
+    userId: actor.userId,
+    userName: actor.userName,
+    summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
+    details: { changes: [{ field: "status", from, to: status }] },
+    metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
+    projectId: id,
+    createdAt: now,
+  });
+
+  // Fired only on an actual status change (folded from the server tail's
+  // `emitWebhookEvent("project.status_changed")`, now in the same transaction).
+  // Best-effort: a webhook read/insert failure must never roll back the status write.
+  if (emitSideEffects === true && from !== status) {
+    try {
+      await enqueueWebhookEvent(ctx, orgId, "project.status_changed", {
+        projectId: id,
+        projectNumber: project.projectNumber,
+        name: project.name,
+        from,
+        to: status,
+      }, now);
+    } catch {
+      // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
     }
+  }
 
-    await ctx.db.patch(project._id, { status, updatedAt: now });
-    await bumpProjectCounters(ctx, orgId, project, { ...project, status });
-
-    // #792: whole-project snapshot on every crossing into CONFIRMED/COMPLETED —
-    // forward advance OR a revert-then-re-advance re-crossing. Read AFTER the
-    // status patch above so the snapshot's own `project` entry carries the new
-    // status too (statusFrom/statusTo record the transition separately).
-    if (crossesIntoSnapshotStatus(from, status)) {
-      const patched = await ctx.db.get(project._id);
-      if (patched) {
-        await captureProjectSnapshot(ctx, {
-          orgId,
-          project: patched,
-          reason: status as "CONFIRMED" | "COMPLETED",
-          statusFrom: from,
-          statusTo: status,
-          actor,
-          now,
-        });
-      }
-    }
-
-    // The whole rule (#1230, D-table): pricing locks when the project REACHES
-    // CONFIRMED. Idempotent (never re-stamps an already-locked project) and
-    // one-directional — a later revert (CONFIRMED -> QUOTING) deliberately
-    // does NOT clear it (D57): "this job has a quote out" stays true; only a
-    // person lowers the flag, via `unlockPricingNative`.
-    let pricingJustLocked = false;
-    if (from !== status && status === "CONFIRMED" && project.pricingLocked !== true) {
-      await ctx.db.patch(project._id, pricingLockRaiseFields(actor, now));
-      pricingJustLocked = true;
-    }
-
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "STATUS_CHANGE",
-      entityType: "project",
-      entityId: id,
-      entityName: project.projectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Changed project ${project.projectNumber} status from ${from} to ${status}${pricingJustLocked ? " — pricing locked" : ""}`,
-      details: { changes: [{ field: "status", from, to: status }] },
-      metadata: pricingJustLocked ? { pricingLocked: true } : undefined,
-      projectId: id,
-      createdAt: now,
-    });
-
-    // Fired only on an actual status change (folded from the server tail's
-    // `emitWebhookEvent("project.status_changed")`, now in the same transaction).
-    // Best-effort: a webhook read/insert failure must never roll back the status write.
-    if (emitSideEffects === true && from !== status) {
-      try {
-        await enqueueWebhookEvent(ctx, orgId, "project.status_changed", {
-          projectId: id,
-          projectNumber: project.projectNumber,
-          name: project.name,
-          from,
-          to: status,
-        }, now);
-      } catch {
-        // swallow — mirrors src/server/projects.ts `void emitWebhookEvent(...)`.
-      }
-    }
-
-    return { id };
+  return { id };
 }
 
 export const updateStatusNative = mutation({
@@ -413,7 +416,7 @@ const PROJECT_SERVER_OWNED = ["revision", "liveRevision"] as const;
  * server-owned fields + `isTemplate` (a project is never flipped to a template in
  * place — that's a saveAsTemplate copy). `projectNumber` stays editable (a legit
  * code edit). */
-const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, ...PROJECT_SERVER_OWNED, "isTemplate"] as const;
+export const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, ...PROJECT_SERVER_OWNED, "isTemplate"] as const;
 
 const PROJECT_NEVER_CLEAR = new Set<string>([
   "id", "organizationId", "projectNumber", ...PROJECT_UPDATE_IMMUTABLE,
@@ -488,7 +491,35 @@ async function isReplayOfCreate(
  */
 const RECALC_INPUT_FIELDS = ["taxRate", "discountPercent"] as const;
 
-async function recalcIfInputsWritten(
+/**
+ * The edit's ONE audit row. It carries the exact-Undo snapshot (`details.fieldEdit`: before/after of ONLY
+ * the fields that changed, `lib/fieldEditUndo.ts`), which `projectEditUndo.undoUpdateNative` reads back, ids
+ * only. The activity readers redact that snapshot by field name with the same lists as `details.changes`
+ * (`lib/activityPay.ts`), so no field is hand-picked here. A save that changed nothing writes a plain row.
+ */
+async function auditProjectEdit(
+  ctx: MutationCtx,
+  a: {
+    orgId: string; project: Doc<"projects">; setObj: Record<string, unknown>; clear: string[];
+    actor: { userId: string; userName: string }; auditId: string; now: number; summary: string;
+  },
+): Promise<void> {
+  const fields = [...Object.keys(a.setObj), ...a.clear].filter((f) => f !== "updatedAt");
+  const after = await ctx.db.get(a.project._id);
+  const diff = after ? diffFields(a.project as Record<string, unknown>, after as Record<string, unknown>, fields) : null;
+  const base = {
+    orgId: a.orgId, entityType: "project", entityId: a.project.id, entityName: a.project.projectNumber,
+    auditId: a.auditId, actor: a.actor, summary: a.summary, now: a.now, links: { projectId: a.project.id },
+  };
+  if (diff) return recordFieldEdit(ctx, { ...base, diff });
+  await writeActivityLog(ctx, {
+    id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project", entityId: a.project.id,
+    entityName: a.project.projectNumber, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary,
+    projectId: a.project.id, createdAt: a.now,
+  });
+}
+
+export async function recalcIfInputsWritten(
   ctx: MutationCtx,
   orgId: string,
   id: string,
@@ -626,18 +657,8 @@ export const updateNative = mutation({
     await recalcIfInputsWritten(ctx, orgId, id, setObj, clear, now);
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "project",
-      entityId: id,
-      entityName: project.projectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated project ${project.projectNumber} - ${name}`,
-      projectId: id,
-      createdAt: now,
+    await auditProjectEdit(ctx, {
+      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`,
     });
 
     return { id };
@@ -1087,6 +1108,10 @@ export const deleteNative = mutation({
       await Promise.all(deleteVersions.map((v) => versionRows(ctx, "projectLineItems", v.id)))
     ).flat().filter((li) => li.organizationId === orgId);
 
+    // The new-stock pool is accounted per lineage: every sale line this cascade removes gives its stock back
+    // (once per lineage, whichever version holds it), before the rows go.
+    await applyVersionDeletePool(ctx, { orgId, projectId: id, rows: lineItems, actor, now });
+
     const checkedOutAssetIds: string[] = [];
     const checkedOutKitIds: string[] = [];
     for (const li of lineItems) {
@@ -1108,6 +1133,7 @@ export const deleteNative = mutation({
         ...(safeLocationId != null ? { locationId: safeLocationId } : {}),
         updatedAt: now,
       });
+      await stampLocationMovement(ctx, orgId, kit.locationId, safeLocationId ?? undefined, now);
     }
 
     // Step 3 — free those kits' serialized member assets (org-scoped, counter-safe path).
@@ -1203,6 +1229,19 @@ export const deleteNative = mutation({
  * crew cascade and writes NO audit. Cascade: PM/tasks/services → grouping → line
  * items → projectModelRevenues → the project row (+ counter).
  */
+/**
+ * A template is archived first (`projectTemplateWrites.archiveTemplatesNative`, with an exact
+ * Undo); only an archived one may be deleted for real, which has no Undo.
+ */
+function assertArchivedTemplate(project: Doc<"projects">): void {
+  if (!project.isTemplate) {
+    throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
+  }
+  if (project.status !== "CANCELLED") {
+    throw new ConvexError({ code: "DELETE_GUARD", message: "Archive the template first; only an archived template can be deleted." });
+  }
+}
+
 export const deleteTemplateNative = mutation({
   returns: v.object({ success: v.boolean() }),
   args: {
@@ -1220,9 +1259,7 @@ export const deleteTemplateNative = mutation({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Template not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    if (!project.isTemplate) {
-      throw new ConvexError({ code: "NOT_A_TEMPLATE", message: "That ID points at a project, not a template." });
-    }
+    assertArchivedTemplate(project);
 
     // Project managers / tasks (org-filtered inline deletes).
     const pms = (
@@ -1311,6 +1348,8 @@ type SrcLine = {
   groupName?: string; notes?: string; isOptional?: boolean; showSubhireOnDocs?: boolean;
   pricingMode?: string; childKind?: string; isKitChild?: boolean; parentLineItemId?: string;
   categoryId?: string; groupId?: string;
+  /** A SALE line's mode (NEW_STOCK / FROM_RENTAL_STOCK): carried by duplicate so the copy keeps its stock semantics. */
+  saleMode?: string;
   /** #1249 — the ROI opt-out, carried through duplicate/save-as-template. */
   excludeFromRoi?: boolean;
 };
@@ -1326,34 +1365,66 @@ type SrcLine = {
  * dup-guarded. A number clash on `newProjectNumber` throws (the caller supplies a
  * user-chosen code, not a retry loop).
  */
-export const duplicateNative = mutation({
-  returns: v.object({ id: v.string() }),
-  args: {
-    sourceId: v.string(),
-    newId: v.string(),
-    newProjectNumber: v.string(),
-    newName: v.string(),
-    orgId: v.string(),
-    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image.
-    // The rate is ALWAYS resolved in-mutation from orgSettings — a client value is
-    // never trusted (a browser caller could otherwise spoof a money-affecting tax
-    // rate on the duplicated project's recalculated totals).
-    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
-    now: v.number(),
-    actor: actorValidator,
-    auditId: v.string(),
-  },
-  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor: suppliedActor, auditId }) => {
-    await assertWritesEnabled(ctx, "project");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, orgId, "project", "create");
-    const actor = await resolveActor(ctx, suppliedActor);
+/** What `duplicateCore` made, by id, so `applyTemplateNative`'s Undo can remove exactly that. */
+export interface CopiedPlan {
+  categories: string[];
+  groups: string[];
+  lines: string[];
+  managers: string[];
+}
 
+interface DuplicateCoreArgs {
+  sourceId: string;
+  newId: string;
+  newProjectNumber: string;
+  newName: string;
+  orgId: string;
+  now: number;
+  actor: { userId: string; userName: string };
+  auditId: string;
+}
+
+/** Step 1 of a duplicate: the new project row and its live version (#1228). Returns the version id every copied row is stamped with. */
+async function insertDuplicateProject(ctx: MutationCtx, a: DuplicateCoreArgs, source: Doc<"projects">): Promise<string> {
+  const newProjectDocId = await ctx.db.insert("projects", {
+    id: a.newId,
+    organizationId: a.orgId,
+    projectNumber: a.newProjectNumber,
+    name: a.newName,
+    status: "ENQUIRY",
+    isTemplate: false,
+    ...duplicateProjectScalars(source),
+    createdAt: a.now,
+    updatedAt: a.now,
+  });
+  // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
+  // note). Every row inserted by the copy is stamped with THIS new version's id
+  // and a FRESH lineageId (a duplicate starts its own lineage — it does not
+  // inherit the source's).
+  return createLiveVersionForProject(ctx, {
+    orgId: a.orgId, projectId: a.newId, projectDocId: newProjectDocId, now: a.now, createdById: a.actor.userId,
+  });
+}
+
+/**
+ * The deep copy behind `duplicateNative` AND `applyTemplateNative` (R-3.1: one copy of
+ * how a plan is copied). With `into` the target project already exists (a wizard draft):
+ * its live version receives the copy and nothing else about the project row, its number
+ * or its audit is touched. The caller has checked permission and resolved the actor.
+ */
+export async function duplicateCore(
+  ctx: MutationCtx,
+  a: DuplicateCoreArgs,
+  into?: { versionId: string },
+): Promise<{ id: string; copied: CopiedPlan; source: Doc<"projects"> }> {
+  const { sourceId, newId, newProjectNumber, newName, orgId, now, actor, auditId } = a;
+  const copied: CopiedPlan = { categories: [], groups: [], lines: [], managers: [] };
+  {
     // newProjectNumber/newName are raw client strings — unlike create()/update() in
     // use-native-project-writes.ts, the duplicate() hook never runs them through
     // projectSchema.parse() first, so this is the ONLY bound check either ever gets
     // (R-8.6.2).
-    assertProjectFields({ name: newName, projectNumber: newProjectNumber });
+    if (!into) assertProjectFields({ name: newName, projectNumber: newProjectNumber });
 
     // Source project — org-checked (by_cuid is global).
     const source = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", sourceId)).first();
@@ -1361,37 +1432,22 @@ export const duplicateNative = mutation({
       throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     }
 
-    // Dup-guard the client-minted project cuid (COLLECT all — a foreign-org
-    // collision must throw, not silently reuse another org's row).
-    const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
-    if (cuidMatches.length > 0) throw new ConvexError("Project already exists");
+    if (!into) {
+      // Dup-guard the client-minted project cuid (COLLECT all — a foreign-org
+      // collision must throw, not silently reuse another org's row).
+      const cuidMatches = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", newId)).collect();
+      if (cuidMatches.length > 0) throw new ConvexError("Project already exists");
 
-    // Number clash (org-scoped @@unique guard) — a user-chosen code, so a hard error.
-    const clash = await ctx.db
-      .query("projects")
-      .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", newProjectNumber))
-      .unique();
-    if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
+      // Number clash (org-scoped @@unique guard) — a user-chosen code, so a hard error.
+      const clash = await ctx.db
+        .query("projects")
+        .withIndex("by_organizationId_projectNumber", (q) => q.eq("organizationId", orgId).eq("projectNumber", newProjectNumber))
+        .unique();
+      if (clash) throw new ConvexError({ code: "DUPLICATE_PROJECT_CODE", message: `A project with code "${newProjectNumber}" already exists.` });
+    }
 
-    // 1. New project row (children below reference its id).
-    const newProjectDocId = await ctx.db.insert("projects", {
-      id: newId,
-      organizationId: orgId,
-      projectNumber: newProjectNumber,
-      name: newName,
-      status: "ENQUIRY",
-      isTemplate: false,
-      ...duplicateProjectScalars(source),
-      createdAt: now,
-      updatedAt: now,
-    });
-    // #1228 — bootstrap version 1 + liveVersionId (see createNative's identical
-    // note). Every row inserted below is stamped with THIS new version's id and
-    // a FRESH lineageId (a duplicate starts its own lineage — it does not
-    // inherit the source's).
-    const newVersionId = await createLiveVersionForProject(ctx, {
-      orgId, projectId: newId, projectDocId: newProjectDocId, now, createdById: actor.userId,
-    });
+    // 1. New project row + live version (children below reference them), or the draft's own version.
+    const newVersionId = into ? into.versionId : await insertDuplicateProject(ctx, a, source);
 
     // 2. Categories (sorted) → catIdMap. LIVE-ONLY read of the source (#1228).
     const sourceCategories = (await liveRows(ctx, source, "projectCategories"))
@@ -1401,6 +1457,7 @@ export const duplicateNative = mutation({
     for (const cat of sourceCategories) {
       const nid = createId();
       catIdMap.set(cat.id, nid);
+      copied.categories.push(nid);
       await ctx.db.insert("projectCategories", {
         id: nid,
         organizationId: orgId,
@@ -1422,6 +1479,7 @@ export const duplicateNative = mutation({
     for (const group of sourceGroups) {
       const nid = createId();
       groupIdMap.set(group.id, nid);
+      copied.groups.push(nid);
       await ctx.db.insert("projectGroups", {
         id: nid,
         organizationId: orgId,
@@ -1472,6 +1530,7 @@ export const duplicateNative = mutation({
       }
 
       const newParentId = createId();
+      copied.lines.push(newParentId);
       await ctx.db.insert("projectLineItems", {
         id: newParentId,
         organizationId: orgId,
@@ -1481,6 +1540,9 @@ export const duplicateNative = mutation({
         ...(newCatId ? { categoryId: newCatId } : {}),
         ...(newGroupId ? { groupId: newGroupId } : {}),
         ...(li.type ? { type: li.type } : {}),
+        // A SALE line keeps its mode: dropping it would turn a NEW_STOCK sale into a mode-less one that takes
+        // nothing from the pool (the copy oversells) and a FROM_RENTAL_STOCK one into an undisposed sale.
+        ...(li.type === "SALE" && li.saleMode ? { saleMode: li.saleMode } : {}),
         ...(li.modelId ? { modelId: li.modelId } : {}),
         ...(li.bulkAssetId ? { bulkAssetId: li.bulkAssetId } : {}),
         ...(li.kitId ? { kitId: li.kitId } : {}),
@@ -1509,9 +1571,15 @@ export const duplicateNative = mutation({
         createdAt: now,
         updatedAt: now,
       } as Record<string, unknown> as never);
+      // A duplicated NEW_STOCK sale is a NEW lineage: it takes its quantity from the pool, exactly as `addNative` does.
+      if (li.type === "SALE" && li.saleMode === "NEW_STOCK") {
+        const copy = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", newParentId)).first();
+        if (copy) await applyLineageAdd(ctx, { orgId, line: copy, actor, now });
+      }
 
       for (const child of childrenByParent.get(li.id) ?? []) {
         const newChildId = createId();
+        copied.lines.push(newChildId);
         await ctx.db.insert("projectLineItems", {
           id: newChildId,
           organizationId: orgId,
@@ -1548,9 +1616,16 @@ export const duplicateNative = mutation({
     const sourcePMs = (
       await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", sourceId)).collect()
     ).filter((r) => r.organizationId === orgId);
+    // A draft may already have the managers its author picked: never add the same person twice.
+    const alreadyManaging = new Set(
+      into ? (await ctx.db.query("projectManagers").withIndex("by_projectId", (q) => q.eq("projectId", newId)).take(200)).map((r) => r.userId) : [],
+    );
     for (const pm of sourcePMs) {
+      if (alreadyManaging.has(pm.userId)) continue;
+      const pmId = createId();
+      copied.managers.push(pmId);
       await ctx.db.insert("projectManagers", {
-        id: createId(),
+        id: pmId,
         organizationId: orgId,
         projectId: newId,
         userId: pm.userId,
@@ -1563,22 +1638,51 @@ export const duplicateNative = mutation({
     const orgDefaultTaxRate = await resolveOrgDefaultTaxRate(ctx, orgId);
     await recalcProjectTotals(ctx, newId, orgId, orgDefaultTaxRate, now);
 
-    // CREATE audit for the new project (native path logs it atomically).
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "CREATE",
-      entityType: "project",
-      entityId: newId,
-      entityName: newProjectNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Duplicated project ${source.projectNumber} to ${newProjectNumber} - ${newName}`,
-      projectId: newId,
-      createdAt: now,
-    });
+    // CREATE audit for the new project (native path logs it atomically). An apply onto a draft writes its own.
+    if (!into) {
+      await writeActivityLog(ctx, {
+        id: auditId,
+        organizationId: orgId,
+        action: "CREATE",
+        entityType: "project",
+        entityId: newId,
+        entityName: newProjectNumber,
+        userId: actor.userId,
+        userName: actor.userName,
+        summary: `Duplicated project ${source.projectNumber} to ${newProjectNumber} - ${newName}`,
+        projectId: newId,
+        createdAt: now,
+      });
+    }
 
-    return { id: newId };
+    return { id: newId, copied, source };
+  }
+}
+
+export const duplicateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    sourceId: v.string(),
+    newId: v.string(),
+    newProjectNumber: v.string(),
+    newName: v.string(),
+    orgId: v.string(),
+    // Accepted-but-IGNORED for backward-compat with the pre-internalization app image.
+    // The rate is ALWAYS resolved in-mutation from orgSettings — a client value is
+    // never trusted (a browser caller could otherwise spoof a money-affecting tax
+    // rate on the duplicated project's recalculated totals).
+    orgDefaultTaxRate: v.optional(v.union(v.number(), v.null())),
+    now: v.number(),
+    actor: actorValidator,
+    auditId: v.string(),
+  },
+  handler: async (ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor: suppliedActor, auditId }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "create");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const { id } = await duplicateCore(ctx, { sourceId, newId, newProjectNumber, newName, orgId, now, actor, auditId });
+    return { id };
   },
 });
 

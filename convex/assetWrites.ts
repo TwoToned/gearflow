@@ -9,8 +9,11 @@ import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
-import { retireAssetCore } from "./lib/assetRetire";
+import { assertNoRetireBypass, retireAssetCore, type RetiredTestTag } from "./lib/assetRetire";
+import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
+import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { assertRefInOrg } from "./lib/orgRef";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -49,6 +52,13 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
  * entirely (R-8.6.2). `assetTag` presence is checked separately by the dup-tag path;
  * only its length is a shared concern here.
  */
+/** The warranty rule, ONE copy: create checks the two it is given; update checks the EFFECTIVE pair (a patch that sets one is checked against the stored other). */
+function assertWarrantyOrder(purchaseDate: number | null | undefined, warrantyExpiry: number | null | undefined): void {
+  if (purchaseDate != null && warrantyExpiry != null && warrantyExpiry < purchaseDate) {
+    throw new ConvexError("Warranty can't end before the purchase date");
+  }
+}
+
 function assertAssetFields(f: {
   assetTag?: string;
   serialNumber?: string;
@@ -58,7 +68,10 @@ function assertAssetFields(f: {
   notes?: string;
   barcode?: string;
   purchasePrice?: number;
+  purchaseDate?: number;
+  warrantyExpiry?: number;
 }): void {
+  assertWarrantyOrder(f.purchaseDate, f.warrantyExpiry);
   if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
   assertStrLen(f.serialNumber, "serialNumber", { max: 100 });
   assertStrLen(f.customName, "customName", { max: 200 });
@@ -124,7 +137,9 @@ export const updateNotesNative = mutation({
  * wrote none — an intentional improvement, not a parity break on data state).
  */
 export const archiveNative = mutation({
-  returns: v.object({ ok: v.boolean() }),
+  // `undoable` is false when the asset was already retired (nothing changed, so
+  // there is nothing to undo and no snapshot was written).
+  returns: v.object({ ok: v.boolean(), undoable: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -145,24 +160,125 @@ export const archiveNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    await retireAssetCore(ctx, orgId, asset, now);
+    // A unit that is out on a job comes back first: retiring it would strand the job's hold on it, and the
+    // return / check-in would then have to un-retire it (RETIRED is one-way, no writer overwrites it).
+    if (asset.status === "CHECKED_OUT") {
+      throw new ConvexError({ code: "ASSET_CHECKED_OUT", message: `${asset.assetTag} is out on a job. Return it before retiring it.` });
+    }
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "asset",
-      entityId: id,
-      entityName: asset.assetTag,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Archived asset ${asset.assetTag}`,
-      details: { archived: true },
-      assetId: id,
-      createdAt: now,
+    const { diff, testTags } = await retireAssetCore(ctx, orgId, asset, now);
+
+    // The audit row IS the Undo's snapshot: asset fields before/after + the T&T rows the
+    // retire changed (`undoRetireNative` reads both; the client supplies no prior value).
+    if (diff) {
+      await recordFieldEdit(ctx, {
+        orgId, entityType: "asset", entityId: id, entityName: asset.assetTag, auditId, actor, now,
+        summary: `Retired asset ${asset.assetTag}`, diff, links: { assetId: id },
+        extraDetails: { archived: true, testTags },
+      });
+    } else {
+      await writeActivityLog(ctx, {
+        id: auditId, organizationId: orgId, action: "UPDATE", entityType: "asset", entityId: id,
+        entityName: asset.assetTag, userId: actor.userId, userName: actor.userName,
+        summary: `Retired asset ${asset.assetTag}`, details: { archived: true }, assetId: id, createdAt: now,
+      });
+    }
+
+    return { ok: true as const, undoable: diff != null };
+  },
+});
+
+/**
+ * undoRetireNative — the exact reverse of ONE `archiveNative` or `reinstateNative`,
+ * addressed by that call's `auditId`. Ids only: the prior status / isActive and the
+ * T&T rows the retire changed all come from the forward audit row (fieldEditUndo:
+ * author only, server-clock window, once only, per-field compare-and-set). The T&T
+ * rows must still be exactly as the retire left them, else the whole Undo refuses
+ * (`CHANGED_SINCE`) and nothing is written. Never deletes anything.
+ */
+export const undoRetireNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    auditId: v.string(),
+    actor: actorValidator,
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, auditId, actor: suppliedActor, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+    const testTags = row && row.organizationId === orgId
+      ? ((row.details as { testTags?: RetiredTestTag[] } | undefined)?.testTags ?? [])
+      : [];
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+
+    return undoFieldEdit(ctx, {
+      orgId, entityType: "asset", entityId: id, entityName: asset?.assetTag ?? id, auditId, actor, now,
+      load: async () => (asset && asset.organizationId === orgId ? asset : null),
+      apply: async (doc, plan) => {
+        // Check EVERY T&T row first so a refusal writes nothing.
+        const rows = [];
+        for (const t of testTags) {
+          const tt = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", t.id)).first();
+          if (!tt || tt.organizationId !== orgId || tt.status !== "RETIRED" || tt.isActive !== false) {
+            throw new ConvexError({ code: "CHANGED_SINCE", message: "Can't undo: its test & tag record changed since." });
+          }
+          rows.push({ tt, prior: t });
+        }
+        const patch = { ...plan.set, ...Object.fromEntries(plan.clear.map((k) => [k, undefined])), updatedAt: now };
+        await ctx.db.patch(doc._id, patch);
+        await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
+        for (const { tt, prior } of rows) {
+          await ctx.db.patch(tt._id, {
+            status: (prior.status ?? undefined) as typeof tt.status,
+            isActive: prior.isActive ?? undefined,
+            updatedAt: now,
+          });
+        }
+      },
     });
+  },
+});
 
-    return { ok: true as const };
+/**
+ * reinstateNative — bring a RETIRED asset back (isActive true, status AVAILABLE).
+ * Its T&T rows are NOT revived (ruling Q-5): the health checklist then reads `not
+ * registered` with `Register`. Audited with the same snapshot, so `undoRetireNative`
+ * reverses it exactly.
+ */
+export const reinstateNative = mutation({
+  returns: v.object({ ok: v.boolean(), undoable: v.boolean() }),
+  args: { id: v.string(), orgId: v.string(), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, { id, orgId, actor: suppliedActor, auditId, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!asset) throw new ConvexError("Asset not found: " + id);
+    if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    // Reinstate is the way back from RETIRED only: it must never reset a unit that is out,
+    // in maintenance or lost to AVAILABLE (that would make gear bookable that is not).
+    if (asset.status !== "RETIRED") {
+      throw new ConvexError({ code: "NOT_RETIRED", message: `Asset ${asset.assetTag} is not retired, so it can't be reinstated.` });
+    }
+    const set = { isActive: true, status: "AVAILABLE" as const };
+    const diff = diffFields(asset, { ...asset, ...set }, ["status", "isActive"]);
+    if (!diff) return { ok: true as const, undoable: false };
+    await ctx.db.patch(asset._id, { ...set, updatedAt: now });
+    await bumpAssetCounters(ctx, orgId, asset, { ...asset, ...set });
+    await recordFieldEdit(ctx, {
+      orgId, entityType: "asset", entityId: id, entityName: asset.assetTag, auditId, actor, now,
+      summary: `Reinstated asset ${asset.assetTag}`, diff, links: { assetId: id },
+    });
+    return { ok: true as const, undoable: true };
   },
 });
 
@@ -198,32 +314,15 @@ export const deleteNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const lineItems = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_assetId", (q) => q.eq("assetId", id))
-      .collect();
-    if (lineItems.some((li) => li.organizationId === orgId)) {
-      throw new ConvexError({ code: "ASSET_IN_USE", message: "This asset is referenced by project line items." });
-    }
-
-    const kitMember = await ctx.db
-      .query("kitSerializedItems")
-      .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", id))
-      .first();
-    if (kitMember) {
-      throw new ConvexError({ code: "ASSET_IN_KIT", message: "This asset is part of a kit." });
-    }
-
-    const childAssets = await ctx.db
-      .query("assets")
-      .withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id))
-      .collect();
-    const childBulk = await ctx.db
-      .query("assetBulkChildren")
-      .withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id))
-      .collect();
-    if (childAssets.some((c) => c.organizationId === orgId) || childBulk.some((c) => c.organizationId === orgId)) {
-      throw new ConvexError({ code: "ASSET_HAS_ACCESSORIES", message: "This asset has accessories attached." });
+    // D32: Delete is only for a bare row. The ONE history rule (`assetHistoryReason`, which
+    // also covers a job, a kit and attached accessories); the UI's `canDelete` is its answer.
+    const history = await assetHistoryReason(ctx, orgId, { assetId: id });
+    if (history) {
+      throw new ConvexError({
+        code: "ASSET_HAS_HISTORY",
+        reason: history,
+        message: `This asset can't be deleted because ${assetHistoryText(history)}. Retire it instead.`,
+      });
     }
 
     // Retire linked T&T entries (Convex-only write — same as deleteAsset).
@@ -288,7 +387,11 @@ const assetSet = v.object({
   kitId: v.optional(v.string()),
   parentAssetId: v.optional(v.string()),
 });
-const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"]);
+// `status` / `isActive` are never cleared: Retire and Reinstate own them (and `assertNoRetireBypass` checks the result anyway).
+const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag", "status", "isActive"]);
+
+/** A `clear` list that removes the location (a clear wins over a `set` of the same key). */
+const clearsLocation = (clear: readonly string[]): boolean => clear.includes("locationId");
 
 /**
  * createNative — insert an asset with the dup-tag guard + CREATE audit in ONE
@@ -374,6 +477,7 @@ export const createNative = mutation({
     if (fields.kitId) await assertRefInOrg(ctx, "kits", fields.kitId, fields.organizationId);
 
     await ctx.db.insert("assets", fields);
+    await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     await bumpAssetCounters(ctx, fields.organizationId, null, fields);
     const createNow = fields.createdAt ?? fields.updatedAt ?? 0;
     // Advance the asset-tag counter + auto-register T&T (parity with createAsset).
@@ -411,7 +515,8 @@ export const createNative = mutation({
  * `set` here so a direct-mutation caller can't skip them (R-8.6.1/R-8.6.2).
  */
 export const updateNative = mutation({
-  returns: v.object({ id: v.string() }),
+  // `undoable` is false when nothing tracked changed (no snapshot was written).
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -431,6 +536,8 @@ export const updateNative = mutation({
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertAssetFields(set);
+    const effective = (k: "purchaseDate" | "warrantyExpiry") => (clear.includes(k) ? undefined : (set[k] ?? doc[k]));
+    assertWarrantyOrder(effective("purchaseDate"), effective("warrantyExpiry"));
 
     // DUP GUARD only when the tag changed (mirrors updateAsset).
     if (set.assetTag && set.assetTag !== doc.assetTag) {
@@ -460,6 +567,13 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
     // mutation `now` (the client `set` omits it; parity with the old updateAsset).
     const setWithTs = { ...set, updatedAt: now };
+    // The doc this edit RESULTS in (set, then clear): the retire guard compares it to the stored one, so no
+    // combination of `set` / `clear` can reinstate or retire an asset.
+    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
+    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
+    assertNoRetireBypass(doc, after);
+    // `lastMovementAt`: a set locationId moves it; clearing it (unless that key is protected) removes it.
+    await stampLocationMovement(ctx, orgId, doc.locationId, clearsLocation(clear) ? null : set.locationId, now);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setWithTs);
       await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...setWithTs });
@@ -475,19 +589,21 @@ export const updateNative = mutation({
     }
 
     const finalTag = set.assetTag ?? doc.assetTag;
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "asset",
-      entityId: id,
-      entityName: finalTag,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated asset ${finalTag}`,
-      assetId: id,
-      createdAt: now,
-    });
+    // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
+    // absent tags / images / custom fields == empty (the sheet always sends them), on BOTH sides
+    const emptyDefaults = (r: Record<string, unknown>) => ({ ...r, tags: r.tags ?? [], images: r.images ?? [], customFieldValues: r.customFieldValues ?? {} });
+    const diff = diffFields(emptyDefaults(doc), emptyDefaults(after), EDIT_TRACKED_FIELDS);
+    if (diff) {
+      await recordFieldEdit(ctx, {
+        orgId, entityType: "asset", entityId: id, entityName: finalTag, auditId, actor, now,
+        summary: `Updated asset ${finalTag}`, diff, links: { assetId: id },
+      });
+    } else {
+      await writeActivityLog(ctx, {
+        id: auditId, organizationId: orgId, action: "UPDATE", entityType: "asset", entityId: id, entityName: finalTag,
+        userId: actor.userId, userName: actor.userName, summary: `Updated asset ${finalTag}`, assetId: id, createdAt: now,
+      });
+    }
 
     // Auto-register/reconcile T&T if the (new) model requires it (parity: updateAsset
     // runs the full backfill when the model requires T&T).
@@ -497,7 +613,46 @@ export const updateNative = mutation({
       await backfillTestTagAssetsCore(ctx, orgId, now);
     }
 
-    return { id };
+    return { id, undoable: diff != null };
+  },
+});
+
+/** The fields an edit can change and an Undo can restore (not system stamps or links). */
+const EDIT_TRACKED_FIELDS = [
+  "assetTag", "serialNumber", "customName", "status", "condition", "purchaseDate", "purchasePrice",
+  "purchaseSupplier", "supplierId", "purchaseOrderNumber", "supplierOrderId", "warrantyExpiry", "notes",
+  "locationId", "customFieldValues", "barcode", "images", "tags", "isActive",
+] as const;
+
+/**
+ * undoUpdateNative — the exact reverse of ONE `updateNative`, addressed by its `auditId`.
+ * Ids only: the prior values of the fields that edit changed come from its own audit row;
+ * it refuses (changing nothing) if any of them changed since, for another author, once
+ * used, or past the window (`fieldEditUndo`). A tag restored must still be unique.
+ */
+export const undoUpdateNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
+  handler: async (ctx, { id, orgId, auditId, actor: suppliedActor, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    return undoFieldEdit(ctx, {
+      orgId, entityType: "asset", entityId: id, entityName: asset?.assetTag ?? id, auditId, actor, now,
+      load: async () => (asset && asset.organizationId === orgId ? asset : null),
+      apply: async (doc, plan) => {
+        const tag = plan.set.assetTag;
+        if (typeof tag === "string" && tag !== doc.assetTag) {
+          const dup = await ctx.db.query("assets").withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", tag)).first();
+          if (dup && dup.id !== id) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" is used by another asset now.` });
+        }
+        const patch = { ...plan.set, ...Object.fromEntries(plan.clear.map((k) => [k, undefined])), updatedAt: now };
+        await ctx.db.patch(doc._id, patch);
+        await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
+      },
+    });
   },
 });
 
@@ -571,6 +726,7 @@ export const createManyNative = mutation({
       const { auditId: _auditId, ...assetFields } = a;
       const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
       await ctx.db.insert("assets", fields);
+      await stampLocationMovement(ctx, orgId, null, fields.locationId ?? null, now);
       await bumpCountersForTable(ctx, "assets", null, fields);
       await registerAssetTestTag(ctx, { organizationId: orgId, assetId: a.id, assetTag: a.assetTag, serialNumber: a.serialNumber, modelId: a.modelId }, now);
       await actorLog(ctx, { orgId, actor, auditId: a.auditId, now, id: a.id, assetTag: a.assetTag, modelId: a.modelId });
@@ -595,7 +751,8 @@ export const bulkUpdateNative = mutation({
   args: {
     orgId: v.string(),
     ids: v.array(v.string()),
-    set: v.object({ status: v.optional(enums.AssetStatus), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
+    // No RETIRED (and no SOLD, the sale flow's): Retire and Reinstate are the only paths across it.
+    set: v.object({ status: v.optional(v.union(v.literal("AVAILABLE"), v.literal("CHECKED_OUT"), v.literal("IN_MAINTENANCE"), v.literal("RESERVED"), v.literal("LOST"))), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
     clear: v.array(v.literal("locationId")),
     now: v.number(),
   },
@@ -611,9 +768,13 @@ export const bulkUpdateNative = mutation({
 
     const patch = { ...set, updatedAt: now };
     let count = 0;
+    const moves = new LocationMovements();
     for (const id of ids) {
       const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
+      // A retired unit can't be moved out of RETIRED by a bulk status change (and nothing moves into it).
+      assertNoRetireBypass(doc, { ...doc, ...patch });
+      moves.record(doc.locationId, clearsLocation(clear) ? null : set.locationId);
       if (clear.length === 0) {
         await ctx.db.patch(doc._id, patch);
         await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
@@ -626,6 +787,7 @@ export const bulkUpdateNative = mutation({
       }
       count++;
     }
+    await moves.flush(ctx, orgId, now);
     return { count };
   },
 });
@@ -660,6 +822,12 @@ export const bulkTagNative = mutation({
 
 export const agentOps: AgentOpsAnnotations = {
   archiveNative: { danger: "high" },
+  // Makes retired gear bookable again (stock-affecting), so `high` (needs `confirm`); reversible.
+  reinstateNative: { danger: "high" },
+  // Reverses ONE retire / reinstate from its own audit row; changes status back.
+  undoRetireNative: { danger: "medium" },
+  // Reverses ONE edit from its own audit row (exact, windowed, author-only, once).
+  undoUpdateNative: { danger: "medium" },
   bulkTagNative: { danger: "medium" },
   // Bulk-changes status/condition/location across N assets at once — can move
   // many assets' availability at scale (§9 bulk-destructive), unlike bulkTagNative.

@@ -229,6 +229,19 @@ describe("discardDraftNative: every guard holds (undo refuses, discard cancels i
     });
   });
 
+  test("the cancel emits project.status_changed like any status change (emitSideEffects is on)", async () => {
+    const t = makeT();
+    await seedDraft(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("webhooks", { id: "wh1", organizationId: ORG, description: "Zapier", url: "https://example.test/hook", events: JSON.stringify(["project.status_changed"]), secret: "s", isActive: true, createdById: USER, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projectLineItems", { versionId: "v1", lineageId: "l1", id: "l1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, status: "QUOTED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    expect(await call(t, args())).toEqual({ outcome: "cancelled" });
+    const rows = await t.run(async (ctx) => ctx.db.query("webhookDeliveries").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).collect());
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0].payload)).toEqual({ projectId: "p1", projectNumber: "P-1", name: "Draft", from: "ENQUIRY", to: "CANCELLED" });
+  });
+
   test("discarding with a manager row removes it; a draft that fills the manager bound refuses instead of orphaning", async () => {
     const t = makeT();
     await seedDraft(t);

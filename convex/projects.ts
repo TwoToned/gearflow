@@ -187,6 +187,48 @@ export const needsYouIds = query({
   },
 });
 
+const TEMPLATE_LIST_CAP = 200;
+/** A template's line count is read to this many rows (the manager shows it as a count, not a total). */
+const MAX_TEMPLATE_LINES_COUNTED = 100;
+
+/**
+ * The org's job templates for the Manage templates dialog and `Start from template ▾`
+ * (UX Phase 9, D23). Newest-updated first ("Recently updated": usage isn't stored), the
+ * cap applied AFTER the template filter with `truncated` saying it bit. `archived`
+ * templates (status CANCELLED) are included only when asked for: the dialog's
+ * `Show archived` word, where a real delete lives. Each carries its top-level gear line
+ * count (the template's live version, by index) and its client's name. Sell-side only:
+ * no cost or margin field is read.
+ */
+export const listTemplates = query({
+  args: { orgId: v.string(), archived: v.optional(v.boolean()) },
+  handler: async (ctx, { orgId, archived }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const hits = (await loadOrgProjects(ctx, orgId))
+      .filter((p) => p.isTemplate === true && (p.status === "CANCELLED") === (archived === true))
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+    const rows = await Promise.all(
+      hits.slice(0, TEMPLATE_LIST_CAP).map(async (p) => {
+        const versionId = p.liveVersionId;
+        const lines = versionId
+          ? await ctx.db.query("projectLineItems").withIndex("by_versionId", (q) => q.eq("versionId", versionId)).take(MAX_TEMPLATE_LINES_COUNTED)
+          : [];
+        const client = p.clientId ? await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", p.clientId!)).first() : null;
+        return {
+          id: p.id,
+          number: p.projectNumber,
+          name: p.name,
+          type: p.type ?? null,
+          clientName: client && client.organizationId === orgId ? client.name : null,
+          lineCount: lines.filter((l) => !l.isKitChild).length,
+          updatedAt: p.updatedAt ?? null,
+        };
+      }),
+    );
+    return { templates: rows, total: hits.length, truncated: hits.length > TEMPLATE_LIST_CAP };
+  },
+});
+
 /** Rows returned by `windowOverlap` (the wizard names the first few, `total` is the true count). */
 const WINDOW_OVERLAP_CAP = 50;
 
@@ -645,6 +687,7 @@ export const agentOps: AgentOpsAnnotations = {
   listPage: { summary: "Filtered, sorted, paginated project list with client join.", danger: "low", mcpTier: 1 },
   segmentCounts: { summary: "Counts for the Jobs list strip: all, active, quoting, booked, out, done and needs-you.", danger: "low", mcpTier: 3 },
   needsYouIds: { summary: "Ids of jobs that need attention: open blocking comment, overdue return, hard overbooking, or a stale quote.", danger: "low", mcpTier: 3 },
+  listTemplates: { summary: "Job templates (newest updated first, capped at 200 with `truncated`), each with its gear line count; pass archived to list archived ones.", danger: "low", mcpTier: 3 },
   windowOverlap: { summary: "Other jobs whose gear window overlaps a date range (number, status, window; capped at 50 with the true total).", danger: "low", mcpTier: 3 },
   listBoard: { summary: "Browse an org's non-template, non-cancelled projects grouped for the kanban board.", danger: "low", mcpTier: 2 },
   listByIds: { summary: "Batch point-read projects by id, scoped to one org.", danger: "low", mcpTier: 2 },

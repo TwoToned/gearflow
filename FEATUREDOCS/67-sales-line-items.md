@@ -56,9 +56,13 @@ src/components/projects/unified-add-dialog.tsx
 src/hooks/use-line-item-writes.ts            — add()/unsell() wrappers
 
 src/app/(app)/assets/sales-stock/page.tsx    — Assets -> Sales Stock tab (2026-08)
-src/components/assets/sales-stock-table.tsx  — the table + restock dialog
-convex/modelWrites.ts                        — adjustSaleStockNative (manual restock mutation)
-src/hooks/use-model-writes.ts                — adjustSaleStock() wrapper
+src/components/assets/sales-stock-list.tsx   — the list (ListPage) + `sales-stock-adjust-dialog.tsx`
+src/lib/list-views/sales-stock.ts            — strip, columns, row mapping (pure)
+convex/modelsList.ts                         — saleStockPage / saleStockSegmentCounts
+convex/lib/saleStockFacts.ts                 — the ONE definition of On hand / Reserved / Available
+convex/modelWrites.ts                        — adjustSaleStockNative (single manual adjust), adjustSaleStockManyNative
+                                               (the list's row + bulk Adjust stock) and undoSaleStockNative (its exact Undo)
+src/hooks/use-model-writes.ts                — adjustSaleStock() / adjustSaleStockMany() / undoSaleStock() wrappers
 
 src/server/csv.ts               — salePrice/saleStockQuantity CSV columns
 src/lib/rate-import.ts          — salePrice in the narrow rate-only CSV import
@@ -277,8 +281,8 @@ unaffected either way — a SALE line is never kit-backed. See FEATUREDOCS/66.
 `Model.salePrice`/`saleStockQuantity` follow the exact `defaultPurchasePrice`/
 `replacementCost` pattern: full-model CSV export/import columns, the narrow
 rate-only CSV import (alias `saleprice|sale|sellprice|rrp|retail`), and
-`bulkUpdateRatesNative`'s `rateType` union (+ the model-table.tsx bulk
-rate-update dialog). **2026-08 fix:** `saleStockQuantity`'s full-model CSV
+`bulkUpdateRatesNative`'s `rateType` union (+ the Models list's bulk
+`Edit rates` dialog, `model-bulk-dialogs.tsx`). **2026-08 fix:** `saleStockQuantity`'s full-model CSV
 import used `parseInt(...) || null`, which reads an explicit `"0"` as falsy
 and silently imports it as null — the update path's `data.saleStockQuantity
 ?? existing.saleStockQuantity` then reads that as "unset" and keeps the OLD
@@ -296,6 +300,51 @@ follow-up rather than folded into this fix.
 - The dead `SERVICE`/`LABOUR`/`TRANSPORT`/`MISC` line-item-type cleanup — a
   separate hygiene follow-up (these types have no live writer; `projectServices`
   is a wholly separate table from `projectLineItems`).
+- Sale-stock receipting/purchasing workflow: see "Not built" below.
+
+## Sales stock list: the stock terms (UX Phase 14, D41)
+
+`/assets/sales-stock` is a `ListPage` (strip `All · Low stock · Out of stock`, the last red when > 0).
+`models.saleStockQuantity` is the new-stock pool **net of every sale line**: adding a NEW_STOCK line
+decrements it whatever the job's status, and it stays down while the line is out. The three figures are
+derived in ONE helper, `convex/lib/saleStockFacts.ts`, and a test pins that they never double-count a line:
+
+- **Available** = the stored pool (what can still be sold).
+- **Reserved** = exactly what the pool has given out and the building still holds: quantity on lines for
+  which `takesFromPool` is true (type SALE, `saleMode` explicitly `NEW_STOCK`, a model) that have not gone
+  out (line status not Checked out / Returned). `takesFromPool` is the SAME predicate `applySaleStockOnAdd`
+  decrements by, so the write and the read cannot drift. It deliberately ignores the job's status and the
+  line's version: the decrement was applied at add time whatever they were, and **nothing restores it on
+  cancel** (a known write-path gap, logged as a follow-up, not fixed here), so a cancelled job's held stock
+  honestly reads as reserved. An unset `saleMode` is not decremented today, so it is not counted. A line
+  copied into another version is one add and counts once per lineage. The reads draw from one budget
+  (`ReadBudget`); a model it could not cover shows `—` for Reserved and On hand, never 0.
+- **The pool is accounted PER LINEAGE** (`convex/lib/lineagePool.ts`, the pure `lineagePoolDelta` in
+  `saleStockFacts.ts`). A lineage is one logical sale line across versions: what it takes from the pool is the MAX
+  quantity over its `takesFromPool` rows, so a copy takes nothing more and deleting one copy while another still
+  holds the stock restores nothing. Add, patch (quantity or model), delete of a row and delete of a whole version
+  each apply exactly the change in that maximum; Reserved reads the same maximum (and is nothing for a lineage
+  with a row that has left the building). So `pool + reserved = physical stock` after every step except cancel
+  (still the logged follow-up: it restores nothing and keeps counting as reserved). `restoreSaleStockOnDelete` and
+  `applySaleStockOnPatch` go through `takesFromPool` too: one predicate on every path.
+- **On hand** = Available + Reserved, so `On hand − Reserved = Available` by construction.
+- **State**: `OUT` when Available ≤ 0 (a negative pool reads `Oversold n`), `LOW` when a reorder level is
+  set and Available ≤ it. An unset `models.reorderLevel` is never read as 0.
+
+`Adjust stock…` (row ⋯ and bulk) applies one whole-number quantity to each model through
+`adjustSaleStockManyNative`, which returns each write's audit id. The toast's Undo is
+`undoSaleStockNative({ auditIds })`: ids only; refuses the whole batch unless every row is a manual
+adjustment by the caller inside the 10-minute server-clock window, not already undone, and the model's pool is
+still exactly what the adjustment left (a sale, restock or other adjustment since blocks it). The
+`Reorder n low` primary only filters the list to `Low stock`; it writes nothing.
+
+`Set reorder level…` (row ⋯ and bulk, `modelWrites.setReorderLevelsNative`): one whole number >= 0 applied to
+each selected model, or blank to CLEAR (an unset level is never 0). It writes one field-edit audit row per
+changed model (a model already at that value writes nothing); its toast Undo is
+`modelWrites.undoModelFieldEditsNative` (shared with bulk `Edit rates`), through `convex/lib/fieldEditUndo.ts`.
+
+## Not built
+
 - Sale-stock receipting/purchasing workflow — the Overbookings & Gaps board's
   procure list is the v1 answer; no PO-generation flow yet.
 - Disposal-proceeds reporting (what a sold *rental* asset's proceeds were,

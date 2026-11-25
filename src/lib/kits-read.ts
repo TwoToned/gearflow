@@ -23,6 +23,15 @@ export async function getKitById(id: string): Promise<ConvexKit | null> {
   return await (await getConvexClient()).query(api.kits.getById, { id });
 }
 
+/**
+ * The kit's DERIVED booking state (`convex/lib/kitState.ts`, D75): whether it can be added to a job and
+ * what is missing. Replaces the stored-status tests the booking gates used to make. Null when the kit is
+ * not in this org.
+ */
+export async function getKitBookingGate(orgId: string, id: string): Promise<{ key: string; blocksBooking: boolean; missing: { label: string; why: string }[] } | null> {
+  return await (await getConvexClient()).query(api.kitsList.bookingGate, { orgId, id });
+}
+
 export async function getKitsByOrg(orgId: string): Promise<ConvexKit[]> {
   return await (await getConvexClient()).query(api.kits.list, { orgId });
 }

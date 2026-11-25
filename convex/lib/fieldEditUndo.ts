@@ -31,7 +31,7 @@
  */
 import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
-import { writeActivityLog } from "./audit";
+import { assertAuditIdFree, writeActivityLog } from "./audit";
 import { assertWithinUndoWindow } from "./undoWindow";
 
 export type FieldValue = string | number | boolean | null | FieldValue[] | { [k: string]: FieldValue };
@@ -165,8 +165,11 @@ export async function recordFieldEdit(
     now: number;
     /** Extra audit columns (`projectId`, `assetId`, `kitId`) for the existing filters. */
     links?: { projectId?: string; assetId?: string; kitId?: string };
+    /** Extra audit `details` keys beside `fieldEdit` (e.g. rows a cascade also changed). */
+    extraDetails?: Record<string, unknown>;
   },
 ): Promise<void> {
+  await assertAuditIdFree(ctx, a.auditId);
   const fieldEdit: FieldEditSnapshot = {
     before: a.diff.before,
     after: a.diff.after,
@@ -183,7 +186,7 @@ export async function recordFieldEdit(
     userId: a.actor.userId,
     userName: a.actor.userName,
     summary: a.summary,
-    details: { fieldEdit },
+    details: { ...a.extraDetails, fieldEdit },
     createdAt: a.now,
     ...a.links,
   });

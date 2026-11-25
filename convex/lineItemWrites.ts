@@ -19,6 +19,9 @@ import { assertRefInOrg } from "./lib/orgRef";
 import { getProjectWindow } from "./lib/projectWindow";
 import * as enums from "./lib/validators";
 import { getKitByCuid, kitChildrenOf, reconcileKitLineChildren, type KitLineReconcileResult } from "./lib/kits";
+import { loadKitBookingGate } from "./lib/kitState";
+import { takesFromPool } from "./lib/saleStockFacts";
+import { applyLineageAdd, applyLineageDelete, applyLineagePatch } from "./lib/lineagePool";
 import { expandAccessoryChildLines, reconcileLineAccessoryChildren, rescaleAccessoryChildrenToQuantity, accessoryChildrenOf, type AccessoryPlan } from "./lib/fulfillment";
 import { createKitLineItemCore } from "./projectLineItems";
 import {
@@ -39,6 +42,7 @@ import {
 } from "./lib/billingDerivation";
 import { assertPricingUnlocked, afterLockAuditMetadata, defaultsToZeroOnInsert, LOCKED_LINE_ITEM_FIELDS, pricedUnderLockOnInsert } from "./lib/projectLocks";
 import { deleteCommentsAndMarkersForTarget } from "./lib/commentCleanup";
+import { assertModelNotArchived } from "./lib/modelArchive";
 import {
   adjustModelSaleStock,
   sellSerializedAssetForSale,
@@ -86,16 +90,11 @@ async function applySaleStockOnAdd(
   if (fields.type !== "SALE") return undefined;
 
   if (fields.saleMode === "NEW_STOCK") {
-    if (fields.modelId) {
-      await adjustModelSaleStock(ctx, {
-        modelId: fields.modelId,
-        orgId: args.orgId,
-        delta: -fields.quantity,
-        projectId: args.projectId,
-        lineItemId: args.lineItemId,
-        actor: args.actor,
-        now: args.now,
-      });
+    // The ONE predicate Reserved counts by (`convex/lib/saleStockFacts.ts`), applied PER LINEAGE
+    // (`convex/lib/lineagePool.ts`): they cannot drift.
+    if (takesFromPool(fields)) {
+      const line = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", args.lineItemId)).first();
+      if (line) await applyLineageAdd(ctx, { orgId: args.orgId, line, actor: args.actor, now: args.now });
     }
     return undefined;
   }
@@ -153,22 +152,15 @@ async function applyFromRentalStockSale(
  */
 async function restoreSaleStockOnDelete(
   ctx: MutationCtx,
-  line: { type?: string; saleMode?: string; modelId?: string; quantity?: number; projectId: string },
+  line: Doc<"projectLineItems">,
   orgId: string,
-  lineItemId: string,
+  _lineItemId: string,
   actor: SaleActor,
   now: number,
 ): Promise<void> {
-  if (line.type !== "SALE" || line.saleMode !== "NEW_STOCK" || !line.modelId) return;
-  await adjustModelSaleStock(ctx, {
-    modelId: line.modelId,
-    orgId,
-    delta: line.quantity ?? 0,
-    projectId: line.projectId,
-    lineItemId,
-    actor,
-    now,
-  });
+  if (!takesFromPool(line)) return;
+  // Per lineage: deleting one copy while another still holds the stock restores nothing.
+  await applyLineageDelete(ctx, { orgId, line, actor, now });
 }
 
 /**
@@ -183,7 +175,7 @@ async function restoreSaleStockOnDelete(
 async function applySaleStockOnPatch(
   ctx: MutationCtx,
   args: {
-    doc: { type?: string; saleMode?: string; modelId?: string; projectId: string };
+    doc: Doc<"projectLineItems">;
     orgId: string;
     id: string;
     actor: SaleActor;
@@ -193,23 +185,11 @@ async function applySaleStockOnPatch(
     newQty: number;
   },
 ): Promise<void> {
-  const { doc, orgId, id, actor, now, newModelId, currentQty, newQty } = args;
+  const { doc, orgId, actor, now, newModelId, newQty } = args;
+  // The ONE predicate (`takesFromPool`): a row that took nothing before and takes nothing after is a no-op.
   if (doc.type !== "SALE" || doc.saleMode !== "NEW_STOCK") return;
-
-  const oldModelId = doc.modelId ?? null;
-  if (oldModelId && newModelId && oldModelId === newModelId) {
-    const delta = currentQty - newQty; // qty grew -> consume more (negative); shrank -> restore
-    if (delta !== 0) {
-      await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta, projectId: doc.projectId, lineItemId: id, actor, now });
-    }
-    return;
-  }
-  if (oldModelId) {
-    await adjustModelSaleStock(ctx, { modelId: oldModelId, orgId, delta: currentQty, projectId: doc.projectId, lineItemId: id, actor, now });
-  }
-  if (newModelId) {
-    await adjustModelSaleStock(ctx, { modelId: newModelId, orgId, delta: -newQty, projectId: doc.projectId, lineItemId: id, actor, now });
-  }
+  // Per lineage: a copy's quantity or model changing moves the pool only by the change in the lineage's maximum.
+  await applyLineagePatch(ctx, { orgId, doc, modelId: newModelId, quantity: newQty, actor, now });
 }
 
 /**
@@ -652,12 +632,19 @@ export const patchNative = mutation({
     // client must never patch (see LINE_IMMUTABLE_ON_PATCH), then bound-check the money
     // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
     const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
+    // A line that took stock from the new-stock pool cannot change `type`: the units it holds would
+    // leave the pool's accounting (SALE -> EQUIPMENT strands them), and nothing reconciles them.
+    if (((setObj.type !== undefined && setObj.type !== doc.type) || clear.includes("type")) && takesFromPool(doc)) {
+      throw new ConvexError({ code: "SALE_TYPE_LOCKED", message: "A sale line that took stock from the pool can't change its type: remove it (the stock goes back) and add the line you want." });
+    }
 
     // Org-validate every referenced FK the client can patch (by_cuid is global — the
     // row could be another org's). Same block as addNative/addLineItemSmartNative —
     // patchNative was missing this entirely, letting a browser-direct caller point a
     // line at another org's model/asset/bulkAsset/category/group/supplier.
     if (setObj.modelId) await assertRefInOrg(ctx, "models", setObj.modelId as string, orgId);
+    // Only a CHANGE of model is a new pick: an existing line on a since-archived model stays editable.
+    if (setObj.modelId && setObj.modelId !== doc.modelId) await assertModelNotArchived(ctx, orgId, setObj.modelId as string);
     if (setObj.assetId) await assertRefInOrg(ctx, "assets", setObj.assetId as string, orgId);
     if (setObj.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", setObj.bulkAssetId as string, orgId);
     if (setObj.groupId) await assertRefInOrg(ctx, "projectGroups", setObj.groupId as string, orgId);
@@ -1591,6 +1578,7 @@ export const addNative = mutation({
     // org's; the service-token read path resolves these with no org re-check). Same
     // block as addLineItemSmartNative, plus supplierId (validated by neither add path before).
     if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.modelId) await assertModelNotArchived(ctx, organizationId, fields.modelId);
     if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
     if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
     if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);
@@ -2196,12 +2184,13 @@ export const addKitNative = mutation({
     const kit = await getKitByCuid(ctx, kitId);
     if (kit && kit.organizationId === organizationId) {
       // (a) Block truly unavailable kits (allow checked-out — the date check handles those).
-      if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
+      const kitGate = await loadKitBookingGate(ctx, organizationId, kit);
+      if (kitGate.blocksBooking) {
         throw new ConvexError({
           code: "KIT_UNAVAILABLE",
           title: "Kit cannot be added",
-          message: `Kit ${kit.assetTag} is ${kit.status.replace("_", " ").toLowerCase()}.`,
-          hint: kit.status === "IN_MAINTENANCE"
+          message: `Kit ${kit.assetTag} is ${kitGate.key.replace("_", " ").toLowerCase()}.`,
+          hint: kitGate.key === "IN_MAINTENANCE"
             ? "Wait for maintenance to finish, or pick a different kit."
             : "Complete the kit's missing items before booking it.",
         });
@@ -2474,6 +2463,7 @@ export const addLineItemSmartNative = mutation({
 
     // Org-validate every referenced FK (by_cuid is global — the row could be another org's).
     if (fields.modelId) await assertRefInOrg(ctx, "models", fields.modelId, organizationId);
+    if (fields.modelId) await assertModelNotArchived(ctx, organizationId, fields.modelId);
     if (fields.assetId) await assertRefInOrg(ctx, "assets", fields.assetId, organizationId);
     if (fields.bulkAssetId) await assertRefInOrg(ctx, "bulkAssets", fields.bulkAssetId, organizationId);
     if (fields.groupId) await assertRefInOrg(ctx, "projectGroups", fields.groupId, organizationId);

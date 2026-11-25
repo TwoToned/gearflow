@@ -15,8 +15,10 @@ import { recalcProjectTotals } from "./lib/recalc";
 import { assertRefInOrg } from "./lib/orgRef";
 import { getKitByCuid } from "./lib/kits";
 import { computeGroupSuggestedPrice } from "./lib/suggestedPrice";
+import { loadKitBookingGate } from "./lib/kitState";
 import { inclusiveCalendarDays, computeBlendedCharge, serializePriceBreakdown } from "./lib/billingDerivation";
 import { resolveLiveVersionIdForProject, resolveWriteVersionId, versionRows } from "./lib/versionScope";
+import { assertModelNotArchived } from "./lib/modelArchive";
 
 /**
  * Native GROUP-TEMPLATE write mutations (Phase 3 browser-direct — replaces the
@@ -475,6 +477,7 @@ export const applyNative = mutation({
       if (!item.modelId) continue;
       const model = await getModel(item.modelId);
       if (!model) continue; // parity: server dropped items whose model didn't resolve
+      await assertModelNotArchived(ctx, a.orgId, item.modelId); // a template apply puts NEW lines on the job
       const quantity = item.quantity ?? 1;
       // #1249 — the SAME rate guard `addLineItemSmartNative` applies before it
       // auto-prices. computeBlendedCharge with both rates null returns
@@ -533,8 +536,9 @@ export const applyNative = mutation({
         kitWarnings.push(`${label}: kit not found`);
         continue;
       }
-      if (kit.status === "IN_MAINTENANCE" || kit.status === "INCOMPLETE") {
-        kitWarnings.push(`${label}: kit is ${kit.status.replace("_", " ").toLowerCase()}`);
+      const kitGate = await loadKitBookingGate(ctx, a.orgId, kit);
+      if (kitGate.blocksBooking) {
+        kitWarnings.push(`${label}: kit is ${kitGate.key.replace("_", " ").toLowerCase()}`);
         continue;
       }
       if (hasDates) {

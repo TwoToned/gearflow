@@ -13,6 +13,7 @@ import { recalcSubHireTotals, upsertSupplierModelRate } from "./lib/subHireTotal
 import { regenerateSubHireLines } from "./lib/subHireLineGen";
 import { reserveSubHireOrderNumberCounter } from "./lib/subHireOrderCounter";
 import { assertStrLen } from "./lib/fieldGuards";
+import { assertModelNotArchived } from "./lib/modelArchive";
 import { createId } from "@paralleldrive/cuid2";
 import * as enums from "./lib/validators";
 import { resolveLiveVersionIdForProject, versionRows } from "./lib/versionScope";
@@ -611,6 +612,7 @@ export const addSubHireItemNative = mutation({
 
     const projectId = head.projectId ?? null;
     if (a.modelId) await assertModelInOrg(ctx, a.modelId, a.orgId);
+    if (a.modelId) await assertModelNotArchived(ctx, a.orgId, a.modelId); // a NEW item is a new pick
     if (a.groupId) await assertSubHireGroupInParent(ctx, a.groupId, a.subHireId);
     if (a.targetGroupId) await assertTargetGroup(ctx, a.targetGroupId, a.orgId, projectId);
     if (a.targetCategoryId) await assertTargetCategory(ctx, a.targetCategoryId, a.orgId, projectId);

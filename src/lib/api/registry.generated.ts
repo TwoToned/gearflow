@@ -3826,7 +3826,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "ff70d04281ed505b",
-    "returnsSha": "efde83ecf2efd768",
+    "returnsSha": "d8054dce3f1182f9",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -3924,7 +3924,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "d85d3ef2efb376fe",
+    "argsSha": "775737f1e506fea8",
     "returnsSha": "ca20c8538a3cc095",
     "stability": "tracks-app",
     "summary": null,
@@ -4215,6 +4215,162 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "assetWrites.reinstateNative",
+    "module": "assetWrites",
+    "fn": "reinstateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ff70d04281ed505b",
+    "returnsSha": "d8054dce3f1182f9",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "assetWrites.undoRetireNative",
+    "module": "assetWrites",
+    "fn": "undoRetireNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d26981e12a735f76",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "assetWrites.undoUpdateNative",
+    "module": "assetWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d26981e12a735f76",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "assetWrites.updateNative",
     "module": "assetWrites",
     "fn": "updateNative",
@@ -4268,7 +4424,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a7a1a60bd7b8e40b",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -6012,6 +6168,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -6028,8 +6194,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7f94cc7688b6fe86",
-    "returnsSha": "8b114161049d5d20",
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -6187,6 +6353,162 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "bulkAssetsWrites.reinstateNative",
+    "module": "bulkAssetsWrites",
+    "fn": "reinstateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "bulkAsset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "de41a6d1a4a33e2c",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "bulkAssetsWrites.undoRetireNative",
+    "module": "bulkAssetsWrites",
+    "fn": "undoRetireNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "bulkAsset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "bulkAssetsWrites.undoUpdateNative",
+    "module": "bulkAssetsWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "bulkAsset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "bulkAssetsWrites.updateNative",
     "module": "bulkAssetsWrites",
     "fn": "updateNative",
@@ -6275,7 +6597,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "43c7e7d3f5942d77",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -8418,6 +8740,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "checkItemsWrites.undoAssignChecksNative",
+    "module": "checkItemsWrites",
+    "fn": "undoAssignChecksNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "checkItem",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "checkItem",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e8f3525d58f1fbc8",
+    "returnsSha": "16e3997af311a541",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent bulk assignment of check items to models by its audit id.",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -25697,6 +26066,162 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "kitsList.bookingGate",
+    "module": "kitsList",
+    "fn": "bookingGate",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c8570d0f01945e1f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A kit's derived booking state: whether it can be added to a job, and what is missing.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitsList.listPage",
+    "module": "kitsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "locationIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9d48bad50f73878d",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Kits list with derived state (Incomplete / Reserved / Available), item count and filters.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitsList.segmentCounts",
+    "module": "kitsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "kit",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Kits list (all, complete, missing items, on a job, in maintenance, retired) and whether the read budget cut them short.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "kitWrites.addBulkItemNative",
     "module": "kitWrites",
     "fn": "addBulkItemNative",
@@ -26097,6 +26622,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "kitWrites.markCompleteNative",
+    "module": "kitWrites",
+    "fn": "markCompleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "1cb2a7e9146018e1",
+    "stability": "tracks-app",
+    "summary": "Clear a kit's reported-missing marker (Mark complete). The kit becomes bookable again.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "kitWrites.removeBulkItemNative",
     "module": "kitWrites",
     "fn": "removeBulkItemNative",
@@ -26205,6 +26782,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitWrites.undoMarkCompleteNative",
+    "module": "kitWrites",
+    "fn": "undoMarkCompleteNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a Mark complete by its audit id.",
     "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
@@ -28311,6 +28940,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "locationsList.listPage",
+    "module": "locationsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "cdb195d9c34f1b54",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Locations list with stored count, capacity and fill, bin-label state and last movement.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsList.segmentCounts",
+    "module": "locationsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "location",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Locations list (all, warehouses, vehicles, sites, empty).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "locationsWrites.createNative",
     "module": "locationsWrites",
     "fn": "createNative",
@@ -28340,6 +29073,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "auditId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "capacity",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "id",
@@ -28398,11 +29136,80 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "04288aa0b7330463",
+    "argsSha": "eed50cd13f03a918",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.moveContentsNative",
+    "module": "locationsWrites",
+    "fn": "moveContentsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      },
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      },
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fromIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "toId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ae7ff7138a4aa810",
+    "returnsSha": "95cb69adccb99b12",
+    "stability": "tracks-app",
+    "summary": "Move everything stored at the given locations to another location (units out on a job are skipped).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -28460,6 +29267,211 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "locationsWrites.setLabelsPrintedNative",
+    "module": "locationsWrites",
+    "fn": "setLabelsPrintedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e590475a113cdaf5",
+    "returnsSha": "ca20c8538a3cc095",
+    "stability": "tracks-app",
+    "summary": "Record that the given locations' bin labels were printed.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.undoCreateNative",
+    "module": "locationsWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo the creation of a location by its audit id (refuses once it has bins, contents or files).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.undoMoveContentsNative",
+    "module": "locationsWrites",
+    "fn": "undoMoveContentsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      },
+      {
+        "resource": "asset",
+        "action": "update"
+      },
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      },
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e8f3525d58f1fbc8",
+    "returnsSha": "1d3043aa7896bae1",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent Move contents by its audit id (puts back only rows the move left untouched).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "locationsWrites.undoUpdateNative",
+    "module": "locationsWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "location",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "location",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo an edit of a location by its audit id (refuses if a changed field was edited again since).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "locationsWrites.updateNative",
     "module": "locationsWrites",
     "fn": "updateNative",
@@ -28489,6 +29501,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "auditId",
         "optional": false,
         "type": "string"
+      },
+      {
+        "name": "capacity",
+        "optional": true,
+        "type": "union"
       },
       {
         "name": "id",
@@ -28547,8 +29564,8 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "04288aa0b7330463",
-    "returnsSha": "8b114161049d5d20",
+    "argsSha": "eed50cd13f03a918",
+    "returnsSha": "e1e8c17e7ffbded7",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -28604,6 +29621,167 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceBulkWrites.bulkAssignNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "bulkAssignNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assignedToId",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4e0c447cf2c157b5",
+    "returnsSha": "cf4da9d71bf7886b",
+    "stability": "tracks-app",
+    "summary": "Assign (or unassign) several open maintenance records to a member (finished ones are skipped).",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceBulkWrites.bulkRescheduleNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "bulkRescheduleNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "scheduledDate",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "846fc20856a46550",
+    "returnsSha": "cf4da9d71bf7886b",
+    "stability": "tracks-app",
+    "summary": "Move the scheduled date of several open maintenance records (finished ones are skipped).",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceBulkWrites.undoBulkEditNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "undoBulkEditNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent bulk reschedule or assign by its audit ids (refuses if a field changed since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -28738,6 +29916,125 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceList.listPage",
+    "module": "maintenanceList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "resultIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "statusIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fe6e51b3e06d6610",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Maintenance list with derived Open / Overdue / Scheduled / Done segments, linked assets and assignee. Cost only for callers who can see job cost.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceList.segmentCounts",
+    "module": "maintenanceList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Maintenance list (open, overdue, scheduled, done, all).",
+    "danger": null,
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -33222,6 +34519,281 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "modelsList.listPage",
+    "module": "modelsList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "assetTypeIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "tagsHasSome",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0c4063a4d1ca861c",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Models list with owned/available counts, derived segment and filters.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.saleStockPage",
+    "module": "modelsList",
+    "fn": "saleStockPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "categoryIdIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "58b7a96599cd7335",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Sales stock list: available, derived reserved and on hand, reorder level.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.saleStockSegmentCounts",
+    "module": "modelsList",
+    "fn": "saleStockSegmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "549a746c6908f6ab",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Sales stock list (all, low, out).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelsList.segmentCounts",
+    "module": "modelsList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "model",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Models list (all, with stock, no stock, due for T&T, archived).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.adjustSaleStockManyNative",
+    "module": "modelWrites",
+    "fn": "adjustSaleStockManyNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "adjustments",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "reason",
+        "optional": true,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "018f7a00356d364a",
+    "returnsSha": "3fe9af373e6ab6e8",
+    "stability": "tracks-app",
+    "summary": "Adjust the new-stock sale pool of several models by a delta each (restock or correction).",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "modelWrites.adjustSaleStockNative",
     "module": "modelWrites",
     "fn": "adjustSaleStockNative",
@@ -33327,9 +34899,9 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "39474d96b96cd2a8",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
-    "summary": null,
+    "summary": "Archive a model: hides it from new quotes and pickers and refuses new job lines on it (MODEL_ARCHIVED). Its assets, existing lines, reservations and availability are NOT touched. Reversible with restoreNative or undoArchiveNative.",
     "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
@@ -33394,7 +34966,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "9d00761cc4091de7",
-    "returnsSha": "ca20c8538a3cc095",
+    "returnsSha": "8870c4cffd6c1b89",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -33620,6 +35192,256 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.restoreNative",
+    "module": "modelWrites",
+    "fn": "restoreNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "39474d96b96cd2a8",
+    "returnsSha": "de41a6d1a4a33e2c",
+    "stability": "tracks-app",
+    "summary": "Restore an archived model so it can be added to jobs again.",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.setReorderLevelsNative",
+    "module": "modelWrites",
+    "fn": "setReorderLevelsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "entries",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0ddc8e0da7d0eeac",
+    "returnsSha": "0efb74f8883f725d",
+    "stability": "tracks-app",
+    "summary": "Set (or clear) the sale-stock reorder level of one or more models.",
+    "danger": "low",
+    "mcpTier": 2,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoArchiveNative",
+    "module": "modelWrites",
+    "fn": "undoArchiveNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoModelFieldEditsNative",
+    "module": "modelWrites",
+    "fn": "undoModelFieldEditsNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo recent bulk rate edits or reorder-level changes by their audit ids (refuses if a field changed since).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoSaleStockNative",
+    "module": "modelWrites",
+    "fn": "undoSaleStockNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent manual sale-stock adjustment by its audit ids (refuses if the stock moved since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -38619,6 +40441,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it (through the normal status transition) while it is still an enquiry. Refuses a non-author and any job that has moved on.",
     "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectEditUndo.undoUpdateNative",
+    "module": "projectEditUndo",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "82d5a2a49fd0ded6",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo a job edit from the audit id its save returned: restores exactly the fields that edit changed, refusing if any changed since, outside the window, or by another user.",
+    "danger": "medium",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -44093,6 +45967,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projects.listTemplates",
+    "module": "projects",
+    "fn": "listTemplates",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "archived",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c077bbff2f4fd3ef",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Job templates (newest updated first, capped at 200 with `truncated`), each with its gear line count; pass archived to list archived ones.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projects.needsYouIds",
     "module": "projects",
     "fn": "needsYouIds",
@@ -47188,6 +49099,317 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.applyTemplateNative",
+    "module": "projectTemplateWrites",
+    "fn": "applyTemplateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "create"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "draftId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "templateId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fdccb5feb92e3ab7",
+    "returnsSha": "5a8358a19c3bfa33",
+    "stability": "tracks-app",
+    "summary": "Copy a template's gear, tags, type, description and discount onto an empty draft enquiry; refuses a draft that already has gear.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.archiveTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "archiveTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f6d0d940e9d1feff",
+    "returnsSha": "f109c0de4a0c611c",
+    "stability": "tracks-app",
+    "summary": "Archive job templates (reversible: returns each audit id for the exact Undo); an archived template can then be deleted.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.restoreTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "restoreTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f6d0d940e9d1feff",
+    "returnsSha": "9f7646b45942af4d",
+    "stability": "tracks-app",
+    "summary": "Restore archived job templates (returns each audit id for the exact Undo); a template that is not archived is skipped.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.unarchiveTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "unarchiveTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "items",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5878020390254e44",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo an archive of job templates, from the audit ids the archive returned.",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.undoApplyTemplateNative",
+    "module": "projectTemplateWrites",
+    "fn": "undoApplyTemplateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "applyAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "75c61279ed6198e9",
+    "returnsSha": "85fb30189c262cfb",
+    "stability": "tracks-app",
+    "summary": "Undo applying a template to a draft: removes exactly what the apply made, refusing if anything was changed since.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.unrestoreTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "unrestoreTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "items",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5878020390254e44",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo a restore of job templates (archives them again), from the audit ids the restore returned.",
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -60927,6 +63149,140 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "testTagList.listPage",
+    "module": "testTagList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "classIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "dueSoonDays",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "linkIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "profileIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "43e51ae57bebb525",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Test and tag list with derived Due / Overdue / Passed / Failed state, last test and tester.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagList.segmentCounts",
+    "module": "testTagList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "dueSoonDays",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "50609db75fa0f8c5",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Test and tag list (due, overdue, passed, failed, all, retired).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "testTagRecords.create",
     "module": "testTagRecords",
     "fn": "create",
@@ -68969,10 +71325,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1334,
-  agentReachable: 688,
-  queries: 474,
-  mutations: 860,
-  agentReachableQueries: 336,
-  agentReachableMutations: 352,
+  total: 1378,
+  agentReachable: 732,
+  queries: 488,
+  mutations: 890,
+  agentReachableQueries: 350,
+  agentReachableMutations: 382,
 } as const;

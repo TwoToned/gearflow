@@ -247,6 +247,11 @@ export const reinstateNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
+    // Reinstate is the way back from RETIRED only: it must never reset a unit that is out,
+    // in maintenance or lost to AVAILABLE (that would make gear bookable that is not).
+    if (asset.status !== "RETIRED") {
+      throw new ConvexError({ code: "NOT_RETIRED", message: `Asset ${asset.assetTag} is not retired, so it can't be reinstated.` });
+    }
     const set = { isActive: true, status: "AVAILABLE" as const };
     const diff = diffFields(asset, { ...asset, ...set }, ["status", "isActive"]);
     if (!diff) return { ok: true as const, undoable: false };
@@ -763,8 +768,8 @@ export const bulkTagNative = mutation({
 
 export const agentOps: AgentOpsAnnotations = {
   archiveNative: { danger: "high" },
-  // Brings a retired unit back into quoting and warehouse pulls; reversible.
-  reinstateNative: { danger: "medium" },
+  // Makes retired gear bookable again (stock-affecting), so `high` (needs `confirm`); reversible.
+  reinstateNative: { danger: "high" },
   // Reverses ONE retire / reinstate from its own audit row; changes status back.
   undoRetireNative: { danger: "medium" },
   bulkTagNative: { danger: "medium" },

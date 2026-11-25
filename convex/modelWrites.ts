@@ -291,6 +291,10 @@ async function setModelActive(
 ) {
   const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
   if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Model not found");
+  // Restore is the way back from archived only.
+  if (active && (doc.isActive ?? true)) {
+    throw new ConvexError({ code: "NOT_ARCHIVED", message: `Model ${doc.name} is not archived, so it can't be restored.` });
+  }
   const diff = diffFields({ isActive: doc.isActive ?? true }, { isActive: active }, ["isActive"]);
   if (!diff) return { id: a.id, undoable: false };
   await ctx.db.patch(doc._id, { isActive: active, updatedAt: a.now });
@@ -447,7 +451,8 @@ export const agentOps: AgentOpsAnnotations = {
   // Delete/archive tier (§9): hides the model from new quotes and pickers. A soft
   // archive now (it no longer deletes the model's assets); still `high` by tier.
   archiveNative: { danger: "high" },
-  restoreNative: { danger: "medium" },
+  // Puts an archived model (and so its gear) back on new quotes, so `high`.
+  restoreNative: { danger: "high" },
   undoArchiveNative: { danger: "medium" },
   // A single model's stock count, reversible by an equal-and-opposite
   // adjustment — no asset/availability impact (that's `saleStock.ts`'s

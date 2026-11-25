@@ -4261,7 +4261,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "d8054dce3f1182f9",
     "stability": "tracks-app",
     "summary": null,
-    "danger": "medium",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -6347,7 +6347,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
-    "danger": "medium",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -32988,7 +32988,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
-    "danger": "medium",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null

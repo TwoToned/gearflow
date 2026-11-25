@@ -104,6 +104,35 @@ describe("Retire + exact Undo", () => {
   });
 });
 
+describe("Reinstate is only the way back from RETIRED", () => {
+  const reinstate = (t: T) => t.withIdentity(SERVICE).mutation(api.assetWrites.reinstateNative, { id: "a1", orgId: ORG, actor: ME, auditId: "i1", now: NOW });
+  const setStatus = (t: T, status: string) =>
+    t.run(async (ctx) => {
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { status: status as never });
+    });
+
+  test.each(["CHECKED_OUT", "IN_MAINTENANCE", "LOST", "AVAILABLE", "RESERVED", "SOLD"])("an asset that is %s is refused and unchanged", async (status) => {
+    const t = makeT();
+    await seed(t);
+    await setStatus(t, status);
+    await expect(reinstate(t)).rejects.toThrow(/not retired/);
+    expect((await asset(t))?.status).toBe(status);
+  });
+
+  test.each(["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK"])("a bulk row that is %s is refused", async (status) => {
+    const t = makeT();
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, modelId: "m1", assetTag: "BK-1", totalQuantity: 5, availableQuantity: 5, status: status as never, isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(
+      t.withIdentity(SERVICE).mutation(api.bulkAssetsWrites.reinstateNative, { id: "b1", orgId: ORG, actor: ME, auditId: "i1", now: NOW }),
+    ).rejects.toThrow(/not retired/);
+    const row = await t.run((ctx) => ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", "b1")).first());
+    expect(row?.status).toBe(status);
+  });
+});
+
 describe("Delete history gate", () => {
   const del = (t: T) => t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, { id: "a1", orgId: ORG, actor: ME, auditId: "d1", now: NOW });
 

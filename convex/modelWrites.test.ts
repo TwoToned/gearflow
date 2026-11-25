@@ -88,10 +88,11 @@ describe("modelWrites", () => {
     expect((await model(t, "mdl1"))?.isActive).toBe(true);
     await t.withIdentity(asUser).mutation(api.modelWrites.undoArchiveNative, { id: "mdl1", orgId: ORG, auditId: "a5", now: NOW + 10, actor });
     expect((await model(t, "mdl1"))?.isActive).toBe(false);
-    // restoring an already-active model changes nothing and offers no Undo
+    // Restore is only the way back from archived: an active model is refused
     await t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 11, actor, auditId: "a6" });
-    const again = await t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 12, actor, auditId: "a7" });
-    expect(again.undoable).toBe(false);
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.restoreNative, { id: "mdl1", orgId: ORG, now: NOW + 12, actor, auditId: "a7" }),
+    ).rejects.toThrow(/not archived/);
   });
 
   test("update: assetType flip rejected while conflicting active stock exists (own-org only)", async () => {

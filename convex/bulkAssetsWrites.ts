@@ -223,6 +223,11 @@ async function setBulkRetired(
 ) {
   const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
   if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
+  // Reinstate is the way back from RETIRED only. Nothing derives LOW_STOCK / OUT_OF_STOCK
+  // in the backend, so a reinstated row is ACTIVE; the status is never client-supplied.
+  if (!retired && doc.status !== "RETIRED") {
+    throw new ConvexError({ code: "NOT_RETIRED", message: `Bulk asset ${doc.assetTag} is not retired, so it can't be reinstated.` });
+  }
   const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: "ACTIVE" as const };
   const diff = diffFields(doc, { ...doc, ...set }, ["status", "isActive"]);
   if (!diff) return { id: a.id, undoable: false };
@@ -284,7 +289,8 @@ export const undoRetireNative = mutation({
 });
 
 export const agentOps: AgentOpsAnnotations = {
-  reinstateNative: { danger: "medium" },
+  // Makes retired stock bookable again (stock-affecting), so `high`.
+  reinstateNative: { danger: "high" },
   undoRetireNative: { danger: "medium" },
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },

@@ -117,6 +117,8 @@ export const undoBulkEditNative = mutation({
         apply: async (doc, plan) => {
           const unsupported = [...Object.keys(plan.set), ...plan.clear].filter((f) => !(BULK_FIELDS as readonly string[]).includes(f));
           if (unsupported.length > 0) throw new ConvexError("This change can't be undone");
+          // The record moved on (completed, cancelled): putting an old date or assignee back would rewrite its history.
+          if (!isOpenMaintenance(doc.status)) throw new ConvexError({ code: "CHANGED_SINCE", message: "Can't undo: that record was completed or closed since." });
           const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
           for (const f of plan.clear) patch[f] = undefined;
           await ctx.db.patch(doc._id, patch);

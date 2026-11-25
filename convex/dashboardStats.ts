@@ -4,7 +4,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import { readCounterValues, ZERO_COUNTERS } from "./dashboardCounters";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
-import { OVERDUE_MAINTENANCE_STATUSES, isOverdueMaintenance } from "./lib/maintenanceOpen";
+import { OVERDUE_MAINTENANCE_STATUSES, isOverdueMaintenance, overdueCutoff } from "./lib/maintenanceOpen";
 
 /**
  * BROWSER-facing native replacement for getDashboardStats (Phase 3). Returns the
@@ -70,7 +70,7 @@ export const bundle = query({
       const read = await ctx.db
         .query("maintenanceRecords")
         .withIndex("by_organizationId_status_scheduledDate", (q) =>
-          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
+          q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", overdueCutoff(now)),
         )
         .take(MAINTENANCE_DUE_CAP + 1);
       if (read.length > MAINTENANCE_DUE_CAP) maintenanceTruncated = true;

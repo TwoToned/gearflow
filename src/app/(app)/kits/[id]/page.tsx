@@ -827,7 +827,7 @@ function KitDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 <StatusIndicator category="kit" value={stateKey} label={kitStatusLabels[stateKey] || formatLabel(stateKey)} />
                 {(kit.state?.missing.length ?? 0) > 0 && <span className="text-caption text-t-out">{kit.state!.missing.length} missing</span>}
               </div>
-              {!kit.state?.reportedMissing && (
+              {stateKey !== "INCOMPLETE" && (
                 <CanDo resource="kit" action="update">
                   <NativeSelect
                     value={kit.status}

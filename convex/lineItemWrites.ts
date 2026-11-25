@@ -631,6 +631,11 @@ export const patchNative = mutation({
     // client must never patch (see LINE_IMMUTABLE_ON_PATCH), then bound-check the money
     // fields it CAN set — a browser-direct caller bypasses the server-side Zod.
     const setObj = sanitizeClientSet(set, LINE_IMMUTABLE_ON_PATCH);
+    // A line that took stock from the new-stock pool cannot change `type`: the units it holds would
+    // leave the pool's accounting (SALE -> EQUIPMENT strands them), and nothing reconciles them.
+    if (((setObj.type !== undefined && setObj.type !== doc.type) || clear.includes("type")) && takesFromPool(doc)) {
+      throw new ConvexError({ code: "SALE_TYPE_LOCKED", message: "A sale line that took stock from the pool can't change its type: remove it (the stock goes back) and add the line you want." });
+    }
 
     // Org-validate every referenced FK the client can patch (by_cuid is global — the
     // row could be another org's). Same block as addNative/addLineItemSmartNative —

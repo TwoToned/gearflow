@@ -9,7 +9,7 @@ import { readCounterValues } from "./dashboardCounters";
 import { overdueReturnsForOrg } from "./lib/overdueReturns";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { deriveTestTagState } from "./lib/testTagListState";
-import { OPEN_MAINTENANCE_STATUSES, OVERDUE_MAINTENANCE_STATUSES, type OpenMaintenanceStatus } from "./lib/maintenanceOpen";
+import { OPEN_MAINTENANCE_STATUSES, OVERDUE_MAINTENANCE_STATUSES, overdueCutoff, type OpenMaintenanceStatus } from "./lib/maintenanceOpen";
 
 /**
  * The phone More sheet's row counts (UX Phase 11, §6d.6, S4): `Assets 605`,
@@ -100,7 +100,7 @@ async function maintenanceCount(ctx: QueryCtx, orgId: string, now: number): Prom
     ctx.db
       .query("maintenanceRecords")
       .withIndex("by_organizationId_status_scheduledDate", (q) =>
-        q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", now),
+        q.eq("organizationId", orgId).eq("status", status).gt("scheduledDate", MIN_TS).lt("scheduledDate", overdueCutoff(now)),
       )
       .take(NAV_COUNT_CAP + 1);
   const [opens, lates] = await Promise.all([Promise.all(OPEN_MAINTENANCE_STATUSES.map(open)), Promise.all(OVERDUE_MAINTENANCE_STATUSES.map(late))]);

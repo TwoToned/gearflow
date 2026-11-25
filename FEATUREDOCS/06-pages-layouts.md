@@ -81,7 +81,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/projects` | Project list (filterable by status, client, date) |
 | `/projects/new` | Create project |
 | `/projects/[id]` | Project detail — tabs: Equipment · Logistics (`?tab=logistics`, FEATUREDOCS/84; `/runsheet` redirects here) · **Finance** (#989 — quote revisions, send/issue dialogs, invoices; retired the old "Financials" tab, not duplicated) · Tasks · Notes · Files |
-| `/projects/[id]/edit` | Edit project |
+| `/projects/[id]/edit` | Redirect to `/projects/[id]?edit=1` (the job edit sheet) |
 | `/projects/templates` | Template list |
 | `/projects/templates/new` | Create template |
 | `/crew` | Crew member list |

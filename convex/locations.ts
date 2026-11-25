@@ -116,7 +116,7 @@ export const detail = query({
     // A kit's state is DERIVED (convex/lib/kitState.ts): the record prints that, never the stored status.
     const shownKits = kitsHere.filter((k) => k.isActive !== false).sort(byTag).slice(0, 50);
     const kitStates = await loadKitStates(ctx, orgId, shownKits, Date.now(), new ReadBudget(KIT_STATE_BUDGET));
-    const kitsOut = shownKits.map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: kitStates.get(k.id)?.key ?? k.status ?? "AVAILABLE" }));
+    const kitsOut = shownKits.map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: kitStates.get(k.id)?.key ?? "UNKNOWN" /* the budget bit: unknown, never the stored status */ }));
 
     const projectsOut = [];
     for (const p of [...projectsHere].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, 20)) {

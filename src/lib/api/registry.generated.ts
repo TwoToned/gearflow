@@ -38560,6 +38560,72 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectDraftWrites.discardDraftNative",
+    "module": "projectDraftWrites",
+    "fn": "discardDraftNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "via",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6bd58c961e73686a",
+    "returnsSha": "99a30a0f18eaacc2",
+    "stability": "tracks-app",
+    "summary": "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it (through the normal status transition) while it is still an enquiry. Refuses a non-author and any job that has moved on.",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectEquipment.browserBundle",
     "module": "projectEquipment",
     "fn": "browserBundle",
@@ -44116,6 +44182,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "summary": null,
     "danger": null,
     "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projects.windowOverlap",
+    "module": "projects",
+    "fn": "windowOverlap",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "end",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "excludeProjectId",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "start",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b40bb58a461962df",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Other jobs whose gear window overlaps a date range (number, status, window; capped at 50 with the true total).",
+    "danger": "low",
+    "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
   },
@@ -67347,10 +67460,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1303,
-  agentReachable: 671,
-  queries: 468,
-  mutations: 835,
-  agentReachableQueries: 332,
-  agentReachableMutations: 339,
+  total: 1305,
+  agentReachable: 673,
+  queries: 469,
+  mutations: 836,
+  agentReachableQueries: 333,
+  agentReachableMutations: 340,
 } as const;

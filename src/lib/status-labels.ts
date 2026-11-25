@@ -32,6 +32,8 @@ export const kitStatusLabels: Record<string, string> = {
   RETIRED: "Retired",
   INCOMPLETE: "Incomplete",
   RESERVED: "Reserved",
+  /** The read budget ran out before this kit's state: unknown, printed as a dash, never a guess. */
+  UNKNOWN: "—",
 };
 
 // --- Project Status ---

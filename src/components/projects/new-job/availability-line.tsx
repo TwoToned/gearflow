@@ -28,7 +28,7 @@ function useOverlapWindows(rentalStart: string | undefined, rentalEnd: string | 
 }
 
 /** `yyyy-MM-dd` → the jobs there, for the calendar's titled dots. */
-export function busyDayTitles(jobs: OverlapJob[]): Map<string, string> {
+function busyDayTitles(jobs: OverlapJob[]): Map<string, string> {
   const byDay = new Map<string, string[]>();
   for (const j of jobs) {
     for (const d of eachDayOfInterval({ start: new Date(j.start), end: new Date(j.end) })) {

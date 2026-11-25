@@ -96,9 +96,9 @@ test.describe("harness: project versioning v2", () => {
       await page.goto("/projects/new");
       await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
       await page.locator('input[name="projectNumber"]').fill(`E2E-${Date.now()}`);
-      await page.getByRole("button", { name: "Next" }).focus();
-      await page.getByRole("button", { name: "Next" }).click();
-      await page.getByRole("button", { name: "Next" }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
       await page.getByRole("button", { name: "Create job" }).click();
       await expect(page).toHaveURL(/\/projects\/(?!new$)[^/]+$/, { timeout: 20000 });
       projectUrl = page.url();

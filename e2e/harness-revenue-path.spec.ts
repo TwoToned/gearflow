@@ -182,9 +182,10 @@ test.describe("harness: primary revenue path", () => {
       // already succeeded). Root-caused chasing #858/R-8.8.3; this sidesteps
       // it without masking the real (tracked separately, #894) step-transition
       // focus-loss bug.
-      await page.getByRole("button", { name: "Next" }).focus();
+      // `exact`: the calendar's "Next month" button also contains the word.
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
       await page.keyboard.press("Enter");
-      await page.getByRole("button", { name: "Next" }).focus();
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
       await page.keyboard.press("Enter");
       await page.getByRole("button", { name: "Create job" }).focus();
       await page.keyboard.press("Enter");

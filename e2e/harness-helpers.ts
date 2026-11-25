@@ -101,9 +101,10 @@ export async function createProject(page: Page, projectName: string, code: strin
   // against the wizard's step-transition unmount (see harness-revenue-path's
   // identical comment; the underlying action always succeeds either way).
   // Who and when -> What -> Review: two "Next" activations (the draft is written at the first).
-  await page.getByRole("button", { name: "Next" }).focus();
+  // `exact`: the calendar's "Next month" button also contains the word.
+  await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Next" }).focus();
+  await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Create job" }).focus();
   await page.keyboard.press("Enter");

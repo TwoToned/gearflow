@@ -34,7 +34,7 @@ export interface WizardContext {
 }
 
 /** Cancel the draft, and delete it when the member may. The one removal path (Discard and the enquiry's Undo). */
-export async function removeDraft(ctx: Pick<WizardContext, "writes" | "canDelete">, id: string) {
+async function removeDraft(ctx: Pick<WizardContext, "writes" | "canDelete">, id: string) {
   await ctx.writes.archive(id);
   if (ctx.canDelete) await ctx.writes.remove(id);
 }

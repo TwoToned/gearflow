@@ -410,6 +410,9 @@ export async function checkoutItemsCore(ctx: Ctx, a: CheckoutItemsArgs): Promise
       if (!lineItem || lineItem.projectId !== a.projectId || lineItem.organizationId !== a.organizationId) {
         throw new ConvexError(`Line item ${item.lineItemId} not found in project`);
       }
+      // The per-line deploy (MCP dispatch_gear, the floor's whole-line deploy) must not put a kit reported missing out
+      // either: the same refusal as the kit check-out preflight, for a kit parent line and its nested kits.
+      await assertKitLineNotReportedMissing(ctx, a.organizationId, lineItem);
       const targetAssetId = item.assetId || lineItem.assetId || null;
       let accessoryScopes: string[] | undefined;
       if (targetAssetId) {
@@ -709,6 +712,20 @@ function kitBatchErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/** The machine code of a thrown ConvexError (`{ code }`), so a batch report can carry it beside the message. */
+function kitBatchErrorCode(e: unknown): string | undefined {
+  const d = e instanceof ConvexError ? (e.data as unknown) : undefined;
+  const code = d && typeof d === "object" ? (d as { code?: unknown }).code : undefined;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** `assertKitsNotReportedMissing` for a kit PARENT line (top-level, `kitId`) and the kits nested under it; any other line is a no-op. */
+async function assertKitLineNotReportedMissing(ctx: Ctx, orgId: string, line: { id: string; kitId?: string; isKitChild?: boolean }): Promise<void> {
+  if (!line.kitId || line.isKitChild) return;
+  const nested = (await childLines(ctx, line.id, orgId)).filter((c) => c.kitId).map((c) => c.kitId!);
+  await assertKitsNotReportedMissing(ctx, orgId, [line.kitId, ...nested]);
+}
+
 /** Refuse check-out of a kit whose derived-OR-marker state is Incomplete (the same state `loadKitBookingGate` reads). */
 async function assertKitsNotReportedMissing(ctx: Ctx, orgId: string, kitIds: string[]): Promise<void> {
   for (const id of kitIds) {
@@ -848,7 +865,7 @@ export async function checkoutKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", a.projectId)).unique();
     const loc = project?.locationId ?? null;
     const succeeded: string[] = [];
-    const errors: { kitId: string; message: string }[] = [];
+    const errors: KitBatchResult["errors"] = [];
     const affected = new Set<string>();
     for (const kitId of a.kitIds) {
       const ka: KitOpArgs = { organizationId: a.organizationId, projectId: a.projectId, userId: a.userId, kitId, now: a.now };
@@ -859,7 +876,8 @@ export async function checkoutKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise
       try {
         await checkoutKitPreflight(ctx, ka, kitLine);
       } catch (e) {
-        errors.push({ kitId, message: kitBatchErrorMessage(e) });
+        const code = kitBatchErrorCode(e);
+        errors.push({ kitId, message: kitBatchErrorMessage(e), ...(code ? { code } : {}) });
         continue;
       }
       const aff = await checkoutKitCore(ctx, ka, kitLine, loc);
@@ -1615,7 +1633,7 @@ export const undeployKit = mutation({
  * the client surfaces the error and the operator retries.) `defLoc` resolved once.
  */
 export type KitsBatchArgs = { organizationId: string; projectId: string; userId: string; kitIds: string[]; now: number };
-export type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string }[]; affectedKitIds: string[] };
+export type KitBatchResult = { succeeded: string[]; errors: { kitId: string; message: string; code?: string }[]; affectedKitIds: string[] };
 
 /** Core batch Deployed → Prepped (per-kit org/project re-check, defLoc once). Shared. */
 export async function undeployKitsBatchCore(ctx: Ctx, a: KitsBatchArgs): Promise<KitBatchResult> {

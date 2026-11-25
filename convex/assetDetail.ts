@@ -20,6 +20,7 @@ function maintenanceFacts(links: Doc<"maintenanceRecordAssets">[], all: Doc<"mai
   };
 }
 
+const JOB_HISTORY_CAP = 60;
 const CHECK_WINDOW = 30;
 const SCAN_WINDOW = 5;
 
@@ -39,6 +40,7 @@ async function readHealthFacts(
     maintenanceRecords: Doc<"maintenanceRecords">[];
     lineItems: Doc<"projectLineItems">[];
     projects: Doc<"projects">[];
+    jobsTruncated: boolean;
   },
 ) {
   const assetId = a.asset.id;
@@ -68,6 +70,7 @@ async function readHealthFacts(
       .filter((s) => s.isActive !== false)
       .map((s) => ({ intervalMonths: s.intervalMonths, anchorDate: s.anchorDate })),
     lastServiceAt,
+    jobsTruncated: a.jobsTruncated,
     openRepairs,
     hasPrepOrReturnCheck: prepOrReturn.length > 0,
     lastCheckResult: prepOrReturn[0]?.result ?? null,
@@ -127,11 +130,11 @@ async function readAssetDetail(ctx: QueryCtx, assetId: string, orgId: string) {
     ? await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", model.categoryId!)).unique()
     : null;
 
-  // ≤20 most-recent usage line items (mirror getAsset's sort + slice).
-  const lineItems = [...lineItemsAll]
-    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-    .slice(0, 20)
-    .filter((r) => r.organizationId === orgId);
+  // The newest JOB_HISTORY_CAP usage line items (org filter first, so a foreign row never takes a slot),
+  // with `jobsTruncated` so the History tab says when there are more than it shows (Q-8).
+  const lineItemsOrg = lineItemsAll.filter((r) => r.organizationId === orgId).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  const lineItems = lineItemsOrg.slice(0, JOB_HISTORY_CAP);
+  const jobsTruncated = lineItemsOrg.length > JOB_HISTORY_CAP;
 
   // Bulk assets referenced by child bulk children + model accessories.
   const refBulkIds = uniq([...childBulkDocs.map((c) => c.bulkAssetId), ...modelAccessories.map((a) => a.bulkAssetId)]);
@@ -158,7 +161,7 @@ async function readAssetDetail(ctx: QueryCtx, assetId: string, orgId: string) {
   );
 
   const facts = await readHealthFacts(ctx, orgId, {
-    asset, modelId: asset.modelId ?? null, maintLinks, maintenanceRecords, lineItems, projects,
+    asset, modelId: asset.modelId ?? null, maintLinks, maintenanceRecords, lineItems, projects, jobsTruncated,
   });
 
   return {

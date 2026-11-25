@@ -26,7 +26,8 @@ export type AssetSheetState =
 export interface AssetSheetProps {
   state: AssetSheetState | null;
   onClose: () => void;
-  onSaved?: (r: { id: string; kind: "serialized" | "bulk" }) => void;
+  /** `again` = `Save and add another` (the sheet stays open); otherwise the sheet closes after this. */
+  onSaved?: (r: { id: string; kind: "serialized" | "bulk"; again?: boolean }) => void;
   onImportCsv?: () => void;
 }
 
@@ -56,44 +57,40 @@ function KindWords({ kind, onChange }: { kind: "serialized" | "bulk"; onChange: 
   );
 }
 
-export function AssetSheet({ state, onClose, onSaved, onImportCsv }: AssetSheetProps) {
-  // Create only: the words can switch kind. Keyed by the opened state so a re-open starts fresh.
-  const [picked, setPicked] = useState<"serialized" | "bulk" | null>(null);
-  if (!state) return null;
-  const creating = state.mode === "create";
-  const kind = creating ? (picked ?? state.kind) : state.kind;
-  const words = creating ? <KindWords kind={kind} onChange={setPicked} /> : undefined;
-  const close = () => {
-    setPicked(null);
-    onClose();
-  };
+type Created = Extract<AssetSheetState, { mode: "create" }>;
+type Saved = NonNullable<AssetSheetProps["onSaved"]>;
 
-  if (state.mode === "edit" && state.kind === "serialized") {
-    return <SerialisedSheet key={state.values.id} mode="edit" values={state.values} onClose={close} onSaved={onSaved && ((r) => onSaved({ ...r, kind: "serialized" }))} />;
-  }
-  if (state.mode === "edit") {
-    return <BulkStockSheet key={state.values.id} mode="edit" values={state.values} onClose={close} onSaved={onSaved && ((r) => onSaved({ ...r, kind: "bulk" }))} />;
-  }
+/** Tells a sheet's `onSaved` which kind it saved. */
+const asKind = (kind: "serialized" | "bulk", onSaved: Saved | undefined) =>
+  onSaved && ((r: { id: string; again?: boolean }) => onSaved({ ...r, kind }));
+
+function EditSheet({ state, onClose, onSaved }: { state: Extract<AssetSheetState, { mode: "edit" }>; onClose: () => void; onSaved?: Saved }) {
+  if (state.kind === "bulk") return <BulkStockSheet key={state.values.id} mode="edit" values={state.values} onClose={onClose} onSaved={asKind("bulk", onSaved)} />;
+  return <SerialisedSheet key={state.values.id} mode="edit" values={state.values} onClose={onClose} onSaved={asKind("serialized", onSaved)} />;
+}
+
+/** Create owns the words' choice: a re-open starts on the kind the caller asked for. */
+function CreateSheet({ state, onClose, onSaved, onImportCsv }: { state: Created; onClose: () => void; onSaved?: Saved; onImportCsv?: () => void }) {
+  const [kind, setKind] = useState(state.kind);
   const d = state.defaults ?? {};
-  return kind === "bulk" ? (
-    <BulkStockSheet
-      key="create-bulk"
-      mode="create"
-      values={{ ...BULK_DEFAULTS, modelId: kind === state.kind ? (d.modelId ?? "") : "", locationId: d.locationId ?? "" }}
-      onClose={close}
-      onSaved={onSaved && ((r) => onSaved({ ...r, kind: "bulk" }))}
-      onImportCsv={onImportCsv}
-      words={words}
-    />
-  ) : (
+  // The model preset belongs to the kind the caller asked for; the other kind starts empty.
+  const modelId = kind === state.kind ? (d.modelId ?? "") : "";
+  const common = { mode: "create" as const, onClose, onImportCsv, words: <KindWords kind={kind} onChange={setKind} /> };
+  if (kind === "bulk") {
+    return <BulkStockSheet key="create-bulk" {...common} values={{ ...BULK_DEFAULTS, modelId, locationId: d.locationId ?? "" }} onSaved={asKind("bulk", onSaved)} />;
+  }
+  return (
     <SerialisedSheet
       key="create-serialised"
-      mode="create"
-      values={{ ...SERIALISED_DEFAULTS, modelId: kind === state.kind ? (d.modelId ?? "") : "", locationId: d.locationId ?? "", condition: d.condition ?? "NEW", supplierId: d.supplierId ?? "" }}
-      onClose={close}
-      onSaved={onSaved && ((r) => onSaved({ ...r, kind: "serialized" }))}
-      onImportCsv={onImportCsv}
-      words={words}
+      {...common}
+      values={{ ...SERIALISED_DEFAULTS, modelId, locationId: d.locationId ?? "", condition: d.condition ?? "NEW", supplierId: d.supplierId ?? "" }}
+      onSaved={asKind("serialized", onSaved)}
     />
   );
+}
+
+export function AssetSheet({ state, onClose, onSaved, onImportCsv }: AssetSheetProps) {
+  if (!state) return null;
+  if (state.mode === "edit") return <EditSheet state={state} onClose={onClose} onSaved={onSaved} />;
+  return <CreateSheet state={state} onClose={onClose} onSaved={onSaved} onImportCsv={onImportCsv} />;
 }

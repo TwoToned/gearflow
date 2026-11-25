@@ -121,6 +121,16 @@ export function useAssetWrites() {
       const r = await updateM({ id, orgId: org, set, clear, actor: actor(), auditId, now: Date.now() });
       return { ...r, auditId };
     },
+    /** Move to a location (or none): one field through `updateNative`, so it has the same exact Undo. */
+    move: async (id: string, locationId: string | null): Promise<{ id: string; undoable: boolean; auditId: string }> => {
+      const org = requireOrg();
+      const auditId = createId();
+      const r = await updateM({
+        id, orgId: org, set: locationId ? { locationId } : {}, clear: locationId ? [] : ["locationId"],
+        actor: actor(), auditId, now: Date.now(),
+      });
+      return { ...r, auditId };
+    },
     /** The exact reverse of one edit, from its own audit row (ids only). */
     undoUpdate: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
       const org = requireOrg();

@@ -212,6 +212,9 @@ export function reconstructAsset(bundle: AssetBundleData) {
     locationId: a.locationId ?? null,
     parentAssetId: a.parentAssetId ?? null,
     barcode: a.barcode ?? null,
+    // Held so an edit writes them back unchanged (the sheet sets every field it holds).
+    tags: a.tags ?? [],
+    images: a.images ?? [],
     notes: a.notes ?? null,
     isActive: a.isActive ?? true,
     purchaseDate: toDate(a.purchaseDate),

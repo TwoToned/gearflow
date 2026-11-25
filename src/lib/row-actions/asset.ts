@@ -72,20 +72,29 @@ export interface AssetPageCtx {
  * dialog names the downstream effects and holds Delete, so it carries no `confirm`).
  * A retired unit offers `Reinstate…` instead of Retire.
  */
+type PageVerb = keyof AssetPageCtx;
+type PageItem = Omit<ActionItem, "onSelect">;
+
+/** The menu, in order. A verb shows only when the caller has its handler AND `applies` says the unit can take it. */
+const PAGE_ITEMS: [PageVerb, PageItem, ((status: string) => boolean)?][] = [
+  ["onScan", { key: "scan", label: "Scan a tag…", group: "edit", icon: ScanLine, kbd: "/" }],
+  ["onMove", { key: "move", label: "Move to…", group: "organise", icon: MapPin }],
+  ["onScheduleService", { key: "schedule", label: "Schedule service…", group: "organise", icon: CalendarClock }],
+  ["onNewLike", { key: "new-like", label: "New asset like this…", group: "organise", icon: Copy, kbd: "N" }],
+  ["onReportIssue", { key: "report", label: "Report issue…", group: "reporting", icon: Wrench }],
+  ["onPrintLabel", { key: "print", label: "Print label…", group: "documents", icon: Printer }],
+  ["onForceReturn", { key: "force", label: "Force return…", group: "organise", icon: RotateCcw }, (s) => s === "CHECKED_OUT"],
+  ["onRetire", { key: "retire", label: "Retire…", group: "danger", icon: Archive, danger: true }, (s) => s !== "RETIRED"],
+  ["onReinstate", { key: "reinstate", label: "Reinstate…", group: "organise", icon: RotateCcw }, (s) => s === "RETIRED"],
+];
+
 export function buildAssetPageActions(row: { status?: string | null }, ctx: AssetPageCtx): ActionMenuSpec {
-  const retired = row.status === "RETIRED";
+  const status = row.status ?? "";
   return {
-    items: compact([
-      ctx.onScan && { key: "scan", label: "Scan a tag…", group: "edit", icon: ScanLine, kbd: "/", onSelect: ctx.onScan },
-      ctx.onMove && { key: "move", label: "Move to…", group: "organise", icon: MapPin, onSelect: ctx.onMove },
-      ctx.onScheduleService && { key: "schedule", label: "Schedule service…", group: "organise", icon: CalendarClock, onSelect: ctx.onScheduleService },
-      ctx.onNewLike && { key: "new-like", label: "New asset like this…", group: "organise", icon: Copy, kbd: "N", onSelect: ctx.onNewLike },
-      ctx.onReportIssue && { key: "report", label: "Report issue…", group: "reporting", icon: Wrench, onSelect: ctx.onReportIssue },
-      ctx.onPrintLabel && { key: "print", label: "Print label…", group: "documents", icon: Printer, onSelect: ctx.onPrintLabel },
-      ctx.onForceReturn && row.status === "CHECKED_OUT" && { key: "force", label: "Force return…", group: "organise", icon: RotateCcw, onSelect: ctx.onForceReturn },
-      !retired && ctx.onRetire && { key: "retire", label: "Retire…", group: "danger", icon: Archive, danger: true, onSelect: ctx.onRetire },
-      retired && ctx.onReinstate && { key: "reinstate", label: "Reinstate…", group: "organise", icon: RotateCcw, onSelect: ctx.onReinstate },
-    ]),
+    items: PAGE_ITEMS.flatMap(([verb, item, applies]) => {
+      const onSelect = ctx[verb];
+      return onSelect && (applies?.(status) ?? true) ? [{ ...item, onSelect }] : [];
+    }),
   };
 }
 

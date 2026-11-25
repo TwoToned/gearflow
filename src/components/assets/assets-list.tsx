@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AssetSheet, type AssetSheetState } from "@/components/assets/asset-sheet";
 import { useConvex, useConvexAuth } from "convex/react";
 import { toast } from "sonner";
 import { Download, Upload } from "lucide-react";
@@ -173,6 +174,8 @@ export function AssetsList() {
 
 function AssetsListInner({ orgId }: { orgId: string | undefined }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const opening = React.useRef(false);
   const now = useStableNow();
   const { state, setState } = useListUrlState(ASSETS_SPEC);
   useRememberedView(state, setState);
@@ -203,7 +206,8 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
       { id: a.id, title: a.assetTag, kind, status: a.status },
       {
         onOpen: () => router.push(href),
-        onEdit: perms.update && kind === "serialized" ? () => router.push(`/assets/registry/${a.id}/edit`) : undefined,
+        // Edit is a sheet over the record: the unit's own page, or its model's page for bulk stock (D31, D62).
+        onEdit: perms.update ? () => router.push(kind === "serialized" ? `/assets/registry/${a.id}?edit=1` : `/assets/models/${a.modelId}?tab=assets&edit-asset=${a.id}`) : undefined,
         onRetire: perms.update ? () => void retireMany([a.id]) : undefined,
       },
     );
@@ -211,7 +215,13 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
     return { ...row, cells: { status: row.status && <StatusWord status={row.status} /> } };
   });
 
-  const goNew = () => router.push(`/assets/registry/new?type=${kind}`);
+  // Create is a sheet over this list: `?new=serialized|bulk` (+ `modelId`), also what `/assets/registry/new` redirects to.
+  const goNew = () => router.push(`/assets/registry?new=${kind}`);
+  const newParam = searchParams.get("new");
+  const sheet: AssetSheetState | null =
+    perms.create && (newParam === "serialized" || newParam === "bulk")
+      ? { mode: "create", kind: newParam, defaults: { modelId: searchParams.get("modelId") ?? undefined } }
+      : null;
   const primary: ListPrimary | undefined = perms.create ? { label: kind === "bulk" ? "New bulk asset" : "New asset", onSelect: goNew } : undefined;
   const filters: ListFilterDef[] = assetFilters(kind, { ...lookups, modelSearch: { value: modelSearch, onChange: setModelSearch } });
 
@@ -257,6 +267,13 @@ function AssetsListInner({ orgId }: { orgId: string | undefined }) {
         importOpen={importOpen}
         setImportOpen={setImportOpen}
         retireMany={retireMany}
+      />
+      <AssetSheet
+        state={sheet}
+        onClose={() => { if (!opening.current) router.replace("/assets/registry"); opening.current = false; }}
+        // `Create asset` opens the new unit (every check reads `not checked` there); `Save and add another` stays.
+        onSaved={(r) => { if (!r.again && r.kind === "serialized") { opening.current = true; router.push(`/assets/registry/${r.id}`); } }}
+        onImportCsv={() => { router.replace("/assets/registry"); setImportOpen(true); }}
       />
     </>
   );

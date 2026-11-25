@@ -4319,6 +4319,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "assetWrites.undoUpdateNative",
+    "module": "assetWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "asset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "asset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d26981e12a735f76",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "assetWrites.updateNative",
     "module": "assetWrites",
     "fn": "updateNative",
@@ -4372,7 +4424,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a7a1a60bd7b8e40b",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -6405,6 +6457,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "bulkAssetsWrites.undoUpdateNative",
+    "module": "bulkAssetsWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "bulkAsset",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "bulkAsset",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "bulkAssetsWrites.updateNative",
     "module": "bulkAssetsWrites",
     "fn": "updateNative",
@@ -6493,7 +6597,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "43c7e7d3f5942d77",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "de41a6d1a4a33e2c",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -66139,10 +66243,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1281,
-  agentReachable: 649,
+  total: 1283,
+  agentReachable: 651,
   queries: 455,
-  mutations: 826,
+  mutations: 828,
   agentReachableQueries: 319,
-  agentReachableMutations: 330,
+  agentReachableMutations: 332,
 } as const;

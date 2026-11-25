@@ -52,6 +52,8 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { Panel } from "@/components/ui/card";
 import { cn, focusRing } from "@/lib/utils";
 import { OUT_LABEL } from "@/lib/vocabulary";
+import { AssetSheet, type AssetSheetState } from "@/components/assets/asset-sheet";
+import { useCanDo } from "@/lib/use-permissions";
 
 export default function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -128,6 +130,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
     onError: (e) => toast.error(e.message),
   });
 
+  const canEditAssets = useCanDo("asset", "update");
   // Standardized destructive confirmations.
   const [archiveModelOpen, setArchiveModelOpen] = useState(false);
   const [forceReturnAssetId, setForceReturnAssetId] = useState<{
@@ -152,6 +155,20 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
       </div>
     );
   }
+
+  // Bulk stock edit is a sheet over this page (`?edit-asset=<id>`, D62); the old edit route forwards here.
+  const editRow = canEditAssets ? model.bulkAssets.find((b) => b.id === searchParams.get("edit-asset")) : undefined;
+  const assetSheet: AssetSheetState | null = editRow
+    ? {
+        mode: "edit",
+        kind: "bulk",
+        values: {
+          id: editRow.id, modelId: editRow.modelId, assetTag: editRow.assetTag, totalQuantity: editRow.totalQuantity,
+          purchasePricePerUnit: editRow.purchasePricePerUnit ?? undefined, locationId: editRow.locationId ?? "",
+          status: editRow.status as never, notes: editRow.notes ?? "", isActive: editRow.isActive, tags: editRow.tags ?? [],
+        },
+      }
+    : null;
 
   const specs = (model.specifications as Record<string, string>) || {};
 
@@ -287,7 +304,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
               title="Edit"
               asChild
             >
-              <Link href={`/assets/registry/${ba.id}/edit?type=bulk`}>
+              <Link href={`/assets/models/${id}?tab=assets&edit-asset=${ba.id}`}>
                 <Pencil className="h-3.5 w-3.5" />
               </Link>
             </Button>
@@ -620,7 +637,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                                       title="Edit"
                                       asChild
                                     >
-                                      <Link href={`/assets/registry/${ba.id}/edit?type=bulk`}>
+                                      <Link href={`/assets/models/${id}?tab=assets&edit-asset=${ba.id}`}>
                                         <Pencil className="h-3.5 w-3.5" />
                                       </Link>
                                     </Button>
@@ -875,6 +892,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
         </DetailLayout>
       </div>
     </FadeIn>
+    <AssetSheet state={assetSheet} onClose={() => router.replace(`/assets/models/${id}?tab=assets`)} />
     <DeleteDialog
       open={archiveModelOpen}
       onOpenChange={setArchiveModelOpen}

@@ -89,10 +89,22 @@ export async function applyMove(ctx: MutationCtx, orgId: string, plan: MovePlan,
 }
 
 /**
+ * Refuses the WHOLE Undo, changing nothing, if a location the items came from no longer exists in this org
+ * (putting a row back to a deleted place would strand it; a half-restore would be worse than none).
+ */
+async function assertSourcesExist(ctx: MutationCtx, orgId: string, moved: readonly MovedRow[]): Promise<void> {
+  for (const from of new Set(moved.map((m) => m.from))) {
+    const loc = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", from)).first();
+    if (!loc || loc.organizationId !== orgId) throw new ConvexError("A location these items came from no longer exists, so the move can't be undone.");
+  }
+}
+
+/**
  * Put back the rows still exactly where the forward move left them (at `toId`, `updatedAt` = the
  * forward `now`). Anything touched since is left alone and counted. Stamps both ends.
  */
 export async function undoMove(ctx: MutationCtx, orgId: string, moved: readonly MovedRow[], toId: string, forwardNow: number, now: number): Promise<{ restored: number; left: number }> {
+  await assertSourcesExist(ctx, orgId, moved);
   const moves = new LocationMovements();
   let restored = 0;
   for (const m of moved) {

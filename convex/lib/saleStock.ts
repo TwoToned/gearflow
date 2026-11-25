@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
-import { writeActivityLog } from "./audit";
+import { assertAuditIdFree, writeActivityLog } from "./audit";
 import { bumpAssetCounters, bumpBulkCounters } from "./counters";
 import { findAssetConflict } from "./availabilityCore";
 
@@ -70,6 +70,7 @@ export async function adjustModelSaleStock(
   await ctx.db.patch(model._id, { saleStockQuantity: to, updatedAt: args.now });
 
   const auditId = args.auditId ?? createId();
+  if (args.auditId) await assertAuditIdFree(ctx, auditId); // a caller-minted id the Undo will trust must name no other row
   await writeActivityLog(ctx, {
     id: auditId,
     organizationId: args.orgId,

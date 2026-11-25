@@ -69,6 +69,13 @@ const EXPECTED_DISCOVERED: Record<string, number> = {
   "warehouseOps.ts": 7, // asset + accessory check-out patches, setAssetsStatus (patch + clear), patchKitStatusAt, releaseKitToLocation (patch + clear)
 };
 
+/**
+ * Functions whose location writes are the two branches of ONE if/else (set vs clear) with a single stamp
+ * AFTER both, read and verified when the guard was made per site (the stamp sees `from` and the final `to`
+ * either way). A function not named here needs a stamp per write site.
+ */
+const SINGLE_STAMP_AFTER_BRANCHES = ["async function setAssetStatus(", "export async function setAssetsStatus("];
+
 /** Mutations that apply a caller-supplied set/patch/merge to an asset, bulk asset or kit (may carry locationId). */
 const GENERIC_WRITERS: [file: string, fn: string][] = [
   ["assetWrites.ts", "updateNative"],
@@ -95,6 +102,21 @@ describe("every write that changes a stock row's locationId records the move", (
   test("each discovered write sits in a function that reaches the helper", () => {
     const missing = found.filter((f) => !STAMP.test(f.body)).map((f) => `${f.rel}:${f.i + 1} (${f.name})`);
     expect(missing, "location writes that do not stamp lastMovementAt").toEqual([]);
+  });
+
+  // Per SITE, not per function: a function with two location writes (a patch and a clear, two branches)
+  // must stamp at least as many times as it writes, or one branch could skip the helper unseen.
+  test("a function stamps at least once for every location write site in it", () => {
+    const sites = new Map<string, { n: number; stamps: number }>();
+    for (const f of found) {
+      const key = `${f.rel} :: ${f.name}`;
+      const stamps = f.body.match(new RegExp(STAMP.source, "g"))?.length ?? 0;
+      sites.set(key, { n: (sites.get(key)?.n ?? 0) + 1, stamps });
+    }
+    const short = [...sites]
+      .filter(([k, s]) => s.stamps < s.n && !SINGLE_STAMP_AFTER_BRANCHES.some((fn) => k.includes(fn)))
+      .map(([k, s]) => `${k}: ${s.n} write site(s), ${s.stamps} stamp(s)`);
+    expect(short, "location write sites without their own stamp").toEqual([]);
   });
 
   test("the discovered set is exactly the enumerated one (a new site must be reviewed and added)", () => {

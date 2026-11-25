@@ -328,6 +328,7 @@ export const bulkUpdateRatesNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "model", "update");
     const actor = await resolveActor(ctx, a.actor);
 
+    await assertBulkSizeOk(ctx, a.modelIds.length);
     if (a.modelIds.length === 0) throw new ConvexError("No models selected");
     if (!Number.isFinite(a.value)) throw new ConvexError("Invalid value");
     if (a.operation === "set" && a.value < 0) throw new ConvexError("Rate cannot be negative");
@@ -517,6 +518,7 @@ export const adjustSaleStockManyNative = mutation({
     if (a.adjustments.length === 0) throw new ConvexError("Nothing to adjust");
     if (a.auditIds.length !== a.adjustments.length) throw new ConvexError("One audit id per adjustment");
     if (new Set(a.adjustments.map((x) => x.id)).size !== a.adjustments.length) throw new ConvexError("Each model can appear once");
+    if (new Set(a.auditIds).size !== a.auditIds.length) throw new ConvexError("Audit ids must be distinct");
 
     const results: { id: string; auditId: string; from: number; to: number }[] = [];
     for (const [i, adj] of a.adjustments.entries()) {
@@ -529,9 +531,6 @@ export const adjustSaleStockManyNative = mutation({
     return { results };
   },
 });
-
-/** How many recent audit rows are scanned for an earlier UNDO of the same adjustment. */
-const UNDO_SCAN_ROWS = 50;
 
 interface UndoableSaleChange {
   model: Doc<"models">;
@@ -555,16 +554,13 @@ function manualSaleStockAudit(details: unknown): SaleStockAudit | null {
     : null;
 }
 
-/** Refuses a second Undo: an UNDO row for this forward row already exists in the model's recent history. */
-async function assertNotAlreadyUndone(ctx: MutationCtx, orgId: string, modelId: string, auditId: string): Promise<void> {
-  const history = await ctx.db
-    .query("activityLogs")
-    .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "model").eq("entityId", modelId))
-    .order("desc")
-    .take(UNDO_SCAN_ROWS);
-  if (history.some((h) => h.action === "UNDO" && (h.details as { undoOf?: string } | undefined)?.undoOf === auditId)) {
-    throw new ConvexError("This stock change was already undone");
-  }
+/**
+ * Refuses a second Undo: the Undo's own audit row has the DETERMINISTIC id `${auditId}:undo`, so one `by_cuid`
+ * lookup answers it (never a scan of recent history, which a busy model would outrun).
+ */
+async function assertNotAlreadyUndone(ctx: MutationCtx, orgId: string, auditId: string): Promise<void> {
+  const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `${auditId}:undo`)).first();
+  if (marker && marker.organizationId === orgId) throw new ConvexError("This stock change was already undone");
 }
 
 /** The model (org-checked), whose pool is still exactly what the forward adjustment left. */
@@ -585,7 +581,7 @@ async function loadUndoableSaleChange(
   if (!row || !sale) throw new ConvexError("This stock change can't be undone");
   if (row.userId !== a.actorUserId) throw new ConvexError("Only the person who made this change can undo it");
   assertWithinUndoWindow(sale.serverSavedAt, a.serverNow, "change");
-  await assertNotAlreadyUndone(ctx, a.orgId, row.entityId, a.auditId);
+  await assertNotAlreadyUndone(ctx, a.orgId, a.auditId);
   const model = await requireUntouchedPool(ctx, a.orgId, row.entityId, sale.to);
   return { model, from: sale.from, to: sale.to, auditId: a.auditId };
 }

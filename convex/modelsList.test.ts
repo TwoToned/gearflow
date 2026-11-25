@@ -247,6 +247,19 @@ describe("exact Undo of a manual sale-stock adjustment", () => {
     await expect(undo(t, ["foreign-1"])).rejects.toThrow(/can't be undone/);
   });
 
+  test("a caller-minted audit id that already names a row is refused (an Undo must never read a row it did not write)", async () => {
+    const t = makeT();
+    await seedSales(t);
+    await adjust(t, "aud-1");
+    await expect(adjust(t, "aud-1", 2)).rejects.toThrow(/already in use|AUDIT_ID_TAKEN/);
+    expect(await pool(t)).toBe(8);
+    await expect(
+      t.withIdentity(asUser).mutation(api.modelWrites.adjustSaleStockManyNative, {
+        orgId: ORG, adjustments: [{ id: "stocked", delta: 1 }, { id: "empty", delta: 1 }], now: Date.now(), actor: ACTOR, auditIds: ["same", "same"],
+      }),
+    ).rejects.toThrow(/distinct/);
+  });
+
   test("a stranger from another org cannot adjust", async () => {
     const t = makeT();
     await seedSales(t);

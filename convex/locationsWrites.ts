@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
-import { writeActivityLog } from "./lib/audit";
+import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
@@ -89,6 +89,9 @@ export const createNative = mutation({
     if (dup) throw new ConvexError("Location already exists");
     // Org-validate the client-supplied parent FK (by_cuid is GLOBAL — cross-org refs leak).
     if (a.parentId) await assertRefInOrg(ctx, "locations", a.parentId, a.orgId);
+    // The exact Undo of a create deletes by these ids: neither may name an existing row.
+    await assertAuditIdFree(ctx, a.auditId);
+    if (await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("That location id is already in use");
     if (a.isDefault) await unsetOtherDefaults(ctx, a.orgId, undefined, a.now);
 
     await ctx.db.insert("locations", {
@@ -346,6 +349,7 @@ export const moveContentsNative = mutation({
     if (!target || target.organizationId !== a.orgId) throw new ConvexError("Destination not found");
     if (sources.some((s) => !s || s.organizationId !== a.orgId)) throw new ConvexError("Location not found");
 
+    await assertAuditIdFree(ctx, a.auditId); // the Undo trusts the row with this id
     const plan = await planMove(ctx, a.orgId, fromIds);
     if (plan.rows.length === 0) throw new ConvexError("Nothing here can be moved");
     const moved = await applyMove(ctx, a.orgId, plan, a.toId, a.now);
@@ -376,12 +380,9 @@ export const undoMoveContentsNative = mutation({
     if (!row || row.organizationId !== a.orgId || row.entityType !== "location" || !isMoveDetails(row.details)) throw new ConvexError("This move can't be undone");
     if (row.userId !== actor.userId) throw new ConvexError("Only the person who moved these items can undo it");
     assertWithinUndoWindow(row.details.serverSavedAt, Date.now(), "change");
-    const history = await ctx.db
-      .query("activityLogs")
-      .withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", a.orgId).eq("entityType", "location").eq("entityId", row.entityId))
-      .order("desc")
-      .take(50);
-    if (history.some((h) => h.action === "UNDO" && (h.details as { undoOf?: string } | undefined)?.undoOf === a.auditId)) throw new ConvexError("This move was already undone");
+    // The Undo's own row has the deterministic id `${auditId}:undo`: ONE by_cuid lookup, never a history scan.
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `${a.auditId}:undo`)).first();
+    if (marker && marker.organizationId === a.orgId) throw new ConvexError("This move was already undone");
 
     const result = await undoMove(ctx, a.orgId, row.details.moved, row.details.toId, row.details.movedAt, a.now);
     await writeActivityLog(ctx, {

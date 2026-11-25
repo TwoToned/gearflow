@@ -163,6 +163,32 @@ describe("Move contents", () => {
     expect(await at(t, "assets", "a1")).toBe("hall");
   });
 
+  test("Undo leaves a row that was edited IN PLACE since the move (its updatedAt changed), and says so", async () => {
+    const t = makeT();
+    await seed(t);
+    await move(t);
+    // Same location, but someone touched the row: the `updatedAt` guard must keep Undo off it.
+    await t.run(async (ctx) => {
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { notes: "re-lamped", updatedAt: NOW + 500 } as never);
+    });
+    expect(await undo(t)).toEqual({ restored: 3, left: 1 });
+    expect(await at(t, "assets", "a1")).toBe("van2");
+  });
+
+  test("Undo refuses as a whole, changing nothing, when a location the items came from no longer exists", async () => {
+    const t = makeT();
+    await seed(t);
+    await move(t);
+    await t.run(async (ctx) => {
+      const l = await ctx.db.query("locations").withIndex("by_cuid", (q) => q.eq("id", "whA")).first();
+      await ctx.db.delete(l!._id);
+    });
+    await expect(undo(t)).rejects.toThrow(/no longer exists/);
+    expect(await at(t, "assets", "a1")).toBe("van2");
+    expect(await at(t, "kits", "k1")).toBe("van2");
+  });
+
   test("refuses another person and refuses once the 10-minute window has passed", async () => {
     const t = makeT();
     await seed(t);

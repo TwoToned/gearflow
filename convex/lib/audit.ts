@@ -1,5 +1,16 @@
+import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import { getAuthContext } from "./auth";
+
+/**
+ * Refuses a caller-minted audit id that already names a row (in ANY org: `by_cuid` is global). An exact
+ * Undo finds its forward row by this id, so a duplicate would let it read, and act on, a row the caller
+ * did not write. Call it before a forward write stores a caller-supplied id an Undo will later trust.
+ */
+export async function assertAuditIdFree(ctx: MutationCtx, id: string): Promise<void> {
+  const taken = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (taken) throw new ConvexError({ code: "AUDIT_ID_TAKEN", message: "That audit id is already in use." });
+}
 
 /**
  * The audit entry shape written to Convex `activityLogs`. Mirrors the Postgres

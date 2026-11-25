@@ -4,7 +4,8 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { writeActivityLog } from "./lib/audit";
+import { createId } from "@paralleldrive/cuid2";
+import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { CheckItemType } from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { assertStrLen } from "./lib/fieldGuards";
@@ -243,6 +244,11 @@ export const reorderModelCheckItemsNative = mutation({
   },
 });
 
+/** Is this id already a `modelCheckItems` row (any org: `by_cuid` is global)? */
+async function rowIdTaken(ctx: MutationCtx, id: string): Promise<boolean> {
+  return (await ctx.db.query("modelCheckItems").withIndex("by_cuid", (q) => q.eq("id", id)).first()) != null;
+}
+
 export const bulkAddCheckItemsToModelsNative = mutation({
   returns: v.object({ count: v.number(), modelNames: v.array(v.string()) }),
   args: { orgId: v.string(), modelIds: v.array(v.string()), checkItemIds: v.array(v.string()), rowIds: v.array(v.string()), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -271,7 +277,10 @@ export const bulkAddCheckItemsToModelsNative = mutation({
       let offset = existing.reduce((m, r) => Math.max(m, r.sortOrder ?? -1), -1) + 1;
       for (const checkItemId of checkItemIds) {
         if (!checkItemIdSet.has(checkItemId) || existingSet.has(checkItemId)) continue;
-        const rowId = a.rowIds[rowIdx++] ?? `${model.id}:${checkItemId}`;
+        // A caller-supplied id is honoured only if it names no existing row; otherwise (or with none) the
+        // server mints one. The Undo deletes rows by these ids, so it must never reach a row it did not create.
+        const wanted = a.rowIds[rowIdx++];
+        const rowId = wanted && !(await rowIdTaken(ctx, wanted)) ? wanted : createId();
         const sortOrder = offset++;
         await ctx.db.insert("modelCheckItems", { id: rowId, organizationId: a.orgId, modelId: model.id, checkItemId, sortOrder, createdAt: a.now });
         existingSet.add(checkItemId); // guard against any residual dup within this model
@@ -285,6 +294,7 @@ export const bulkAddCheckItemsToModelsNative = mutation({
       await log(ctx, { orgId: a.orgId, actor, auditId: `${a.auditId}-${model.id}`, now: a.now, action: "UPDATE", entityType: "model", entityId: model.id, entityName: model.name, summary: `Bulk assigned check items [${checkLabels}] to model "${model.name}"` });
     }
     // The batch's own audit row: the exact Undo (`undoAssignChecksNative`) reads the rows it created from here.
+    await assertAuditIdFree(ctx, a.auditId);
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "model", entityId: models[0]?.id ?? "", entityName: `${models.length} models`,
       userId: actor.userId, userName: actor.userName, summary: `Assigned ${checkItems.length} check item(s) to ${models.length} model(s) (${created} new)`,

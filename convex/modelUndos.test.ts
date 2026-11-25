@@ -90,8 +90,9 @@ describe("Edit rates Undo", () => {
 });
 
 describe("Set reorder level", () => {
+  let roSeq = 0; // a caller-minted audit id must be fresh each call (a reused one is refused)
   const set = (t: T, level: number | null) =>
-    t.withIdentity(asUser).mutation(api.modelWrites.setReorderLevelsNative, { orgId: ORG, entries: [{ id: "m1", level }], now: NOW, actor: ACTOR, auditId: "ro" });
+    t.withIdentity(asUser).mutation(api.modelWrites.setReorderLevelsNative, { orgId: ORG, entries: [{ id: "m1", level }], now: NOW, actor: ACTOR, auditId: `ro${++roSeq}` });
   const undo = (t: T, ids: string[]) => t.withIdentity(asUser).mutation(api.modelWrites.undoModelFieldEditsNative, { orgId: ORG, auditIds: ids, now: NOW + 1, actor: ACTOR });
 
   test("sets, then Undo clears it again: an unset level stays absent, never 0", async () => {
@@ -160,5 +161,27 @@ describe("Assign checks Undo", () => {
     await assign(t);
     await expect(undo(t, { subject: "user_2", orgId: ORG })).rejects.toThrow(/Only the person/);
     expect(await rows(t)).toEqual(["r1", "r2"]);
+  });
+
+  // The Undo deletes by the ids the forward call recorded, so a caller-supplied id that names a row that
+  // already exists (here "pre", or a fallback-shaped id) must never be adopted: the server mints a fresh one.
+  test("a supplied row id that names an existing row is not adopted, so Undo cannot delete that row", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("modelCheckItems", { id: "pre", organizationId: ORG, modelId: "m1", checkItemId: "c0", sortOrder: 0 } as never);
+      await ctx.db.insert("modelCheckItems", { id: "m2:c1", organizationId: ORG, modelId: "other", checkItemId: "cX", sortOrder: 0 } as never);
+    });
+    await t.withIdentity(asUser).mutation(api.checkItemsWrites.bulkAddCheckItemsToModelsNative, { orgId: ORG, modelIds: ["m1", "m2"], checkItemIds: ["c1"], rowIds: ["pre"], now: NOW, actor: ACTOR, auditId: "as1" });
+    expect((await rows(t)).filter((r) => r === "pre")).toHaveLength(1);
+    await undo(t);
+    expect(await rows(t)).toEqual(["m2:c1", "pre"]); // both pre-existing rows survive; only the two created are gone
+  });
+
+  test("a reused audit id is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    await assign(t);
+    await expect(t.withIdentity(asUser).mutation(api.checkItemsWrites.bulkAddCheckItemsToModelsNative, { orgId: ORG, modelIds: ["m1"], checkItemIds: ["c1"], rowIds: [], now: NOW, actor: ACTOR, auditId: "as1" })).rejects.toThrow(/already in use|AUDIT_ID_TAKEN/);
   });
 });

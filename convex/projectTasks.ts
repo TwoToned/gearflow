@@ -88,6 +88,15 @@ export const assignees = query({
   },
 });
 
+/** A user's name, only if they are a MEMBER of this org (the users mirror is global: gate on `by_org_user`). */
+async function memberName(ctx: QueryCtx, orgId: string, userId: string | undefined): Promise<string | null> {
+  if (!userId) return null;
+  const member = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
+  if (!member) return null;
+  const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).first();
+  return u?.name ?? null;
+}
+
 /**
  * A project's tasks (sorted sortOrder→createdAt) with the assignee join relations the
  * board renders. dueDate is returned as an ISO string (the consumer slices it to
@@ -136,6 +145,10 @@ export const listByProjectWithRelations = query({
         assigneeUser,
         assigneeCrew,
         sortOrder: t.sortOrder ?? 0,
+        // The task sheet's history line (added by · when · done when).
+        createdAt: t.createdAt ?? null,
+        completedAt: t.completedAt ?? null,
+        createdByName: await memberName(ctx, orgId, t.createdById),
       });
     }
     return out;

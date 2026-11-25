@@ -3,22 +3,29 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { EquipmentAddBar } from "@/components/projects/equipment-add-bar";
-import { ActionMenu } from "@/components/ui/action-menu";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useFormatters } from "@/components/providers/format-provider";
+import { EQUIPMENT_COLUMNS, equipmentRowModel } from "@/lib/equipment-row-model";
+import { InlineEditablePrice, InlineEditableQuantity } from "@/components/projects/line-item-inline-cells";
+import { BulkBar } from "@/components/ui/bulk-bar";
+import { BulkDeleteDialog } from "@/components/ui/bulk-delete-dialog";
+import { LineRowList, visibleRowIds } from "@/components/ui/line-row";
 import { useNativeEquipmentTab } from "@/hooks/use-native-equipment-tab";
-import { useLineItemWrites } from "@/hooks/use-line-item-writes";
+import { updateLineItemFromPayload, useLineItemWrites } from "@/hooks/use-line-item-writes";
+import { useRowSelection } from "@/lib/primitives/use-row-selection";
+import { computeInlineLineItemPayload, type InlineLineItemPatch } from "@/lib/line-item-edit-payload";
+import { buildGearLineActions } from "@/lib/row-actions/gear-line";
+import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
 import type { LineItemData } from "@/components/projects/equipment-rows";
 import type { OverbookedInfo } from "@/lib/overbooking-core";
-import type { ActionMenuSpec } from "@/lib/primitives/types";
+import type { LineRowData } from "@/lib/primitives/types";
 
 /**
  * Wizard step 2, What: the Equipment tab's search-first add (the SAME
- * `EquipmentAddBar` and write path, pointed at the draft) plus the draft's lines
- * as rows: qty inline, price, total, `short n` / `unpriced` flags, ⋯, always-on
- * checkboxes and a bulk `Remove n`. Sub-hire, custom and sale items open from the
- * job's Equipment tab (the wizard never had them).
+ * `EquipmentAddBar`) pointed at the draft, and the draft's lines as the Equipment
+ * tab's own rows: `equipmentRowModel` for the title, flags and facts (so `short n`
+ * and `unpriced` read the same), `buildGearLineActions` for the row ⋯ (a handler a
+ * draft does not have is absent, never dead), the same inline qty/price cells and
+ * the same write (`updateLineItemFromPayload`), `BulkBar` + `buildBulkEquipmentActions`
+ * for the ticks. Sub-hire, custom and sale items open from the job's Equipment tab.
  */
 export interface WizardLines {
   lines: LineItemData[];
@@ -35,31 +42,48 @@ export function useWizardLines(draftId: string | undefined, orgId: string | unde
   return { lines, overbooked: tab.overbookedMap, total, isLoading: tab.isLoading };
 }
 
+// A draft has no stage, availability-by-asset or discount columns: the Equipment tab's own qty, unit and total.
+const COLUMNS = EQUIPMENT_COLUMNS.filter((c) => c.id === "qty" || c.id === "unit" || c.id === "total");
+const num = (v: unknown): number | null => (v == null || v === "" ? null : Number(v));
+
 export function StepWhat({ draftId, orgId, data }: { draftId: string | undefined; orgId: string | undefined; data: WizardLines }) {
   const writes = useLineItemWrites();
-  const { formatCurrency } = useFormatters();
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [confirmIds, setConfirmIds] = useState<string[] | null>(null);
+  const [removing, setRemoving] = useState(false);
   const { lines, overbooked } = data;
+
+  const edit = (item: LineItemData, patch: Exclude<InlineLineItemPatch, { field: "discountPercent" }>) =>
+    updateLineItemFromPayload(writes, item.id, computeInlineLineItemPayload(item, patch) as unknown as Record<string, unknown>, patch.field === "quantity" ? patch.allowOverbook : false)
+      .catch((e: Error) => { if (!/INSUFFICIENT_STOCK/.test(e.message)) toast.error(e.message); throw e; });
+
+  const rows: LineRowData[] = lines.map((item) => {
+    const model = equipmentRowModel(item, { overbooked: overbooked[item.id] });
+    return {
+      id: item.id, kind: model.kind, title: model.title, subtitle: model.subtitle, tags: model.tags,
+      glyphs: model.glyphs, flags: model.flags, facts: model.facts,
+      cells: {
+        qty: <InlineEditableQuantity value={item.quantity} onSave={(next, allowOverbook) => edit(item, { field: "quantity", value: next, allowOverbook })} />,
+        unit: <InlineEditablePrice value={num(item.unitPrice)} onSave={(next) => edit(item, { field: "unitPrice", value: next })} />,
+      },
+      menu: buildGearLineActions({ ...item, title: model.title }, { onRemove: () => setConfirmIds([item.id]) }),
+    };
+  });
+  const selection = useRowSelection(visibleRowIds([{ section: { id: "lines", title: "Lines" }, rows, headless: true }]));
 
   if (!draftId) {
     return <p className="text-ui-text text-muted">Name the job on the first step and its draft starts, then add gear here.</p>;
   }
-  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const remove = async (ids: string[]) => {
+    setRemoving(true);
     try {
       const r = await writes.removeMany(ids);
-      setPicked(new Set());
+      selection.clear();
       toast.success(`Removed ${r.removed} line${r.removed === 1 ? "" : "s"}${r.skipped ? `, ${r.skipped} skipped` : ""}`);
     } catch (e) {
       toast.error((e as Error).message);
-    }
-  };
-  const setQty = async (line: LineItemData, qty: number) => {
-    if (!Number.isFinite(qty) || qty < 1 || qty === line.quantity) return;
-    try {
-      await writes.update(line.id, { quantity: qty }, [], { entityName: line.description ?? "Line", allowOverbook: false });
-    } catch (e) {
-      toast.error((e as Error).message);
+    } finally {
+      setRemoving(false);
+      setConfirmIds(null);
     }
   };
 
@@ -71,66 +95,27 @@ export function StepWhat({ draftId, orgId, data }: { draftId: string | undefined
         invalidate={() => {}}
         onOpenDialog={() => toast.info("Add sub-hire, custom and sale items from the job's Equipment tab once it is created.")}
       />
-      {lines.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-ui-text text-muted">No gear yet. Search a model or kit above and press Enter to add it.</p>
       ) : (
-        <ul className="divide-y divide-line border-y border-line" aria-label="Gear on this job">
-          {lines.map((l) => (
-            <LineItemRow
-              key={l.id} line={l} short={overbooked[l.id]?.overBy ?? 0} checked={picked.has(l.id)}
-              money={(n) => formatCurrency(n, { cents: false })}
-              onToggle={() => toggle(l.id)} onQty={(q) => void setQty(l, q)} onRemove={remove}
-            />
-          ))}
-        </ul>
+        <LineRowList rows={rows} columns={COLUMNS} selection={selection} />
       )}
-      {picked.size > 0 && (
-        <div className="flex items-center gap-3 text-table-cell" role="toolbar" aria-label="Selected lines">
-          <span className="text-muted">{picked.size} selected</span>
-          <Button type="button" variant="line" size="sm" onClick={() => void remove([...picked])}>Remove {picked.size}</Button>
-          <button type="button" className="text-muted underline-offset-4 hover:underline" onClick={() => setPicked(new Set())}>Clear</button>
-        </div>
-      )}
+      <BulkBar
+        noun="line"
+        selection={selection}
+        actions={buildBulkEquipmentActions([], { onDelete: () => setConfirmIds([...selection.selected]) })}
+      />
+      <BulkDeleteDialog
+        open={confirmIds != null}
+        onOpenChange={(o) => !o && setConfirmIds(null)}
+        title="Remove from this job"
+        description="The selected lines come off the draft job. Kit and accessory members go with their parent."
+        count={confirmIds?.length ?? 0}
+        itemLabel="line"
+        confirmLabel={`Remove ${confirmIds?.length ?? 0} line${confirmIds?.length === 1 ? "" : "s"}`}
+        pending={removing}
+        onConfirm={() => void remove(confirmIds ?? [])}
+      />
     </div>
   );
-}
-
-function LineItemRow({
-  line: l, short, checked, money, onToggle, onQty, onRemove,
-}: {
-  line: LineItemData; short: number; checked: boolean; money: (n: number) => string;
-  onToggle: () => void; onQty: (qty: number) => void; onRemove: (ids: string[]) => void | Promise<void>;
-}) {
-  const name = l.description ?? "line";
-  const priced = l.unitPrice != null && l.unitPrice !== "";
-  return (
-    <li className="flex min-h-14 items-center gap-3 py-2">
-      <input type="checkbox" aria-label={`Select ${name}`} checked={checked} onChange={onToggle} className="size-[22px] shrink-0 md:size-4" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-ui-text font-medium text-ink">{l.description}</p>
-        <p className="text-caption">
-          {short > 0 && <span className="mr-2 text-t-out">short {short}</span>}
-          {!priced && <span className="text-warn">unpriced</span>}
-        </p>
-      </div>
-      <Input
-        key={`${l.id}:${l.quantity}`}
-        type="number" min={1} inputMode="numeric" aria-label={`Quantity of ${name}`}
-        defaultValue={l.quantity} onBlur={(e) => onQty(Number(e.target.value))}
-        className="h-11 w-16 text-center md:h-9"
-      />
-      <span className="w-20 text-right font-mono text-table-cell text-ink">{priced ? money(Number(l.lineTotal) || 0) : "—"}</span>
-      <ActionMenu spec={rowMenu(l, onRemove)} label={`Actions for ${name}`} />
-    </li>
-  );
-}
-
-function rowMenu(line: LineItemData, remove: (ids: string[]) => void | Promise<void>): ActionMenuSpec {
-  return {
-    items: [{
-      key: "remove", label: "Remove", group: "danger", danger: true,
-      confirm: { title: "Remove this line?", body: `${line.description ?? "This line"} comes off the job. Nothing else changes.`, confirmLabel: "Remove" },
-      onSelect: () => remove([line.id]),
-    }],
-  };
 }

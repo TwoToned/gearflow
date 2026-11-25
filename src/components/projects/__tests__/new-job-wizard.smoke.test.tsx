@@ -99,7 +99,8 @@ describe("NewJobWizard", () => {
     fireEvent.change(document.querySelector('input[name="projectNumber"]') as HTMLInputElement, { target: { value: "P-78" } });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Barco UDX")).toBeTruthy();
-    expect((screen.getByLabelText("Quantity of Barco UDX") as HTMLInputElement).value).toBe("2");
+    // The Equipment tab's own row: a select box and a ⋯ whose only item is the shared gear-line Delete.
+    expect(screen.getByRole("checkbox", { name: /Barco UDX/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText(/Hire \$1,000 · Discount \$0 · Total ex GST \$1,000/)).toBeTruthy();
     expect(screen.getByRole("group", { name: "Starts as" })).toBeTruthy();

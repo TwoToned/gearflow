@@ -138,7 +138,7 @@ function buildAddFields(parsed: ParsedLineItem) {
  *  Empty scalars are CLEARED; association fields are only touched when explicitly
  *  provided (undefined ⇒ keep existing). Exported so equipment-tab builds it and passes
  *  it to `update()`. */
-export function buildLineItemSetClear(parsed: ParsedLineItem): {
+function buildLineItemSetClear(parsed: ParsedLineItem): {
   set: Record<string, unknown>;
   clear: string[];
 } {
@@ -194,6 +194,24 @@ export function buildLineItemSetClear(parsed: ParsedLineItem): {
   if (parsed.supplierId !== undefined) setStr("supplierId", parsed.supplierId);
 
   return { set, clear };
+}
+
+/**
+ * The ONE inline/dialog line edit write: validate the payload (`computeInlineLineItemPayload`
+ * output or the edit form's), split it into set/clear, and run the patch. The Equipment tab
+ * and the new-job wizard's What step both call it, so a quantity or price edit means the
+ * same thing on both (R-3.1).
+ */
+export function updateLineItemFromPayload(
+  writes: Pick<ReturnType<typeof useLineItemWrites>, "enabled" | "update">,
+  id: string,
+  data: Record<string, unknown>,
+  allowOverbook = false,
+) {
+  if (!writes.enabled) throw new Error("Not ready — try again in a moment.");
+  const parsed = lineItemSchema.parse(data);
+  const { set, clear } = buildLineItemSetClear(parsed);
+  return writes.update(id, set, clear, { entityName: parsed.description || "Line item", allowOverbook });
 }
 
 export function useLineItemWrites() {

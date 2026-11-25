@@ -168,7 +168,7 @@ Sub-hire costs are integrated into the project financial calculations:
 |-------|---------|--------|
 | `subHireCostTotal` | SUM(subHire.totalCost) for CONFIRMED/ON_HIRE/RETURNED | `recalculateProjectTotals` |
 | sub-hire **revenue** | SUM(subHire line `lineTotal`) — via `equipmentRevenue` | `recalculateProjectTotals` |
-| `margin` | total - (serviceCostTotal + labourCostTotal + **subHireCostTotal**) | `recalculateProjectTotals` |
+| `margin` | taxableAmount (ex GST) - (serviceCostTotal + labourCostTotal + **subHireCostTotal** + saleCostTotal) | `recalcProjectTotals` (`marginExGst`) |
 
 Sub-hire costs appear in the **Costs** section of the project financial summary alongside service costs and labour costs. DRAFT and CANCELLED sub-hires are excluded from the cost calculation.
 

@@ -70,8 +70,9 @@ describe("recalcProjectTotals — totals parity", () => {
     // tax 10% of 280 = 28
     expect(p?.taxAmount).toBe(28);
     expect(p?.total).toBe(308);
-    // margin = total 308 - (svc 20 + labour 40 + subhire 15 = 75) = 233
-    expect(p?.margin).toBe(233);
+    // margin is EX GST: taxable 280 - (svc 20 + labour 40 + subhire 15 = 75) = 205
+    // (not total 308 - 75 = 233: the 28 of tax is not margin).
+    expect(p?.margin).toBe(205);
     expect(p?.updatedAt).toBe(NOW + 1);
   });
 
@@ -204,6 +205,27 @@ describe("recalcProjectTotals — totals parity", () => {
     expect(p?.subtotal).toBe(100);
     expect(p?.taxAmount).toBe(20); // 20% of 100
     expect(p?.total).toBe(120);
+  });
+
+  // The margin is EX GST. $10,000 taxable + $1,000 GST = $11,000 total with $5,000
+  // of costs is a $5,000 margin (50%), not the $6,000 (60%) that `total - costs` gave.
+  test("margin is ex GST: taxable amount less costs, never total less costs", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p1", organizationId: ORG, projectNumber: "P1", name: "Gig", status: "CONFIRMED", isTemplate: false, discountPercent: 0, createdAt: NOW, updatedAt: NOW,
+        liveVersionId: "v-p1-gst",
+      });
+      await ctx.db.insert("projectVersions", { id: "v-p1-gst", organizationId: ORG, projectId: "p1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
+      await ctx.db.insert("projectServices", { id: "s1", organizationId: ORG, projectId: "p1", type: "LABOUR", title: "Crew", status: "CONFIRMED", showOnDocuments: true, lineTotal: 10000, costTotal: 5000,
+        versionId: "v-p1-gst",
+        lineageId: "s1",
+      });
+      await recalcProjectTotals(ctx, "p1", ORG, 10, NOW);
+    });
+    const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
+    expect(p?.taxAmount).toBe(1000);
+    expect(p?.total).toBe(11000);
+    expect(p?.margin).toBe(5000);
   });
 
   // #1088 (T1) — no hardcoded tax-rate fallback. An org with neither a
@@ -365,8 +387,8 @@ describe("recalcProjectTotals — WS11 (#950) sale revenue + COGS", () => {
     // saleRevenue = 300 + 40 = 340; subtotal = 340; tax 10% = 34; total = 374
     expect(p?.saleRevenue).toBe(340);
     expect(p?.total).toBe(374);
-    // margin = total 374 - saleCostTotal 90 (no other costs) = 284
-    expect(p?.margin).toBe(284);
+    // margin (ex GST) = taxable 340 - saleCostTotal 90 (no other costs) = 250
+    expect(p?.margin).toBe(250);
   });
 
   test("cancelled/optional SALE lines are excluded from both saleRevenue and saleCostTotal", async () => {

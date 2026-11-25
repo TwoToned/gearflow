@@ -3,6 +3,8 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
+import { isTaskOverdue } from "./lib/taskDue";
 
 // Work-or-project RBAC transition (#1243): task reads were gated on `project:read`
 // before the `work` resource existed. Any already-issued API key/OAuth scope still
@@ -89,6 +91,22 @@ export const assignees = query({
 });
 
 /**
+ * The MEMBERS of this org among `userIds`, loaded ONCE per unique user (not once per task),
+ * as name + image. The users mirror is global, so a user is exposed only if they are a
+ * member of this org (`by_org_user`): a stale or foreign id resolves to nothing.
+ */
+async function loadMembers(ctx: QueryCtx, orgId: string, userIds: Iterable<string | undefined>) {
+  const people = new Map<string, { id: string; name: string; image: string | null }>();
+  for (const userId of new Set([...userIds].filter((x): x is string => !!x))) {
+    const member = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
+    if (!member) continue;
+    const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).first();
+    if (u) people.set(userId, { id: u.id, name: u.name, image: u.image ?? null });
+  }
+  return people;
+}
+
+/**
  * A project's tasks (sorted sortOrder→createdAt) with the assignee join relations the
  * board renders. dueDate is returned as an ISO string (the consumer slices it to
  * YYYY-MM-DD), matching the deleted server action's serialized shape.
@@ -102,22 +120,10 @@ export const listByProjectWithRelations = query({
     ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
+    const people = await loadMembers(ctx, orgId, rows.flatMap((t) => [t.assigneeUserId, t.createdById]));
     const out = [];
     for (const t of rows) {
-      let assigneeUser: { id: string; name: string; image: string | null } | null = null;
-      if (t.assigneeUserId) {
-        // Only expose the user's name/image if they are a MEMBER of this org (the
-        // users mirror is global — gate the join on by_org_user so a stale/foreign
-        // assigneeUserId can't leak another org's user; mirrors the assigneeCrew check).
-        const member = await ctx.db
-          .query("members")
-          .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", t.assigneeUserId as string))
-          .first();
-        if (member) {
-          const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", t.assigneeUserId as string)).first();
-          assigneeUser = u ? { id: u.id, name: u.name, image: u.image ?? null } : null;
-        }
-      }
+      const assigneeUser = t.assigneeUserId ? (people.get(t.assigneeUserId) ?? null) : null;
       let assigneeCrew: { id: string; firstName: string; lastName: string } | null = null;
       if (t.assigneeCrewId) {
         const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", t.assigneeCrewId as string)).first();
@@ -136,6 +142,10 @@ export const listByProjectWithRelations = query({
         assigneeUser,
         assigneeCrew,
         sortOrder: t.sortOrder ?? 0,
+        // The task sheet's history line (added by · when · done when).
+        createdAt: t.createdAt ?? null,
+        completedAt: t.completedAt ?? null,
+        createdByName: (t.createdById ? people.get(t.createdById)?.name : undefined) ?? null,
       });
     }
     return out;
@@ -255,6 +265,7 @@ function serializeMyOpenTask(
   t: MyOpenTaskDoc,
   projects: Map<string, { name: string; projectNumber: string }>,
   now: number,
+  timezone: string | undefined,
 ) {
   const project = projectFieldsFor(t, projects);
   return {
@@ -263,7 +274,8 @@ function serializeMyOpenTask(
     status: t.status ?? "TODO",
     priority: t.priority ?? "NORMAL",
     dueDate: t.dueDate ?? null,
-    overdue: t.dueDate != null && t.dueDate < now,
+    // THE one overdue rule (taskDue.ts): the stored due DAY against today in the org's zone.
+    overdue: isTaskOverdue(t, now, timezone),
     projectId: t.projectId ?? null,
     projectName: project.name,
     projectNumber: project.projectNumber,
@@ -285,7 +297,8 @@ export const myOpenTasks = query({
     const bounded = sortMyOpenTasks([...byId.values()]).slice(0, MY_OPEN_TASKS_LIMIT);
     const projects = await resolveProjectsFor(ctx, bounded);
 
-    return bounded.map((t) => serializeMyOpenTask(t, projects, now));
+    const { timezone } = await resolveOrgInvoiceConfig(ctx, orgId);
+    return bounded.map((t) => serializeMyOpenTask(t, projects, now, timezone));
   },
 });
 

@@ -1183,6 +1183,10 @@ other fields:
 - Sale lines ride in their existing category/group bucket — there is no
   separate "Sales" section; the badge is the only differentiator.
 
+## Call sheet crew notes (UX Phase 10)
+
+The pdfme call sheet (`templates/call-sheet-services.ts`) prints the job's crew notes on its FIRST page under the info block: a `CREW NOTES` heading and the notes as plain lines (`src/lib/crew-notes-print.ts` strips `**`/`*` markers; bullets print as `- ` because pdfme is Helvetica-only). The block's height shifts the table start and shrinks page 1's row budget by the same amount (`paginateSections(sections, notesHeight)`), so no row is dropped. It is capped at 12 rows and ends with a pointer back to the job's Crew notes. No notes = no block, the sheet is byte-for-byte the old layout. Pipeline test: `templates/call-sheet-crew-notes.test.ts`. The Logistics run sheet print reads the same helper.
+
 ## T&T Reports
 
 10 report types generated via pdfme, each with a template builder in `src/lib/pdfme/templates/tt-*.ts`. API route: `GET /api/test-tag-reports/[reportType]?format=pdf|csv`. CSV export is unchanged. These builders are **not** part of the project-document pipeline above and were unaffected by the #790 redesign.

@@ -9,7 +9,7 @@ import { ChevronDown } from "lucide-react";
 import { DetailHeader } from "@/components/ui/detail-header";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { CommentThreadPanel } from "@/components/collaboration/comment-thread-panel";
+import { DiscussionBadge } from "@/components/projects/discussion-badge";
 import { CallSheetDialog } from "@/components/projects/call-sheet-dialog";
 import { DuplicateProjectDialog } from "@/components/projects/duplicate-project-dialog";
 import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
@@ -193,25 +193,17 @@ function useBlockingCount(orgId: string | undefined, projectId: string, isTempla
 
 const openTab = (path: string) => window.open(path, "_blank");
 
-/** Controlled when the caller passes `open` + `onOpenChange`; local state otherwise. */
-function useControllableOpen(open: boolean | undefined, onOpenChange: ((o: boolean) => void) | undefined) {
-  const [local, setLocal] = React.useState(false);
-  return [open ?? local, onOpenChange ?? setLocal] as const;
-}
-
 /** The dialogs and sheets the header opens. Each is the component the old hero used. */
-function JobHeaderDialogs({ project, orgId, writes, state }: {
+function JobHeaderDialogs({ project, writes, state }: {
   project: JobHeaderProject;
-  orgId: string | undefined;
   writes: ReturnType<typeof useJobHeaderWrites>;
   state: {
     dupMode: DupMode; setDupMode: (m: DupMode) => void;
     callSheetOpen: boolean; setCallSheetOpen: (o: boolean) => void;
-    commentsOpen: boolean; setCommentsOpen: (o: boolean) => void;
     deleteOpen: boolean; setDeleteOpen: (o: boolean) => void;
   };
 }) {
-  const { id, isTemplate } = project;
+  const { id } = project;
   return (
     <>
       <ConfirmStatusImpactDialog
@@ -221,9 +213,6 @@ function JobHeaderDialogs({ project, orgId, writes, state }: {
         onConfirm={writes.confirmGate.confirmPending}
         onCancel={writes.confirmGate.cancelPending}
       />
-      {orgId && !isTemplate ? (
-        <CommentThreadPanel orgId={orgId} entityType="project" entityId={id} open={state.commentsOpen} onOpenChange={state.setCommentsOpen} noTrigger />
-      ) : null}
       {state.dupMode ? (
         <DuplicateProjectDialog
           open
@@ -255,17 +244,15 @@ export function JobHeader({
   onOpenTab,
   onOpenVersions,
   onMakeLive,
-  commentsOpen: commentsOpenProp,
-  onCommentsOpenChange,
+  onOpenDiscussion,
 }: {
   project: JobHeaderProject;
   orgId: string | undefined;
   onOpenTab: (tab: JobTabKey) => void;
   onOpenVersions: () => void;
   onMakeLive: (target: ProjectVersionSummary) => void;
-  /** Controlled comments panel, so the Overview's discussion links open the SAME one. */
-  commentsOpen?: boolean;
-  onCommentsOpenChange?: (open: boolean) => void;
+  /** Jump to the Discussion section of the Tasks & notes tab (the ⋯ item and the count badge). */
+  onOpenDiscussion: () => void;
 }) {
   const router = useRouter();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -274,7 +261,6 @@ export function JobHeader({
 
   const [dupMode, setDupMode] = React.useState<DupMode>(null);
   const [callSheetOpen, setCallSheetOpen] = React.useState(false);
-  const [commentsOpen, setCommentsOpen] = useControllableOpen(commentsOpenProp, onCommentsOpenChange);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [docsOpened, setDocsOpened] = React.useState(false);
   // Frozen at mount: it only feeds the payment strip's derived EXPIRED read (never query args that tick).
@@ -284,7 +270,7 @@ export function JobHeader({
   const { isViewingVersion } = useProjectVersion();
   const blockingCount = useBlockingCount(orgId, id, isTemplate);
 
-  const writes = useJobHeaderWrites({ projectId: id, orgId, blockingCount, pricingLock, openComments: () => setCommentsOpen(true) });
+  const writes = useJobHeaderWrites({ projectId: id, orgId, blockingCount, pricingLock, openComments: onOpenDiscussion });
   const versionItem = useVersionMenuItem(onOpenVersions);
   const labels = useHeaderLabels(id, docsOpened);
   useVersionsShortcut(onOpenVersions);
@@ -311,7 +297,7 @@ export function JobHeader({
       openCallSheet: () => setCallSheetOpen(true),
       openTimeline: () => openTab(`/api/documents/timeline/${id}`),
       openFinance: () => onOpenTab("finance"),
-      openComments: () => setCommentsOpen(true),
+      openComments: onOpenDiscussion,
       openWarehouse: () => router.push(`/warehouse/${id}`),
       openRunsheet: () => router.push(`/projects/${id}/runsheet`),
       duplicate: () => setDupMode("duplicate"),
@@ -339,11 +325,11 @@ export function JobHeader({
         <CancelledNotice status={status} canUpdate={can.update} onSetStatus={requestStatus} onDelete={() => setDeleteOpen(true)} />
       ) : null}
       {live ? <PaymentProgressStrip projectId={id} orgId={orgId} status={status} now={now} /> : null}
+      {live ? <DiscussionBadge projectId={id} orgId={orgId} onOpen={onOpenDiscussion} /> : null}
       <JobHeaderDialogs
         project={project}
-        orgId={orgId}
         writes={writes}
-        state={{ dupMode, setDupMode, callSheetOpen, setCallSheetOpen, commentsOpen, setCommentsOpen, deleteOpen, setDeleteOpen }}
+        state={{ dupMode, setDupMode, callSheetOpen, setCallSheetOpen, deleteOpen, setDeleteOpen }}
       />
     </div>
   );

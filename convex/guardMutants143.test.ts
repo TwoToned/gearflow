@@ -109,7 +109,10 @@ describe("list reads: truncated flags and unknown sort keys", () => {
     const t = makeT();
     await seed(t);
     await t.run(async (ctx) => {
+      // Two rows each: the comparator only runs (and only throws on a missing key function) with 2+ rows.
       await ctx.db.insert("testTagAssets", { id: "tt1", organizationId: ORG, testTagId: "TT-1", description: "Lead", isActive: true } as never);
+      await ctx.db.insert("testTagAssets", { id: "tt2", organizationId: ORG, testTagId: "TT-2", description: "Lead", isActive: true } as never);
+      for (const n of [1, 2]) await ctx.db.insert("maintenanceRecords", { id: `ms${n}`, organizationId: ORG, type: "REPAIR", title: `Sort ${n}`, status: "SCHEDULED", scheduledDate: n } as never);
     });
     for (const sortBy of ["toString", "constructor", "__proto__", "notAField"]) {
       await expect(as(t).query(api.maintenanceList.listPage, { orgId: ORG, segment: "all", sortBy })).resolves.toBeTruthy();

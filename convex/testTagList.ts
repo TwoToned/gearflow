@@ -82,7 +82,7 @@ export const listPage = query({
     const seg = parseTestTagSegment(a.segment);
     const now = resolveNow(a.now);
     const days = clampDueSoonDays(a.dueSoonDays);
-    const sortBy = a.sortBy && a.sortBy in SORT_KEYS ? a.sortBy : "nextDue";
+    const sortBy = a.sortBy && Object.hasOwn(SORT_KEYS, a.sortBy) ? a.sortBy : "nextDue";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
     const [items, profiles] = await Promise.all([
       collectCapped(ctx.db.query("testTagAssets").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))),

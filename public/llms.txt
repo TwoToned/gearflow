@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (664 agent-reachable)
+## Operations (671 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -297,8 +297,13 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 
 ### maintenance
 - `incidentWrites.reportIssueNative` (mutation, scope: maintenance:create)
+- `maintenanceBulkWrites.bulkAssignNative` (mutation, scope: maintenance:update)
+- `maintenanceBulkWrites.bulkRescheduleNative` (mutation, scope: maintenance:update)
+- `maintenanceBulkWrites.undoBulkEditNative` (mutation, scope: maintenance:update)
 - `maintenanceCheckoffWrites.checkOffBulkSession` (mutation, scope: maintenance:update)
 - `maintenanceCheckoffWrites.checkOffUnit` (mutation, scope: maintenance:update)
+- `maintenanceList.listPage` (query, scope: maintenance:read)
+- `maintenanceList.segmentCounts` (query, scope: maintenance:read)
 - `maintenanceRecordAssets.getById` (query, scope: maintenance:read)
 - `maintenanceRecordAssets.list` (query, scope: maintenance:read)
 - `maintenanceRecords.assetsForSelect` (query, scope: maintenance:read)
@@ -658,6 +663,8 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `testTagAssetsWrites.undoCreateNative` (mutation, scope: testTag:create)
 - `testTagAssetsWrites.undoReactivateNative` (mutation, scope: testTag:update)
 - `testTagAssetsWrites.updateNative` (mutation, scope: testTag:update)
+- `testTagList.listPage` (query, scope: testTag:read)
+- `testTagList.segmentCounts` (query, scope: testTag:read)
 - `testTagRecords.latestForAsset` (query, scope: testTag:read)
 - `testTagRecords.recordsPage` (query, scope: testTag:read)
 - `testTagRecordsWrites.createNative` (mutation, scope: testTag:create)

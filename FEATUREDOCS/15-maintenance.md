@@ -2,6 +2,22 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-26 (review quarterly — POLICY.md R-5.5)_
 
+## The Maintenance list (UX Phase 14, 14a-3, `/maintenance`)
+A `ListPage` (`src/components/maintenance/maintenance-list.tsx`, config `src/lib/list-views/maintenance.ts`) over
+`maintenanceList.listPage` / `segmentCounts`. The four stat tiles and the overdue banner are replaced by the strip
+`Open · Overdue · Scheduled · Done · All` with counts. Open and Overdue are THE definitions in
+`convex/lib/maintenanceOpen.ts` (the same ones Home and the More sheet count by); held work (awaiting parts, QA) is
+open but not overdue. Columns Asset, Status, Due, Assigned; opt-in Cost, Reported by, Completed, Tags. Filters Type,
+Status, Result. Search matches title, description, tags and (within a read budget) linked asset tags and model names.
+- **Cost is a job-cost field**: ABSENT from the payload for a caller who fails `canSeeJobCost` (`invoice:read` and not a
+  `noFinancials` key), and ordering by it falls back to the default order ascending whatever direction was asked.
+- Row menu: Open, Edit, `Reschedule…`, `Assign…`, `Delete…` (confirm, no Undo). Bulk `Reschedule n` and `Assign n`
+  (`maintenanceBulkWrites`): open records only (finished or cancelled ones are skipped and named in the toast), one
+  field-edit audit row per changed record, and ONE toast Undo (`undoBulkEditNative`, ids only, all or nothing,
+  author, 10 minutes, once, refuses if a record changed since). Neither verb touches an asset hold: that follows
+  STATUS. `Mark done` (Complete/Reopen), `Check off cycle` and the parts table arrive with the record slice (14b-3).
+- The page menu links to `/maintenance/due` (service schedules and per-cycle check-off) until that moves into dialogs.
+
 ## Multi-Asset Records
 One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` join table. The form adds assets via a `ComboboxPicker` builder that appends each pick as a removable chip (see Maintenance Form below).
 

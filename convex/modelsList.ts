@@ -139,7 +139,7 @@ const MODEL_SORT_KEYS: Record<string, (m: Doc<"models">, c: SortCtx) => unknown>
 function effectiveModelSort(sortBy: string | undefined, dir: 1 | -1, redacted: boolean): { sortBy: string; dir: 1 | -1 } {
   const s = sortBy ?? "name";
   const isCost = (MODEL_COST_FIELDS as readonly string[]).includes(s);
-  if (!(s in MODEL_SORT_KEYS) || (redacted && isCost)) return { sortBy: "name", dir: 1 };
+  if (!Object.hasOwn(MODEL_SORT_KEYS, s) || (redacted && isCost)) return { sortBy: "name", dir: 1 };
   return { sortBy: s, dir };
 }
 
@@ -258,7 +258,7 @@ export const saleStockPage = query({
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "model");
     const seg = parseSaleStockSegment(a.segment);
-    const sortBy = a.sortBy && a.sortBy in SALE_SORT_KEYS ? a.sortBy : "available";
+    const sortBy = a.sortBy && Object.hasOwn(SALE_SORT_KEYS, a.sortBy) ? a.sortBy : "available";
     const dir: 1 | -1 = a.sortOrder === "desc" ? -1 : 1;
     const [models, categories] = await Promise.all([
       collectCapped(ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", a.orgId))),

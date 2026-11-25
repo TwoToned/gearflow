@@ -28534,6 +28534,167 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "maintenanceBulkWrites.bulkAssignNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "bulkAssignNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "assignedToId",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4e0c447cf2c157b5",
+    "returnsSha": "cf4da9d71bf7886b",
+    "stability": "tracks-app",
+    "summary": "Assign (or unassign) several open maintenance records to a member (finished ones are skipped).",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceBulkWrites.bulkRescheduleNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "bulkRescheduleNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "scheduledDate",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "846fc20856a46550",
+    "returnsSha": "cf4da9d71bf7886b",
+    "stability": "tracks-app",
+    "summary": "Move the scheduled date of several open maintenance records (finished ones are skipped).",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceBulkWrites.undoBulkEditNative",
+    "module": "maintenanceBulkWrites",
+    "fn": "undoBulkEditNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "maintenance",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "db212aac57a35423",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent bulk reschedule or assign by its audit ids (refuses if a field changed since).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "maintenanceCheckoffWrites.checkOffBulkSession",
     "module": "maintenanceCheckoffWrites",
     "fn": "checkOffBulkSession",
@@ -28663,6 +28824,125 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceList.listPage",
+    "module": "maintenanceList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "resultIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "statusIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fe6e51b3e06d6610",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Maintenance list with derived Open / Overdue / Scheduled / Done segments, linked assets and assignee. Cost only for callers who can see job cost.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "maintenanceList.segmentCounts",
+    "module": "maintenanceList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "maintenance",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "maintenance",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Maintenance list (open, overdue, scheduled, done, all).",
+    "danger": null,
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -58891,6 +59171,140 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "testTagList.listPage",
+    "module": "testTagList",
+    "fn": "listPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "classIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "dueSoonDays",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "linkIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "profileIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "typeIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "43e51ae57bebb525",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "One page of the Test and tag list with derived Due / Overdue / Passed / Failed state, last test and tester.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagList.segmentCounts",
+    "module": "testTagList",
+    "fn": "segmentCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "dueSoonDays",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "50609db75fa0f8c5",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Strip counts for the Test and tag list (due, overdue, passed, failed, all, retired).",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "testTagRecords.create",
     "module": "testTagRecords",
     "fn": "create",
@@ -66933,10 +67347,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1296,
-  agentReachable: 664,
-  queries: 464,
-  mutations: 832,
-  agentReachableQueries: 328,
-  agentReachableMutations: 336,
+  total: 1303,
+  agentReachable: 671,
+  queries: 468,
+  mutations: 835,
+  agentReachableQueries: 332,
+  agentReachableMutations: 339,
 } as const;

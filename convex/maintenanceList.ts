@@ -67,7 +67,7 @@ const COST_SORT_KEYS: readonly string[] = ["cost"];
  */
 function effectiveSort(sortBy: string | undefined, dir: 1 | -1, seesCost: boolean): { sortBy: string; dir: 1 | -1 } {
   const s = sortBy ?? "scheduledDate";
-  if (!(s in SORT_KEYS) || (!seesCost && COST_SORT_KEYS.includes(s))) return { sortBy: "scheduledDate", dir: 1 };
+  if (!Object.hasOwn(SORT_KEYS, s) || (!seesCost && COST_SORT_KEYS.includes(s))) return { sortBy: "scheduledDate", dir: 1 };
   return { sortBy: s, dir };
 }
 

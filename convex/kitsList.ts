@@ -88,7 +88,7 @@ const KIT_COST_SORT_KEYS: readonly string[] = KIT_COST_FIELDS;
  */
 function effectiveKitSort(sortBy: string | undefined, dir: 1 | -1, redacted: boolean): { sortBy: string; dir: 1 | -1 } {
   const s = sortBy ?? "assetTag";
-  if (!(s in KIT_SORT_KEYS) || (redacted && KIT_COST_SORT_KEYS.includes(s))) return { sortBy: "assetTag", dir: 1 };
+  if (!Object.hasOwn(KIT_SORT_KEYS, s) || (redacted && KIT_COST_SORT_KEYS.includes(s))) return { sortBy: "assetTag", dir: 1 };
   return { sortBy: s, dir };
 }
 

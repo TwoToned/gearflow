@@ -33,6 +33,9 @@ export function useMaintenanceWrites() {
   const updateM = useMutation(api.maintenanceWrites.updateNative);
   const deleteM = useMutation(api.maintenanceWrites.deleteNative);
   const undoCreateM = useMutation(api.maintenanceWrites.undoCreateNative);
+  const rescheduleM = useMutation(api.maintenanceBulkWrites.bulkRescheduleNative);
+  const assignM = useMutation(api.maintenanceBulkWrites.bulkAssignNative);
+  const undoBulkM = useMutation(api.maintenanceBulkWrites.undoBulkEditNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => {
@@ -113,6 +116,18 @@ export function useMaintenanceWrites() {
      */
     undoCreate: async (id: string): Promise<{ ok: boolean }> => {
       return await undoCreateM({ orgId: requireOrg(), id, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Bulk `Reschedule…`: open records only; returns the audit ids the toast's Undo takes (`undoBulkEdit`). */
+    bulkReschedule: async (ids: string[], scheduledDate: number): Promise<{ count: number; skipped: number; auditIds: string[] }> => {
+      return await rescheduleM({ orgId: requireOrg(), ids, scheduledDate, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Bulk `Assign…` (`null` unassigns). */
+    bulkAssign: async (ids: string[], assignedToId: string | null): Promise<{ count: number; skipped: number; auditIds: string[] }> => {
+      return await assignM({ orgId: requireOrg(), ids, assignedToId, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** Exactly reverses a bulk reschedule or assign (ids only; refuses the whole batch if any record changed since). */
+    undoBulkEdit: async (auditIds: string[]): Promise<{ restored: number }> => {
+      return await undoBulkM({ orgId: requireOrg(), auditIds, now: Date.now(), actor: actor() });
     },
     remove: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();

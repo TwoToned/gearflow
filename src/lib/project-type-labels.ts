@@ -14,3 +14,6 @@ export const PROJECT_TYPE_LABELS: Record<string, string> = {
   CONFERENCE: "Conference",
   OTHER: "Other",
 };
+
+/** The same words as `{ value, label }` for a Select (the job form's Type). */
+export const PROJECT_TYPE_OPTIONS = Object.entries(PROJECT_TYPE_LABELS).map(([value, label]) => ({ value, label }));

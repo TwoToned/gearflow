@@ -7,6 +7,8 @@ import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeJobCost, jobCostRedactor } from "./lib/crewPayVisibility";
 import { JOB_COST_FIELDS } from "./lib/crewPayFields";
+import { getProjectWindow } from "./lib/projectWindow";
+import { DEAD_PROJECT_STATUSES, HARD_PROJECT_STATUSES } from "./lib/availabilityCore";
 import { createLiveVersionForProject } from "./lib/projectVersionState";
 import {
   JOB_SEGMENT_KEYS,
@@ -189,6 +191,43 @@ export const needsYouIds = query({
     const rows = (await loadOrgProjects(ctx, orgId)).filter((p) => !p.isTemplate);
     const ids = await needsYouProjectIds(ctx, orgId, rows, now);
     return [...ids].sort();
+  },
+});
+
+/** Rows returned by `windowOverlap` (the wizard names the first few, `total` is the true count). */
+const WINDOW_OVERLAP_CAP = 50;
+
+/**
+ * Other jobs whose GEAR window overlaps `[start, end]` (UX Phase 9, the wizard's
+ * dates-and-availability line and the calendar's busy-day dots). Same window rule
+ * as every availability read (`getProjectWindow`: project window, else rental),
+ * org-scoped by the read, never the job itself, never a template, and never a
+ * status whose gear is back or released (`DEAD_PROJECT_STATUSES`, the same set every
+ * availability read skips). `hard` marks the statuses that hold gear
+ * (`HARD_PROJECT_STATUSES`). Ordered by gear start, EARLIEST first, then capped AFTER
+ * the filter; `total` is the true count and `truncated` says the cap bit.
+ */
+export const windowOverlap = query({
+  args: { orgId: v.string(), start: v.number(), end: v.number(), excludeProjectId: v.optional(v.string()) },
+  handler: async (ctx, { orgId, start, end, excludeProjectId }) => {
+    await requireOrgReadFor(ctx, orgId, "project");
+    const hits = (await loadOrgProjects(ctx, orgId))
+      .filter((p) => !p.isTemplate && !DEAD_PROJECT_STATUSES.includes(p.status ?? "ENQUIRY") && p.id !== excludeProjectId)
+      .map((p) => ({ p, w: getProjectWindow(p) }))
+      .filter(({ w }) => w.start != null && w.end != null && w.start <= end && w.end >= start)
+      .sort((a, b) => (a.w.start ?? 0) - (b.w.start ?? 0));
+    return {
+      total: hits.length,
+      truncated: hits.length > WINDOW_OVERLAP_CAP,
+      jobs: hits.slice(0, WINDOW_OVERLAP_CAP).map(({ p, w }) => ({
+        id: p.id,
+        number: p.projectNumber,
+        status: p.status ?? "ENQUIRY",
+        start: w.start as number,
+        end: w.end as number,
+        hard: HARD_PROJECT_STATUSES.has(p.status ?? "ENQUIRY"),
+      })),
+    };
   },
 });
 
@@ -613,6 +652,7 @@ export const agentOps: AgentOpsAnnotations = {
   listPage: { summary: "Filtered, sorted, paginated project list with client join.", danger: "low", mcpTier: 1 },
   segmentCounts: { summary: "Counts for the Jobs list strip: all, active, quoting, booked, out, done and needs-you.", danger: "low", mcpTier: 3 },
   needsYouIds: { summary: "Ids of jobs that need attention: open blocking comment, overdue return, hard overbooking, or a stale quote.", danger: "low", mcpTier: 3 },
+  windowOverlap: { summary: "Other jobs whose gear window overlaps a date range (number, status, window; capped at 50 with the true total).", danger: "low", mcpTier: 3 },
   listBoard: { summary: "Browse an org's non-template, non-cancelled projects grouped for the kanban board.", danger: "low", mcpTier: 2 },
   listByIds: { summary: "Batch point-read projects by id, scoped to one org.", danger: "low", mcpTier: 2 },
   getByOrgAndNumber: { summary: "Look up a project by its human-facing project number.", danger: "low", mcpTier: 1 },

@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useNavItems } from "@/hooks/use-nav-items";
+import { useOpenJobEdit } from "@/hooks/use-open-job-edit";
 import { api } from "../../../../convex/_generated/api";
 import { ProjectManagersPanel } from "@/components/projects/project-managers-panel";
 import { formatDate } from "@/lib/formatters";
@@ -22,10 +23,9 @@ import { OverviewLabel, OverviewLine, OverviewLinks, OverviewTextButton, Overvie
  * (`project-context-rail.tsx`); which schedule rows exist and whether there
  * are directions come from `@/lib/project-context`, shared with the rail, so
  * the two renderings can't disagree about the facts (R-3.1). `Edit dates` and
- * Where's `Edit` go to the job edit page until Phase 9's sheets.
+ * Where's `Edit` open the job edit sheet in place (`?edit=1`).
  */
 
-const editHref = (projectId: string) => `/projects/${projectId}/edit`;
 
 function scheduleLine(project: ProjectContextProject): string | null {
   const rows = projectScheduleRows(project);
@@ -33,7 +33,8 @@ function scheduleLine(project: ProjectContextProject): string | null {
   return rows.map((r) => `${r.label} ${formatDate(r.date ?? null)}${r.time ? ` ${r.time}` : ""}`).join(" · ");
 }
 
-export function OverviewWhen({ projectId, project, onOpenLogistics }: { projectId: string; project: ProjectContextProject; onOpenLogistics: () => void }) {
+export function OverviewWhen({ project, onOpenLogistics }: { project: ProjectContextProject; onOpenLogistics: () => void }) {
+  const openEdit = useOpenJobEdit();
   const rental = rentalDatesLabel(project.rentalStartDate, project.rentalEndDate);
   const jobWindow = scheduleLine(project);
   return (
@@ -48,14 +49,15 @@ export function OverviewWhen({ projectId, project, onOpenLogistics }: { projectI
       )}
       <OverviewLine muted>{jobWindow ?? "No job window — same as the rental dates"}</OverviewLine>
       <OverviewLinks>
-        <OverviewTextLink href={editHref(projectId)}>Edit dates</OverviewTextLink>
+        <OverviewTextButton onClick={openEdit}>Edit dates</OverviewTextButton>
         <OverviewTextButton onClick={onOpenLogistics}>Logistics ›</OverviewTextButton>
       </OverviewLinks>
     </div>
   );
 }
 
-export function OverviewWhere({ projectId, project }: { projectId: string; project: ProjectContextProject }) {
+export function OverviewWhere({ project }: { project: ProjectContextProject }) {
+  const openEdit = useOpenJobEdit();
   const loc = project.location;
   const directions = directionsHref(project);
   return (
@@ -82,7 +84,7 @@ export function OverviewWhere({ projectId, project }: { projectId: string; proje
         <OverviewLine muted>No location set</OverviewLine>
       )}
       <OverviewLinks>
-        <OverviewTextLink href={editHref(projectId)}>Edit</OverviewTextLink>
+        <OverviewTextButton onClick={openEdit}>Edit</OverviewTextButton>
       </OverviewLinks>
     </div>
   );

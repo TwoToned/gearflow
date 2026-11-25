@@ -95,10 +95,12 @@ test.describe("harness: project versioning v2", () => {
     await test.step("create a project", async () => {
       await page.goto("/projects/new");
       await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
-      await page.getByRole("button", { name: "Continue" }).focus();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
+      await page.locator('input[name="projectNumber"]').fill(`E2E-${Date.now()}`);
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      // The first Next writes the draft job (async): wait for the What step before the second press.
+      await expect(page.getByRole("button", { name: /^What/ })).toHaveAttribute("aria-current", "step", { timeout: 30000 });
+      await page.getByRole("button", { name: "Next", exact: true }).click();
       await page.getByRole("button", { name: "Create job" }).click();
       await expect(page).toHaveURL(/\/projects\/(?!new$)[^/]+$/, { timeout: 20000 });
       projectUrl = page.url();

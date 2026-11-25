@@ -58,7 +58,7 @@ export function ClientMergeDialog({
         title: `Merged ${loser.name} into ${keep.name} · ${plural(c.projects, "job")}, ${plural(c.invoices, "invoice")}, ${plural(c.contacts, "contact")} moved`,
         undoneTitle: `Undone · ${loser.name} restored`,
         performUndo: async () => {
-          const r = await undo({ orgId, forwardAuditId: auditId, auditId: createId(), now: Date.now(), actor: actor() });
+          const r = await undo({ orgId, forwardAuditId: auditId, now: Date.now(), actor: actor() });
           return r.left.length > 0 ? `${loser.name} restored · ${plural(r.left.length, "record")} had changed since and stayed` : undefined;
         },
       });

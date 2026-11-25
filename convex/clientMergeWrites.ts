@@ -9,6 +9,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { collectCapped } from "./lib/pagination";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
+import { undoMarkerId } from "./lib/fieldEditUndo";
 import { MAX_TAGS } from "./lib/tagLimits";
 
 /**
@@ -169,14 +170,19 @@ async function byCuid<T extends "projects" | "projectVersions" | "invoices" | "c
   return out;
 }
 
+/** The deterministic `undo:<auditId>` marker, the same once-only check every other Undo uses (never a bounded scan). */
+async function isMergeUndone(ctx: QueryCtx | MutationCtx, orgId: string, forwardAuditId: string): Promise<boolean> {
+  const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(forwardAuditId))).first();
+  return !!marker && marker.organizationId === orgId;
+}
+
 async function loadUndoableMerge(ctx: MutationCtx, orgId: string, forwardAuditId: string, userId: string) {
   const forward = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", forwardAuditId)).first();
   const d = forward?.details as MergeSnapshot | undefined;
   if (!forward || forward.organizationId !== orgId || d?.kind !== KIND) throw new ConvexError("That merge was not found.");
   if (forward.userId !== userId) throw new ConvexError("Only the person who merged can undo it.");
   assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
-  const prior = await collectCapped(ctx.db.query("activityLogs").withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "client").eq("entityId", d.loserId)), 200);
-  if (prior.rows.some((r) => r.action === "UNDO" && (r.details as { undoOf?: string } | undefined)?.undoOf === forwardAuditId)) throw new ConvexError("That merge was already undone.");
+  if (await isMergeUndone(ctx, orgId, forwardAuditId)) throw new ConvexError("That merge was already undone.");
   const loser = await loadClientInOrg(ctx, d.loserId, orgId);
   if ((loser.isActive ?? true) !== false) throw new ConvexError("The merged client was reactivated since, so this can't be undone.");
   return { forward, d, loser };
@@ -191,7 +197,7 @@ async function loadUndoableMerge(ctx: MutationCtx, orgId: string, forwardAuditId
  */
 export const undoClientMergeNative = mutation({
   returns: v.object({ restored: v.number(), left: v.array(v.object({ table: v.string(), id: v.string() })) }),
-  args: { orgId: v.string(), forwardAuditId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  args: { orgId: v.string(), forwardAuditId: v.string(), now: v.number(), actor: actorValidator },
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "client");
     await enforceBrowserWriteLimit(ctx);
@@ -231,12 +237,20 @@ export const undoClientMergeNative = mutation({
     else left.push({ table: "clients", id: survivor.id });
     await ctx.db.patch(loser._id, { isActive: true, updatedAt: a.now });
     await writeActivityLog(ctx, {
-      id: a.auditId, organizationId: a.orgId, action: "UNDO", entityType: "client", entityId: loser.id, entityName: loser.name,
+      id: undoMarkerId(a.forwardAuditId), organizationId: a.orgId, action: "UNDO", entityType: "client", entityId: loser.id, entityName: loser.name,
       userId: actor.userId, userName: actor.userName, summary: `Undid the merge of ${loser.name}`, details: { undoOf: forward.id, left }, createdAt: a.now,
     });
     return { restored, left };
   },
 });
+
+/** The newest merge row whose `undo:` marker does not exist. */
+async function newestLiveMerge<R extends { id: string; createdAt?: number }>(ctx: QueryCtx, orgId: string, merges: R[]): Promise<R | undefined> {
+  for (const m of [...merges].sort((x, y) => (y.createdAt ?? 0) - (x.createdAt ?? 0))) {
+    if (!(await isMergeUndone(ctx, orgId, m.id))) return m;
+  }
+  return undefined;
+}
 
 /** The client a merged-away client was merged into (from the forward audit row), or null. */
 export const mergedInto = query({
@@ -246,11 +260,10 @@ export const mergedInto = query({
     const client = await loadClientInOrg(ctx, id, orgId);
     if ((client.isActive ?? true) !== false) return null;
     const rows = (await collectCapped(ctx.db.query("activityLogs").withIndex("by_organizationId_entityType_entityId", (q) => q.eq("organizationId", orgId).eq("entityType", "client").eq("entityId", id)), 200)).rows;
-    const undone = new Set(rows.filter((r) => r.action === "UNDO").map((r) => (r.details as { undoOf?: string } | undefined)?.undoOf));
-    const merge = rows.filter((r) => r.action === "MERGE" && !undone.has(r.id)).sort((x, y) => (y.createdAt ?? 0) - (x.createdAt ?? 0))[0];
+    const merge = await newestLiveMerge(ctx, orgId, rows.filter((r) => r.action === "MERGE"));
     const survivorId = (merge?.details as MergeSnapshot | undefined)?.survivorId;
     if (!survivorId) return null;
     const survivor = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", survivorId)).first();
-    return survivor && survivor.organizationId === orgId ? { id: survivor.id, name: survivor.name, forwardAuditId: merge.id } : null;
+    return survivor && survivor.organizationId === orgId ? { id: survivor.id, name: survivor.name, forwardAuditId: merge!.id } : null;
   },
 });

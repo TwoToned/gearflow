@@ -46,7 +46,7 @@ const row = <K extends "projects" | "invoices" | "clientContacts" | "clientMedia
 const merge = (t: T, over: Record<string, unknown> = {}, who = as(t)) =>
   who.mutation(api.clientMergeWrites.mergeClientsNative, { orgId: ORG, survivorId: "keep", loserId: "gone", auditId: "aM", receivedAuditId: "aR", now: NOW, actor, ...over });
 const undo = (t: T, over: Record<string, unknown> = {}, who = as(t)) =>
-  who.mutation(api.clientMergeWrites.undoClientMergeNative, { orgId: ORG, forwardAuditId: "aM", auditId: "aU", now: NOW + 1, actor, ...over });
+  who.mutation(api.clientMergeWrites.undoClientMergeNative, { orgId: ORG, forwardAuditId: "aM", now: NOW + 1, actor, ...over });
 
 describe("mergeClientsNative", () => {
   test("moves exactly the listed rows, archives the loser, never touches another org", async () => {
@@ -126,7 +126,7 @@ describe("undoClientMergeNative", () => {
     const t = makeT(); await seed(t);
     await merge(t);
     await undo(t);
-    await expect(undo(t, { auditId: "aU2" })).rejects.toThrow(/already undone|reactivated/);
+    await expect(undo(t)).rejects.toThrow(/already undone|reactivated/);
     const t2 = makeT(); await seed(t2);
     await t2.run(async (ctx) => { await ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: "admin" }); });
     await merge(t2);
@@ -139,6 +139,61 @@ describe("undoClientMergeNative", () => {
       await ctx.db.patch(f!._id, { details: { ...(f!.details as object), serverSavedAt: Date.now() - 11 * 60 * 1000 } });
     });
     await expect(undo(t3)).rejects.toThrow(/10 minutes/);
+  });
+
+  test("`once` is the deterministic undo: marker: a second Undo is refused even after the loser is archived again", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await undo(t);
+    expect(await row(t, "activityLogs" as never, "undo:aM")).toBeTruthy();
+    await t.run(async (ctx) => { const g = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", "gone")).first(); await ctx.db.patch(g!._id, { isActive: false }); });
+    await expect(undo(t)).rejects.toThrow(/already undone/);
+  });
+
+  test("another org cannot undo this org's merge, and a planted foreign id in the snapshot is never touched", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mo", organizationId: OTHER, userId: USER, role: "admin" }); });
+    await expect(undo(t, { orgId: OTHER }, t.withIdentity({ subject: USER, orgId: OTHER, role: "admin" }))).rejects.toThrow(/not found/);
+    expect((await row(t, "projects", "p1"))?.clientId).toBe("keep");
+    // The foreign project `px` still points at "gone"; planting its id in the forward row's moved list must not move it.
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "px")).first())!._id, { clientId: "keep" });
+      const f = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "aM")).first();
+      const d = f!.details as { moved: { projects: string[] } };
+      await ctx.db.patch(f!._id, { details: { ...d, moved: { ...d.moved, projects: [...d.moved.projects, "px"] } } });
+    });
+    await undo(t);
+    expect((await row(t, "projects", "px"))?.clientId).toBe("keep");
+    expect((await row(t, "projects", "p1"))?.clientId).toBe("gone");
+  });
+
+  test("compare-and-set: a contact, a link and the tags changed since are left and named, not clobbered", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await t.run(async (ctx) => {
+      await ctx.db.patch((await ctx.db.query("clientContacts").withIndex("by_cuid", (q) => q.eq("id", "cc1")).first())!._id, { clientId: "elsewhere" });
+      await ctx.db.patch((await ctx.db.query("workItemLinks").withIndex("by_cuid", (q) => q.eq("id", "wl1")).first())!._id, { entityId: "elsewhere" });
+      await ctx.db.patch((await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", "keep")).first())!._id, { tags: ["vip", "hotel", "later"] });
+    });
+    const res = await undo(t);
+    expect(res.left).toEqual(expect.arrayContaining([{ table: "clientContacts", id: "cc1" }, { table: "workItemLinks", id: "wl1" }, { table: "clients", id: "keep" }]));
+    expect((await row(t, "clientContacts", "cc1"))?.clientId).toBe("elsewhere");
+    expect((await row(t, "workItemLinks", "wl1"))?.entityId).toBe("elsewhere");
+    expect((await row(t, "clients", "keep"))?.tags).toEqual(["vip", "hotel", "later"]);
+  });
+
+  test("a role without invoice:update cannot merge or undo, and the survivor must be active", async () => {
+    const t = makeT(); await seed(t, "member");
+    await expect(merge(t, {}, as(t, "member"))).rejects.toThrow();
+    expect((await row(t, "clients", "gone"))?.isActive).toBe(true);
+    const t2 = makeT(); await seed(t2);
+    await merge(t2);
+    await t2.run(async (ctx) => { await ctx.db.patch((await ctx.db.query("members").first())!._id, { role: "member" }); });
+    await expect(undo(t2, {}, as(t2, "member"))).rejects.toThrow();
+    const t3 = makeT(); await seed(t3);
+    await t3.run(async (ctx) => { await ctx.db.patch((await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", "keep")).first())!._id, { isActive: false }); });
+    await expect(merge(t3)).rejects.toThrow(/active client/);
   });
 
   test("a merge over the cap refuses before writing anything", async () => {

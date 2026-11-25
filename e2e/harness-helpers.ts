@@ -84,7 +84,7 @@ export async function createAssetForModel(page: Page, modelName: string): Promis
 }
 
 /** Create a project with every optional field left at its default —
- *  Basics -> Schedule -> Site -> Review, three plain "Continue" activations.
+ *  Who and when -> What -> Review, two plain "Next" activations then "Create job".
  *  Returns the new project's id. */
 export async function createProject(page: Page, projectName: string, code: string): Promise<string> {
   await page.goto("/projects/new");
@@ -100,11 +100,14 @@ export async function createProject(page: Page, projectName: string, code: strin
   // .focus()+Enter, not .click() — sidesteps a Playwright locator-retry race
   // against the wizard's step-transition unmount (see harness-revenue-path's
   // identical comment; the underlying action always succeeds either way).
-  await page.getByRole("button", { name: "Continue" }).focus();
+  // Who and when -> What -> Review: two "Next" activations (the draft is written at the first).
+  // `exact`: the calendar's "Next month" button also contains the word.
+  await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Continue" }).focus();
-  await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Continue" }).focus();
+  // The first Next writes the draft job (async), so wait for the What step before pressing Next
+  // again: a second press while the first is still in flight is the same step, not the next one.
+  await expect(page.getByRole("button", { name: /^What/ })).toHaveAttribute("aria-current", "step", { timeout: 30000 });
+  await page.getByRole("button", { name: "Next", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Create job" }).focus();
   await page.keyboard.press("Enter");

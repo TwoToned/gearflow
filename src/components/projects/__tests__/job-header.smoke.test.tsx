@@ -21,7 +21,11 @@ let mockIsMobile = false;
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mockIsMobile }));
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: vi.fn() }),
+  usePathname: () => "/projects/p1",
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("next/link", () => ({ default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => <a href={href} {...p}>{children}</a> }));
 
 let perms: Record<string, boolean> = {};

@@ -208,6 +208,8 @@ import type * as locationsWrites from "../locationsWrites.js";
 import type * as maintenanceBulkWrites from "../maintenanceBulkWrites.js";
 import type * as maintenanceCheckoffWrites from "../maintenanceCheckoffWrites.js";
 import type * as maintenanceList from "../maintenanceList.js";
+import type * as maintenanceParts from "../maintenanceParts.js";
+import type * as maintenancePartsWrites from "../maintenancePartsWrites.js";
 import type * as maintenanceRecordAssets from "../maintenanceRecordAssets.js";
 import type * as maintenanceRecords from "../maintenanceRecords.js";
 import type * as maintenanceScheduleGeneration from "../maintenanceScheduleGeneration.js";
@@ -562,6 +564,8 @@ declare const fullApi: ApiFromModules<{
   maintenanceBulkWrites: typeof maintenanceBulkWrites;
   maintenanceCheckoffWrites: typeof maintenanceCheckoffWrites;
   maintenanceList: typeof maintenanceList;
+  maintenanceParts: typeof maintenanceParts;
+  maintenancePartsWrites: typeof maintenancePartsWrites;
   maintenanceRecordAssets: typeof maintenanceRecordAssets;
   maintenanceRecords: typeof maintenanceRecords;
   maintenanceScheduleGeneration: typeof maintenanceScheduleGeneration;

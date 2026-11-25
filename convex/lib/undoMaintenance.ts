@@ -53,5 +53,8 @@ export async function deleteMaintenanceWithLinks(ctx: MutationCtx, m: Doc<"maint
     .withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", m.id))
     .take(MAX_LINKS);
   for (const l of links) await ctx.db.delete(l._id);
+  // Its parts go with it (`by_maintenanceRecordId` is global: org re-checked per row).
+  const parts = await ctx.db.query("maintenanceParts").withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", m.id)).take(MAX_LINKS);
+  for (const p of parts) if (p.organizationId === m.organizationId) await ctx.db.delete(p._id);
   await ctx.db.delete(m._id);
 }

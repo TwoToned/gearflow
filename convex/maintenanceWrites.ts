@@ -652,6 +652,9 @@ export const deleteNative = mutation({
     // BOTH kinds (LINK + WS6 CHECKOFF), so a deleted record's progress history
     // doesn't orphan.
     for (const l of await allRecordAssetRows(ctx, a.id)) await ctx.db.delete(l._id);
+    // …and its parts (D76), org re-checked per row (`by_maintenanceRecordId` is global).
+    const parts = await ctx.db.query("maintenanceParts").withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", a.id)).take(500);
+    for (const p of parts) if (p.organizationId === a.orgId) await ctx.db.delete(p._id);
 
     await writeActivityLog(ctx, {
       id: a.auditId,

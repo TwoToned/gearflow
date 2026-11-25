@@ -493,7 +493,8 @@ export const createNative = mutation({
  * `set` here so a direct-mutation caller can't skip them (R-8.6.1/R-8.6.2).
  */
 export const updateNative = mutation({
-  returns: v.object({ id: v.string() }),
+  // `undoable` is false when nothing tracked changed (no snapshot was written).
+  returns: v.object({ id: v.string(), undoable: v.boolean() }),
   args: {
     id: v.string(),
     orgId: v.string(),
@@ -557,19 +558,21 @@ export const updateNative = mutation({
     }
 
     const finalTag = set.assetTag ?? doc.assetTag;
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "asset",
-      entityId: id,
-      entityName: finalTag,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated asset ${finalTag}`,
-      assetId: id,
-      createdAt: now,
-    });
+    // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
+    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
+    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
+    const diff = diffFields(doc, after, EDIT_TRACKED_FIELDS);
+    if (diff) {
+      await recordFieldEdit(ctx, {
+        orgId, entityType: "asset", entityId: id, entityName: finalTag, auditId, actor, now,
+        summary: `Updated asset ${finalTag}`, diff, links: { assetId: id },
+      });
+    } else {
+      await writeActivityLog(ctx, {
+        id: auditId, organizationId: orgId, action: "UPDATE", entityType: "asset", entityId: id, entityName: finalTag,
+        userId: actor.userId, userName: actor.userName, summary: `Updated asset ${finalTag}`, assetId: id, createdAt: now,
+      });
+    }
 
     // Auto-register/reconcile T&T if the (new) model requires it (parity: updateAsset
     // runs the full backfill when the model requires T&T).
@@ -579,7 +582,46 @@ export const updateNative = mutation({
       await backfillTestTagAssetsCore(ctx, orgId, now);
     }
 
-    return { id };
+    return { id, undoable: diff != null };
+  },
+});
+
+/** The fields an edit can change and an Undo can restore (not system stamps or links). */
+const EDIT_TRACKED_FIELDS = [
+  "assetTag", "serialNumber", "customName", "status", "condition", "purchaseDate", "purchasePrice",
+  "purchaseSupplier", "supplierId", "purchaseOrderNumber", "supplierOrderId", "warrantyExpiry", "notes",
+  "locationId", "customFieldValues", "barcode", "images", "tags", "isActive",
+] as const;
+
+/**
+ * undoUpdateNative — the exact reverse of ONE `updateNative`, addressed by its `auditId`.
+ * Ids only: the prior values of the fields that edit changed come from its own audit row;
+ * it refuses (changing nothing) if any of them changed since, for another author, once
+ * used, or past the window (`fieldEditUndo`). A tag restored must still be unique.
+ */
+export const undoUpdateNative = mutation({
+  returns: v.object({ restored: v.array(v.string()) }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
+  handler: async (ctx, { id, orgId, auditId, actor: suppliedActor, now }) => {
+    await assertWritesEnabled(ctx, "asset");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "asset", "update");
+    const actor = await resolveActor(ctx, suppliedActor);
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    return undoFieldEdit(ctx, {
+      orgId, entityType: "asset", entityId: id, entityName: asset?.assetTag ?? id, auditId, actor, now,
+      load: async () => (asset && asset.organizationId === orgId ? asset : null),
+      apply: async (doc, plan) => {
+        const tag = plan.set.assetTag;
+        if (typeof tag === "string" && tag !== doc.assetTag) {
+          const dup = await ctx.db.query("assets").withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", tag)).first();
+          if (dup && dup.id !== id) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" is used by another asset now.` });
+        }
+        const patch = { ...plan.set, ...Object.fromEntries(plan.clear.map((k) => [k, undefined])), updatedAt: now };
+        await ctx.db.patch(doc._id, patch);
+        await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
+      },
+    });
   },
 });
 
@@ -746,6 +788,8 @@ export const agentOps: AgentOpsAnnotations = {
   reinstateNative: { danger: "high" },
   // Reverses ONE retire / reinstate from its own audit row; changes status back.
   undoRetireNative: { danger: "medium" },
+  // Reverses ONE edit from its own audit row (exact, windowed, author-only, once).
+  undoUpdateNative: { danger: "medium" },
   bulkTagNative: { danger: "medium" },
   // Bulk-changes status/condition/location across N assets at once — can move
   // many assets' availability at scale (§9 bulk-destructive), unlike bulkTagNative.

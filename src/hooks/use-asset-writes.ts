@@ -31,6 +31,7 @@ export function useAssetWrites() {
   const deleteM = useMutation(api.assetWrites.deleteNative);
   const archiveM = useMutation(api.assetWrites.archiveNative);
   const reinstateM = useMutation(api.assetWrites.reinstateNative);
+  const undoUpdateM = useMutation(api.assetWrites.undoUpdateNative);
   const undoRetireM = useMutation(api.assetWrites.undoRetireNative);
   const notesM = useMutation(api.assetWrites.updateNotesNative);
 
@@ -110,13 +111,20 @@ export function useAssetWrites() {
       }));
       return await createManyM({ orgId: org, now, actor: actor(), assets: payload });
     },
-    update: async (id: string, data: AssetFormValues): Promise<{ id: string }> => {
+    /** `auditId` is the handle `undoUpdate` takes; `undoable` is false when nothing changed. */
+    update: async (id: string, data: AssetFormValues): Promise<{ id: string; undoable: boolean; auditId: string }> => {
       const org = requireOrg();
       const p = assetSchema.parse(data);
       const cf = resolveCF(p.customFieldValues);
       const { set, clear } = buildSetClear(p, cf);
-      await updateM({ id, orgId: org, set, clear, actor: actor(), auditId: createId(), now: Date.now() });
-      return { id };
+      const auditId = createId();
+      const r = await updateM({ id, orgId: org, set, clear, actor: actor(), auditId, now: Date.now() });
+      return { ...r, auditId };
+    },
+    /** The exact reverse of one edit, from its own audit row (ids only). */
+    undoUpdate: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
+      const org = requireOrg();
+      return await undoUpdateM({ id, orgId: org, auditId, actor: actor(), now: Date.now() });
     },
     bulkUpdate: async (ids: string[], data: { status?: string; condition?: string; locationId?: string | null }): Promise<{ count: number }> => {
       const org = requireOrg();

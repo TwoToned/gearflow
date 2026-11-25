@@ -104,6 +104,53 @@ describe("Retire + exact Undo", () => {
   });
 });
 
+describe("Edit with an exact Undo (updateNative / undoUpdateNative)", () => {
+  const edit = (t: T, set: Record<string, unknown>, clear: string[] = [], auditId = "e1") =>
+    t.withIdentity(SERVICE).mutation(api.assetWrites.updateNative, { id: "a1", orgId: ORG, set, clear, actor: ME, auditId, now: NOW });
+  const undoEdit = (t: T, auditId = "e1", actor = ME) =>
+    t.withIdentity(SERVICE).mutation(api.assetWrites.undoUpdateNative, { id: "a1", orgId: ORG, auditId, actor, now: NOW });
+
+  test("restores exactly what the edit changed (a set field, a cleared field), once", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      const a = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", "a1")).first();
+      await ctx.db.patch(a!._id, { customName: "FOH desk", serialNumber: "S1" });
+    });
+    expect((await edit(t, { serialNumber: "S2", condition: "FAIR" }, ["customName"])).undoable).toBe(true);
+    expect(await asset(t)).toMatchObject({ serialNumber: "S2", condition: "FAIR" });
+    expect((await asset(t))?.customName).toBeUndefined();
+
+    await undoEdit(t);
+    expect(await asset(t)).toMatchObject({ serialNumber: "S1", condition: "GOOD", customName: "FOH desk" });
+    await expect(undoEdit(t)).rejects.toThrow(/already undone/);
+  });
+
+  test("an edit that changes nothing is not undoable; a later edit of the same field blocks the Undo", async () => {
+    const t = makeT();
+    await seed(t);
+    expect((await edit(t, { condition: "GOOD" })).undoable).toBe(false);
+    await edit(t, { condition: "FAIR" }, [], "e2");
+    await edit(t, { condition: "POOR" }, [], "e3");
+    await expect(undoEdit(t, "e2")).rejects.toThrow(/condition changed since/);
+    expect((await asset(t))?.condition).toBe("POOR");
+    await expect(undoEdit(t, "e3", BOB)).rejects.toThrow(/Only the person/);
+    await undoEdit(t, "e3");
+    expect((await asset(t))?.condition).toBe("FAIR");
+  });
+
+  test("an Undo that would restore a tag now used by another asset is refused, writing nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    await edit(t, { assetTag: "TAG-NEW" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("assets", { id: "a9", organizationId: ORG, modelId: "m1", assetTag: "TAG-1", status: "AVAILABLE", condition: "GOOD", isActive: true, createdAt: NOW, updatedAt: NOW });
+    });
+    await expect(undoEdit(t)).rejects.toThrow(/used by another asset/);
+    expect((await asset(t))?.assetTag).toBe("TAG-NEW");
+  });
+});
+
 describe("Reinstate is only the way back from RETIRED", () => {
   const reinstate = (t: T) => t.withIdentity(SERVICE).mutation(api.assetWrites.reinstateNative, { id: "a1", orgId: ORG, actor: ME, auditId: "i1", now: NOW });
   const setStatus = (t: T, status: string) =>

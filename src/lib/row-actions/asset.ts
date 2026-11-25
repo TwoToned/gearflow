@@ -1,4 +1,4 @@
-import { Archive, ExternalLink, Pencil, RotateCcw, Tag } from "lucide-react";
+import { Archive, CalendarClock, Copy, ExternalLink, MapPin, Pencil, Printer, RotateCcw, ScanLine, Tag, Wrench } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
 
@@ -45,6 +45,46 @@ export function buildAssetActions(row: AssetActionRow, ctx: AssetActionCtx): Act
             confirmLabel: "Retire",
           },
         },
+    ]),
+  };
+}
+
+// ─── The asset page's ⋯ (UX Phase 12, §9d.2) ──────────────────────────────
+
+/** Every verb is a handler the caller may or may not have: omitted = ABSENT, never disabled. */
+export interface AssetPageCtx {
+  /** Camera / lookup (`Scan a tag…`, key `/`). */
+  onScan?: () => void;
+  onMove?: () => void;
+  onScheduleService?: () => void;
+  onReportIssue?: () => void;
+  onPrintLabel?: () => void;
+  onNewLike?: () => void;
+  /** Present only for a deployed unit (Force return is meaningless otherwise, ruling Q-3). */
+  onForceReturn?: () => void;
+  /** Opens the Retire dialog (which holds Delete for a bare unit). */
+  onRetire?: () => void;
+  onReinstate?: () => void;
+}
+
+/**
+ * The asset page's menu: Scan first, then the rest, `Retire…` last and red (its own
+ * dialog names the downstream effects and holds Delete, so it carries no `confirm`).
+ * A retired unit offers `Reinstate…` instead of Retire.
+ */
+export function buildAssetPageActions(row: { status?: string | null }, ctx: AssetPageCtx): ActionMenuSpec {
+  const retired = row.status === "RETIRED";
+  return {
+    items: compact([
+      ctx.onScan && { key: "scan", label: "Scan a tag…", group: "edit", icon: ScanLine, kbd: "/", onSelect: ctx.onScan },
+      ctx.onMove && { key: "move", label: "Move to…", group: "organise", icon: MapPin, onSelect: ctx.onMove },
+      ctx.onScheduleService && { key: "schedule", label: "Schedule service…", group: "organise", icon: CalendarClock, onSelect: ctx.onScheduleService },
+      ctx.onNewLike && { key: "new-like", label: "New asset like this…", group: "organise", icon: Copy, kbd: "N", onSelect: ctx.onNewLike },
+      ctx.onReportIssue && { key: "report", label: "Report issue…", group: "reporting", icon: Wrench, onSelect: ctx.onReportIssue },
+      ctx.onPrintLabel && { key: "print", label: "Print label…", group: "documents", icon: Printer, onSelect: ctx.onPrintLabel },
+      ctx.onForceReturn && row.status === "CHECKED_OUT" && { key: "force", label: "Force return…", group: "organise", icon: RotateCcw, onSelect: ctx.onForceReturn },
+      !retired && ctx.onRetire && { key: "retire", label: "Retire…", group: "danger", icon: Archive, danger: true, onSelect: ctx.onRetire },
+      retired && ctx.onReinstate && { key: "reinstate", label: "Reinstate…", group: "organise", icon: RotateCcw, onSelect: ctx.onReinstate },
     ]),
   };
 }

@@ -79,14 +79,14 @@ function ModelsListInner({ orgId }: { orgId: string | undefined }) {
   const [bulkIds, setBulkIds] = React.useState<Set<string>>(new Set());
   const photos = React.useMemo(() => new Map(items.map((m) => [m.id, m.media])), [items]);
 
-  useKeyboardShortcut("n", () => canCreate && router.push("/assets/models/new"));
+  useKeyboardShortcut("n", () => canCreate && router.push("/assets/models?new-model=1")); // the model sheet (ModelSheetHost, in the assets layout)
 
   const rows = items.map((m) =>
     modelRowOf(
       m,
       buildModelActions({
         onOpen: () => router.push(`/assets/models/${m.id}`),
-        onEdit: canUpdate ? () => router.push(`/assets/models/${m.id}/edit`) : undefined,
+        onEdit: canUpdate ? () => router.push(`/assets/models?edit-model=${m.id}`) : undefined,
       }),
     ),
   );
@@ -95,7 +95,7 @@ function ModelsListInner({ orgId }: { orgId: string | undefined }) {
     setBulkIds(new Set(ids));
     setDialog(kind);
   };
-  const primary: ListPrimary | undefined = canCreate ? { label: "New model", onSelect: () => router.push("/assets/models/new") } : undefined;
+  const primary: ListPrimary | undefined = canCreate ? { label: "New model", onSelect: () => router.push("/assets/models?new-model=1") } : undefined;
   const pageMenu: ActionMenuSpec = canCreate
     ? {
         items: [

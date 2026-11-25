@@ -25,7 +25,8 @@ export const modelSchema = z.object({
   // WS11 (#950) — sales items. `saleStockQuantity` has no `.min()`: a negative
   // pool is valid (oversell is warn-allow, spec decision), not an input error.
   salePrice: blankableNumber(z.number().min(0)),
-  saleStockQuantity: z.coerce.number().int().optional(),
+  // Blank stays blank (never a real 0 pool): `blankableNumber`, like every other optional number here.
+  saleStockQuantity: blankableNumber(z.number().int()),
   weight: blankableNumber(z.number().min(0)),
   powerDraw: blankableNumber(z.number().int().min(0)),
   requiresTestAndTag: z.boolean().default(false),

@@ -5,6 +5,7 @@ import {
   ASSET_SORT_KEYS,
   BULK_ASSET_COST_FIELDS,
   BULK_ASSET_SORT_KEYS,
+  KIT_COST_FIELDS,
   MODEL_COST_FIELDS,
   resolveSortKey,
 } from "./gearCostFields";
@@ -37,5 +38,9 @@ async function guard(ctx: QueryCtx | MutationCtx, fields: readonly string[], sor
   };
 }
 
+const KIT_SORT_KEYS = ["assetTag", "name", "status", "condition", "category", "location", "createdAt", "updatedAt"] as const;
+
+/** Kit rows: the kit's own `purchasePrice`. A kit sort is an allow-list too, so `purchasePrice` is never a sort key for a hidden caller. */
+export const kitCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, KIT_COST_FIELDS, KIT_SORT_KEYS);
 export const assetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, ASSET_COST_FIELDS, ASSET_SORT_KEYS);
 export const bulkAssetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, BULK_ASSET_COST_FIELDS, BULK_ASSET_SORT_KEYS);

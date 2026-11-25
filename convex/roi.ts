@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgReadFor } from "./lib/auth";
+import { MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { liveRows } from "./lib/versionScope";
 
@@ -74,7 +75,7 @@ const positiveCost = (v: number | null | undefined): number | null => (v != null
  * see it (the page's `Show cost & payback` is only a UI default; the server is the
  * authority, R-9.3). The keys are ABSENT, never zeroed, so nothing can be back-solved.
  */
-const ROI_COST_FIELDS = ["fleetCost", "replacementCost"] as const;
+const ROI_COST_FIELDS = ["fleetCost", ...MODEL_COST_FIELDS] as const;
 async function roiCostRedactor(ctx: QueryCtx): Promise<<T extends Record<string, unknown>>(row: T) => T> {
   const hide = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
   return (row) => (hide ? redactFields(row, ROI_COST_FIELDS) : row);

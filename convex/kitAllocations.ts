@@ -1,7 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgReadFor } from "./lib/auth";
+import { getAuthContext, isAgentNoFinancials, requireOrgReadFor } from "./lib/auth";
 import { suggestKitAllocation, allocationCoversKit } from "./lib/allocation";
 import { getKitByCuid } from "./lib/kits";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -81,11 +81,13 @@ export const getKitAllocation = query({
       })),
     );
 
+    // What a model costs to replace is COST: ABSENT for a `noFinancials` key (the suggested % is a ratio, not money).
+    const costHidden = await isAgentNoFinancials(ctx, await getAuthContext(ctx));
     const rows = [...quantities]
       .map(([modelId, quantity]) => ({
         modelId,
         modelName: models.get(modelId)!.name,
-        replacementCost: models.get(modelId)!.replacementCost,
+        ...(costHidden ? {} : { replacementCost: models.get(modelId)!.replacementCost }),
         quantity,
         allocationPercent: savedByModel.get(modelId) ?? null,
         suggestedPercent: suggested.get(modelId) ?? 0,

@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgPermission } from "./lib/auth";
-import { assetCostGuard, bulkAssetCostGuard } from "./lib/gearCostRedact";
+import { assetCostGuard, bulkAssetCostGuard, kitCostGuard } from "./lib/gearCostRedact";
 import { pick, USER_PUBLIC_FIELDS, FILE_URL_FIELDS } from "./lib/dto";
 import { getKitByCuid } from "./lib/kits";
 
@@ -75,7 +75,7 @@ async function readKitDetail(ctx: QueryCtx, kitId: string, orgId: string) {
     : null;
 
   return {
-    kit,
+    kit: (await kitCostGuard(ctx)).row(kit),
     serializedItems: serialized,
     bulkItems: bulk,
     lineItems,

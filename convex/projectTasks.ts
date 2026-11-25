@@ -90,13 +90,20 @@ export const assignees = query({
   },
 });
 
-/** A user's name, only if they are a MEMBER of this org (the users mirror is global: gate on `by_org_user`). */
-async function memberName(ctx: QueryCtx, orgId: string, userId: string | undefined): Promise<string | null> {
-  if (!userId) return null;
-  const member = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
-  if (!member) return null;
-  const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).first();
-  return u?.name ?? null;
+/**
+ * The MEMBERS of this org among `userIds`, loaded ONCE per unique user (not once per task),
+ * as name + image. The users mirror is global, so a user is exposed only if they are a
+ * member of this org (`by_org_user`): a stale or foreign id resolves to nothing.
+ */
+async function loadMembers(ctx: QueryCtx, orgId: string, userIds: Iterable<string | undefined>) {
+  const people = new Map<string, { id: string; name: string; image: string | null }>();
+  for (const userId of new Set([...userIds].filter((x): x is string => !!x))) {
+    const member = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", userId)).first();
+    if (!member) continue;
+    const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", userId)).first();
+    if (u) people.set(userId, { id: u.id, name: u.name, image: u.image ?? null });
+  }
+  return people;
 }
 
 /**
@@ -113,22 +120,10 @@ export const listByProjectWithRelations = query({
     ).filter((t) => t.organizationId === orgId); // by_projectId is global → org re-check
     rows.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.createdAt ?? 0) - (b.createdAt ?? 0));
 
+    const people = await loadMembers(ctx, orgId, rows.flatMap((t) => [t.assigneeUserId, t.createdById]));
     const out = [];
     for (const t of rows) {
-      let assigneeUser: { id: string; name: string; image: string | null } | null = null;
-      if (t.assigneeUserId) {
-        // Only expose the user's name/image if they are a MEMBER of this org (the
-        // users mirror is global — gate the join on by_org_user so a stale/foreign
-        // assigneeUserId can't leak another org's user; mirrors the assigneeCrew check).
-        const member = await ctx.db
-          .query("members")
-          .withIndex("by_org_user", (q) => q.eq("organizationId", orgId).eq("userId", t.assigneeUserId as string))
-          .first();
-        if (member) {
-          const u = await ctx.db.query("users").withIndex("by_cuid", (q) => q.eq("id", t.assigneeUserId as string)).first();
-          assigneeUser = u ? { id: u.id, name: u.name, image: u.image ?? null } : null;
-        }
-      }
+      const assigneeUser = t.assigneeUserId ? (people.get(t.assigneeUserId) ?? null) : null;
       let assigneeCrew: { id: string; firstName: string; lastName: string } | null = null;
       if (t.assigneeCrewId) {
         const c = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", t.assigneeCrewId as string)).first();
@@ -150,7 +145,7 @@ export const listByProjectWithRelations = query({
         // The task sheet's history line (added by · when · done when).
         createdAt: t.createdAt ?? null,
         completedAt: t.completedAt ?? null,
-        createdByName: await memberName(ctx, orgId, t.createdById),
+        createdByName: (t.createdById ? people.get(t.createdById)?.name : undefined) ?? null,
       });
     }
     return out;

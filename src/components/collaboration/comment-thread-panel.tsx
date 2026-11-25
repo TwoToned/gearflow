@@ -27,6 +27,7 @@ import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { getMentionableMembers } from "@/server/org-members";
 import { getForegroundColor, getUserInitials, timeAgo } from "@/lib/collaboration-colors";
 import { cn } from "@/lib/utils";
+import { useCanDo } from "@/lib/use-permissions";
 import { toast } from "sonner";
 
 interface Comment {
@@ -346,9 +347,11 @@ export function CommentThreadBody({
   const [blocking, setBlocking] = useState(false);
   const [mentions, setMentions] = useState<string[]>([]);
   const { createThread } = useCollaborationWrites();
-  // Blocking comments gate project prep / send-out. They are meaningless on
-  // other entities (assets, clients, …), so the toggle is project-only.
-  const allowBlocking = entityType === "project";
+  // Blocking comments gate project prep / send-out. They are meaningless on other entities
+  // (assets, clients, …), so the toggle is project-only, and it is offered only to a caller who
+  // may use it: the server requires `project:manage_line_items` to block (absent, not an error).
+  const canBlock = useCanDo("project", "manage_line_items");
+  const allowBlocking = entityType === "project" && canBlock;
   const { visibleThreads } = useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled });
 
   const { data: members } = useServerQuery({

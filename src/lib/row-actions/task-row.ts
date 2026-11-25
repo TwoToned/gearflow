@@ -6,8 +6,9 @@ import type { ProjectTaskRow } from "@/lib/project-tasks";
 
 /**
  * A task row's ⋯ (UX Phase 10, spec §8c): Edit… · Mark done / Reopen · Due ▸ ·
- * Delete. An action that does not apply is ABSENT. Delete asks nothing: it toasts
- * with an exact Undo (`restoreDeletedNative`), so it carries no confirm.
+ * Delete. An action that does not apply is ABSENT. Delete is danger, last, and CONFIRMS
+ * (the ActionMenu rule has no exception); it also toasts with an exact Undo
+ * (`restoreDeletedNative`).
  */
 export type DueShortcut = "today" | "tomorrow" | "nextWeek" | "clear";
 
@@ -29,7 +30,7 @@ export function dueShortcutItems(hasDue: boolean, onSetDue: (when: DueShortcut) 
   return items;
 }
 
-export function buildTaskRowActions(task: Pick<ProjectTaskRow, "status" | "dueDate">, h: TaskRowHandlers): ActionMenuSpec {
+export function buildTaskRowActions(task: Pick<ProjectTaskRow, "status" | "dueDate" | "title">, h: TaskRowHandlers): ActionMenuSpec {
   const open = isOpenTask(task);
   const items: ActionItem[] = [
     { key: "edit", label: "Edit…", group: "edit", icon: Pencil, kbd: "E", onSelect: h.onEdit },
@@ -37,7 +38,15 @@ export function buildTaskRowActions(task: Pick<ProjectTaskRow, "status" | "dueDa
       ? { key: "done", label: "Mark done", group: "organise", icon: CheckCircle2, onSelect: h.onToggleDone }
       : { key: "reopen", label: "Reopen", group: "organise", icon: RotateCcw, onSelect: h.onToggleDone },
     { key: "due", label: "Due", group: "organise", icon: CalendarDays, onSelect: () => {}, children: dueShortcutItems(task.dueDate != null, h.onSetDue) },
-    { key: "delete", label: "Delete", group: "danger", icon: Trash2, danger: true, onSelect: h.onDelete },
+    {
+      key: "delete",
+      label: "Delete",
+      group: "danger",
+      icon: Trash2,
+      danger: true,
+      onSelect: h.onDelete,
+      confirm: { title: `Delete “${task.title}”?`, body: "The task is removed from this job. You can undo it from the toast for a few minutes.", confirmLabel: "Delete task" },
+    },
   ];
   return { items };
 }

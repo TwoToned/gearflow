@@ -268,33 +268,56 @@ async function applyOrder(ctx: MutationCtx, orgId: string, orderedIds: string[],
   for (let index = 0; index < orderedIds.length; index++) {
     const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).first();
     if (!doc || doc.organizationId !== orgId) continue;
-    if ((doc.sortOrder ?? null) !== index) {
-      before[doc.id] = doc.sortOrder ?? null;
-      after[doc.id] = index;
-    }
     projectId ??= doc.projectId;
+    // Only a task whose place actually changed is touched (its `updatedAt` is its edit history).
+    if ((doc.sortOrder ?? null) === index) continue;
+    before[doc.id] = doc.sortOrder ?? null;
+    after[doc.id] = index;
     await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
   }
   return { before, after, projectId };
 }
 
-/** Run an Undo over several tasks: a stale one is skipped; if NONE could be undone, say why. */
-async function undoEach(ids: string[], run: (id: string) => Promise<void>): Promise<{ restoredIds: string[]; skippedIds: string[] }> {
-  const restoredIds: string[] = [];
-  const skippedIds: string[] = [];
+/**
+ * Run an Undo over several tasks, AS A WHOLE (the house rule): if ANY task has changed
+ * since, the mutation throws, which rolls back everything already restored in this call,
+ * and the error NAMES the tasks that moved on. A single task rethrows its own refusal.
+ */
+async function undoEach(
+  ids: string[],
+  run: (id: string) => Promise<void>,
+  nameOf: (id: string) => Promise<string>,
+): Promise<{ restoredIds: string[]; skippedIds: string[] }> {
+  const failed: string[] = [];
   let firstError: unknown;
   for (const id of ids) {
     try {
       await run(id);
-      restoredIds.push(id);
     } catch (e) {
       if (!(e instanceof ConvexError)) throw e;
       firstError ??= e;
-      skippedIds.push(id);
+      failed.push(await nameOf(id));
     }
   }
-  if (restoredIds.length === 0 && firstError) throw firstError;
-  return { restoredIds, skippedIds };
+  if (failed.length === 0) return { restoredIds: ids, skippedIds: [] };
+  if (ids.length === 1) throw firstError;
+  throw new ConvexError({
+    code: "CHANGED_SINCE",
+    message: `Can't undo: ${failed.map((n) => `“${n}”`).join(", ")} changed since. Nothing was restored.`,
+    taskNames: failed,
+  });
+}
+
+/** A task's title for a refusal message (falls back to its id). */
+async function taskTitle(ctx: MutationCtx, orgId: string, id: string): Promise<string> {
+  const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  return doc && doc.organizationId === orgId ? doc.title : id;
+}
+
+/** A deleted task's title, from its own delete row (the task itself is gone). */
+async function deletedTitle(ctx: MutationCtx, orgId: string, auditId: string, id: string): Promise<string> {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", rowAuditId(auditId, id))).first();
+  return row && row.organizationId === orgId ? row.entityName : id;
 }
 
 // Shared editable fields (title is added per-mutation: required on create, optional on update).
@@ -623,8 +646,8 @@ export const undoCreateNative = mutation({
  * Undo an UPDATE (single or bulk) by the forward call's `auditId` and the task
  * ids it CHANGED (`updateNative` / `bulkUpdateNative` return them). Per task the
  * shared `undoFieldEdit` refuses unless every changed field still holds what the
- * forward write left. A stale task is skipped and reported; with none restored
- * the first refusal is thrown so the toast can say why.
+ * forward write left. Bulk refuses AS A WHOLE: if any task changed since, nothing is
+ * restored (the throw rolls the call back) and the error names the tasks that moved on.
  */
 export const undoUpdateNative = mutation({
   returns: undoOutcome,
@@ -636,32 +659,33 @@ export const undoUpdateNative = mutation({
     await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
-    return await undoEach(a.ids, async (id) => {
-      let title = id;
-      await undoFieldEdit<Doc<"projectTasks">>(ctx, {
-        orgId: a.orgId, entityType: "ProjectTask", entityId: id, entityName: title, auditId: rowAuditId(a.auditId, id), actor, now: a.now,
-        load: async () => {
-          const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-          if (!doc || doc.organizationId !== a.orgId) return null;
-          title = doc.title;
-          return doc;
-        },
-        apply: async (doc, plan) => {
-          const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
-          for (const f of plan.clear) patch[f] = undefined;
-          await dropInvalidAssignees(ctx, a.orgId, patch); // a restored assignee may have left the org since
-          await ctx.db.patch(doc._id, patch);
-        },
-      });
-    });
+    return await undoEach(
+      a.ids,
+      async (id) => {
+        await undoFieldEdit<Doc<"projectTasks">>(ctx, {
+          orgId: a.orgId, entityType: "ProjectTask", entityId: id, entityName: id, auditId: rowAuditId(a.auditId, id), actor, now: a.now,
+          load: async () => {
+            const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+            return doc && doc.organizationId === a.orgId ? doc : null;
+          },
+          apply: async (doc, plan) => {
+            const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+            for (const f of plan.clear) patch[f] = undefined;
+            await dropInvalidAssignees(ctx, a.orgId, patch); // a restored assignee may have left the org since
+            await ctx.db.patch(doc._id, patch);
+          },
+        });
+      },
+      (id) => taskTitle(ctx, a.orgId, id),
+    );
   },
 });
 
 /**
  * Undo a DELETE (single or bulk) by the forward call's `auditId` and the ids it
  * deleted. Re-inserts each task from the snapshot its own delete row stored, with
- * its original id and `sortOrder`. Skips a task that exists again; refuses a
- * project that left the org; drops an assignee who is no longer valid. Once per
+ * its original id and `sortOrder`. Refuses (the whole call, naming the task) when a task
+ * exists again or its job left the org; drops an assignee who is no longer valid. Once per
  * task (marker row). Never touches stored files (a task owns none).
  */
 export const restoreDeletedNative = mutation({
@@ -674,7 +698,11 @@ export const restoreDeletedNative = mutation({
     await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
-    return await undoEach(a.ids, (id) => restoreOneDeleted(ctx, { orgId: a.orgId, auditId: a.auditId, id, actor, now: a.now }));
+    return await undoEach(
+      a.ids,
+      (id) => restoreOneDeleted(ctx, { orgId: a.orgId, auditId: a.auditId, id, actor, now: a.now }),
+      (id) => deletedTitle(ctx, a.orgId, a.auditId, id),
+    );
   },
 });
 

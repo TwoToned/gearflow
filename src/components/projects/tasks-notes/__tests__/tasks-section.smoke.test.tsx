@@ -65,13 +65,15 @@ describe("TasksSection", () => {
     expect(screen.getByText("Send quote")).toBeTruthy();
   });
 
-  it("the row ⋯ opens with Edit, Mark done, Due, Delete; Delete writes (its Undo is the toast's)", async () => {
+  it("the row ⋯ opens with Edit, Mark done, Due, Delete; Delete asks first, then writes (its Undo is the toast's)", async () => {
     const user = userEvent.setup();
     render(<TasksSection projectId="p1" />);
     await user.click(screen.getByRole("button", { name: "Book truck actions" }));
     const menu = await screen.findByRole("menu");
     expect(within(menu).getByRole("menuitem", { name: /Mark done/ })).toBeTruthy();
     await user.click(within(menu).getByRole("menuitem", { name: /Delete/ }));
+    expect(actions.remove).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("button", { name: /Delete task/ }));
     expect(actions.remove).toHaveBeenCalledWith(expect.objectContaining({ id: "Book truck" }));
   });
 

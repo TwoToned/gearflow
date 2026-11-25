@@ -6,8 +6,8 @@ import type { DueShortcut } from "@/lib/row-actions/task-row";
 /**
  * The Tasks section's bulk verbs (UX Phase 10, spec §8c): Assign ▾ · Due ▾ · Mark
  * done · Delete, over the existing `bulkUpdateNative` / `bulkDeleteNative`. Every
- * label carries the count; Delete is last and danger, and asks nothing because its
- * toast offers an exact Undo (`restoreDeletedNative`). One `BulkBar` is the
+ * label carries the count; Delete is last and danger, asks to confirm, and its
+ * toast then offers an exact Undo (`restoreDeletedNative`). One `BulkBar` is the
  * only bulk surface.
  */
 export interface Assignable {
@@ -68,6 +68,14 @@ export function buildTaskBulkActions(assignees: Assignable | undefined, h: TaskB
       ],
     },
     { key: "done", label: (n) => `Mark done ${n}`, group: "organise", icon: CheckCircle2, onSelect: h.onDone },
-    { key: "delete", label: (n) => `Delete ${n}`, group: "danger", icon: Trash2, danger: true, onSelect: h.onDelete },
+    {
+      key: "delete",
+      label: (n) => `Delete ${n}`,
+      group: "danger",
+      icon: Trash2,
+      danger: true,
+      onSelect: h.onDelete,
+      confirm: { title: "Delete these tasks?", body: "The tasks are removed from this job. You can undo it from the toast for a few minutes.", confirmLabel: "Delete tasks" },
+    },
   ];
 }

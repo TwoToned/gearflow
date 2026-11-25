@@ -38,10 +38,15 @@ vi.mock("@/hooks/use-server-mutation", () => ({
 }));
 vi.mock("@/server/org-members", () => ({ getMentionableMembers: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+let canBlock = true;
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: (_r: string, action: string) => (action === "manage_line_items" ? canBlock : true) }));
 
 import { DiscussionSection } from "@/components/projects/tasks-notes/discussion-section";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  canBlock = true;
+});
 
 describe("DiscussionSection", () => {
   it("renders inline (no Sheet), counts line-item threads and jumps to Equipment", async () => {
@@ -52,6 +57,13 @@ describe("DiscussionSection", () => {
     expect(screen.getByText("No comments yet. Start a discussion below.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /On line items · 2 open/ }));
     expect(onOpenEquipment).toHaveBeenCalledTimes(1);
+  });
+
+  it("a caller without project:manage_line_items gets NO Blocking switch (absent, not an error)", () => {
+    canBlock = false;
+    render(<DiscussionSection projectId="p1" orgId="org1" onOpenEquipment={vi.fn()} />);
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.getByLabelText("New discussion")).toBeTruthy(); // a plain discussion is still open to them
   });
 
   it("the Blocking switch posts a blocking thread; the @ Mention picker opens", async () => {

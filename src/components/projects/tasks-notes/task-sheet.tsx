@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { ProjectTaskInput } from "@/hooks/use-project-tasks-writes";
@@ -43,8 +44,8 @@ function assigneeText(value: string, assignees: Assignable | undefined): string 
 /**
  * The task sheet (UX Phase 10, spec §8c; a Radix `Sheet`, a bottom sheet on a
  * phone): every live field (title, description, assignee from team + crew, due,
- * status, priority) plus a history line. Delete asks nothing; its toast offers an
- * exact Undo. A save is ONE `update` call (`useTaskActions.patch`).
+ * status, priority) plus a history line. Delete asks to confirm; its toast then
+ * offers an exact Undo. A save is ONE `update` call (`useTaskActions.patch`).
  */
 export function TaskSheet({
   task,
@@ -69,6 +70,7 @@ export function TaskSheet({
     task.assigneeUserId ? `u:${task.assigneeUserId}` : task.assigneeCrewId ? `c:${task.assigneeCrewId}` : NO_ASSIGNEE,
   );
   const history = historyLine(task);
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
 
   const save = () =>
     onSave({
@@ -112,13 +114,30 @@ export function TaskSheet({
           </div>
         </div>
         <SheetFooter className="mt-2 flex-row justify-between gap-2 sm:justify-between">
-          <Button type="button" variant="ghost" onClick={onDelete}>
+          <Button type="button" variant="ghost" onClick={() => setConfirmingDelete(true)}>
             <Trash2 className="h-4 w-4" /> Delete
           </Button>
           <Button type="button" disabled={!title.trim()} onClick={save}>
             Save
           </Button>
         </SheetFooter>
+        {/* Delete always confirms (the ActionMenu rule has no exception); the toast then offers an exact Undo. */}
+        <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Delete “{task.title}”?</DialogTitle>
+              <DialogDescription>The task is removed from this job. You can undo it from the toast for a few minutes.</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="line" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={onDelete}>
+                Delete task
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </SheetContent>
     </Sheet>
   );

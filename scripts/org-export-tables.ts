@@ -172,6 +172,9 @@ export const PARENT_JOIN = [
   // WS1 (#940) — invoiceLines has no organizationId column by design (joined
   // via invoiceId into an already org-scoped `invoices` row).
   { table: "invoiceLines", parentTable: "invoices", index: "by_invoiceId", field: "invoiceId" },
+  // UX Phase 10 Slice E — task links carry organizationId but (by the approved schema) no
+  // `by_organizationId` index, so they export through their task (`by_taskId`), already org-scoped.
+  { table: "projectTaskLinks", parentTable: "projectTasks", index: "by_taskId", field: "taskId" },
 ] as const;
 
 /** Excluded with reason. `organizations` handled separately as `orgRow`. */
@@ -285,7 +288,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // alongside the read path's by_organizationId_userId).
 // Custom accessories: +1 — modelCustomAccessories (DIRECT — free-text model-level
 // accessory, has its own by_organizationId index).
-export const EXPECTED_TABLE_COUNT = 128;
+// UX Phase 10 Slice E: +1 — projectTaskLinks (PARENT_JOIN via projectTasks, the approved schema
+// has no by_organizationId index).
+export const EXPECTED_TABLE_COUNT = 129;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

@@ -61,6 +61,29 @@ async function assertParentInOrg(ctx: MutationCtx, cfg: (typeof CFG)[Kind], pare
   if (!parent || parent.organizationId !== orgId) throw new ConvexError("Parent not found");
 }
 
+/** Another row of this media table that already points at the file (its `by_fileId` index is global; the file is org-checked by the caller). */
+async function otherRowsForFile(ctx: MutationCtx, cfg: (typeof CFG)[Kind], fileId: string, exceptId?: string): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rows = (await ctx.db.query(cfg.table).withIndex("by_fileId" as any, (q: any) => q.eq("fileId", fileId)).take(2)) as MediaRow[];
+  return rows.some((r) => r.id !== exceptId);
+}
+
+/**
+ * A file may be ATTACHED only if it is the caller's own fresh upload that nothing else
+ * already holds (a removal later deletes the stored bytes, so attaching someone else's
+ * file, or one a quote / sub-hire / another row uses, would let a remove destroy it).
+ * A job's file must also come from the job upload folder. A service identity (no user
+ * to compare) skips the uploader test; every other check still applies.
+ */
+async function assertFileAttachable(ctx: MutationCtx, cfg: (typeof CFG)[Kind], a: { kind: Kind; orgId: string }, file: { id: string; storageKey: string; uploadedById: string }) {
+  const actor = await resolveActor(ctx, { userId: "", userName: "" });
+  if (actor.userId && file.uploadedById !== actor.userId) throw new ConvexError("You can only attach a file you uploaded");
+  if (await otherRowsForFile(ctx, cfg, file.id)) throw new ConvexError("That file is already attached");
+  if (a.kind !== "project") return;
+  const stored = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).first();
+  if (!stored || stored.organizationId !== a.orgId || stored.folder !== "projects") throw new ConvexError("That file was not uploaded to this job");
+}
+
 async function guards(ctx: MutationCtx, kind: Kind, orgId: string) {
   await assertWritesEnabled(ctx, "media");
   await enforceBrowserWriteLimit(ctx);
@@ -77,6 +100,7 @@ export const addNative = mutation({
 
     const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
     if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
+    await assertFileAttachable(ctx, cfg, a, file);
 
     const dup = await mediaByCuid(ctx, cfg, a.id);
     if (dup) throw new ConvexError("Media already exists");
@@ -125,7 +149,8 @@ export const removeNative = mutation({
     // Org-check the file too (by_cuid is global) — add enforces file.org == media.org,
     // so this only guards against a corrupt/mismatched row deleting another org's file.
     const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-    if (file && file.organizationId === a.orgId) {
+    // Bytes go only when this was the file's last holder (a shared file stays for the others).
+    if (file && file.organizationId === a.orgId && !(await otherRowsForFile(ctx, cfg, fileId))) {
       await deleteStored(ctx, file.storageKey);
       if (file.thumbnailUrl) {
         const thumb = storageIdFromUrl(file.thumbnailUrl);

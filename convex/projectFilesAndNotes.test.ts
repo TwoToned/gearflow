@@ -123,6 +123,49 @@ describe("project file writes (category, rename, events)", () => {
   });
 });
 
+describe("attaching and removing a file can never destroy bytes that are not the caller's", () => {
+  const add = (t: T, fileId: string, id = "pmNew") =>
+    t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "project", id, orgId: ORG, parentId: "P1", fileId, type: "OTHER", now: NOW });
+  const fileExists = (t: T, id: string) => t.run(async (ctx) => !!(await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).first()));
+  const addUpload = (t: T, id: string, o: { by?: string; folder?: string | null } = {}) =>
+    t.run(async (ctx) => {
+      await ctx.db.insert("fileUploads", { id, organizationId: ORG, fileName: `${id}.pdf`, fileSize: 1, mimeType: "application/pdf", storageKey: `k-${id}`, url: `/api/files/k-${id}`, uploadedById: o.by ?? USER, createdAt: NOW });
+      if (o.folder !== null) await ctx.db.insert("storedFiles", { storageId: `k-${id}`, organizationId: ORG, folder: o.folder ?? "projects" });
+    });
+
+  test("the caller's own fresh job upload attaches", async () => {
+    const t = makeT(); await seed(t); await addUpload(t, "fNew");
+    expect(await add(t, "fNew")).toEqual({ id: "pmNew" });
+  });
+
+  test("another person's upload in the same org is refused (cannot be attached, so cannot be removed-and-deleted)", async () => {
+    const t = makeT(); await seed(t); await addUpload(t, "fTheirs", { by: "stranger" });
+    await expect(add(t, "fTheirs")).rejects.toThrow(/only attach a file you uploaded/i);
+    expect(await fileExists(t, "fTheirs")).toBe(true);
+  });
+
+  test("a file something already holds (even the caller's own) is refused", async () => {
+    const t = makeT(); await seed(t);
+    await expect(add(t, "f1")).rejects.toThrow(/already attached/i);
+  });
+
+  test("a file from another upload folder (a quote PDF, a check photo) or another org is refused", async () => {
+    const t = makeT(); await seed(t); await addUpload(t, "fPdf", { folder: "finance" }); await addUpload(t, "fNoRow", { folder: null });
+    await expect(add(t, "fPdf")).rejects.toThrow(/not uploaded to this job/i);
+    await expect(add(t, "fNoRow")).rejects.toThrow(/not uploaded to this job/i);
+    await expect(add(t, "fX")).rejects.toThrow(/File not found/);
+  });
+
+  test("removing a file another row still holds keeps its bytes; the last holder's removal deletes them", async () => {
+    const t = makeT(); await seed(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(api.mediaWrites.removeNative, { kind: "project", orgId: ORG, mediaId: "pm1" }); // f1 is also held by pmP2
+    expect(await fileExists(t, "f1")).toBe(true);
+    await u.mutation(api.mediaWrites.removeNative, { kind: "project", orgId: ORG, mediaId: "pmP2" }); // now the last holder
+    expect(await fileExists(t, "f1")).toBe(false);
+  });
+});
+
 describe("notes save event", () => {
   test("a notes save writes a note_updated event naming the field, NEVER the text; lastNoteSaves reads it back", async () => {
     const t = makeT(); await seed(t);

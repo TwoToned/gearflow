@@ -360,9 +360,9 @@ export const undoArchiveNative = mutation({
 
 /**
  * Duplicate a model (`Duplicate…`): a new model row copying the source's own fields
- * ONLY. No assets, bulk stock, accessories or media rows travel with it (a copy is a
- * new catalogue entry, not a clone of the stock), the name gets ` (copy)` and the SKU is
- * cleared (a SKU names one model). The forward write records its own exact-Undo
+ * ONLY. No assets, bulk stock, accessories, check items or media rows travel with it (a copy
+ * is a new catalogue entry, not a clone of the stock), the name gets ` (copy)`, the SKU is
+ * cleared (a SKU names one model) and the sale-stock pool is not copied. The forward write records its own exact-Undo
  * snapshot in its audit row (`details.duplicate`).
  */
 export const duplicateNative = mutation({
@@ -379,7 +379,10 @@ export const duplicateNative = mutation({
     if (dup) throw new ConvexError("Model already exists");
     const name = `${src.name} (copy)`.slice(0, 200);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { _id, _creationTime, id: _srcId, organizationId: _org, createdAt: _c, updatedAt: _u, sku: _sku, ...own } = src;
+    // Not copied: the SKU (names one model) and the new-stock sale POOL (`saleStockQuantity`, `reorderLevel`):
+    // a copy starts with no pool, never phantom stock. `image` / `images` URLs are shared, which is fine:
+    // no path deletes a file a model points at.
+    const { _id, _creationTime, id: _srcId, organizationId: _org, createdAt: _c, updatedAt: _u, sku: _sku, saleStockQuantity: _pool, reorderLevel: _reorder, ...own } = src;
     await ctx.db.insert("models", { ...own, id: a.id, organizationId: a.orgId, name, isActive: true, createdAt: a.now, updatedAt: a.now });
     await writeActivityLog(ctx, {
       id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "model", entityId: a.id, entityName: name,
@@ -429,7 +432,9 @@ export const undoDuplicateNative = mutation({
   handler: async (ctx, a) => {
     await assertWritesEnabled(ctx, "model");
     await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, a.orgId, "model", "delete");
+    // `model:create`, the SAME permission as the duplicate it reverses (it is author-only and windowed too):
+    // gating it on `model:delete` would hand a manager an Undo that always fails.
+    await requireOrgPermission(ctx, a.orgId, "model", "create");
     const actor = await resolveActor(ctx, a.actor);
     const snap = await loadDuplicateSnapshot(ctx, a, actor.userId);
     const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();

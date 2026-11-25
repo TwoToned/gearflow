@@ -35035,11 +35035,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "kind": "mutation",
     "guard": "orgPermission",
     "resource": "model",
-    "action": "delete",
+    "action": "create",
     "scopePairs": [
       {
         "resource": "model",
-        "action": "delete"
+        "action": "create"
       }
     ],
     "agentReachable": true,

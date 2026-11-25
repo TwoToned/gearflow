@@ -362,11 +362,16 @@ dialogs and the onboarding tour anchor are kept.
 - **The page's ⋯** (`buildModelPageActions`, `src/lib/row-actions/model.ts`): New asset · Edit ·
   `Duplicate…` · `Print labels for all (n)` · `Archive…` (last, red, `model:delete`) or `Restore`
   (`model:update`). Absent, never disabled. Archive, Restore and Duplicate each toast with an exact Undo.
-- **Duplicate** (`modelWrites.duplicateNative`) copies the model's own fields only: no assets, bulk
-  stock, accessories or media, the name gets ` (copy)` and the SKU is cleared. Its Undo
-  (`undoDuplicateNative`, ids only) reads the duplicate's own audit row and deletes the copy only while
-  it is the author's, inside the server-clock window, unedited, and has no units, stock, job lines or
-  sub-hire lines on it.
+- **Duplicate** (`modelWrites.duplicateNative`, `model:create`) copies the model's own fields only: no
+  assets, bulk stock, accessories, check items or media rows (the toast says so), the name gets ` (copy)`,
+  the SKU is cleared, and the new-stock sale pool (`saleStockQuantity`, `reorderLevel`) is NOT copied, so a
+  copy never starts with phantom stock. `image` / `images` URLs are shared with the source; that is safe
+  because no path deletes a file a model points at. Its Undo (`undoDuplicateNative`, ids only, gated on
+  the SAME `model:create`, so a manager's Undo works) reads the duplicate's own audit row and deletes the
+  copy only while it is this org's, the author's, inside the server-clock window, the first undo,
+  unedited, and has no asset, bulk stock, job line or sub-hire line on it. `?edit-model=<unknown or
+  another org's id>` drops the param and says "Model not found". The sheet's asset-type lock counts only
+  active units, like the server.
 - **Print labels for all** is a browser-print QR sheet (`ModelPrintLabelsDialog`, no PDF type): one label
   per live serialised unit and bulk tag (`modelLabels`), retired units left out.
 - **ROI `Show cost & payback`** hides fleet cost, payback and the cost-recovered panel until asked for; a

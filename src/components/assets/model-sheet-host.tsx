@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useConvex, useConvexAuth } from "convex/react";
 
@@ -41,18 +42,28 @@ function EditHost({ id, onClose }: { id: string; onClose: () => void }) {
   const orgId = useActiveOrganization().data?.id;
   const convex = useConvex();
   const { isAuthenticated } = useConvexAuth();
-  const { data: model } = useServerQuery({
+  const { data: model, isLoading, error } = useServerQuery({
     queryKey: ["model", orgId, id, isAuthenticated],
     queryFn: () => convex.query(api.models.detail, { id }),
     enabled: !!orgId && isAuthenticated,
   });
+  // An unknown (or another organisation's) id: say so once and drop the param, never an empty sheet.
+  const missing = !isLoading && (!!error || model === null);
+  useEffect(() => {
+    if (!missing) return;
+    toast.error("Model not found");
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per missing id
+  }, [missing]);
   if (!model) return null;
+  // The asset-type lock counts only ACTIVE units, the same rule `updateNative` enforces.
+  const active = <T extends { isActive?: boolean | null }>(rows: T[]) => rows.filter((r) => r.isActive !== false).length;
   return (
     <ModelSheet
       key={model.id}
       mode="edit"
       values={modelToFormValues(model)}
-      stock={{ assets: model.assets.length, bulk: model.bulkAssets.length }}
+      stock={{ assets: active(model.assets), bulk: active(model.bulkAssets) }}
       onClose={onClose}
       onSaved={(r) => window.dispatchEvent(new CustomEvent(MODEL_SAVED_EVENT, { detail: r.id }))}
     />

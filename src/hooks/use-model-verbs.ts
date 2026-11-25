@@ -36,7 +36,7 @@ export function useModelVerbs({ onChanged, onOpenModel }: { onChanged: () => voi
     try {
       const r = await writes.duplicate(sourceId);
       announceListWrite({
-        title: `Duplicated as ${r.name}`,
+        title: `Duplicated as ${r.name} (units, accessories, check items and media are not copied)`,
         undoneTitle: `Removed ${r.name}`,
         performUndo: async () => {
           await writes.undoDuplicate(r.id, r.auditId);

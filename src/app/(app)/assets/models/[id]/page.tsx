@@ -393,7 +393,7 @@ function ModelDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 { name: model.name, isActive: model.isActive, labelCount: labels.length },
                 {
                   onNewAsset: canEditAssets ? () => router.push(`/assets/registry?new=${model.assetType === "SERIALIZED" ? "serialized" : "bulk"}&modelId=${model.id}`) : undefined,
-                  onEdit: canUpdateModel ? () => router.push(`/assets/models/${id}?edit-model=${id}`) : undefined,
+                  onEdit: canUpdateModel ? () => router.replace(`/assets/models/${id}?edit-model=${id}`) : undefined,
                   onDuplicate: canCreateModel ? () => void verbs.duplicate(model.id) : undefined,
                   onPrintLabels: () => setLabelsOpen(true),
                   onArchive: canArchiveModel ? () => void verbs.archive(model.id, model.name) : undefined,

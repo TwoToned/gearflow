@@ -28814,7 +28814,7 @@ export const OPENAPI_DOCUMENT = {
       "post": {
         "operationId": "modelWrites.undoDuplicateNative",
         "summary": "modelWrites.undoDuplicateNative (mutation)",
-        "description": "Requires scope: model:delete. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "description": "Requires scope: model:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
         "tags": [
           "model"

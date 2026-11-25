@@ -393,7 +393,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelWrites.restoreNative` (mutation, scope: model:update)
 - `modelWrites.setReorderLevelsNative` (mutation, scope: model:update)
 - `modelWrites.undoArchiveNative` (mutation, scope: model:update)
-- `modelWrites.undoDuplicateNative` (mutation, scope: model:delete)
+- `modelWrites.undoDuplicateNative` (mutation, scope: model:create)
 - `modelWrites.undoModelFieldEditsNative` (mutation, scope: model:update)
 - `modelWrites.undoSaleStockNative` (mutation, scope: model:update)
 - `modelWrites.updateNative` (mutation, scope: model:update)

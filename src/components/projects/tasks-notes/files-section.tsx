@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FileRow, downloadFile, fileName, type JobFile } from "@/components/projects/tasks-notes/file-row";
+import { AttachToTaskDialog } from "@/components/projects/tasks-notes/attach-to-task-dialog";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
+import { useTaskLinks } from "@/hooks/use-task-links";
+import { linkTargetKey, type TaskLink } from "@/lib/task-links";
 import { useProjectFileWrites } from "@/hooks/use-project-file-writes";
 import { showError } from "@/lib/show-error";
 import { useIsViewer } from "@/lib/use-permissions";
@@ -172,6 +175,12 @@ function useFileActions(projectId: string, clear: () => void) {
   return { upload, uploading, setType, remove, rename };
 }
 
+/** `Attach to a task…` for one file, mounted only while a file is chosen. */
+function AttachHost({ projectId, file, onClose }: { projectId: string; file: JobFile | null; onClose: () => void }) {
+  if (!file) return null;
+  return <AttachToTaskDialog projectId={projectId} target={{ kind: "file", id: file.id, label: fileName(file) }} onClose={onClose} />;
+}
+
 interface FileListProps {
   loading: boolean;
   total: number;
@@ -182,6 +191,9 @@ interface FileListProps {
   onRename: (file: JobFile) => void;
   onSetType: (id: string, type: FileCategory) => void;
   onRemove: (id: string) => void;
+  /** Tasks linking to a file (the `Task: …` line) and `Attach to a task…` (absent = cannot link). */
+  linksFor: (mediaId: string) => TaskLink[] | undefined;
+  onAttach?: (file: JobFile) => void;
 }
 
 /** The rows, or the one calm line when there is nothing to show. */
@@ -200,6 +212,8 @@ function FileList(p: FileListProps) {
           onRename={() => p.onRename(f)}
           onSetType={(type) => p.onSetType(f.id, type)}
           onRemove={() => p.onRemove(f.id)}
+          taskLinks={p.linksFor(f.id)}
+          onAttachToTask={p.onAttach ? () => p.onAttach?.(f) : undefined}
         />
       ))}
     </ul>
@@ -212,6 +226,8 @@ export function FilesSection({ projectId, orgId }: { projectId: string; orgId: s
   const [filter, setFilter] = React.useState<FileFilter>("all");
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
   const [renaming, setRenaming] = React.useState<JobFile | null>(null);
+  const [attaching, setAttaching] = React.useState<JobFile | null>(null);
+  const { byTarget } = useTaskLinks(projectId);
   const clear = () => setSelected(new Set());
   const { upload, uploading, setType, remove, rename } = useFileActions(projectId, clear);
 
@@ -246,7 +262,10 @@ export function FilesSection({ projectId, orgId }: { projectId: string; orgId: s
         onRename={setRenaming}
         onSetType={(id, type) => void setType([id], type)}
         onRemove={(id) => void remove([id])}
+        linksFor={(id) => byTarget.get(linkTargetKey("file", id))}
+        onAttach={canEdit ? setAttaching : undefined}
       />
+      <AttachHost projectId={projectId} file={attaching} onClose={() => setAttaching(null)} />
       {data?.truncated && <p className="t-micro text-muted">Showing the first files only.</p>}
       {selected.size > 0 && <BulkBar selection={{ count: selected.size, clear }} actions={bulk} noun="file" />}
       <AlsoOnJob projectId={projectId} orgId={orgId} />

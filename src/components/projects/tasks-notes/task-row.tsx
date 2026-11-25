@@ -5,6 +5,8 @@ import { Check, GripVertical } from "lucide-react";
 
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TaskLinkChips } from "@/components/projects/tasks-notes/task-link-chips";
+import type { TaskLink } from "@/lib/task-links";
 import { formatDateInTimezone } from "@/lib/formatters";
 import type { ActionItem } from "@/lib/primitives/types";
 import { isOpenTask } from "@/lib/project-task-groups";
@@ -35,6 +37,9 @@ export interface TaskRowProps {
   onSetDue: (when: DueShortcut) => void;
   onAssign: (target: AssignTarget) => void;
   onDelete: () => void;
+  /** This task's links (Slice E): chips under the assignee / due line. Absent = none shown. */
+  links?: readonly TaskLink[];
+  onOpenLink?: (link: TaskLink) => void;
 }
 
 const assigneeName = (t: ProjectTaskRow): string | null =>
@@ -135,6 +140,9 @@ export function TaskRow(p: TaskRowProps) {
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
           <AssigneeMenu task={task} assignees={p.assignees} onAssign={p.onAssign} />
           <DueMenu task={task} overdue={p.overdue} onSetDue={p.onSetDue} />
+        </div>
+        <div className="mt-1">
+          <TaskLinkChips links={p.links} onOpen={p.onOpenLink} />
         </div>
       </div>
       <ActionMenu

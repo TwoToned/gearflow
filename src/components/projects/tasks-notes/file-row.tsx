@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDate } from "@/lib/formatters";
 import { FILE_CATEGORIES, fileCategoryLabel, fileSizeLabel, isPhotoFile, type FileCategory } from "@/lib/file-category";
 import { buildFileRowActions } from "@/lib/row-actions/file-row";
+import type { TaskLink } from "@/lib/task-links";
 import { cn, focusRing } from "@/lib/utils";
 
 /** A job file as `projectFiles.listForProject` returns it. */
@@ -46,7 +47,13 @@ export function FileRow({
   onRename,
   onSetType,
   onRemove,
+  taskLinks,
+  onAttachToTask,
 }: {
+  /** Tasks that link to this file (Slice E): a `Task: …` back-reference. */
+  taskLinks?: readonly TaskLink[];
+  /** Present only for a caller who may link tasks. */
+  onAttachToTask?: () => void;
   file: JobFile;
   canEdit: boolean;
   selected: boolean;
@@ -63,6 +70,7 @@ export function FileRow({
     onRename,
     onSetType,
     onRemove,
+    onAttachToTask,
   });
   const meta = [fileSizeLabel(file.file.fileSize), file.uploadedByName ? `by ${file.uploadedByName}` : null, file.addedAt ? formatDate(new Date(file.addedAt)) : null]
     .filter(Boolean)
@@ -95,6 +103,9 @@ export function FileRow({
           )}
           <span>{meta}</span>
         </div>
+        {taskLinks && taskLinks.length > 0 && (
+          <p className="truncate text-caption text-muted">Task: {taskLinks.map((l) => l.taskTitle).join(", ")}</p>
+        )}
       </div>
       <ActionMenu spec={spec} label={`${name} actions`} />
     </li>

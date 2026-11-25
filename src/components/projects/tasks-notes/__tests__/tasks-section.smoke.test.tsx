@@ -39,6 +39,16 @@ const actions = {
   create: vi.fn(), patch: vi.fn(), toggleDone: vi.fn(), remove: vi.fn(), bulkPatch: vi.fn(), bulkRemove: vi.fn(), reorder: vi.fn(),
 };
 vi.mock("@/hooks/use-task-actions", () => ({ useTaskActions: () => actions }));
+// Slice E: "Book truck" is linked to a line item and a file.
+const LINKS = [
+  { id: "l1", taskId: "Book truck", taskTitle: "Book truck", kind: "lineItem", linkedId: "li1", label: "Transport" },
+  { id: "l2", taskId: "Book truck", taskTitle: "Book truck", kind: "file", linkedId: "pm1", label: "rider.pdf" },
+];
+const linkActions = { link: vi.fn(), unlink: vi.fn() };
+vi.mock("@/hooks/use-task-links", () => ({
+  useTaskLinks: () => ({ byTask: new Map([["Book truck", LINKS]]), byTarget: new Map(), links: LINKS, truncated: false }),
+  useTaskLinkActions: () => linkActions,
+}));
 vi.mock("@/hooks/use-task-due-clock", () => ({ useTaskDueClock: () => ({ now: NOW, timezone: undefined, ready: true }) }));
 vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: { user: { id: "u2", name: "Bob" } } }) }));
 let mobile = false;
@@ -112,6 +122,25 @@ describe("TasksSection", () => {
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     expect(actions.patch).toHaveBeenCalledTimes(1);
     expect(actions.patch.mock.calls[0][1]).toMatchObject({ title: "Book the big truck", status: "TODO" });
+  });
+
+  it("a task's links show as chips on its row; a chip opens its target", async () => {
+    const user = userEvent.setup();
+    const onOpenLink = vi.fn();
+    render(<TasksSection projectId="p1" onOpenLink={onOpenLink} />);
+    await user.click(screen.getByRole("button", { name: "Line item: Transport" }));
+    expect(onOpenLink).toHaveBeenCalledWith(expect.objectContaining({ id: "l1", kind: "lineItem" }));
+    expect(screen.getByRole("button", { name: "File: rider.pdf" })).toBeTruthy();
+  });
+
+  it("the task sheet lists the links and Unlink removes just that one (its Undo is the toast's)", async () => {
+    const user = userEvent.setup();
+    render(<TasksSection projectId="p1" />);
+    await user.click(screen.getByRole("button", { name: "Book truck" }));
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Linked")).toBeTruthy();
+    await user.click(within(sheet).getByRole("button", { name: "Unlink rider.pdf" }));
+    expect(linkActions.unlink).toHaveBeenCalledWith(expect.objectContaining({ id: "l2" }), "Book truck");
   });
 
   it("Select mode turns the circles into checkboxes and shows the BulkBar with Assign, Due, Mark done, Delete", async () => {

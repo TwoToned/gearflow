@@ -25,7 +25,7 @@ export const listForProject = query({
       (t) => t.organizationId === orgId,
     );
     let truncated = tasks.length > TASK_CAP;
-    const links: { id: string; taskId: string; kind: LinkKind; linkedId: string; label: string }[] = [];
+    const links: { id: string; taskId: string; taskTitle: string; kind: LinkKind; linkedId: string; label: string }[] = [];
     for (const t of tasks.slice(0, TASK_CAP)) {
       if (links.length >= LINK_CAP) {
         truncated = true;
@@ -36,7 +36,7 @@ export const listForProject = query({
       );
       for (const r of rows) {
         const label = await targetLabel(ctx, orgId, projectId, r.linkedKind, r.linkedId);
-        if (label !== null) links.push({ id: r.id, taskId: t.id, kind: r.linkedKind, linkedId: r.linkedId, label });
+        if (label !== null) links.push({ id: r.id, taskId: t.id, taskTitle: t.title, kind: r.linkedKind, linkedId: r.linkedId, label });
       }
     }
     return { links, truncated };

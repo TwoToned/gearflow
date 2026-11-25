@@ -25,7 +25,8 @@ Vocabulary lives in `src/lib/project-tasks.ts` (UI) and `convex/lib/validators.t
 **Deprecated columns (kept in `convex/schema.ts`, never read or written):** `checklist`, `kind`,
 `stage`, `parentId`, `startDate`, `dueTime`, `scheduledStart/End`, `snoozedUntil`,
 `estimateMinutes`, `tags`, `sourceKey`, `isPrivate`, `templateId`, `recurrence`,
-`watcherUserIds`, `automation`; and the tables `workItemLinks`, `workSignalStates`,
+`watcherUserIds`, `automation`; and the tables `workItemLinks` (not revived: see Task links below),
+`workSignalStates`,
 `workTemplates`. Convex rejects a schema push that drops a field/table that still holds data, so
 these stay until a data-wipe migration is run. Rows that were subtasks or automated follow-ups
 simply show up as ordinary tasks now.
@@ -108,6 +109,30 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   `Also on this job` (`projectFiles.alsoOnJob`) lists, read-only, the files that live on other
   tabs (sent quote and issued invoice documents, sub-hire attachments, incident photos), each
   with its origin and an open link, gated per source by `callerMayRead`.
+- **Task links** (UX Phase 10 Slice E; owner-approved, 2026-11-24): the table
+  `projectTaskLinks` (`id, organizationId, taskId, linkedKind: lineItem | file | discussion,
+  linkedId, createdById, createdAt`; indexes `by_cuid`, `by_taskId`, `by_linked`) is a bare
+  POINTER from a task to something on its own job. Nothing about the target is copied, so a
+  renamed line or file never goes stale. It is NOT the retired `workItemLinks` (no typed
+  relations, no cross-job links). `convex/lib/taskLinkTargets.ts` is the one place that decides
+  a target is THIS org's and THIS job's (every lookup is by a global `by_cuid` / Convex id, so
+  each row is org- and project-checked) and caps a task at 25 links. Writes
+  (`projectTaskLinksWrites`): `linkNative` (idempotent: an existing pair returns
+  `created: false`, no write, no Undo), `unlinkNative`, and the ids-only Undos `undoLinkNative` /
+  `undoUnlinkNative`. The forward write stores its author, the SERVER clock and (for an unlink)
+  the whole row in its own audit row; an Undo refuses, changing nothing, unless the row is this
+  org's and this link's, the caller is the author, it is inside the 10-minute window, it has not
+  been undone, and the link is still as that write left it (an unlink's Undo also refuses if
+  the pair exists again or the task / target is gone). An Undo never touches a stored file: a
+  link points at a file, it does not own one. One bounded read, `projectTaskLinks.listForProject`
+  (400 links, 500 tasks), returns every link with its target's label and the linking task's
+  title; a link whose target is gone or moved is dropped, never leaked. UI: chips under a task
+  row (up to three and `+n`) and a `Linked` list with ✕ in the task sheet (a chip opens its
+  target: Equipment, or the Files / Discussion section); `Attach to a task…` in a file row's ⋯
+  and an Equipment line's ⋯ (absent without `project:update`; `AttachToTaskDialog` offers the
+  job's open tasks, never one already linked); a file row prints `Task: …` for the tasks that link
+  to it. Deleting a task keeps its link rows (so a restored task regains them); the read joins
+  through the task, so an orphan is never shown.
 - **`/my-tasks`** (`src/app/(app)/my-tasks/page.tsx`) and the **My tasks** dashboard widget
   (`MyTasksWidget`).
 

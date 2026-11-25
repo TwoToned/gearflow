@@ -9,7 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { TaskLinkChips } from "@/components/projects/tasks-notes/task-link-chips";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { TaskLink } from "@/lib/task-links";
 import type { ProjectTaskInput } from "@/hooks/use-project-tasks-writes";
 import { formatDate } from "@/lib/formatters";
 import {
@@ -41,6 +43,17 @@ function assigneeText(value: string, assignees: Assignable | undefined): string 
   return value.startsWith("c:") ? "Assigned" : "Unassigned";
 }
 
+/** The sheet's `Linked` list (Slice E): every link, each openable and removable; nothing when there are none. */
+function LinkedList({ links, onOpen, onRemove }: { links?: readonly TaskLink[]; onOpen?: (l: TaskLink) => void; onRemove?: (l: TaskLink) => void }) {
+  if (!links || links.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      <p className="text-overline uppercase tracking-wide text-muted">Linked</p>
+      <TaskLinkChips links={links} showAll onOpen={onOpen} onRemove={onRemove} />
+    </div>
+  );
+}
+
 /**
  * The task sheet (UX Phase 10, spec §8c; a Radix `Sheet`, a bottom sheet on a
  * phone): every live field (title, description, assignee from team + crew, due,
@@ -53,12 +66,19 @@ export function TaskSheet({
   onClose,
   onSave,
   onDelete,
+  links,
+  onOpenLink,
+  onUnlink,
 }: {
   task: ProjectTaskRow;
   assignees: Assignable | undefined;
   onClose: () => void;
   onSave: (data: ProjectTaskInput) => void;
   onDelete: () => void;
+  /** This task's links (Slice E), each openable and removable. Absent = no Linked section. */
+  links?: readonly TaskLink[];
+  onOpenLink?: (link: TaskLink) => void;
+  onUnlink?: (link: TaskLink) => void;
 }) {
   const isMobile = useIsMobile();
   const [title, setTitle] = React.useState(task.title);
@@ -112,6 +132,7 @@ export function TaskSheet({
               </SelectContent>
             </Select>
           </div>
+          <LinkedList links={links} onOpen={onOpenLink} onRemove={onUnlink} />
         </div>
         <SheetFooter className="mt-2 flex-row justify-between gap-2 sm:justify-between">
           <Button type="button" variant="ghost" onClick={() => setConfirmingDelete(true)}>

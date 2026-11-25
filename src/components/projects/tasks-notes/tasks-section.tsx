@@ -20,6 +20,8 @@ import {
   type TaskFilter,
 } from "@/lib/project-task-groups";
 import type { ProjectTaskRow } from "@/lib/project-tasks";
+import type { TaskLink } from "@/lib/task-links";
+import { useTaskLinkActions, useTaskLinks } from "@/hooks/use-task-links";
 import { assignLabel, assignPatch, buildTaskBulkActions, type AssignTarget } from "@/lib/row-actions/task-bulk";
 import type { DueShortcut } from "@/lib/row-actions/task-row";
 import { isTaskOverdue } from "../../../../convex/lib/taskDue";
@@ -77,9 +79,11 @@ function Toolbar(p: {
   );
 }
 
-export function TasksSection({ projectId }: { projectId: string }) {
+export function TasksSection({ projectId, onOpenLink }: { projectId: string; onOpenLink?: (link: TaskLink) => void }) {
   const { tasks, isLoading, refetch, assignees } = useProjectTaskList(projectId);
   const actions = useTaskActions(projectId, refetch);
+  const { byTask: linksByTask } = useTaskLinks(projectId);
+  const linkActions = useTaskLinkActions();
   const { now, timezone, ready } = useTaskDueClock();
   const { data: session } = useSession();
   const userId = session?.user.id;
@@ -182,6 +186,8 @@ export function TasksSection({ projectId }: { projectId: string }) {
                     onSetDue: (when) => void setDue(task, when),
                     onAssign: (target) => void assign(task, target),
                     onDelete: () => void actions.remove(task),
+                    links: linksByTask.get(task.id),
+                    onOpenLink,
                   })}
                 />
               )}
@@ -196,6 +202,9 @@ export function TasksSection({ projectId }: { projectId: string }) {
         <TaskSheet
           task={editing}
           assignees={assigneesForMenus}
+          links={linksByTask.get(editing.id)}
+          onOpenLink={onOpenLink}
+          onUnlink={(l) => void linkActions.unlink(l, editing.title)}
           onClose={() => setEditing(null)}
           onSave={(data) => {
             const task = editing;

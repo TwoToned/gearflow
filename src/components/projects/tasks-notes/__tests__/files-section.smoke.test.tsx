@@ -48,6 +48,28 @@ vi.mock("@/hooks/use-authed-query", async () => {
   };
 });
 
+// Slice E: rider.pdf (media m1) is linked from the task "Book truck"; two open tasks exist.
+const taskLinkActions = { link: vi.fn(), unlink: vi.fn() };
+vi.mock("@/hooks/use-task-links", () => ({
+  useTaskLinks: () => ({
+    byTask: new Map(),
+    byTarget: new Map([["file:m1", [{ id: "l1", taskId: "t1", taskTitle: "Book truck", kind: "file", linkedId: "m1", label: "rider.pdf" }]]]),
+    links: [],
+    truncated: false,
+  }),
+  useTaskLinkActions: () => taskLinkActions,
+}));
+vi.mock("@/hooks/use-project-task-list", () => ({
+  useProjectTaskList: () => ({
+    isLoading: false,
+    tasks: [
+      { id: "t1", title: "Book truck", status: "TODO" },
+      { id: "t2", title: "Print passes", status: "TODO" },
+      { id: "t3", title: "Old thing", status: "DONE" },
+    ],
+  }),
+}));
+
 import { FilesSection } from "@/components/projects/tasks-notes/files-section";
 
 beforeEach(() => {
@@ -114,6 +136,29 @@ describe("FilesSection", () => {
     expect(within(bar).getByText(/Download 2/)).toBeTruthy();
   });
 
+  it("a file shows which task links to it, and Attach to a task links ONE open task (done tasks and already-linked ones are not offered)", async () => {
+    const user = userEvent.setup();
+    render(<FilesSection projectId="p1" orgId="org1" />);
+    expect(screen.getByText("Task: Book truck")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "stage.jpg actions" }));
+    await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: /Attach to a task/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("Old thing")).toBeNull(); // a done task is not offered
+    await user.click(within(dialog).getByRole("button", { name: /Print passes/ }));
+    expect(taskLinkActions.link).toHaveBeenCalledWith(expect.objectContaining({ id: "t2" }), { kind: "file", id: "m2", label: "stage.jpg" });
+  });
+
+  it("a task that already links to the file is shown as Linked and cannot be linked again", async () => {
+    const user = userEvent.setup();
+    render(<FilesSection projectId="p1" orgId="org1" />);
+    await user.click(screen.getByRole("button", { name: "rider.pdf actions" }));
+    await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: /Attach to a task/ }));
+    const dialog = await screen.findByRole("dialog");
+    const linked = within(dialog).getByRole("button", { name: /Book truck/ }) as HTMLButtonElement;
+    expect(linked.disabled).toBe(true);
+    expect(within(dialog).getByText("Linked")).toBeTruthy();
+  });
+
   it("a viewer can open and download but has no upload strip, rename, category menu or Remove", async () => {
     viewer = true;
     const user = userEvent.setup();
@@ -122,7 +167,7 @@ describe("FilesSection", () => {
     expect(screen.queryByRole("button", { name: "Category: Other" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "rider.pdf actions" }));
     const menu = await screen.findByRole("menu");
-    expect(within(menu).queryByRole("menuitem", { name: /Remove|Rename/ })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: /Remove|Rename|Attach to a task/ })).toBeNull();
     expect(within(menu).getByRole("menuitem", { name: /Download/ })).toBeTruthy();
   });
 });

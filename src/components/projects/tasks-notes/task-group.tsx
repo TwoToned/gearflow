@@ -14,7 +14,7 @@ import type { TaskGroup as TaskGroupData } from "@/lib/project-task-groups";
  * per project, so a drag never moves a task across groups; the due menu changes the
  * day). The grip is absent while reordering makes no sense (Select mode, one task).
  */
-type RowProps = Omit<TaskRowProps, "task" | "overdue" | "selected" | "grip" | "onSelectedChange" | "onEdit" | "onToggleDone" | "onSetDue" | "onAssign" | "onDelete">;
+type RowProps = Omit<TaskRowProps, "task" | "overdue" | "selected" | "grip" | "onSelectedChange" | "onEdit" | "onToggleDone" | "onSetDue" | "onAssign" | "onDelete" | "links" | "onOpenLink">;
 
 export interface TaskGroupProps {
   group: TaskGroupData;
@@ -22,7 +22,7 @@ export interface TaskGroupProps {
   onReorder: (activeId: string, overId: string, groupIds: string[]) => void;
   isOverdue: (taskId: string) => boolean;
   isSelected: (taskId: string) => boolean;
-  rowHandlers: (task: TaskGroupData["tasks"][number]) => Pick<TaskRowProps, "onSelectedChange" | "onEdit" | "onToggleDone" | "onSetDue" | "onAssign" | "onDelete">;
+  rowHandlers: (task: TaskGroupData["tasks"][number]) => Pick<TaskRowProps, "onSelectedChange" | "onEdit" | "onToggleDone" | "onSetDue" | "onAssign" | "onDelete" | "links" | "onOpenLink">;
   rowProps: RowProps;
 }
 

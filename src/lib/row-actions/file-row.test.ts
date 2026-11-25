@@ -15,6 +15,12 @@ describe("buildFileRowActions", () => {
     expect(remove.confirm?.body).toMatch(/cannot be undone/i); // a stored-file delete: no Undo, ever
   });
 
+  test("Attach to a task… appears only when the caller can link tasks (absent, not disabled)", () => {
+    expect(keys(buildFileRowActions({ type: "OTHER", name: "x" }, true, h()))).not.toContain("attach-task");
+    expect(keys(buildFileRowActions({ type: "OTHER", name: "x" }, true, { ...h(), onAttachToTask: vi.fn() }))).toEqual(["open", "download", "rename", "attach-task", "category", "remove"]);
+    expect(keys(buildFileRowActions({ type: "OTHER", name: "x" }, false, { ...h(), onAttachToTask: vi.fn() }))).toEqual(["open", "download"]);
+  });
+
   test("a viewer gets only Open and Download (write verbs absent, not disabled)", () => {
     expect(keys(buildFileRowActions({ type: "OTHER", name: "x" }, false, h()))).toEqual(["open", "download"]);
   });

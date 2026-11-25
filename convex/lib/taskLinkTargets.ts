@@ -25,18 +25,30 @@ export async function assertLinkTarget(ctx: MutationCtx | QueryCtx, orgId: strin
 
 /** The label, or `null` when the target is missing / another org's / another job's. */
 export async function targetLabel(ctx: MutationCtx | QueryCtx, orgId: string, projectId: string, kind: LinkKind, linkedId: string): Promise<string | null> {
-  if (kind === "lineItem") {
-    const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", linkedId)).first();
-    return li && li.organizationId === orgId && li.projectId === projectId ? (li.description ?? "Line item") : null;
-  }
-  if (kind === "file") {
-    const m = await ctx.db.query("projectMedia").withIndex("by_cuid", (q) => q.eq("id", linkedId)).first();
-    if (!m || m.organizationId !== orgId || m.projectId !== projectId) return null;
-    if (m.displayName) return m.displayName;
-    const f = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).first();
-    return f && f.organizationId === orgId ? f.fileName : "File";
-  }
-  const threadId = ctx.db.normalizeId("commentThreads", linkedId);
+  if (kind === "lineItem") return lineItemLabel(ctx, orgId, projectId, linkedId);
+  if (kind === "file") return fileLabel(ctx, orgId, projectId, linkedId);
+  return discussionLabel(ctx, orgId, projectId, linkedId);
+}
+
+type Ctx = MutationCtx | QueryCtx;
+
+async function lineItemLabel(ctx: Ctx, orgId: string, projectId: string, id: string): Promise<string | null> {
+  const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!li || li.organizationId !== orgId || li.projectId !== projectId) return null;
+  return li.description ?? "Line item";
+}
+
+async function fileLabel(ctx: Ctx, orgId: string, projectId: string, id: string): Promise<string | null> {
+  const m = await ctx.db.query("projectMedia").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!m || m.organizationId !== orgId || m.projectId !== projectId) return null;
+  if (m.displayName) return m.displayName;
+  const f = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", m.fileId)).first();
+  return f && f.organizationId === orgId ? f.fileName : "File";
+}
+
+async function discussionLabel(ctx: Ctx, orgId: string, projectId: string, id: string): Promise<string | null> {
+  const threadId = ctx.db.normalizeId("commentThreads", id);
   const t = threadId ? await ctx.db.get(threadId) : null;
-  return t && t.orgId === orgId && (t.projectId === projectId || t.entityId === projectId) ? "Discussion" : null;
+  if (!t || t.orgId !== orgId) return null;
+  return t.projectId === projectId || t.entityId === projectId ? "Discussion" : null;
 }

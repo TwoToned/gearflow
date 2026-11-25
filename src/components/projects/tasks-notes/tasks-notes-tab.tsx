@@ -8,6 +8,7 @@ import { NotesSection, type NoteValues } from "@/components/projects/tasks-notes
 import { TasksSection } from "@/components/projects/tasks-notes/tasks-section";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import type { JobTabKey, TasksNotesSection } from "@/lib/job-tabs";
+import type { TaskLink } from "@/lib/task-links";
 import { cn, focusRing } from "@/lib/utils";
 
 /**
@@ -66,6 +67,8 @@ export function TasksNotesTab({
   useEffect(() => {
     if (section) refs.current[section]?.scrollIntoView?.({ block: "start" });
   }, [section]);
+  // A task link opens where its target lives: a line item on Equipment, a file and a discussion on this tab.
+  const openLink = (l: TaskLink) => (l.kind === "lineItem" ? onOpenTab("equipment") : jump(l.kind === "file" ? "files" : "discussion"));
   const slot = (key: TasksNotesSection) => (el: HTMLElement | null) => {
     refs.current[key] = el;
   };
@@ -79,7 +82,7 @@ export function TasksNotesTab({
             <Heading id="tn-tasks">Tasks</Heading>
             <VersionNotTrackedNote what="Tasks" />
             {/* Keyed by org: switching organisation must drop the selection and any open sheet. */}
-            <TasksSection key={orgId} projectId={projectId} />
+            <TasksSection key={orgId} projectId={projectId} onOpenLink={openLink} />
           </section>
           <section ref={slot("files")}>
             <Heading id="tn-files">Files</Heading>

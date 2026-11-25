@@ -76,6 +76,15 @@ async function linkEvent(ctx: MutationCtx, a: { orgId: string; projectId: string
   await emitProjectActivityEvent(ctx, { orgId: a.orgId, projectId: a.projectId, actor: a.actor, now: a.now, action: a.action, summary: a.summary, targetType: "task", targetId: a.taskId });
 }
 
+/** The `taskLink` block a forward write stored (author, server clock, and an unlink's row), or a refusal. */
+function parseTaskLinkDetails(details: unknown): { authorId: string; serverSavedAt: number; row?: Record<string, unknown> } {
+  const d = (details as { taskLink?: { authorId?: string; serverSavedAt?: number; row?: Record<string, unknown> } } | undefined)?.taskLink;
+  if (!d || typeof d.authorId !== "string" || typeof d.serverSavedAt !== "number") {
+    throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone." });
+  }
+  return { authorId: d.authorId, serverSavedAt: d.serverSavedAt, row: d.row };
+}
+
 /** The forward row an Undo reads: this org's, for this link, and the snapshot block it carries. */
 async function readForward(ctx: MutationCtx, orgId: string, auditId: string, linkId: string) {
   const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
@@ -83,10 +92,7 @@ async function readForward(ctx: MutationCtx, orgId: string, auditId: string, lin
   if (!row || row.organizationId !== orgId || row.entityType !== "ProjectTaskLink" || row.entityId !== linkId) {
     throw new ConvexError({ code: "NOT_FOUND", message: "That change was not found, so it can't be undone." });
   }
-  const d = (row.details as { taskLink?: { authorId?: string; serverSavedAt?: number; row?: Record<string, unknown> } } | undefined)?.taskLink;
-  if (!d || typeof d.authorId !== "string" || typeof d.serverSavedAt !== "number") {
-    throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone." });
-  }
+  const d = parseTaskLinkDetails(row.details);
   const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(auditId))).first();
   if (marker && marker.organizationId === orgId) throw new ConvexError({ code: "ALREADY_UNDONE", message: "That change was already undone." });
   return { row, authorId: d.authorId, serverSavedAt: d.serverSavedAt, snapshot: d.row };

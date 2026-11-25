@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { Download, ExternalLink, ListChecks, Pencil, Trash2 } from "lucide-react";
 
 import { FILE_CATEGORIES, type FileCategory } from "@/lib/file-category";
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
@@ -15,6 +15,8 @@ export interface FileRowHandlers {
   onRename: () => void;
   onSetType: (type: FileCategory) => void;
   onRemove: () => void;
+  /** `Attach to a task…` (UX Phase 10 Slice E); absent = the caller cannot link tasks. */
+  onAttachToTask?: () => void;
 }
 
 export function buildFileRowActions(file: { type: string; name: string }, canEdit: boolean, h: FileRowHandlers): ActionMenuSpec {
@@ -25,6 +27,7 @@ export function buildFileRowActions(file: { type: string; name: string }, canEdi
   if (!canEdit) return { items };
   items.push(
     { key: "rename", label: "Rename…", group: "edit", icon: Pencil, onSelect: h.onRename },
+    ...(h.onAttachToTask ? [{ key: "attach-task", label: "Attach to a task…", group: "organise" as const, icon: ListChecks, onSelect: h.onAttachToTask }] : []),
     {
       key: "category",
       label: "Change category",

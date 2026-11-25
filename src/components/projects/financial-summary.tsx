@@ -111,7 +111,8 @@ function CostsColumn({
   maintenance: { total: number; count: number; href: string; labourRevenue: number } | null;
 }) {
   const m = maintenance ?? { total: 0, count: 0, href: "", labourRevenue: 0 };
-  const costs = service + labour + subHire + sale + m.total;
+  // The costs the margin subtracts (`marginExGst`): services, labour, sub-hire, sale COGS.
+  const costs = service + labour + subHire + sale;
   // Only non-zero lines show. "Labour revenue" is a memo beside the labour COST
   // row (WS10 #949): revenue for service-linked LABOUR services, while the cost
   // also covers standalone crew that never has a charge side.
@@ -120,7 +121,6 @@ function CostsColumn({
     { label: "Labour", amount: labour },
     { label: "Labour revenue", amount: m.labourRevenue, muted: true },
     { label: "Sub-Hires", amount: subHire },
-    { label: `Maintenance (${m.count})`, amount: m.total },
     { label: "Sale cost of goods", amount: sale },
   ];
   return (
@@ -130,8 +130,10 @@ function CostsColumn({
         <Row key={l.label} label={l.label} value={formatCurrency(l.amount)} muted={l.muted} />
       ))}
       {costs > 0 ? <Row label="Total costs" value={formatCurrency(costs)} bold /> : <Row label="No costs recorded" value="—" muted />}
+      {/* Maintenance is its own memo line: it is NOT in the margin above, so it never makes a second margin. */}
+      {m.total > 0 && <Row label={`Maintenance (${m.count}), not in margin`} value={formatCurrency(m.total)} muted />}
       {m.count > 0 && (
-        <Link href={m.href}className="inline-block text-caption text-link underline-offset-2 hover:underline">
+        <Link href={m.href} className="inline-block text-caption text-link underline-offset-2 hover:underline">
           Maintenance records →
         </Link>
       )}
@@ -227,6 +229,8 @@ export function FinancialSummary({
 }: FinancialSummaryProps) {
   const totalVal = total != null ? Number(total) : 0;
   const marginVal = margin != null ? Number(margin) : 0;
+  // The margin's base is revenue EX GST (the same base as the tile): total less tax.
+  const revenueExGst = totalVal - (taxAmount != null ? Number(taxAmount) : 0);
   const costsShown = margin != null && serviceCostTotal != null && labourCostTotal != null;
   const allGroupsPriced = totalGroupCount != null && pricedGroupCount != null && pricedGroupCount >= totalGroupCount;
 
@@ -243,7 +247,7 @@ export function FinancialSummary({
           <span className="text-xs text-fg-3">Total inc GST</span>
           <span className="text-lg font-bold tabular-nums tracking-tight text-fg">{formatCurrency(totalVal)}</span>
         </div>
-        {costsShown && <MarginBar margin={marginVal} total={totalVal} />}
+        {costsShown && <MarginBar margin={marginVal} total={revenueExGst} />}
         <div className="flex items-baseline justify-between">
           {costsShown ? (
             <span className="text-right text-[11px] text-fg-4">Margin: {formatCurrency(marginVal)} ex GST</span>

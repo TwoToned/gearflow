@@ -30,6 +30,7 @@ import type * as backfillInvoiceSourceRevision from "../backfillInvoiceSourceRev
 import type * as backfillKitUnits from "../backfillKitUnits.js";
 import type * as backfillMaintenanceSchedules from "../backfillMaintenanceSchedules.js";
 import type * as backfillOrphanedLineItemComments from "../backfillOrphanedLineItemComments.js";
+import type * as backfillProjectMargin from "../backfillProjectMargin.js";
 import type * as backfillProjectContainers from "../backfillProjectContainers.js";
 import type * as backfillProjectLiveRevision from "../backfillProjectLiveRevision.js";
 import type * as backfillProjectPricingLock from "../backfillProjectPricingLock.js";
@@ -361,6 +362,7 @@ declare const fullApi: ApiFromModules<{
   backfillKitUnits: typeof backfillKitUnits;
   backfillMaintenanceSchedules: typeof backfillMaintenanceSchedules;
   backfillOrphanedLineItemComments: typeof backfillOrphanedLineItemComments;
+  backfillProjectMargin: typeof backfillProjectMargin;
   backfillProjectContainers: typeof backfillProjectContainers;
   backfillProjectLiveRevision: typeof backfillProjectLiveRevision;
   backfillProjectPricingLock: typeof backfillProjectPricingLock;

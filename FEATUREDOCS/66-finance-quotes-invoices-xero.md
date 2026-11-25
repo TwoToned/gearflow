@@ -1780,5 +1780,17 @@ can't both spend the same rotating refresh token.
   (with the `Maintenance records →` link); the Invoiced / Deposit lines moved to the tiles.
   `ProjectCostsPanel` and `ProjectFinancePanel` are gone. The P&L is read only when a margin is
   present, so a zero-filled `operationalCosts` is never rendered as real.
+- **One margin, ex GST.** `projects.margin` is `taxableAmount - costs` (`marginExGst` in
+  `convex/lib/recalc.ts`; before this phase it was `total - costs`, which included the GST).
+  The tile and the Financials card show THAT figure; the P&L's net margin (also minus
+  maintenance) is not shown as a second margin.
+- **Post-deploy (run once per deployment, by the owner; nothing runs it automatically).**
+  Rows keep the old GST-inclusive `margin` until their next recalc. The internal,
+  idempotent `backfillProjectMargin:backfillProjectMarginPage` recomputes `margin` from the
+  stored buckets and patches only that field where it differs (no activity row, no
+  `updatedAt`, no recalc, so locked jobs' money cannot move). Run it in pages until
+  `isDone`: `pnpm exec convex run --prod backfillProjectMargin:backfillProjectMarginPage '{"cursor": null}'`,
+  then repeat with the returned `cursor`. It returns `{ scanned, patched, cursor, isDone }`;
+  a second full pass reports `patched: 0`.
 - **Stored-bytes rules are unchanged**: every PDF action is a download of the stored artifact,
   a watermarked preview for a draft, or the explicit retry; no new live-render path.

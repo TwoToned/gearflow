@@ -94,10 +94,17 @@ describe("FinancialSummary smoke", () => {
     const { container } = render(
       <FinancialSummary {...BASE_PROPS} serviceCostTotal={100} maintenance={{ total: 60, count: 2, href: "/maintenance?projectId=p1", labourRevenue: 0 }} />,
     );
-    expect(screen.getByText("Maintenance (2)")).toBeTruthy();
+    // Maintenance is a memo line, NOT in the margin or in Total costs (no second margin).
+    expect(screen.getByText("Maintenance (2), not in margin")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Maintenance records/ }).getAttribute("href")).toBe("/maintenance?projectId=p1");
-    expect(screen.getByText("Total costs").nextSibling?.textContent).toBe("$160.00");
+    expect(screen.getByText("Total costs").nextSibling?.textContent).toBe("$100.00");
     expect(container.textContent).toMatch(/Margin: \$400\.00 ex GST/);
+  });
+
+  it("the margin bar's % is of revenue ex GST (the tile's base), not of the GST-inclusive total", () => {
+    const { container } = render(<FinancialSummary {...BASE_PROPS} serviceCostTotal={600} />); // margin 400 of ex-GST 1000
+    expect(container.textContent).toMatch(/40%/);
+    expect(container.textContent).not.toMatch(/36%/); // 400 / 1100
   });
 
   it("never shows maintenance without job cost, even when it is passed", () => {

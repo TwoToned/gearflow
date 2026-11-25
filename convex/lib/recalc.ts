@@ -40,6 +40,22 @@ import { versionRows, resolveVersionId, resolveEffectiveProjectForVersion } from
  */
 
 const round = (v: number): number => Math.round(v * 100) / 100;
+
+/** The taxable amount: subtotal less the discount. The ONE formula (recalc and the margin backfill). */
+export const taxableFrom = (subtotal: number, discountAmount: number): number => round(subtotal - discountAmount);
+
+/**
+ * THE margin formula: EX GST, the taxable amount less every cost bucket. `total`
+ * includes tax, which is not margin. `recalcProjectTotals` writes it; the margin
+ * backfill (`backfillProjectMargin.ts`) recomputes it from the stored buckets
+ * through this same function, so there is one definition.
+ */
+export function marginExGst(
+  taxableAmount: number,
+  costs: { serviceCostTotal: number; labourCostTotal: number; subHireCostTotal: number; saleCostTotal: number },
+): number {
+  return round(taxableAmount - (costs.serviceCostTotal + costs.labourCostTotal + costs.subHireCostTotal + costs.saleCostTotal));
+}
 const num = (v: unknown): number => (v != null ? Number(v) : 0);
 
 /** First value > 0 in priority order — the "resolved unit cost" chain (WS11
@@ -448,7 +464,7 @@ export function computeTotals(bundle: TotalsBundle): Totals {
   const subtotal = round(equipmentRevenue + serviceRevenue + saleRevenue);
   const discountPercent = num(project.discountPercent);
   const discountAmount = round(subtotal * (discountPercent / 100));
-  const taxableAmount = round(subtotal - discountAmount);
+  const taxableAmount = taxableFrom(subtotal, discountAmount);
 
   // T3 (#1091, docs/designs/tax-model.md §2) — an exempt client's projects
   // produce zero tax regardless of any project/line rate: a hard
@@ -492,7 +508,11 @@ export function computeTotals(bundle: TotalsBundle): Totals {
   const total = round(taxableAmount + taxAmount);
   // WS11 (#950) — saleCostTotal joins the cost side so a sale's margin (sale
   // price minus its COGS) is visible, same as every other cost bucket here.
-  const margin = round(total - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal));
+  // The margin is EX GST: the taxable amount (after discount) less costs. `total`
+  // includes tax, which is the client's money to remit, not margin (the UI labels
+  // this "Margin ex GST" and divides it by ex-GST revenue). One definition: the
+  // operational P&L (`projectCosts.operationalCosts`) uses the same base.
+  const margin = marginExGst(taxableAmount, { serviceCostTotal, labourCostTotal, subHireCostTotal, saleCostTotal });
 
   // 6b. WS1 (#940) — depositPaid/invoicedTotal are DERIVED from this project's
   // own invoices (never hand-typed — see the schema.ts field comment).

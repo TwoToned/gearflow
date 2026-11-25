@@ -122,7 +122,9 @@ export function FinancialsCard({
   return (
     <FinancialSummary
       {...summary}
-      margin={pnlLoaded ? pnl.netMargin : margin}
+      // ONE margin: the project's (the tile's), ex GST. The P&L only supplies the
+      // maintenance and labour-revenue memo lines; its own net margin is never shown.
+      margin={margin}
       maintenance={
         pnlLoaded
           ? {

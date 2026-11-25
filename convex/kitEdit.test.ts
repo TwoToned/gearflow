@@ -236,4 +236,56 @@ describe("kitWrites.editNative and the kit cost line", () => {
     await edit(t, { purchasePrice: 450 }, [], "u1");
     expect((await kit(t)).purchasePrice).toBe(450); // a user session sets it
   });
+
+  async function seedWithKey(t: T) {
+    await seed(t);
+    await t.run(async (ctx) => {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+      await ctx.db.patch(k!._id, { purchasePrice: 400 });
+      await ctx.db.insert("apiKeys", { id: "key1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h", scopes: JSON.stringify(["*"]), isActive: true, actingUserId: "user_1", createdById: "user_1", noFinancials: true });
+    });
+  }
+  const asAgentKey = { subject: "user_1", orgId: ORG, akid: "key1" };
+
+  test("a noFinancials key cannot undo a user's cost edit (it would rewrite a number it cannot read); the user can", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    await edit(t, { name: "Rack B", purchasePrice: 450 }, [], "u1"); // a user edits the name AND the price
+    await expect(undoEdit(t, "u1", asAgentKey)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect(await kit(t)).toMatchObject({ name: "Rack B", purchasePrice: 450 }); // refused as a whole: nothing restored
+    await undoEdit(t, "u1"); // the same person with a user session
+    expect(await kit(t)).toMatchObject({ name: "Rack", purchasePrice: 400 });
+  });
+
+  test("a noFinancials key CAN undo an edit that did not touch the cost, and the CLEARED price is not restored through it", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    await edit(t, { name: "Rack B" }, [], "n1");
+    await undoEdit(t, "n1", asAgentKey);
+    expect(await kit(t)).toMatchObject({ name: "Rack", purchasePrice: 400 });
+    await edit(t, {}, ["purchasePrice"], "c1"); // a user clears the price
+    await expect(undoEdit(t, "c1", asAgentKey)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect((await kit(t)).purchasePrice).toBeUndefined();
+  });
+
+  test("createNative from a noFinancials key stores no purchasePrice; from a user session it does", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    const create = (id: string, who: typeof asUser, auditId: string) =>
+      t.withIdentity(who).mutation(api.kitWrites.createNative, { id, organizationId: ORG, assetTag: `T-${id}`, name: id, purchasePrice: 99, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId } as never);
+    await create("viaKey", asAgentKey, "ck");
+    await create("viaUser", asUser, "cu");
+    expect((await kit(t, "viaKey")).purchasePrice).toBeUndefined();
+    expect((await kit(t, "viaUser")).purchasePrice).toBe(99);
+  });
+
+  test("absent tags and [] are the same state: a save that only sends [] writes nothing and offers no Undo", async () => {
+    const t = makeT();
+    await seed(t);
+    expect(await edit(t, { name: "Rack", tags: [] }, [], "t1")).toEqual({ id: "k1", changed: false });
+    await expect(undoEdit(t, "t1")).rejects.toThrow();
+    await edit(t, { tags: ["a"] }, [], "t2");
+    expect(await edit(t, { tags: [] }, [], "t3")).toEqual({ id: "k1", changed: true }); // clearing real tags still counts
+    expect((await kit(t)).tags).toEqual([]);
+  });
 });

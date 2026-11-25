@@ -165,7 +165,8 @@ export const createNative = mutation({
     if (fields.categoryId) await assertRefInOrg(ctx, "categories", fields.categoryId, fields.organizationId);
     if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
 
-    await ctx.db.insert("kits", fields);
+    // What the kit cost is a cost field: a `noFinancials` key cannot set it on create either (the write follows the read).
+    await ctx.db.insert("kits", (await kitCostGuard(ctx)).row(fields));
     await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     // Advance the asset-tag counter (parity — createKit reserved 1 after insert).
     await reserveAssetTagCounter(ctx, fields.organizationId, 1, fields.createdAt ?? fields.updatedAt ?? 0);
@@ -287,6 +288,25 @@ async function withoutHiddenKitCost<S extends Record<string, unknown>>(ctx: Muta
   return { set: kept, clear: clear.filter((f) => !(KIT_COST_FIELDS as readonly string[]).includes(f)) };
 }
 
+/** A kit with no tags and a save that sends `[]` are the same state: drop the empty list so a no-op save writes nothing and offers no Undo. */
+function withoutNoopEmptyTags<S extends { tags?: string[] }>(set: S, doc: { tags?: string[] | null }): S {
+  if (!set.tags || set.tags.length > 0 || doc.tags?.length) return set;
+  const { tags: _empty, ...rest } = set;
+  void _empty;
+  return rest as S;
+}
+
+/**
+ * An Undo restores EVERY field its edit changed, so for a caller whose cost is hidden (a `noFinancials` key) it
+ * refuses as a whole when the plan would touch what the kit cost (set OR clear): otherwise undoing a user's price
+ * edit would let the key rewrite a number it cannot read (the write follows the read).
+ */
+async function assertHiddenCostUntouched(ctx: MutationCtx, fields: string[]): Promise<void> {
+  if (!(await kitCostGuard(ctx)).hidden) return;
+  if (!fields.some((f) => (KIT_COST_FIELDS as readonly string[]).includes(f))) return;
+  throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change touched what the kit cost, which this key can't see, so it can't be undone here." });
+}
+
 /**
  * The Kit sheet's save (UX Phase 14, 14b-2): `set` writes fields, `clear` empties them (the old `updateNative`
  * could not clear a field: an omitted arg leaves it alone). Only KIT_EDIT_FIELDS may be named, so status, the
@@ -304,7 +324,9 @@ export const editNative = mutation({
     const doc = await getKitByCuid(ctx, a.id);
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found: " + a.id);
     // What the kit COST to buy is a cost field: a `noFinancials` key can neither set nor clear it (the write follows the read).
-    const { set, clear } = await withoutHiddenKitCost(ctx, a.set, a.clear);
+    const hiddenCost = await withoutHiddenKitCost(ctx, a.set, a.clear);
+    const set = withoutNoopEmptyTags(hiddenCost.set, doc);
+    const clear = hiddenCost.clear;
     const clears = clear.filter((f) => (KIT_EDIT_FIELDS as readonly string[]).includes(f) && f !== "name" && f !== "assetTag");
     if (clears.length !== clear.length) throw new ConvexError("That field can't be cleared here");
     assertKitFields(set);
@@ -341,6 +363,7 @@ export const undoEditNative = mutation({
       apply: async (doc, plan) => {
         const fields = [...Object.keys(plan.set), ...plan.clear];
         if (fields.some((f) => !(KIT_EDIT_FIELDS as readonly string[]).includes(f))) throw new ConvexError("This change can't be undone");
+        await assertHiddenCostUntouched(ctx, fields);
         if (typeof plan.set.assetTag === "string") await assertTagFree(ctx, a.orgId, plan.set.assetTag, a.id);
         if (typeof plan.set.categoryId === "string") await assertRefInOrg(ctx, "categories", plan.set.categoryId, a.orgId);
         if (typeof plan.set.locationId === "string") await assertRefInOrg(ctx, "locations", plan.set.locationId, a.orgId);

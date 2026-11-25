@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { projectSchema } from "@/lib/validations/project";
-import { buildProjectUpdate } from "./project-edit-patch";
+import { buildProjectUpdate, changedGroups } from "./project-edit-patch";
 import { LOCKED_PROJECT_FIELDS } from "../../convex/lib/projectLocks";
 
 const parse = (over: Record<string, unknown> = {}) =>
@@ -54,6 +54,12 @@ describe("buildProjectUpdate: diff mode (the pricing-lock fix)", () => {
     const u = buildProjectUpdate(parse({ discountPercent: 0 }), { before, now: NOW });
     expect(u.clear).toEqual(["description"]);
     expect(u.set.discountPercent).toBe(0);
+  });
+
+  it("names what changed for the sheet footer", () => {
+    const before = parse({ rentalStartDate: "2026-12-01", projectStartDate: "2026-11-30" });
+    const u = buildProjectUpdate(parse({ rentalStartDate: "2026-12-03", projectStartDate: "2026-12-02", tags: ["a"], name: "B" }), { before, now: NOW });
+    expect(changedGroups(u)).toEqual(["dates", "project window", "tags", "details"]);
   });
 
   it("no change at all is an empty update", () => {

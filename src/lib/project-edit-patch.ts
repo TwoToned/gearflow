@@ -62,6 +62,23 @@ function collectFields(parsed: ParsedProjectForm, before?: ParsedProjectForm): P
   return { set, clear };
 }
 
+const CHANGE_GROUPS: [string, (k: string) => boolean][] = [
+  ["dates", (k) => k === "rentalStartDate" || k === "rentalEndDate"],
+  ["project window", (k) => /^project(Start|End)(Date|Time)$/.test(k)],
+  ["client", (k) => k === "clientId" || k === "clientContactId"],
+  ["where", (k) => k === "locationId" || k.startsWith("siteContact")],
+  ["discount", (k) => k === "discountPercent"],
+  ["tags", (k) => k === "tags"],
+];
+
+/** What an update changes, in words, for the sheet footer (`dates, project window`). */
+export function changedGroups(update: ProjectUpdate): string[] {
+  const keys = [...Object.keys(update.set), ...update.clear].filter((k) => k !== "updatedAt");
+  const out = CHANGE_GROUPS.filter(([, test]) => keys.some(test)).map(([label]) => label);
+  const rest = keys.filter((k) => !CHANGE_GROUPS.some(([, test]) => test(k)));
+  return rest.length ? [...out, "details"] : out;
+}
+
 export function buildProjectUpdate(
   parsed: ParsedProjectForm,
   opts: { before?: ParsedProjectForm; now: number },

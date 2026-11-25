@@ -175,14 +175,40 @@ Project
   → ProjectManager (multi-PM via join table)
 ```
 
+## Job edit sheet (UX Phase 9, D22)
+
+`/projects/[id]/edit` is a redirect to `?edit=1` on the record. `JobEditSheet`
+(`src/components/projects/job-edit-sheet.tsx`, hosted once by the job page, built
+on `FormSheet`) opens from the header `Edit`, the readiness fixes and the
+Overview `Edit` links; it renders the shared `ProjectFields`
+(`project-fields.tsx`, the ONE field list in `projectSchema` order, also used by
+the wizard) with Job · Where · Money sections (no Money for a template).
+- **Status is not a field.** It moves only through the header stepper, which runs
+  the accepted-quote, blocking-discussion and confirm-impact checks. (The update
+  mutation still accepts `status` for API callers; closing that is a contract
+  change, deferred.)
+- **Save sends only the changed fields** (`buildProjectUpdate` with `before`,
+  `src/lib/project-edit-patch.ts`), so a pricing-locked job never has an
+  untouched `discountPercent`/`taxRate` in the payload (the old full payload made
+  every save fail on a locked job). `Save changes` is disabled until something
+  changed; the footer names what.
+- **D25:** moving the rental dates carries a set project window by the same
+  calendar-day offset (`shiftWindowWithRental`, `src/lib/project-form-dates.ts`);
+  a blank window stays blank.
+- The #1227 date-move gate runs only when the gear window moved and the status is
+  Confirmed or later (`DateMoveImpactDialog` over the sheet, fails open).
+- The save toast has **no Undo yet**: an exact one needs `fieldEditUndo` and a
+  money-safe audit snapshot (the activity log redacts money by field diff; a
+  `details.fieldEdit` blob would carry the discount unredacted). Tracked for the
+  Phase 9 follow-up.
+
 ## Project Wizard (`src/components/projects/project-wizard.tsx`)
 
-A single 4-step wizard (Basics → Schedule → Site → Review) backs **create, edit,
-and templates** — there is no separate flat form (the old `project-form.tsx` was
-retired). Routes:
+A 4-step wizard (Basics → Schedule → Site → Review) backs **create and template
+create** (edit moved to the sheet above; the wizard is being replaced by the
+three-step Phase 9 wizard). Routes:
 - `/projects/new` → `<ProjectWizard />` (create)
 - `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
-- `/projects/[id]/edit` → `<ProjectWizard project={project} />` (edit)
 
 **Edit mode** is engaged by passing the `project` prop (the `getProject`/
 `useProjectDetail` composite, typed loosely as `EditableProject`). In edit mode:
@@ -693,7 +719,7 @@ Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files
     Kit and Loose item labels, whose lists load the first time the menu opens;
     Call sheet; Job timeline; then `Quote & invoice PDFs → Finance`. It never
     renders a sent quote or an issued invoice, which are stored bytes (#987).
-  - **`Edit`** goes to `/projects/[id]/edit` until Phase 9.
+  - **`Edit`** opens the job edit sheet in place (`?edit=1`, see "Job edit sheet").
   - **⋯:** Comments & discussion (with the live blocking count), Warehouse page,
     Runsheet, the `Version ▸` submenu (switch · New version from vN · Compare ·
     Manage versions… `V`), Duplicate job, Save as template, then Cancel job… or,

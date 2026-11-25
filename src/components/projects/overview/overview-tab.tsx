@@ -2,6 +2,7 @@
 // use-client: interactive — routes readiness fixes to tabs/pages (R-8.1.1)
 
 import { useRouter } from "next/navigation";
+import { useOpenJobEdit } from "@/hooks/use-open-job-edit";
 
 import type { ProjectContextProject } from "@/lib/project-context";
 import type { ReadinessFix } from "@/lib/project-readiness-checks";
@@ -46,9 +47,10 @@ export function OverviewTab({
   onOpenDiscussion: () => void;
 }) {
   const router = useRouter();
+  const openEdit = useOpenJobEdit();
   const onFix = (fix: ReadinessFix) => {
     if (fix.kind === "tab") onOpenTab(fix.tab);
-    else if (fix.kind === "edit") router.push(`/projects/${projectId}/edit`);
+    else if (fix.kind === "edit") openEdit();
     else if (fix.kind === "warehouse") router.push(`/warehouse/${projectId}`);
     else onOpenDiscussion();
   };

@@ -22,7 +22,8 @@ import { OverviewLabel, OverviewLine, OverviewLinks, OverviewTextButton, Overvie
  * (`project-context-rail.tsx`); which schedule rows exist and whether there
  * are directions come from `@/lib/project-context`, shared with the rail, so
  * the two renderings can't disagree about the facts (R-3.1). `Edit dates` and
- * Where's `Edit` go to the job edit page until Phase 9's sheets.
+ * Where's `Edit` follow `/projects/[id]/edit`, which redirects to the job edit
+ * sheet (`?edit=1`).
  */
 
 const editHref = (projectId: string) => `/projects/${projectId}/edit`;

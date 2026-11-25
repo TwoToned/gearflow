@@ -85,8 +85,8 @@ export function OverviewTab({
         </OverviewSection>
       )}
       <OverviewSection aria-label="When, where and who" className="grid gap-5 md:grid-cols-3 md:gap-7">
-        {!isTemplate && <OverviewWhen projectId={projectId} project={project} onOpenLogistics={openLogistics} />}
-        <OverviewWhere projectId={projectId} project={project} />
+        {!isTemplate && <OverviewWhen project={project} onOpenLogistics={openLogistics} />}
+        <OverviewWhere project={project} />
         <OverviewWho projectId={projectId} orgId={orgId} project={project} onOpenLogistics={openLogistics} />
       </OverviewSection>
       {!isTemplate && (

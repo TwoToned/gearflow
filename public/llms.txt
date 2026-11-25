@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (719 agent-reachable)
+## Operations (727 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -48,6 +48,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasksWrites.undoReorderNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.undoUpdateNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
+- `projectTemplateWrites.applyTemplateNative` (mutation, scope: project:create,project:update)
 - `subHiresWrites.coverShortfallNative` (mutation, scope: subHire:update,subHire:create,project:manage_line_items)
 - `subHiresWrites.undoShortfallNative` (mutation, scope: subHire:update,project:manage_line_items,subHire:delete)
 
@@ -484,6 +485,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectContainersWrites.updateNative` (mutation, scope: project:manage_line_items)
 - `projectCosts.operationalCosts` (query, scope: project:read)
 - `projectDetail.bundle` (query, scope: project:read)
+- `projectEditUndo.undoUpdateNative` (mutation, scope: project:update)
 - `projectEquipment.browserBundle` (query, scope: project:read)
 - `projectFiles.alsoOnJob` (query, scope: project:read)
 - `projectFiles.listForProject` (query, scope: project:read)
@@ -530,6 +532,7 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projects.listBoard` (query, scope: project:read)
 - `projects.listByIds` (query, scope: project:read)
 - `projects.listPage` (query, scope: project:read)
+- `projects.listTemplates` (query, scope: project:read)
 - `projects.needsYouIds` (query, scope: project:read)
 - `projects.segmentCounts` (query, scope: project:read)
 - `projects.windowOverlap` (query, scope: project:read)
@@ -547,6 +550,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectServicesWrites.updateServiceNative` (mutation, scope: project:update)
 - `projectServicesWrites.updateServiceStatusNative` (mutation, scope: project:update)
 - `projectTaskLinks.listForProject` (query, scope: project:read)
+- `projectTemplateWrites.archiveTemplatesNative` (mutation, scope: project:delete)
+- `projectTemplateWrites.restoreTemplatesNative` (mutation, scope: project:delete)
+- `projectTemplateWrites.unarchiveTemplatesNative` (mutation, scope: project:delete)
+- `projectTemplateWrites.undoApplyTemplateNative` (mutation, scope: project:update)
+- `projectTemplateWrites.unrestoreTemplatesNative` (mutation, scope: project:delete)
 - `projectWrites.addTagNative` (mutation, scope: project:update)
 - `projectWrites.archiveNative` (mutation, scope: project:update)
 - `projectWrites.createNative` (mutation, scope: project:create)

@@ -284,3 +284,49 @@ describe("the reads drop foreign rows and foreign files (table-driven)", () => {
     expect(JSON.stringify(reads)).not.toMatch(/k_fx|k_fy|Planted/);
   });
 });
+
+describe("removal only deletes bytes nothing else holds (legacy shared files survive)", () => {
+  test("removing a document / an order file keeps a file another row still holds, and deletes it once the last holder goes", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      // Legacy data from before the attach rule: one file held by two rows, and one held by a media row.
+      await ctx.db.insert("supplierDocuments", { id: "dA", organizationId: ORG, supplierId: "s1", fileId: "f1", name: "A" });
+      await ctx.db.insert("supplierDocuments", { id: "dB", organizationId: ORG, supplierId: "s1", fileId: "f1", name: "B" });
+      await ctx.db.insert("supplierOrderFiles", { id: "ofA", organizationId: ORG, orderId: "o1", fileId: "g1", kind: "PO" });
+      await ctx.db.insert("clientMedia", { id: "cm", organizationId: ORG, clientId: "c", fileId: "g1" });
+    });
+    const rmDoc = (id: string) => as(t).mutation(W.removeDocumentNative, { orgId: ORG, supplierId: "s1", documentId: id, now: NOW, actor, auditId: `r_${id}` });
+    await rmDoc("dA");
+    expect(await files(t, ["f1"])).toEqual({ f1: true }); // dB still holds it
+    await as(t).mutation(W.removeOrderFileNative, { orgId: ORG, orderId: "o1", fileRowId: "ofA", now: NOW, actor, auditId: "r_ofA" });
+    expect(await files(t, ["g1"])).toEqual({ g1: true }); // a media row still holds it
+    await rmDoc("dB");
+    expect(await files(t, ["f1"])).toEqual({ f1: false }); // the last holder is gone
+  });
+
+  test("the supplier-delete cascade keeps a document file something else holds", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.delete((await ctx.db.query("supplierOrders").first())!._id);
+      await ctx.db.insert("supplierDocuments", { id: "dA", organizationId: ORG, supplierId: "s1", fileId: "f1", name: "A" });
+      await ctx.db.insert("supplierDocuments", { id: "dB", organizationId: ORG, supplierId: "s2", fileId: "f1", name: "B" }); // another supplier's document, same file
+      await ctx.db.insert("supplierDocuments", { id: "dC", organizationId: ORG, supplierId: "s1", fileId: "f2", name: "C" });
+    });
+    await as(t).mutation(api.suppliersWrites.removeNative, { id: "s1", orgId: ORG, now: NOW, actor, auditId: "x1" });
+    expect(await files(t, ["f1", "f2"])).toEqual({ f1: true, f2: false });
+  });
+
+  test("an order's invoice another order still holds survives a remove, a replace and the order's delete", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("supplierOrders", { id: "o2", organizationId: ORG, supplierId: "s1", orderNumber: "PO-2", type: "PURCHASE", invoiceFileId: "f5" }); }); // legacy: f5 held by both
+    await as(t).mutation(api.supplierOrdersWrites.removeInvoiceNative, { id: "o2", orgId: ORG, now: NOW, actor, auditId: "ri" });
+    expect(await files(t, ["f5"])).toEqual({ f5: true }); // o1 still holds it
+    await as(t).mutation(api.supplierOrdersWrites.attachInvoiceNative, { id: "o1", orgId: ORG, fileId: "f6", now: NOW, actor, auditId: "ai" });
+    expect(await files(t, ["f5", "f6"])).toEqual({ f5: false, f6: true }); // now nothing holds f5
+    await t.run(async (ctx) => { await ctx.db.insert("supplierOrders", { id: "o3", organizationId: ORG, supplierId: "s1", orderNumber: "PO-3", type: "PURCHASE", invoiceFileId: "f6" }); });
+    await as(t).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "do1" });
+    expect(await files(t, ["f6"])).toEqual({ f6: true }); // o3 still holds it
+    await as(t).mutation(api.supplierOrdersWrites.deleteNative, { id: "o3", orgId: ORG, now: NOW, actor, auditId: "do3" });
+    expect(await files(t, ["f6"])).toEqual({ f6: false });
+  });
+});

@@ -23,8 +23,8 @@ convention:
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
 | Queries | 474 | 336 | 133 | 2 | 3 |
-| Mutations | 859 | 352 | 485 | 0 | 22 |
-| **Total** | **1333** | **688** | **618** | **2** | **25** |
+| Mutations | 860 | 352 | 486 | 0 | 22 |
+| **Total** | **1334** | **688** | **619** | **2** | **25** |
 
 <!-- reachability-floor: 688 -->
 
@@ -148,6 +148,7 @@ fails the build otherwise.
 | `crewShifts.listByAssignmentIds` | crewShifts has no organizationId column; this query has no orgId to check the assignmentIds argument against, so opening it risks a cross-tenant read (R-8.4.3). |
 | `fileUploads.getByThumbnailUrl` | Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment). |
 | `fileUploads.isReferencedByMedia` | Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment). |
+| `fileUploads.removeIfUnreferenced` | Service-only: the legacy server removal path decides for the real caller. |
 | `financeArtifacts.invoiceArtifactContext` | Same as quoteArtifactContext: SERVICE-gated by design (module docstring), exposes pdfFileId into the deliberately-closed finance-document subsystem; non-sensitive fields are already agent-reachable via invoices.ts. |
 | `financeArtifacts.quoteArtifactContext` | Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain. |
 | `financeArtifacts.versionPreviewContext` | SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render. |

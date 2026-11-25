@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 
 /**
  * Thin CRUD for FileUpload (Convex table "fileUploads"). GENERATED — Phase 2/5.
@@ -138,6 +139,17 @@ export const remove = mutation({
 });
 
 // ── CUSTOM (Phase C) — NOT emitted by the CRUD generator; re-add on regen. ──
+// The ONE remove rule for the legacy server path (`src/lib/media-write.ts`, sub-hire media): delete the
+// file (bytes, thumbnail, records) ONLY when nothing holds it, after the caller's own media row is gone.
+// Service-only; org-checked inside (`deleteStoredFileIfUnreferenced`).
+export const removeIfUnreferenced = mutation({
+  args: { orgId: v.string(), fileId: v.string() },
+  handler: async (ctx, { orgId, fileId }) => {
+    await requireService(ctx);
+    return await deleteStoredFileIfUnreferenced(ctx, orgId, fileId);
+  },
+});
+
 // Is this file referenced by ANY media row across the 7 *_media tables? Replaces
 // the raw-SQL UNION ref-count in removeSubHireMedia (each table has a by_fileId
 // index). Used to decide whether deleting a media row should also delete its file.
@@ -181,4 +193,5 @@ export const agentOps: AgentOpsAnnotations = {
   getById: { summary: "Get one uploaded-file record by id.", danger: "low", mcpTier: 3 },
   getByThumbnailUrl: { agentAccess: "denied", reason: fileUploadsCrossOrgDenyReason },
   isReferencedByMedia: { agentAccess: "denied", reason: fileUploadsCrossOrgDenyReason },
+  removeIfUnreferenced: { agentAccess: "denied", reason: "Service-only: the legacy server removal path decides for the real caller." },
 };

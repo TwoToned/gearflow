@@ -71,6 +71,24 @@ describe("mediaWrites — asset (photo kind)", () => {
     expect(f1).toBeNull(); // file cleaned up
   });
 
+  test("remove: a file another row still holds SURVIVES (an unconditional delete would destroy it)", async () => {
+    const t = makeT(); await seedMember(t); await seedAsset(t, "a1"); await seedFile(t, "f1");
+    await t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am1", orgId: ORG, parentId: "a1", fileId: "f1", type: "PHOTO", now: NOW });
+    // Legacy data: the same file is also held by a client's media row and by a maintenance record's photos.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clientMedia", { id: "cm1", organizationId: ORG, clientId: "c", fileId: "f1" });
+    });
+    await t.withIdentity(asUser).mutation(api.mediaWrites.removeNative, { kind: "asset", orgId: ORG, mediaId: "am1" });
+    expect(await assetMedia(t)).toEqual([]); // this row is gone
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f1")).first())).not.toBeNull(); // the file is not
+    expect(await t.run(async (ctx) => ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", "sk-f1")).first())).not.toBeNull();
+    // Once the last holder goes, the file goes with it.
+    await t.run(async (ctx) => { await ctx.db.delete((await ctx.db.query("clientMedia").first())!._id); });
+    await t.run(async (ctx) => { await ctx.db.insert("assetMedia", { id: "am2", organizationId: ORG, assetId: "a1", fileId: "f1" } as never); });
+    await t.withIdentity(asUser).mutation(api.mediaWrites.removeNative, { kind: "asset", orgId: ORG, mediaId: "am2" });
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f1")).first())).toBeNull();
+  });
+
   test("setPrimary switches the single primary; cross-org media rejected", async () => {
     const t = makeT(); await seedMember(t); await seedAsset(t, "a1"); await seedFile(t, "f1"); await seedFile(t, "f2");
     await t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am1", orgId: ORG, parentId: "a1", fileId: "f1", type: "PHOTO", now: NOW });

@@ -21311,6 +21311,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "fileUploads.removeIfUnreferenced",
+    "module": "fileUploads",
+    "fn": "removeIfUnreferenced",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "fileId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "913b8a85a3baa903",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Service-only: the legacy server removal path decides for the real caller."
+  },
+  {
     "operation": "fileUploads.update",
     "module": "fileUploads",
     "fn": "update",
@@ -68937,10 +68969,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1333,
+  total: 1334,
   agentReachable: 688,
   queries: 474,
-  mutations: 859,
+  mutations: 860,
   agentReachableQueries: 336,
   agentReachableMutations: 352,
 } as const;

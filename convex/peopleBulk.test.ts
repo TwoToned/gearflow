@@ -37,7 +37,7 @@ async function seed(t: T, role = "admin") {
   });
 }
 const get = (t: T, table: "crewMembers" | "clients" | "suppliers", id: string) =>
-  t.run(async (ctx) => ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first());
+  t.run(async (ctx) => (await ctx.db.query(table).withIndex("by_cuid", (q) => q.eq("id", id)).first()) as Record<string, unknown> | null);
 type Kind = "crew" | "client" | "supplier";
 const items = (...ids: string[]) => ids.map((id) => ({ id, auditId: `au_${id}` }));
 const setActive = (t: T, kind: Kind, ids: string[], active: boolean, who = as(t)) =>

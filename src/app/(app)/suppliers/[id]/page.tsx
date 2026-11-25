@@ -59,7 +59,7 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const writes = useSupplierWrites();
-  const patch = useMutation(api.suppliersWrites.patchNative);
+  const setActiveMany = useMutation(api.peopleBulkWrites.setActiveManyNative);
   const canUpdate = useCanDo("supplier", "update");
   const canCreate = useCanDo("supplier", "create");
   const canDelete = useCanDo("supplier", "delete");
@@ -94,7 +94,7 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
   const openOrders = orders.filter((o) => ["DRAFT", "ORDERED", "PARTIAL"].includes(o.status));
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const setActive = (isActive: boolean) =>
-    void patch({ id, orgId: orgId!, patch: { isActive }, now: Date.now(), actor: actor(), auditId: createId() }).then(() => toast.success(isActive ? "Supplier reactivated" : "Supplier archived"));
+    void setActiveMany({ orgId: orgId!, kind: "supplier", items: [{ id, auditId: createId() }], active: isActive, todayMs: Date.now(), now: Date.now(), actor: actor() }).then(() => toast.success(isActive ? "Supplier reactivated" : "Supplier archived"));
 
   // Delete sits behind Archive, and is absent while the supplier has orders (D74); the server guard stays.
   const canRemove = canDelete && !active && orders.length === 0;

@@ -138,27 +138,19 @@ function AlsoOnJob({ projectId, orgId }: { projectId: string; orgId: string | un
   );
 }
 
-export function FilesSection({ projectId, orgId }: { projectId: string; orgId: string | undefined }) {
-  const data = useAuthedQuery(api.projectFiles.listForProject, orgId ? { orgId, projectId } : "skip");
+async function run(fn: () => Promise<unknown>, ok: string) {
+  try {
+    await fn();
+    toast.success(ok);
+  } catch (e) {
+    showError(e);
+  }
+}
+
+/** Every Files write: upload, change category, remove. Each toasts once; none has an Undo. */
+function useFileActions(projectId: string, clear: () => void) {
   const writes = useProjectFileWrites(projectId);
-  const canEdit = !useIsViewer();
-  const [filter, setFilter] = React.useState<FileFilter>("all");
-  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
-  const [renaming, setRenaming] = React.useState<JobFile | null>(null);
   const [uploading, setUploading] = React.useState(false);
-
-  const files = (data?.files ?? []) as JobFile[];
-  const shown = files.filter((f) => matchesFileFilter(f.file.mimeType, filter));
-  const clear = () => setSelected(new Set());
-
-  const run = async (fn: () => Promise<unknown>, ok: string) => {
-    try {
-      await fn();
-      toast.success(ok);
-    } catch (e) {
-      showError(e);
-    }
-  };
   const upload = async (picked: File[]) => {
     if (picked.length === 0) return;
     setUploading(true);
@@ -176,6 +168,55 @@ export function FilesSection({ projectId, orgId }: { projectId: string; orgId: s
       for (const id of ids) await writes.remove(id);
       clear();
     }, ids.length === 1 ? "File removed" : `${ids.length} files removed`);
+  const rename = (id: string, name: string) => run(() => writes.rename(id, name), `Renamed to “${name}”`);
+  return { upload, uploading, setType, remove, rename };
+}
+
+interface FileListProps {
+  loading: boolean;
+  total: number;
+  shown: JobFile[];
+  canEdit: boolean;
+  selected: ReadonlySet<string>;
+  onToggle: (id: string, checked: boolean) => void;
+  onRename: (file: JobFile) => void;
+  onSetType: (id: string, type: FileCategory) => void;
+  onRemove: (id: string) => void;
+}
+
+/** The rows, or the one calm line when there is nothing to show. */
+function FileList(p: FileListProps) {
+  if (p.loading) return <p className="t-micro text-muted">Loading files…</p>;
+  if (p.shown.length === 0) return <p className="t-micro text-muted">{p.total === 0 ? "No files yet." : "No files match."}</p>;
+  return (
+    <ul>
+      {p.shown.map((f) => (
+        <FileRow
+          key={f.id}
+          file={f}
+          canEdit={p.canEdit}
+          selected={p.selected.has(f.id)}
+          onSelectedChange={(c) => p.onToggle(f.id, c)}
+          onRename={() => p.onRename(f)}
+          onSetType={(type) => p.onSetType(f.id, type)}
+          onRemove={() => p.onRemove(f.id)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+export function FilesSection({ projectId, orgId }: { projectId: string; orgId: string | undefined }) {
+  const data = useAuthedQuery(api.projectFiles.listForProject, orgId ? { orgId, projectId } : "skip");
+  const canEdit = !useIsViewer();
+  const [filter, setFilter] = React.useState<FileFilter>("all");
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const [renaming, setRenaming] = React.useState<JobFile | null>(null);
+  const clear = () => setSelected(new Set());
+  const { upload, uploading, setType, remove, rename } = useFileActions(projectId, clear);
+
+  const files = (data?.files ?? []) as JobFile[];
+  const shown = files.filter((f) => matchesFileFilter(f.file.mimeType, filter));
 
   const picked = files.filter((f) => selected.has(f.id));
   const bulk = buildFileBulkActions(canEdit, {
@@ -188,33 +229,24 @@ export function FilesSection({ projectId, orgId }: { projectId: string; orgId: s
     <div className="space-y-3">
       {canEdit && <DropStrip onFiles={upload} uploading={uploading} />}
       <FilterChips value={filter} onChange={setFilter} />
-      {data === undefined ? (
-        <p className="t-micro text-muted">Loading files…</p>
-      ) : shown.length === 0 ? (
-        <p className="t-micro text-muted">{files.length === 0 ? "No files yet." : "No files match."}</p>
-      ) : (
-        <ul>
-          {shown.map((f) => (
-            <FileRow
-              key={f.id}
-              file={f}
-              canEdit={canEdit}
-              selected={selected.has(f.id)}
-              onSelectedChange={(c) =>
-                setSelected((prev) => {
-                  const next = new Set(prev);
-                  if (c) next.add(f.id);
-                  else next.delete(f.id);
-                  return next;
-                })
-              }
-              onRename={() => setRenaming(f)}
-              onSetType={(type) => void setType([f.id], type)}
-              onRemove={() => void remove([f.id])}
-            />
-          ))}
-        </ul>
-      )}
+      <FileList
+        loading={data === undefined}
+        total={files.length}
+        shown={shown}
+        canEdit={canEdit}
+        selected={selected}
+        onToggle={(id, c) =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            if (c) next.add(id);
+            else next.delete(id);
+            return next;
+          })
+        }
+        onRename={setRenaming}
+        onSetType={(id, type) => void setType([id], type)}
+        onRemove={(id) => void remove([id])}
+      />
       {data?.truncated && <p className="t-micro text-muted">Showing the first files only.</p>}
       {selected.size > 0 && <BulkBar selection={{ count: selected.size, clear }} actions={bulk} noun="file" />}
       <AlsoOnJob projectId={projectId} orgId={orgId} />
@@ -225,7 +257,7 @@ export function FilesSection({ projectId, orgId }: { projectId: string; orgId: s
           onSave={(name) => {
             const f = renaming;
             setRenaming(null);
-            void run(() => writes.rename(f.id, name), `Renamed to “${name}”`);
+            void rename(f.id, name);
           }}
         />
       )}

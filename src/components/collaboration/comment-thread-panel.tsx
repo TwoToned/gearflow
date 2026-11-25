@@ -30,6 +30,12 @@ import { cn } from "@/lib/utils";
 import { useCanDo } from "@/lib/use-permissions";
 import { toast } from "sonner";
 
+/** Whether the composer offers the Blocking switch: project threads only, for a caller the server lets block. */
+function useBlockingAllowed(entityType: string): boolean {
+  const canBlock = useCanDo("project", "manage_line_items");
+  return entityType === "project" && canBlock;
+}
+
 interface Comment {
   _id: string;
   body: string;
@@ -350,8 +356,7 @@ export function CommentThreadBody({
   // Blocking comments gate project prep / send-out. They are meaningless on other entities
   // (assets, clients, …), so the toggle is project-only, and it is offered only to a caller who
   // may use it: the server requires `project:manage_line_items` to block (absent, not an error).
-  const canBlock = useCanDo("project", "manage_line_items");
-  const allowBlocking = entityType === "project" && canBlock;
+  const allowBlocking = useBlockingAllowed(entityType);
   const { visibleThreads } = useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled });
 
   const { data: members } = useServerQuery({

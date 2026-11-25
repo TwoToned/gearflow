@@ -31,25 +31,35 @@ const CARDS: { field: Field; title: string; audience: string; previewable?: bool
   { field: "internalNotes", title: "Internal notes", audience: "only us · never printed" },
 ];
 
+/** A version's plan fields as the three note strings (a missing field is empty). */
+function toNoteValues(planFields: Partial<NoteValues> | null): NoteValues | null {
+  if (!planFields) return null;
+  return { crewNotes: planFields.crewNotes ?? "", internalNotes: planFields.internalNotes ?? "", clientNotes: planFields.clientNotes ?? "" };
+}
+
+/** Another version's plan fields, fetched only when a version other than the page's own is picked. */
+function useOtherVersionFields(fetchId: string | undefined, projectId: string, orgId: string | undefined) {
+  const args = orgId && fetchId ? { organizationId: orgId, projectId, versionId: fetchId } : "skip";
+  const fetched = useAuthedQuery(api.versionsRead.getVersion, args);
+  return (fetched?.planFields ?? null) as Partial<NoteValues> | null;
+}
+
 /** The version whose notes are on screen, and whether they can be edited. */
 function useNotesVersion(composed: NoteValues, projectId: string, orgId: string | undefined) {
   const { versions, isViewingVersion, viewingVersion } = useProjectVersion();
-  const live = versions.find((v) => v.isLive);
+  const liveId = versions.find((v) => v.isLive)?.id;
   const [pickedId, setPickedId] = React.useState<string | null>(null);
-  const composedId = viewingVersion?.id ?? live?.id;
+  const composedId = viewingVersion?.id ?? liveId;
   const shownId = pickedId ?? composedId;
   // The page already holds the composed notes for the version it shows; only another version is fetched.
-  const fetchId = shownId && shownId !== composedId ? shownId : undefined;
-  const fetched = useAuthedQuery(api.versionsRead.getVersion, orgId && fetchId ? { organizationId: orgId, projectId, versionId: fetchId } : "skip");
-  const planFields = fetchId ? ((fetched?.planFields ?? null) as Partial<NoteValues> | null) : composed;
-  const values: NoteValues | null = planFields ? { crewNotes: planFields.crewNotes ?? "", internalNotes: planFields.internalNotes ?? "", clientNotes: planFields.clientNotes ?? "" } : null;
-  const shown = versions.find((v) => v.id === shownId);
+  const fetchId = shownId !== composedId ? shownId : undefined;
+  const other = useOtherVersionFields(fetchId, projectId, orgId);
   return {
-    values,
-    shown,
+    values: toNoteValues(fetchId ? other : composed),
+    shown: versions.find((v) => v.id === shownId),
     versions,
     pick: setPickedId,
-    editable: !isViewingVersion && (!shownId || shownId === live?.id),
+    editable: !isViewingVersion && (!shownId || shownId === liveId),
   };
 }
 

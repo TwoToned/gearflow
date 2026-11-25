@@ -1,6 +1,5 @@
 "use client";
 
-import { NotesEditor } from "@/components/ui/notes-editor";
 import { StalePricingBanner } from "@/components/projects/stale-pricing-banner";
 import { PositionTiles } from "@/components/projects/finance/position-tiles";
 import { FinanceStrip, FinanceWordsSwitch, FinancialsCard } from "@/components/projects/finance/finance-tab-parts";
@@ -9,11 +8,10 @@ import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked
 import { useProjectVersion } from "@/components/projects/project-version-context";
 
 /**
- * The job page's tab bodies that used to live at the bottom of
- * `src/app/(app)/projects/[id]/page.tsx`, moved out unchanged (UX Phase 7) so
- * the page stays small enough for Phases 9 and 10 to merge into. (The
- * Overview's four-tile strip that also lived here was removed in slice B:
- * each figure is on the tab that owns it, see FEATUREDOCS/69.)
+ * The job page's Finance tab body, moved out of
+ * `src/app/(app)/projects/[id]/page.tsx` (UX Phase 7) so the page stays small enough
+ * for Phases 9 and 10 to merge into. (The Notes body moved to
+ * `tasks-notes/notes-section.tsx` when Tasks, Notes and Files merged, UX Phase 10.)
  */
 
 interface FinanceTabSlotProps {
@@ -119,80 +117,6 @@ export function FinanceTabSlot(props: FinanceTabSlotProps) {
         pricedGroupCount={pricedGroupCount}
         totalGroupCount={totalGroupCount}
         groupBreakdown={groupBreakdown}
-      />
-    </div>
-  );
-}
-
-interface NotesTabSlotProps {
-  liveCrewNotes: string;
-  liveInternalNotes: string;
-  liveClientNotes: string;
-  onChanged: () => void;
-  onSave: (field: "crewNotes" | "internalNotes" | "clientNotes", notes: string) => Promise<unknown>;
-}
-
-function ReadOnlyNoteBlock({ title, value }: { title: string; value: string | null }) {
-  return (
-    <div className="rounded-[var(--r-lg)] border-2 border-line bg-card p-4">
-      <h3 className="text-card-title font-bold text-ink">{title}</h3>
-      <p className="mt-2 whitespace-pre-wrap text-ui-text text-ink-2">{value || "—"}</p>
-    </div>
-  );
-}
-
-/**
- * `crewNotes`/`internalNotes`/`clientNotes` ARE PLAN FIELDS
- * (`convex/lib/versionPlanFields.ts`), so the caller already hands this
- * component the COMPOSED value (design §5 D32) — a non-live version's own
- * captured text, no separate snapshot-projection read needed anymore. Notes
- * writes (`useOptimisticProjectNotes`) patch the LIVE `projects` row only
- * (#1221 follow-up closed this same class of gap for new equipment/group/
- * category/service INSERTS — see `EquipmentTabProps.addDisabledReason`'s
- * doc comment — but notes are a PLAN FIELD on `projects` itself, not one of
- * the five versioned plan tables, so this one is untouched by that fix), so
- * this stays READ-ONLY while viewing a non-live version rather than
- * silently writing the wrong version's notes.
- */
-export function NotesTabSlot({ liveCrewNotes, liveInternalNotes, liveClientNotes, onChanged, onSave }: NotesTabSlotProps) {
-  const { isViewingVersion, viewingVersion } = useProjectVersion();
-
-  if (isViewingVersion && viewingVersion) {
-    return (
-      <div className="grid gap-4 pt-4">
-        <p className="text-caption text-muted">Notes as captured in v{viewingVersion.number} — read-only.</p>
-        <ReadOnlyNoteBlock title="Crew notes" value={liveCrewNotes} />
-        <ReadOnlyNoteBlock title="Internal notes" value={liveInternalNotes} />
-        <ReadOnlyNoteBlock title="Client notes" value={liveClientNotes} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 pt-4">
-      <NotesEditor
-        title="Crew notes"
-        initialNotes={liveCrewNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("crewNotes", notes)}
-        placeholder="Notes for crew members..."
-        rows={4}
-      />
-      <NotesEditor
-        title="Internal notes"
-        initialNotes={liveInternalNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("internalNotes", notes)}
-        placeholder="Internal notes (not visible to client)..."
-        rows={4}
-      />
-      <NotesEditor
-        title="Client notes"
-        initialNotes={liveClientNotes}
-        onChanged={onChanged}
-        onSave={(notes) => onSave("clientNotes", notes)}
-        placeholder="Notes visible to client on documents... supports **bold**, *italic*, and '- ' bullets."
-        rows={4}
       />
     </div>
   );

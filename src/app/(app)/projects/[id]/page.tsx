@@ -22,8 +22,6 @@ import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useMediaWrites } from "@/hooks/use-media-writes";
-import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
 import { getProjectWindowDates } from "@/lib/project-window";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -35,7 +33,7 @@ import { VersionOverlays } from "@/components/projects/versions/version-overlays
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
 import { JobTabRow } from "@/components/projects/job-tab-row";
-import { FinanceTabSlot, NotesTabSlot } from "@/components/projects/job-tab-slots";
+import { FinanceTabSlot } from "@/components/projects/job-tab-slots";
 import { JOB_TAB_KEYS, availableJobTabs, jobTabSection, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
 export default function ProjectDetailPage({
@@ -102,7 +100,6 @@ export default function ProjectDetailPage({
   const openDiscussion = useCallback(() => setRequestedTab("discussion"), []);
 
   const { data: project, isLoading } = useProjectDetail(id);
-  const media = useMediaWrites("project");
 
   // Phase 3 browser-direct: optimistic project-notes save (always native — the notes
   // are safe to optimistic; a wrong save just re-renders, nothing irreversible happens).
@@ -257,30 +254,12 @@ export default function ProjectDetailPage({
         orgId={orgId}
         section={jobTabSection(requestedTab)}
         onOpenTab={setRequestedTab}
-        notes={
-          <NotesTabSlot
-            liveCrewNotes={(composedProject.crewNotes as string) || ""}
-            liveInternalNotes={(composedProject.internalNotes as string) || ""}
-            liveClientNotes={(composedProject.clientNotes as string) || ""}
-            onChanged={() => refreshProjectDetail(id)}
-            onSave={saveProjectNotes}
-          />
-        }
-        files={
-          <MediaUploader
-            entityType="project"
-            entityId={id}
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
-            existingMedia={(project.media || []) as MediaItem[]}
-            onChanged={() => refreshProjectDetail(id)}
-            onUploadComplete={async (fileUpload) => {
-              await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
-            }}
-            onRemove={async (mediaId) => {
-              await media.remove(mediaId);
-            }}
-          />
-        }
+        composedNotes={{
+          crewNotes: (composedProject.crewNotes as string) || "",
+          internalNotes: (composedProject.internalNotes as string) || "",
+          clientNotes: (composedProject.clientNotes as string) || "",
+        }}
+        onSaveNote={saveProjectNotes}
       />
     ),
     // Versions (D19, UX Phase 8): the dated list; Compare and Make live open the

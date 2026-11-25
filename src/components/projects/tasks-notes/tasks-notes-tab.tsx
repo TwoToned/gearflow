@@ -3,6 +3,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { DiscussionSection } from "@/components/projects/tasks-notes/discussion-section";
+import { FilesSection } from "@/components/projects/tasks-notes/files-section";
+import { NotesSection, type NoteValues } from "@/components/projects/tasks-notes/notes-section";
 import { TasksSection } from "@/components/projects/tasks-notes/tasks-section";
 import { VersionNotTrackedNote } from "@/components/projects/version-not-tracked-note";
 import type { JobTabKey, TasksNotesSection } from "@/lib/job-tabs";
@@ -14,9 +16,6 @@ import { cn, focusRing } from "@/lib/utils";
  * section. Desktop is two columns (tasks then files; notes then discussion) that
  * collapse to ONE below `xl` (the context sidebar keeps its width); a phone gets a
  * sticky `Tasks · Notes · Files · Discussion` chip row that jumps to each.
- *
- * Slice C builds Tasks and Discussion; the Notes and Files slots still hold their
- * existing bodies until Slice D.
  */
 const SECTIONS: { key: TasksNotesSection; label: string }[] = [
   { key: "tasks", label: "Tasks" },
@@ -50,15 +49,16 @@ export function TasksNotesTab({
   projectId,
   orgId,
   section,
-  notes,
-  files,
+  composedNotes,
+  onSaveNote,
   onOpenTab,
 }: {
   projectId: string;
   orgId: string | undefined;
   section: TasksNotesSection | null;
-  notes: ReactNode;
-  files: ReactNode;
+  /** The notes the page shows (a viewed version's when one is open). */
+  composedNotes: NoteValues;
+  onSaveNote: (field: "crewNotes" | "internalNotes" | "clientNotes", text: string) => Promise<unknown>;
   onOpenTab: (tab: JobTabKey) => void;
 }) {
   const refs = useRef<Partial<Record<TasksNotesSection, HTMLElement | null>>>({});
@@ -84,13 +84,13 @@ export function TasksNotesTab({
           <section ref={slot("files")}>
             <Heading id="tn-files">Files</Heading>
             <VersionNotTrackedNote what="Files" />
-            {files}
+            <FilesSection projectId={projectId} orgId={orgId} />
           </section>
         </div>
         <div className="min-w-0">
           <section ref={slot("notes")}>
             <Heading id="tn-notes">Notes</Heading>
-            {notes}
+            <NotesSection projectId={projectId} orgId={orgId} composed={composedNotes} onSave={onSaveNote} />
           </section>
           <section ref={slot("discussion")}>
             <Heading id="tn-discussion">Discussion</Heading>

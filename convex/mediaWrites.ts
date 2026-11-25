@@ -2,9 +2,13 @@ import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import { requireOrgPermission } from "./lib/auth";
+import { requireOrgPermission, resolveActor } from "./lib/auth";
+import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
-import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
+import { enforceBrowserWriteLimit, assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertStrLen } from "./lib/fieldGuards";
+import { emitProjectActivityEvent } from "./lib/activityEvents";
+import { ProjectMediaType as ProjectMediaTypeV } from "./lib/validators";
 
 /**
  * Native MEDIA write mutations (Phase 3 browser-direct — replaces the 6 *-media.ts
@@ -86,9 +90,17 @@ export const addNative = mutation({
     if (cfg.photo) doc.isPrimary = isPrimary;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await ctx.db.insert(cfg.table, doc as any);
+    await emitFileEvent(ctx, a.kind, a.orgId, a.parentId, a.now, "file_added", `added file "${a.displayName ?? file.fileName}"`, a.id);
     return { id: a.id };
   },
 });
+
+/** The Activity rail for a JOB's file writes (UX Phase 10). Other kinds have no job feed. */
+async function emitFileEvent(ctx: MutationCtx, kind: Kind, orgId: string, parentId: string, now: number, action: string, summary: string, mediaId: string) {
+  if (kind !== "project") return;
+  const actor = await resolveActor(ctx, { userId: "", userName: "" });
+  await emitProjectActivityEvent(ctx, { orgId, projectId: parentId, actor, now, action, summary, targetType: "file", targetId: mediaId });
+}
 
 export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -102,8 +114,10 @@ export const removeNative = mutation({
     const parentId = media[cfg.fk] as string;
     const wasPrimary = media.isPrimary ?? false;
     const fileId = media.fileId;
+    const label = (media.displayName as string | undefined) ?? (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first())?.fileName ?? "a file";
 
     await ctx.db.delete(media._id);
+    await emitFileEvent(ctx, a.kind, a.orgId, parentId, Date.now(), "file_removed", `removed file "${label}"`, a.mediaId);
 
     // Delete the file: stored bytes + storedFiles record (replicating files.deleteFile)
     // + thumbnail bytes + the fileUploads row. Unconditional (the 6 UI kinds never
@@ -150,6 +164,56 @@ export const setPrimaryNative = mutation({
   },
 });
 
+/**
+ * Set the CATEGORY of one or more project files (UX Phase 10, spec §8c: a category
+ * per file, the `ProjectMediaType` enum). Project media only. Per-row org + parent
+ * check (`by_cuid` is global); a file that is not this job's is skipped and reported.
+ * One Activity event per call. Only `type` changes: no stored file is touched.
+ */
+export const setTypeNative = mutation({
+  returns: v.object({ updated: v.number(), skipped: v.number() }),
+  args: { orgId: v.string(), projectId: v.string(), mediaIds: v.array(v.string()), type: ProjectMediaTypeV, now: v.number() },
+  handler: async (ctx, a) => {
+    await guards(ctx, "project", a.orgId);
+    await assertBulkSizeOk(ctx, a.mediaIds.length);
+    const cfg = CFG.project;
+    await assertParentInOrg(ctx, cfg, a.projectId, a.orgId);
+    let updated = 0;
+    for (const id of a.mediaIds) {
+      const doc = await mediaByCuid(ctx, cfg, id);
+      if (!doc || doc.organizationId !== a.orgId || doc[cfg.fk] !== a.projectId) continue;
+      if (doc.type !== a.type) await ctx.db.patch(doc._id, { type: a.type });
+      updated++;
+    }
+    if (updated > 0) {
+      const actor = await resolveActor(ctx, { userId: "", userName: "" });
+      await emitProjectActivityEvent(ctx, {
+        orgId: a.orgId, projectId: a.projectId, actor, now: a.now, action: "file_updated", targetType: "file",
+        summary: `changed ${updated} ${updated === 1 ? "file" : "files"} to ${a.type.toLowerCase().replace(/_/g, " ")}`,
+      });
+    }
+    return { updated, skipped: a.mediaIds.length - updated };
+  },
+});
+
+/** Rename one project file (`displayName`, 1-200 chars). The stored file and its name on disk are untouched. */
+export const renameNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), projectId: v.string(), mediaId: v.string(), displayName: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await guards(ctx, "project", a.orgId);
+    const cfg = CFG.project;
+    const name = a.displayName.trim();
+    if (!name) throw new ConvexError("A file needs a name");
+    assertStrLen(name, "displayName", { max: 200 });
+    const doc = await mediaByCuid(ctx, cfg, a.mediaId);
+    if (!doc || doc.organizationId !== a.orgId || doc[cfg.fk] !== a.projectId) throw new ConvexError("Media not found");
+    await ctx.db.patch(doc._id, { displayName: name });
+    await emitFileEvent(ctx, "project", a.orgId, a.projectId, a.now, "file_updated", `renamed a file to "${name}"`, a.mediaId);
+    return { id: a.mediaId };
+  },
+});
+
 export const reorderNative = mutation({
   returns: v.object({ ok: v.boolean() }),
   args: { kind: MediaKind, orgId: v.string(), orderedIds: v.array(v.string()) },
@@ -180,3 +244,8 @@ function storageIdFromUrl(url: string): string | null {
   const idx = url.indexOf(prefix);
   return idx === -1 ? null : url.slice(idx + prefix.length);
 }
+
+export const agentOps: AgentOpsAnnotations = {
+  setTypeNative: { summary: "Set the category of one or more project files (the ProjectMediaType enum). Changes only the category.", danger: "low", mcpTier: 3 },
+  renameNative: { summary: "Rename a project file's display name; the stored file is untouched.", danger: "low", mcpTier: 3 },
+};

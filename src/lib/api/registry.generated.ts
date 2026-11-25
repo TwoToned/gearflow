@@ -12087,6 +12087,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "collaboration.lastNoteSaves",
+    "module": "collaboration",
+    "fn": "lastNoteSaves",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f75cf9c7cfef7f2e",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "Who last saved each of a job's three note fields, and when (derived from Activity events).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "collaboration.listActivityEvents",
     "module": "collaboration",
     "fn": "listActivityEvents",
@@ -29315,6 +29352,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "mediaWrites.renameNative",
+    "module": "mediaWrites",
+    "fn": "renameNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "displayName",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "mediaId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f1d344b8c597797d",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "mediaWrites.reorderNative",
     "module": "mediaWrites",
     "fn": "reorderNative",
@@ -29386,6 +29470,53 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "64c34ba9765452d0",
     "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "mediaWrites.setTypeNative",
+    "module": "mediaWrites",
+    "fn": "setTypeNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "mediaIds",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "type",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "bfc737267940a2a3",
+    "returnsSha": "04471d174c91281a",
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
@@ -66056,10 +66187,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1279,
-  agentReachable: 647,
-  queries: 455,
-  mutations: 824,
-  agentReachableQueries: 319,
+  total: 1282,
+  agentReachable: 648,
+  queries: 456,
+  mutations: 826,
+  agentReachableQueries: 320,
   agentReachableMutations: 328,
 } as const;

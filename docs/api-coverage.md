@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 455 | 319 | 132 | 2 | 2 |
-| Mutations | 824 | 328 | 485 | 0 | 11 |
-| **Total** | **1279** | **647** | **617** | **2** | **13** |
+| Queries | 456 | 320 | 132 | 2 | 2 |
+| Mutations | 826 | 328 | 485 | 0 | 13 |
+| **Total** | **1282** | **648** | **617** | **2** | **15** |
 
-<!-- reachability-floor: 647 -->
+<!-- reachability-floor: 648 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -78,7 +78,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `emails` | 1 |
 | `financeArtifacts` | 5 |
 | `globalSearch` | 1 |
-| `mediaWrites` | 4 |
+| `mediaWrites` | 6 |
 | `miraConversations` | 4 |
 | `miraKeys` | 2 |
 | `miraMessages` | 4 |

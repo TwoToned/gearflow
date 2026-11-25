@@ -1,10 +1,24 @@
 "use client";
 
 import { useMutation } from "convex/react";
+import type { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
 import { kitSchema, type KitFormValues } from "@/lib/validations/kit";
+
+const blank = (s: string | undefined) => s || undefined;
+const dateMs = (d: Date | undefined) => (d ? new Date(d).getTime() : undefined);
+
+/** The optional fields a form can leave blank, as the server takes them (blank = undefined). ONE copy for create, update and edit. */
+function optionalKitFields(p: z.output<typeof kitSchema>) {
+  return {
+    description: blank(p.description), categoryId: blank(p.categoryId), locationId: blank(p.locationId),
+    weight: p.weight, caseType: blank(p.caseType), caseDimensions: blank(p.caseDimensions),
+    notes: blank(p.notes), purchaseDate: dateMs(p.purchaseDate), purchasePrice: p.purchasePrice,
+    xeroAccountCode: blank(p.xeroAccountCode),
+  };
+}
 
 /**
  * Browser-direct KIT writes (Phase 3 — replaces createKit/updateKit/updateKitNotes/
@@ -48,14 +62,10 @@ export function useKitWrites() {
       const auditId = createId();
       const now = Date.now();
       await createM({
-        id, organizationId: org, name: p.name, assetTag: p.assetTag,
-        description: p.description || undefined, categoryId: p.categoryId || undefined,
-        status: p.status, condition: p.condition, locationId: p.locationId || undefined,
-        weight: p.weight ?? undefined, caseType: p.caseType || undefined, caseDimensions: p.caseDimensions || undefined,
-        notes: p.notes || undefined, purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined,
-        purchasePrice: p.purchasePrice ?? undefined, image: p.image || undefined, images: p.images ?? undefined,
-        barcode: p.assetTag, qrCode: p.assetTag, isActive: p.isActive, tags: p.tags ?? undefined, checkMode: p.checkMode,
-        xeroAccountCode: p.xeroAccountCode || undefined,
+        id, organizationId: org, name: p.name, assetTag: p.assetTag, ...optionalKitFields(p),
+        status: p.status, condition: p.condition,
+        image: blank(p.image), images: p.images,
+        barcode: p.assetTag, qrCode: p.assetTag, isActive: p.isActive, tags: p.tags, checkMode: p.checkMode,
         createdAt: now, updatedAt: now, actor: actor(), auditId,
       });
       return { id, auditId };
@@ -65,12 +75,10 @@ export function useKitWrites() {
       const p = kitSchema.parse(data);
       await updateM({
         id, orgId: org, patch: {
-          name: p.name, assetTag: p.assetTag, description: p.description || undefined, categoryId: p.categoryId || undefined,
-          status: p.status, condition: p.condition, locationId: p.locationId || undefined, weight: p.weight ?? undefined,
-          caseType: p.caseType || undefined, caseDimensions: p.caseDimensions || undefined, notes: p.notes || undefined,
-          purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined, purchasePrice: p.purchasePrice ?? undefined,
-          image: p.image || undefined, images: p.images ?? undefined, isActive: p.isActive, tags: p.tags ?? undefined,
-          checkMode: p.checkMode, xeroAccountCode: p.xeroAccountCode || undefined, updatedAt: Date.now(),
+          name: p.name, assetTag: p.assetTag, ...optionalKitFields(p),
+          status: p.status, condition: p.condition,
+          image: blank(p.image), images: p.images, isActive: p.isActive, tags: p.tags,
+          checkMode: p.checkMode, updatedAt: Date.now(),
         },
         actor: actor(), auditId: createId(), now: Date.now(),
       });
@@ -84,13 +92,8 @@ export function useKitWrites() {
     edit: async (id: string, data: KitFormValues): Promise<{ id: string; changed: boolean; auditId: string }> => {
       const p = kitSchema.parse(data);
       const auditId = createId();
-      const set: Record<string, unknown> = { name: p.name, assetTag: p.assetTag, condition: p.condition, checkMode: p.checkMode, tags: p.tags ?? [] };
-      const optional: Record<string, unknown> = {
-        description: p.description || undefined, categoryId: p.categoryId || undefined, locationId: p.locationId || undefined,
-        weight: p.weight ?? undefined, caseType: p.caseType || undefined, caseDimensions: p.caseDimensions || undefined,
-        notes: p.notes || undefined, purchaseDate: p.purchaseDate ? new Date(p.purchaseDate).getTime() : undefined,
-        purchasePrice: p.purchasePrice ?? undefined, xeroAccountCode: p.xeroAccountCode || undefined,
-      };
+      const set: Record<string, unknown> = { name: p.name, assetTag: p.assetTag, condition: p.condition, checkMode: p.checkMode, tags: p.tags };
+      const optional: Record<string, unknown> = optionalKitFields(p);
       const clear: string[] = [];
       for (const [k, val] of Object.entries(optional)) (val === undefined ? clear.push(k) : (set[k] = val));
       const r = await editM({ orgId: requireOrg(), id, set: set as never, clear, actor: actor(), auditId, now: Date.now() });

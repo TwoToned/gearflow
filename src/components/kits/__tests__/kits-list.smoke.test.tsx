@@ -28,7 +28,14 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "user1", name: "Alice" } } }),
 }));
 vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true }));
-vi.mock("@/hooks/use-categories", () => ({ useCategories: () => [{ id: "c1", name: "Backline" }] }));
+vi.mock("@/hooks/use-categories", () => ({
+  useCategories: () => [{ id: "c1", name: "Backline" }],
+  useCategoriesWithParent: () => [{ id: "c1", name: "Backline", parent: null }],
+}));
+vi.mock("@/hooks/use-xero-linked", () => ({ useXeroLinked: () => false }));
+vi.mock("@/components/assets/quick-create-location", () => ({ QuickCreateLocation: () => null }));
+vi.mock("@/components/settings/xero-coding-fields", () => ({ XeroAccountCodeField: () => null }));
+vi.mock("@/server/settings", () => ({ peekNextAssetTags: async () => ["KIT-0001"] }));
 vi.mock("@/hooks/use-locations", () => ({ useLocations: () => [{ id: "l1", name: "Warehouse A" }] }));
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: () => [] }));
 vi.mock("@/hooks/use-keyboard-shortcut", () => ({ useKeyboardShortcut: () => undefined }));

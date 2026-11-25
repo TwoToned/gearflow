@@ -1141,7 +1141,9 @@ Versions is a job tab (`?tab=versions`; `V` and ⋯ › Version › Manage versi
 surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:
 the app-shell `<main>` keeps a lingering `transform` from its page-enter animation, so a
 `fixed` bar left in place resolves against `<main>` and an inline one reflows the list on
-every tap. Don't remove the portal. A verb with no `confirm` fires immediately (the
+every tap. Don't remove the portal. **Inside a modal Radix `Dialog`, pass `inDialog`** (Manage templates):
+the body portal inherits the Dialog's `pointer-events: none` lock and every click is swallowed, so there the bar
+stays in `DialogContent`, sticky, on every breakpoint. A verb with no `confirm` fires immediately (the
 surface owns its own dialog, as the three legacy consumers' `BulkDeleteDialog` does).
 
 `ScanStrip`'s `undo` MUST be `AnnouncedWrite.scanUndo` from `announceWarehouseWrite`,

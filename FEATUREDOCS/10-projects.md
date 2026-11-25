@@ -253,10 +253,15 @@ the wizard's own menu).
 - **`New template…`** (`templates/new-template-sheet.tsx`): the shared `ProjectFields` job block in a
   `FormSheet` (name, type, tags, description, client, managers; no code, discount or dates); it creates
   the template through the ordinary create and opens its page, where gear is added.
-- **Deferred: Restore for archived templates.** An archived template can leave the Archived list only by
-  `Delete forever…`; the one way back is the delete's own Undo toast (`unarchiveTemplatesNative`, ids only,
-  10-minute window). A standing `Restore` action needs its own guarded write (not the ids-only Undo) and is
-  logged as a follow-up, unbuilt.
+- **Restore** (Archived tab, row ⋯ and bulk `Restore n`): `restoreTemplatesNative` returns an archived
+  template to a live Enquiry. Gated like archive (`project:delete`), no confirm, and its own exact Undo
+  (`unrestoreTemplatesNative`, ids only; both Undos share one helper over `fieldEditUndo`). A live template in
+  the list is skipped. The bulk bar sits INSIDE the dialog (`BulkBar inDialog`, sticky, no body portal): a Radix
+  modal sets `pointer-events: none` on `<body>`, so a portaled bar would swallow every click on a phone.
+- **The wizard form adopts what an apply writes.** `applyTemplateNative` returns the scalars it filled
+  (`applied`) and what the draft had (`previous`); the Undo returns `restored`. `useJobDraft.adopt` puts them in
+  the form AND the saved baseline, so the next autosave diff never sends a stale form value over them (and the
+  Undo, which checks the draft is as the apply left it, keeps working).
 
 ## Job fields
 
@@ -289,7 +294,10 @@ row carrying `details.fieldEdit` (before/after of only the changed fields, `lib/
 reads that back and refuses as a whole, changing nothing, unless the caller is the author, it is inside the
 10-minute server-clock window, it has not already been undone, every changed field still holds what the save
 left (`CHANGED_SINCE`), and a restored locked money field (`discountPercent`/`taxRate`) is not on a
-pricing-locked job. Restoring a recalc input recalculates in the same transaction. The sheet offers no Undo
+pricing-locked job. Restoring a recalc input recalculates in the same transaction. It restores ONLY fields
+the edit sheet may write: `updateNative` is also reachable directly, so a snapshot holding `status`, `packerUserId`
+or any server-owned field (`PROJECT_UPDATE_IMMUTABLE`) is refused (`NOT_UNDOABLE`), never raw-patched past
+`transitionProjectStatus`; a restored `clientId` / `locationId` / `clientContactId` is re-checked against the org. The sheet offers no Undo
 when the manager set changed in the same Save (a separate write the Undo does not cover). The activity readers
 redact `details.fieldEdit` by field name with the same lists as `details.changes` (`lib/activityPay.ts`).
 

@@ -46196,7 +46196,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "fdccb5feb92e3ab7",
-    "returnsSha": "af533ba0b409713a",
+    "returnsSha": "5a8358a19c3bfa33",
     "stability": "tracks-app",
     "summary": "Copy a template's gear, tags, type, description and discount onto an empty draft enquiry; refuses a draft that already has gear.",
     "danger": "medium",
@@ -46252,6 +46252,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": "Archive job templates (reversible: returns each audit id for the exact Undo); an archived template can then be deleted.",
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.restoreTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "restoreTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f6d0d940e9d1feff",
+    "returnsSha": "9f7646b45942af4d",
+    "stability": "tracks-app",
+    "summary": "Restore archived job templates (returns each audit id for the exact Undo); a template that is not archived is skipped.",
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -46347,10 +46399,57 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "75c61279ed6198e9",
-    "returnsSha": "e2e4cb5bd33c24c1",
+    "returnsSha": "85fb30189c262cfb",
     "stability": "tracks-app",
     "summary": "Undo applying a template to a draft: removes exactly what the apply made, refusing if anything was changed since.",
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTemplateWrites.unrestoreTemplatesNative",
+    "module": "projectTemplateWrites",
+    "fn": "unrestoreTemplatesNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "project",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "items",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5878020390254e44",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": "Undo a restore of job templates (archives them again), from the audit ids the restore returned.",
+    "danger": "low",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -68132,10 +68231,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1317,
-  agentReachable: 682,
+  total: 1319,
+  agentReachable: 684,
   queries: 469,
-  mutations: 848,
+  mutations: 850,
   agentReachableQueries: 333,
-  agentReachableMutations: 349,
+  agentReachableMutations: 351,
 } as const;

@@ -61,6 +61,8 @@ describe("projects.windowOverlap", () => {
       { id: "self", rental: w },
       { id: "tpl", rental: w, isTemplate: true },
       { id: "gone", rental: w, status: "CANCELLED" },
+      { id: "back", rental: w, status: "RETURNED" },
+      { id: "done", rental: w, status: "COMPLETED" },
       { id: "soft", rental: w, status: "ENQUIRY" },
       { id: "hard", rental: w, status: "CONFIRMED" },
     ]);
@@ -84,6 +86,8 @@ describe("projects.windowOverlap", () => {
     const r = await run(t);
     expect(r.jobs).toHaveLength(50);
     expect(r.total).toBe(55);
+    expect(r.truncated).toBe(true);
+    expect((await run(t, { start: D0 + 59 * DAY, end: D0 + 62 * DAY })).truncated).toBe(false);
   });
 
   test("a caller from another org is refused", async () => {

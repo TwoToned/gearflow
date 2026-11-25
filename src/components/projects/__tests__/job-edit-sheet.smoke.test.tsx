@@ -28,7 +28,13 @@ vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
   useSession: () => ({ data: { user: { id: "user1" } } }),
 }));
-vi.mock("@/components/auth/permission-gate", () => ({ CanDo: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
+let canUpdate = true;
+vi.mock("@/lib/use-permissions", () => ({
+  useCanDo: () => canUpdate,
+  useCurrentRole: () => ({ isLoading: false, role: "member", permissions: {} }),
+}));
+const toastError = vi.fn();
+vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastError(...a), success: vi.fn() } }));
 vi.mock("@/hooks/use-server-mutation", () => ({
   useServerMutation: (o: { mutationFn: (d: unknown) => Promise<unknown>; onSuccess?: (r: unknown) => void; onError?: (e: Error) => void }) => ({
     mutate: async (d: unknown) => {
@@ -66,6 +72,8 @@ beforeEach(() => {
   impactRows = [];
   update.mockClear();
   replace.mockClear();
+  toastError.mockClear();
+  canUpdate = true;
 });
 
 describe("JobEditSheet", () => {
@@ -121,7 +129,15 @@ describe("JobEditSheet", () => {
     expect(screen.queryByText(/creates a shortage/)).toBeNull();
   });
 
-  it("renders nothing without ?edit=1 semantics for a template: no Money section", async () => {
+  it("a ?edit=1 link without project:update says so and drops the param, rather than rendering nothing", async () => {
+    canUpdate = false;
+    render(<JobEditSheet projectId="p1" />);
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("You can't edit this job"));
+    expect(replace).toHaveBeenCalledWith("/projects/p1?tab=equipment");
+    expect(screen.queryByText("Edit job")).toBeNull();
+  });
+
+  it("a template edits in the same sheet, with no Money section", async () => {
     project = { ...base, isTemplate: true, status: "ENQUIRY" };
     render(<JobEditSheet projectId="p1" />);
     expect(await screen.findByText("Edit template")).toBeTruthy();

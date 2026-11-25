@@ -35,6 +35,7 @@ export function RangeCalendar({
   onChange,
   className,
   busyDays,
+  onViewMonthChange,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
@@ -42,11 +43,19 @@ export function RangeCalendar({
   /** Optional: a dot under each day another job has gear out; the value is the
    *  day's title (which jobs). Keys are `yyyy-MM-dd`. Absent = no dots. */
   busyDays?: ReadonlyMap<string, string>;
+  /** Optional: told the first of the visible month on mount and whenever it changes,
+   *  so a caller can load per-day facts (busy dots) for exactly what is on screen. */
+  onViewMonthChange?: (month: Date) => void;
 }) {
   const [viewMonth, setViewMonth] = React.useState<Date>(
     () => startOfMonth(value.start ?? new Date()),
   );
   const [hover, setHover] = React.useState<Date | null>(null);
+  const viewMonthMs = viewMonth.getTime();
+  React.useEffect(() => {
+    onViewMonthChange?.(new Date(viewMonthMs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMonthMs]);
 
   // Keep the visible month in sync when the range is set externally (presets).
   // Adjust-state-during-render (React's recommended pattern) keyed on the

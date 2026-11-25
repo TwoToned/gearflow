@@ -264,6 +264,13 @@ function useProjectCodePrefill(form: FormApi, nextProjectNumber: string | null |
   }, [nextProjectNumber]);
 }
 
+/** The wizard's availability extras around the rental calendar: dots, the line under it, and the visible month. */
+interface ScheduleExtras {
+  busyDays?: ReadonlyMap<string, string>;
+  footer?: React.ReactNode;
+  onMonthChange?: (month: Date) => void;
+}
+
 type ProjectFieldsState = ReturnType<typeof useProjectFieldsState>;
 
 export function ProjectFields({
@@ -273,14 +280,14 @@ export function ProjectFields({
   state: ProjectFieldsState;
   sections: ProjectFieldsSection[];
   /** The wizard's availability extras under the rental calendar. */
-  schedule?: { busyDays?: ReadonlyMap<string, string>; footer?: React.ReactNode };
+  schedule?: ScheduleExtras;
 }) {
   const has = (s: ProjectFieldsSection) => sections.includes(s);
   return (
     <>
       {has("job") && <JobFields form={form} state={state} />}
       {has("money") && <MoneyFields form={form} state={state} />}
-      {has("schedule") && <ScheduleFields form={form} busyDays={schedule?.busyDays} footer={schedule?.footer} />}
+      {has("schedule") && <ScheduleFields form={form} extras={schedule} />}
       {has("where") && <WhereFields form={form} state={state} />}
     </>
   );
@@ -490,7 +497,8 @@ function windowWarning(range: DateRange, projectRange: DateRange): string | unde
   return undefined;
 }
 
-function ScheduleFields({ form, busyDays, footer }: { form: UseFormReturn<ProjectFormValues>; busyDays?: ReadonlyMap<string, string>; footer?: React.ReactNode }) {
+function ScheduleFields({ form, extras }: { form: UseFormReturn<ProjectFormValues>; extras?: ScheduleExtras }) {
+  const { busyDays, footer, onMonthChange } = extras ?? {};
   const v = form.watch();
   const range: DateRange = { start: fromDateStr(v.rentalStartDate), end: fromDateStr(v.rentalEndDate) };
   const projectRange: DateRange = { start: fromDateStr(v.projectStartDate), end: fromDateStr(v.projectEndDate) };
@@ -516,7 +524,7 @@ function ScheduleFields({ form, busyDays, footer }: { form: UseFormReturn<Projec
 
       <PresetChips range={range} onPick={setRange} />
       <div className="rounded-[var(--r-lg)] border border-line bg-paper-2/40 p-4">
-        <RangeCalendar value={range} onChange={setRange} busyDays={busyDays} />
+        <RangeCalendar value={range} onChange={setRange} busyDays={busyDays} onViewMonthChange={onMonthChange} />
         <div className="mt-3 flex items-center justify-between border-t border-line pt-3">
           <span className={cn("text-table-cell font-medium", range.start ? "text-ink" : "text-muted")}>{summary}</span>
           {lenLabel && (

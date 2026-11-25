@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useCanDo } from "@/lib/use-permissions";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useProject } from "@/hooks/use-projects";
 import { useProjectWrites, useNativeProjectStatus } from "@/hooks/use-native-project-writes";
@@ -69,7 +68,6 @@ function useStepFocus(step: StepKey) {
 function WizardBody({ orgId }: { orgId: string | undefined }) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const canDelete = useCanDo("project", "delete");
   const writes = useProjectWrites(orgId);
   const status = useNativeProjectStatus(orgId);
   const milestones = useActivationMilestones(orgId);
@@ -85,7 +83,8 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const v = form.watch();
   const doc = useProject(draft.draftId);
   const data = useWizardLines(draft.draftId, orgId);
-  const avail = useWizardAvailability(orgId, draft.draftId, v.rentalStartDate as string | undefined, v.rentalEndDate as string | undefined);
+  const [month, setMonth] = useState<Date | undefined>();
+  const avail = useWizardAvailability(orgId, draft.draftId, v.rentalStartDate as string | undefined, v.rentalEndDate as string | undefined, month);
   const shortLines = data.lines.filter((l) => (data.overbooked[l.id]?.overBy ?? 0) > 0).length;
   useClientParam(form);
   const headingRef = useStepFocus(step);
@@ -103,7 +102,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   };
 
   const ctx: WizardContext = {
-    form, writes, canDelete, push: router.push, draftId: draft.draftId, draftNumber: draft.number, lineCount: data.lines.length,
+    form, writes, push: router.push, draftId: draft.draftId, draftNumber: draft.number, createAuditId: draft.createAuditId, lineCount: data.lines.length,
     flush: draft.flush, forget: draft.forget, finishStepOne, updateStatus: status.updateStatus, startsAs, milestones,
     resetWizard: () => { setUnlocked(false); setStep("who"); },
   };
@@ -120,6 +119,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const back = () => setStep(step === "review" ? "what" : "who");
 
   const named = !!v.name?.trim();
+  const menu = headMenu(draft.draftId ? () => discardDraft(ctx) : undefined, data.lines.length);
   const actions = (
     <WizardActions
       step={step} creating={creating} named={named}
@@ -129,7 +129,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
   const whoStep = (
     <WhoStep
       form={form} state={state} onSubmit={() => void next()}
-      availability={{ busyDays: avail.busyDays, footer: <AvailabilityLine hasDates={!!v.rentalStartDate} others={avail.others} shortLines={shortLines} lineCount={data.lines.length} /> }}
+      availability={{ busyDays: avail.busyDays, onMonthChange: setMonth, footer: <AvailabilityLine hasDates={!!v.rentalStartDate} others={avail.others} shortLines={shortLines} lineCount={data.lines.length} /> }}
     />
   );
   const reviewStep = (
@@ -154,7 +154,7 @@ function WizardBody({ orgId }: { orgId: string | undefined }) {
           <p className="t-micro text-muted" role="status">{draftStatusLine(draft.phase, draft.number, named)}</p>
         </div>
         {!isMobile && actions}
-        <ActionMenu spec={headMenu(router.push, draft.draftId ? () => discardDraft(ctx) : undefined, data.lines.length)} label="Wizard actions" />
+        {menu && <ActionMenu spec={menu} label="Wizard actions" />}
       </header>
 
       <StepNav step={step} unlocked={unlocked} whatCount={data.lines.length} onPick={setStep} />
@@ -196,7 +196,7 @@ function WhoStep({
 }: {
   form: UseFormReturn<ProjectFormValues>;
   state: ReturnType<typeof useProjectFieldsState>;
-  availability: { busyDays?: ReadonlyMap<string, string>; footer: React.ReactNode };
+  availability: { busyDays?: ReadonlyMap<string, string>; footer: React.ReactNode; onMonthChange: (month: Date) => void };
   onSubmit: () => void;
 }) {
   const [more, setMore] = useState(false);
@@ -247,19 +247,18 @@ function draftStatusLine(phase: string, number: string | undefined, named: boole
 }
 
 /** The page ⋯: sibling links first, `Discard draft…` red and last (its confirm names what goes). */
-function headMenu(push: (href: string) => void, discard: (() => Promise<void>) | undefined, lineCount: number): ActionMenuSpec {
-  const items: ActionMenuSpec["items"] = [
-    { key: "existing", label: "Edit an existing job…", group: "edit", onSelect: () => push("/projects") },
-  ];
-  if (discard) {
-    items.push({
+function headMenu(discard: (() => Promise<void>) | undefined, lineCount: number): ActionMenuSpec | null {
+  if (!discard) return null;
+  return {
+    items: [{
       key: "discard", label: "Discard draft…", group: "danger", danger: true, onSelect: discard,
       confirm: {
         title: "Discard this draft?",
-        body: lineCount > 0 ? `The draft job and its ${lineCount} line${lineCount === 1 ? "" : "s"} are removed. This can't be undone.` : "The draft job is removed.",
+        body: lineCount > 0
+          ? `The draft already has ${lineCount} line${lineCount === 1 ? "" : "s"}, so it is cancelled rather than deleted: it stays in Jobs as Cancelled. This can't be undone.`
+          : "The empty draft is removed. This can't be undone.",
         confirmLabel: "Discard draft",
       },
-    });
-  }
-  return { items };
+    }],
+  };
 }

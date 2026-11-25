@@ -8,21 +8,22 @@ import type { StartStatus } from "./step-review";
 /**
  * What the wizard's header and footer DO, kept out of the component so each verb
  * is small and testable. The draft row is the one source: Create finishes it,
- * Discard removes it, nothing here ever duplicates it.
+ * Discard removes it, nothing here ever duplicates it. Removal is ONE server
+ * verb (`discardDraft`): it deletes only an empty draft the caller made and
+ * nobody else touched, and otherwise cancels while still an Enquiry. There is no
+ * client-side "archive then delete", and no snapshot-recreate Undo.
  */
 interface Writes {
-  archive: (id: string) => Promise<void>;
-  remove: (id: string) => Promise<unknown>;
+  discardDraft: (projectId: string, createAuditId: string, via: "undo" | "discard") => Promise<{ outcome: "deleted" | "cancelled" }>;
 }
 
 export interface WizardContext {
   form: UseFormReturn<ProjectFormValues>;
   writes: Writes;
-  canDelete: boolean;
   push: (href: string) => void;
   draftId: string | undefined;
   draftNumber: string | undefined;
-  lineCount: number;
+  createAuditId: () => string;
   flush: () => Promise<string | undefined>;
   forget: () => void;
   /** Validates step one, writes the draft, and returns its id. */
@@ -30,30 +31,41 @@ export interface WizardContext {
   updateStatus: (id: string, status: StartStatus) => Promise<void>;
   startsAs: StartStatus;
   milestones: ActivationMilestonesState | undefined;
+  lineCount: number;
   resetWizard: () => void;
 }
 
-/** Cancel the draft, and delete it when the member may. The one removal path (Discard and the enquiry's Undo). */
-async function removeDraft(ctx: Pick<WizardContext, "writes" | "canDelete">, id: string) {
-  await ctx.writes.archive(id);
-  if (ctx.canDelete) await ctx.writes.remove(id);
-}
-
 export async function discardDraft(ctx: WizardContext) {
-  const snapshot = ctx.form.getValues();
-  if (ctx.draftId) await removeDraft(ctx, ctx.draftId);
+  if (ctx.draftId) {
+    try {
+      const { outcome } = await ctx.writes.discardDraft(ctx.draftId, ctx.createAuditId(), "discard");
+      toast.success(outcome === "deleted" ? "Draft discarded" : "Draft cancelled");
+    } catch (e) {
+      return void toast.error((e as Error).message);
+    }
+  }
   ctx.forget();
   ctx.form.reset(projectFormDefaults());
   ctx.resetWizard();
-  // Undo only for a lineless draft: it is exactly the form's own values; lines can't be restored.
-  const undo = { action: { label: "Undo", onClick: () => { ctx.form.reset(snapshot); void ctx.flush(); } } };
-  toast.success("Draft discarded", ctx.lineCount === 0 ? undo : undefined);
 }
 
 function enquiryToast(ctx: WizardContext, id: string) {
   const label = `Enquiry${ctx.draftNumber ? ` ${ctx.draftNumber}` : ""} created`;
+  const auditId = ctx.createAuditId();
   toast.success(label, {
-    action: { label: "Undo", onClick: async () => { await removeDraft(ctx, id); ctx.push("/projects"); } },
+    // The server decides: it refuses once anyone has worked on the job, after the window, or twice.
+    action: {
+      label: "Undo",
+      onClick: async () => {
+        try {
+          await ctx.writes.discardDraft(id, auditId, "undo");
+          toast.success("Enquiry removed");
+          ctx.push("/projects");
+        } catch (e) {
+          toast.error((e as Error).message);
+        }
+      },
+    },
   });
 }
 

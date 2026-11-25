@@ -1,12 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { FormSheet } from "@/components/ui/form-sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CanDo } from "@/components/auth/permission-gate";
+import { useCanDo, useCurrentRole } from "@/lib/use-permissions";
 import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
 import {
   ProjectFields, projectFormDefaults, useProjectFieldsState, type EditableProject,
@@ -36,12 +37,20 @@ import { JOB_EDIT_PARAM, jobEditCloseHref } from "@/lib/job-edit-url";
  */
 export function JobEditSheet({ projectId }: { projectId: string }) {
   const searchParams = useSearchParams();
-  if (searchParams.get(JOB_EDIT_PARAM) !== "1") return null;
-  return (
-    <CanDo resource="project" action="update">
-      <LoadedSheet projectId={projectId} />
-    </CanDo>
-  );
+  const requested = searchParams.get(JOB_EDIT_PARAM) === "1";
+  const { isLoading } = useCurrentRole();
+  const allowed = useCanDo("project", "update");
+  const close = useCloseSheet();
+  // A `?edit=1` link without the right to edit says so and drops the param, never a silent nothing.
+  const refused = requested && !isLoading && !allowed;
+  useEffect(() => {
+    if (!refused) return;
+    toast.error("You can't edit this job");
+    close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refused]);
+  if (!requested || !allowed) return null;
+  return <LoadedSheet projectId={projectId} />;
 }
 
 function useCloseSheet() {

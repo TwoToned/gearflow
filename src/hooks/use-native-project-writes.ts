@@ -224,6 +224,7 @@ export function useProjectWrites(orgId: string | undefined) {
   const duplicateM = useMutation(api.projectWrites.duplicateNative);
   const saveAsTemplateM = useMutation(api.projectWrites.saveAsTemplateNative);
   const deleteM = useMutation(api.projectWrites.deleteNative);
+  const discardDraftM = useMutation(api.projectDraftWrites.discardDraftNative);
 
   const locations = useLocations(orgId);
 
@@ -270,6 +271,9 @@ export function useProjectWrites(orgId: string | undefined) {
    */
   const create = async (
     data: ProjectFormValues & { isTemplate?: boolean },
+    /** The wizard mints these ONCE per draft: a retried create (a lost response) then
+     *  returns the row it already made, never a second job or number. */
+    ids?: { id: string; auditId: string },
   ): Promise<{ id: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchema.parse(data);
@@ -296,7 +300,7 @@ export function useProjectWrites(orgId: string | undefined) {
     const templateNumber =
       isTemplate && !parsed.projectNumber ? await peekNextTemplateCode() : null;
 
-    const id = createId();
+    const id = ids?.id ?? createId();
     const now = new Date();
     const baseArgs = {
       id,
@@ -352,7 +356,7 @@ export function useProjectWrites(orgId: string | undefined) {
             }
           : { projectNumber: templateNumber ?? parsed.projectNumber! }),
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
-        auditId: createId(),
+        auditId: ids?.auditId ?? createId(),
       });
       // A manual/template number clash is a hard duplicate (auto retries in-mutation).
       if (!created.created) {
@@ -564,5 +568,29 @@ export function useProjectWrites(orgId: string | undefined) {
   const addTag = tagBatch(addTagM);
   const removeTag = tagBatch(removeTagM);
 
-  return { enabled, archive, deleteTemplate, create, update, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove };
+  /**
+   * Discard a wizard draft (and the `Create as enquiry` Undo) through the ONE
+   * server-guarded verb: it deletes only an empty draft the caller made and nobody
+   * else touched (`via: "undo"` also needs the 10-minute window and runs once), and
+   * otherwise cancels while still an Enquiry. Never a client-side archive + delete.
+   */
+  const discardDraft = async (
+    projectId: string,
+    createAuditId: string,
+    via: "undo" | "discard",
+  ): Promise<{ outcome: "deleted" | "cancelled" }> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      return await discardDraftM({
+        orgId, projectId, createAuditId, via,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
+  };
+
+  return { enabled, archive, deleteTemplate, create, update, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove, discardDraft };
 }

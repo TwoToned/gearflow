@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { PROJECT_TYPE_LABELS } from "@/lib/project-type-labels";
 import { rentalDatesLabel } from "@/lib/job-header";
 import type { ProjectFormValues } from "@/lib/validations/project";
-import { AvailabilityLine } from "./availability-line";
+import { AvailabilityLine, type Overlap } from "./availability-line";
 import type { WizardLines } from "./step-what";
 
 /** The statuses a new job can START as. Confirmed and later stay on the Overview stepper (its gates). */
@@ -31,7 +31,7 @@ export function StepReview({
   number?: string;
   data: WizardLines;
   discountAmount: number;
-  others: { total: number; jobs: { number: string; id: string; status: string; start: number; end: number; hard: boolean }[] } | null;
+  others: Overlap | null;
   startsAs: StartStatus;
   onStartsAs: (s: StartStatus) => void;
   onEdit: (step: "who" | "what") => void;

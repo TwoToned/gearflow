@@ -37164,6 +37164,72 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "projectDraftWrites.discardDraftNative",
+    "module": "projectDraftWrites",
+    "fn": "discardDraftNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "createAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "via",
+        "optional": false,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6bd58c961e73686a",
+    "returnsSha": "99a30a0f18eaacc2",
+    "stability": "tracks-app",
+    "summary": "Discard a draft job the caller created: hard-deletes it when it is still an empty enquiry nobody else has touched, otherwise cancels it while it is still an enquiry. Refuses once it has moved on.",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "projectEquipment.browserBundle",
     "module": "projectEquipment",
     "fn": "browserBundle",
@@ -65864,10 +65930,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1276,
-  agentReachable: 644,
+  total: 1277,
+  agentReachable: 645,
   queries: 456,
-  mutations: 820,
+  mutations: 821,
   agentReachableQueries: 320,
-  agentReachableMutations: 324,
+  agentReachableMutations: 325,
 } as const;

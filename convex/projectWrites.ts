@@ -434,6 +434,19 @@ async function assertClientContactOnCreate(
   await assertClientContactBelongsToClient(ctx, clientContactId, clientId, orgId);
 }
 
+/** True when `existing` was made by this very create call retried: the caller's own CREATE audit row, this org and project. */
+async function isReplayOfCreate(
+  ctx: MutationCtx,
+  existing: { id: string; organizationId: string },
+  orgId: string,
+  auditId: string,
+  userId: string,
+): Promise<boolean> {
+  if (existing.organizationId !== orgId) return false;
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+  return !!row && row.organizationId === orgId && row.entityId === existing.id && row.action === "CREATE" && row.userId === userId;
+}
+
 /**
  * The project fields `recalcProjectTotals` reads (its INPUTS; the outputs are
  * `PROJECT_MONEY_ANCHORS`). Writing one without recalculating leaves the stored
@@ -848,7 +861,14 @@ export const createNative = mutation({
     // manual callers retry with a NEW number): a cuid collision is a hard error,
     // else another org's by_cuid reads get muddied.
     const dupId = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
-    if (dupId) throw new ConvexError("Project already exists");
+    if (dupId) {
+      // A retry of THIS create (a lost response) returns the row it already made:
+      // same id, same org, and the create's own audit row, written by this caller.
+      if (await isReplayOfCreate(ctx, dupId, fields.organizationId, auditId, actor.userId)) {
+        return { created: true as const, id: dupId.id };
+      }
+      throw new ConvexError("Project already exists");
+    }
 
     // The counter row's updatedAt / render `now` — the server used one `now` for
     // both the create timestamps and the counter (byte-identical here).

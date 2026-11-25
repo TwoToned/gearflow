@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
+import { createId } from "@paralleldrive/cuid2";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { useProjectManagerWrites } from "@/hooks/use-project-managers-writes";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -37,6 +38,9 @@ export function useJobDraft({
   const [phase, setPhase] = useState<DraftPhase>("none");
   const [draftId, setDraftId] = useState<string | undefined>();
   const idRef = useRef<string | undefined>(undefined);
+  // Minted ONCE per draft and sent with every create: a retry after a lost response
+  // then returns the row already made (server: same id + same create audit row).
+  const mintedRef = useRef({ id: createId(), auditId: createId() });
   const savedRef = useRef<ProjectFormValues | undefined>(undefined);
   const savedManagersRef = useRef<string[]>([]);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -57,7 +61,7 @@ export function useJobDraft({
     const values = form.getValues();
     if (!hasName(values) || !projectSchema.safeParse(values).success) return idRef.current;
     if (!idRef.current) {
-      const created = await writes.create({ ...values, status: "ENQUIRY", isTemplate: false });
+      const created = await writes.create({ ...values, status: "ENQUIRY", isTemplate: false }, mintedRef.current);
       idRef.current = created.id;
       setDraftId(created.id);
     } else if (savedRef.current) {
@@ -104,11 +108,15 @@ export function useJobDraft({
     idRef.current = undefined;
     savedRef.current = undefined;
     savedManagersRef.current = [];
+    mintedRef.current = { id: createId(), auditId: createId() };
     setDraftId(undefined);
     setPhase("none");
   }, []);
 
-  return { phase, draftId, number, flush, forget };
+  /** The audit id the draft's create carried (read at click time; the server proves authorship with it). */
+  const createAuditId = useCallback(() => mintedRef.current.auditId, []);
+
+  return { phase, draftId, number, flush, forget, createAuditId };
 }
 
 /** A code the org must type (no auto-number) is "not yet", not an error; a duplicate code lands on its field. */

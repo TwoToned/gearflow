@@ -55520,6 +55520,896 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "supplierRecord.contacts",
+    "module": "supplierRecord",
+    "fn": "contacts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d3470e2b0b6b7cf6",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A supplier's additional contacts.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecord.documents",
+    "module": "supplierRecord",
+    "fn": "documents",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "d3470e2b0b6b7cf6",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A supplier's documents (insurance, contracts) with expiry dates.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecord.orderFiles",
+    "module": "supplierRecord",
+    "fn": "orderFiles",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "supplier",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "orderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "dc610009bd4f9f80",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "An order's attached PO, docket and other files.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.addContactNative",
+    "module": "supplierRecordWrites",
+    "fn": "addContactNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "email",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "phone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "role",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5c4ec1e3e8986ac9",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.addDocumentNative",
+    "module": "supplierRecordWrites",
+    "fn": "addDocumentNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expiryDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "fileId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "7de1b460d4813ad0",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.addOrderFileNative",
+    "module": "supplierRecordWrites",
+    "fn": "addOrderFileNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fileId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "dde2d3037ca828fa",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.removeContactNative",
+    "module": "supplierRecordWrites",
+    "fn": "removeContactNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "contactId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a56f0d1e782f3b77",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.removeDocumentNative",
+    "module": "supplierRecordWrites",
+    "fn": "removeDocumentNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "documentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "02232ed6ccd44d34",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.removeOrderFileNative",
+    "module": "supplierRecordWrites",
+    "fn": "removeOrderFileNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "fileRowId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "f3a641dfefefa109",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.undoContactRowNative",
+    "module": "supplierRecordWrites",
+    "fn": "undoContactRowNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c5ead2f0d6eaff79",
+    "returnsSha": "39a41587c0fdfde2",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.undoDocumentAddNative",
+    "module": "supplierRecordWrites",
+    "fn": "undoDocumentAddNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c5ead2f0d6eaff79",
+    "returnsSha": "39a41587c0fdfde2",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.undoOrderFileAddNative",
+    "module": "supplierRecordWrites",
+    "fn": "undoOrderFileAddNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orderId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "31f2df25f4eb4027",
+    "returnsSha": "39a41587c0fdfde2",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.undoRowEditNative",
+    "module": "supplierRecordWrites",
+    "fn": "undoRowEditNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "rowId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "05a0c8eadd6bc373",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.updateContactNative",
+    "module": "supplierRecordWrites",
+    "fn": "updateContactNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "contactId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "email",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "phone",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "role",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "acc9be6340986cee",
+    "returnsSha": "1a5419570c9593c7",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "supplierRecordWrites.updateDocumentNative",
+    "module": "supplierRecordWrites",
+    "fn": "updateDocumentNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "supplier",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "supplier",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "documentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expiryDate",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "kind",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "notes",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "supplierId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4e86105c6b760a78",
+    "returnsSha": "1a5419570c9593c7",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "suppliers.assetsPage",
     "module": "suppliers",
     "fn": "assetsPage",
@@ -66833,10 +67723,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1294,
-  agentReachable: 659,
-  queries: 464,
-  mutations: 830,
-  agentReachableQueries: 328,
-  agentReachableMutations: 331,
+  total: 1309,
+  agentReachable: 674,
+  queries: 467,
+  mutations: 842,
+  agentReachableQueries: 331,
+  agentReachableMutations: 343,
 } as const;

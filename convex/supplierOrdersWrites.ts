@@ -1,7 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -9,6 +8,8 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { deleteStoredFile } from "./lib/deleteStoredFile";
+import { MAX_FILES_PER_ORDER } from "./lib/supplierRecordCore";
 import * as enums from "./lib/validators";
 
 /**
@@ -237,7 +238,8 @@ export const deleteNative = mutation({
 
     const items = await ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", a.id)).collect();
     for (const it of items) await ctx.db.delete(it._id);
-    if (order.invoiceFileId) await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+    if (order.invoiceFileId) await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
+    await deleteOrderFiles(ctx, a.orgId, a.id);
 
     await ctx.db.delete(order._id);
 
@@ -285,7 +287,7 @@ export const attachInvoiceNative = mutation({
     if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
 
     if (order.invoiceFileId && order.invoiceFileId !== a.fileId) {
-      await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+      await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     }
 
     await ctx.db.patch(order._id, { invoiceFileId: a.fileId, updatedAt: a.now });
@@ -320,7 +322,7 @@ export const removeInvoiceNative = mutation({
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
     if (!order.invoiceFileId) return { id: a.id }; // idempotent — nothing to remove
 
-    await deleteFileById(ctx, order.invoiceFileId, a.orgId);
+    await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     await ctx.db.patch(order._id, { invoiceFileId: undefined, updatedAt: a.now });
 
     await writeActivityLog(ctx, {
@@ -340,18 +342,13 @@ export const removeInvoiceNative = mutation({
   },
 });
 
-/** Delete a fileUploads row + its stored bytes/storedFiles record (org re-checked). */
-async function deleteFileById(ctx: MutationCtx, fileId: string, orgId: string): Promise<void> {
-  const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (!file || file.organizationId !== orgId) return;
-  const rec = await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
-  if (rec) await ctx.db.delete(rec._id);
-  try {
-    await ctx.storage.delete(file.storageKey as Id<"_storage">);
-  } catch {
-    // already gone — idempotent
+/** An order's PO / docket / other files go with it, stored bytes included (B3). */
+async function deleteOrderFiles(ctx: MutationCtx, orgId: string, orderId: string): Promise<void> {
+  const files = await ctx.db.query("supplierOrderFiles").withIndex("by_orderId", (q) => q.eq("orderId", orderId)).take(MAX_FILES_PER_ORDER + 1);
+  for (const f of files.filter((x) => x.organizationId === orgId)) {
+    await deleteStoredFile(ctx, f.fileId, orgId);
+    await ctx.db.delete(f._id);
   }
-  await ctx.db.delete(file._id);
 }
 
 // ─── Hire return (UX Phase 13, D71) ── `Mark returned` and `Extend hire` ────────────

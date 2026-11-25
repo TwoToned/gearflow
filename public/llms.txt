@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (659 agent-reachable)
+## Operations (674 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -617,6 +617,21 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `supplierOrdersWrites.removeInvoiceNative` (mutation, scope: supplier:update)
 - `supplierOrdersWrites.undoHireChangeNative` (mutation, scope: supplier:update)
 - `supplierOrdersWrites.updateNative` (mutation, scope: supplier:update)
+- `supplierRecord.contacts` (query, scope: supplier:read)
+- `supplierRecord.documents` (query, scope: supplier:read)
+- `supplierRecord.orderFiles` (query, scope: supplier:read)
+- `supplierRecordWrites.addContactNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.addDocumentNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.addOrderFileNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.removeContactNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.removeDocumentNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.removeOrderFileNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.undoContactRowNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.undoDocumentAddNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.undoOrderFileAddNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.undoRowEditNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.updateContactNative` (mutation, scope: supplier:update)
+- `supplierRecordWrites.updateDocumentNative` (mutation, scope: supplier:update)
 - `suppliers.assetsPage` (query, scope: supplier:read)
 - `suppliers.counts` (query, scope: supplier:read)
 - `suppliers.detail` (query, scope: supplier:read)

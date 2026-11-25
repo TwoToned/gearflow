@@ -1282,6 +1282,59 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_clientId", ["clientId"]),
 
+  // SupplierContact (UX Phase 13, B3, owner-approved 2026-11-25). DIRECT. More people at a
+  // supplier than the one embedded `suppliers.contactName/email/phone` (which stays). No
+  // primary flag: the embedded contact IS the primary. Cap 50/supplier in the write layer.
+  supplierContacts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    supplierId: v.string(),
+    name: v.optional(v.string()),
+    role: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_supplierId", ["supplierId"]),
+
+  // SupplierDocument (B3). DIRECT. A file on the supplier (insurance, contract, licence) with
+  // an optional expiry. `fileId` points at `fileUploads`; expiry STATE is derived on read
+  // (`documentExpiry`), never stored. Cap 100/supplier in the write layer.
+  supplierDocuments: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    supplierId: v.string(),
+    fileId: v.string(),
+    name: v.string(),
+    kind: v.optional(v.string()),
+    expiryDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_supplierId", ["supplierId"]),
+
+  // SupplierOrderFile (B3). DIRECT. The order's PO / docket / other files. The invoice keeps
+  // its own 1:1 slot (`supplierOrders.invoiceFileId`), so there is no INVOICE kind here.
+  supplierOrderFiles: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    orderId: v.string(),
+    fileId: v.string(),
+    kind: v.union(v.literal("PO"), v.literal("DOCKET"), v.literal("OTHER")),
+    name: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_orderId", ["orderId"]),
+
   // Project
   projects: defineTable({
     id: v.string(),

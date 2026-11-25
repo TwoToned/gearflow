@@ -130,7 +130,7 @@ describe("headline", () => {
     expect(s.headline).toBe("PARTIALLY_PAID");
   });
 
-  test("a paid partial alone is NOT paid in full — the remainder is still to raise", () => {
+  test("a paid DEPOSIT with the rest still to raise reads Deposit paid (Phase 10)", () => {
     const s = deriveInvoicingState(
       [inv({ id: "1", kind: "DEPOSIT", status: "ISSUED", total: 2500, amountPaid: 2500 })],
       25,
@@ -138,7 +138,36 @@ describe("headline", () => {
     );
     expect(s.outstanding).toBe(0);
     expect(s.notYetInvoiced).toBe(7500);
+    expect(s.headline).toBe("DEPOSIT_PAID");
+  });
+
+  test("a paid non-deposit partial alone is still just awaiting the rest", () => {
+    const s = deriveInvoicingState([inv({ id: "1", kind: "BALANCE", status: "ISSUED", total: 2500, amountPaid: 2500 })], 25, 10_000);
     expect(s.headline).toBe("AWAITING_PAYMENT");
+  });
+
+  test("Overdue outranks Partially paid (D56) but only when a clock is supplied", () => {
+    const day = 86_400_000;
+    const dueDate = Date.UTC(2026, 10, 10);
+    const rows = [inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000, amountPaid: 100, paymentStatus: "PARTIALLY_PAID", dueDate })];
+    expect(deriveInvoicingState(rows, 25, 1000, dueDate + 3 * day).headline).toBe("OVERDUE");
+    expect(deriveInvoicingState(rows, 25, 1000, dueDate - day).headline).toBe("PARTIALLY_PAID");
+    expect(deriveInvoicingState(rows, 25, 1000).headline).toBe("PARTIALLY_PAID");
+  });
+
+  test("a credit note folds into the total and is never an invoice sent", () => {
+    const s = deriveInvoicingState(
+      [
+        inv({ id: "1", kind: "FULL", status: "ISSUED", total: 1000 }),
+        inv({ id: "2", kind: "CREDIT", status: "ISSUED", total: -1000 }),
+      ],
+      25,
+      1000,
+    );
+    expect(s.issuedInvoices).toHaveLength(1);
+    expect(s.creditedTotal).toBe(-1000);
+    expect(s.outstanding).toBe(0);
+    expect(s.allSettled).toBe(true);
   });
 
   test("everything raised and paid reads as paid in full", () => {

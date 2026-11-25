@@ -1339,7 +1339,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_supplierId", ["supplierId"]),
+    .index("by_supplierId", ["supplierId"])
+    .index("by_fileId", ["fileId"]),
 
   // SupplierOrderFile (B3). DIRECT. The order's PO / docket / other files. The invoice keeps
   // its own 1:1 slot (`supplierOrders.invoiceFileId`), so there is no INVOICE kind here.
@@ -1354,7 +1355,8 @@ export default defineSchema({
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
-    .index("by_orderId", ["orderId"]),
+    .index("by_orderId", ["orderId"])
+    .index("by_fileId", ["fileId"]),
 
   // Project
   projects: defineTable({
@@ -3714,6 +3716,26 @@ export default defineSchema({
     .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
     .index("by_parentId", ["parentId"])
     .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
+
+  // ProjectTaskLinks (UX Phase 10 Slice E, owner-approved 2026-11-24) — a task may point at
+  // a line item, a file or a discussion thread on its own job: "Book the truck" -> the
+  // transport line. One row per (taskId, linkedKind, linkedId). It stores ONLY the pointer:
+  // nothing about the target is copied, so a renamed line or file never goes stale. The
+  // target's row id (a line/file `id`, or a thread's Convex `_id`) is checked to belong to
+  // the task's job and org on every write and every read. Deliberately NOT the retired
+  // `workItemLinks` shape (no typed relations, no cross-job links).
+  projectTaskLinks: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    taskId: v.string(),
+    linkedKind: v.union(v.literal("lineItem"), v.literal("file"), v.literal("discussion")),
+    linkedId: v.string(),
+    createdById: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_taskId", ["taskId"])
+    .index("by_linked", ["linkedKind", "linkedId"]),
 
   // WorkSignalState — a human's decision (snoozed/dismissed/promoted) about a
   // DERIVED Triage signal (#1243, design §10.3/§9). Nothing else about a

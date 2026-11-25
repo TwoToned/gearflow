@@ -15,6 +15,11 @@ import {
   type ReadinessGearSection,
 } from "./lib/projectReadiness";
 import { liveRows } from "./lib/versionScope";
+import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
+import { isTaskOverdue } from "./lib/taskDue";
+
+/** Tasks read for the overdue count; one row past it only decides `truncated`. */
+const TASK_SCAN_CAP = 500;
 
 /**
  * Lines and groups a lifecycle lock forced to $0, with a usable label on each.
@@ -126,6 +131,26 @@ async function readIncidentReadiness(ctx: QueryCtx, orgId: string, projectId: st
 }
 
 /**
+ * UX Phase 10 — overdue open tasks on this job, by THE one rule (`taskDue.ts`:
+ * stored due day vs today in the org's timezone). `null` when the caller sent no
+ * clock, so the client reports "not checked" rather than a false all-clear.
+ * Newest first so a capped scan reads the tasks most likely still open; a
+ * foreign-org row (global `by_projectId`) is dropped (R-8.4.3).
+ */
+async function readOverdueTasks(ctx: QueryCtx, orgId: string, projectId: string, now: number | undefined) {
+  if (now == null) return null;
+  const [tasks, config] = await Promise.all([
+    ctx.db.query("projectTasks").withIndex("by_projectId", (q) => q.eq("projectId", projectId)).order("desc").take(TASK_SCAN_CAP + 1),
+    resolveOrgInvoiceConfig(ctx, orgId),
+  ]);
+  const scanned = tasks.slice(0, TASK_SCAN_CAP).filter((t) => t.organizationId === orgId);
+  return {
+    overdueCount: scanned.filter((t) => isTaskOverdue(t, now, config.timezone)).length,
+    truncated: tasks.length > TASK_SCAN_CAP,
+  };
+}
+
+/**
  * "Is this project ready to go out the door?" — the read behind the project
  * Overview tab's Readiness checklist (#1061).
  *
@@ -152,8 +177,8 @@ async function readIncidentReadiness(ctx: QueryCtx, orgId: string, projectId: st
  * project's own window end, and everything else is a `by_projectId` lookup.
  */
 export const forProject = query({
-  args: { orgId: v.string(), projectId: v.string() },
-  handler: async (ctx, { orgId, projectId }) => {
+  args: { orgId: v.string(), projectId: v.string(), now: v.optional(v.number()) },
+  handler: async (ctx, { orgId, projectId, now }) => {
     await requireOrgReadFor(ctx, orgId, "project");
 
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", projectId)).first();
@@ -201,6 +226,7 @@ export const forProject = query({
     const pricing = await readPricingReadiness(ctx, orgId, projectId);
     const packing = await readPackingReadiness(ctx, orgId, projectId);
     const incidents = await readIncidentReadiness(ctx, orgId, projectId);
+    const tasks = await readOverdueTasks(ctx, orgId, projectId, now);
 
     return {
       hasWindow: start != null && end != null,
@@ -210,6 +236,7 @@ export const forProject = query({
       pricing,
       packing,
       incidents,
+      tasks,
     };
   },
 });
@@ -217,7 +244,7 @@ export const forProject = query({
 export const agentOps: AgentOpsAnnotations = {
   forProject: {
     summary:
-      "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents.",
+      "Readiness checks for one project: gear shortage, unconfirmed crew, understaffed services, unpriced lines, unplanned packing, open incidents, overdue tasks (when `now` is given).",
     danger: "low",
     mcpTier: 1,
   },

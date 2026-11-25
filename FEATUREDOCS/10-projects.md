@@ -175,14 +175,60 @@ Project
   → ProjectManager (multi-PM via join table)
 ```
 
-## Project Wizard (`src/components/projects/project-wizard.tsx`)
+## Job edit sheet (UX Phase 9, D22)
 
-A single 4-step wizard (Basics → Schedule → Site → Review) backs **create, edit,
-and templates** — there is no separate flat form (the old `project-form.tsx` was
-retired). Routes:
-- `/projects/new` → `<ProjectWizard />` (create)
+`/projects/[id]/edit` is a redirect to `?edit=1` on the record. `JobEditSheet`
+(`src/components/projects/job-edit-sheet.tsx`, hosted once by the job page, built
+on `FormSheet`) opens from the header `Edit`, the readiness fixes and the
+Overview `Edit` links; it renders the shared `ProjectFields`
+(`project-fields.tsx`, the ONE field list in `projectSchema` order, also used by
+the wizard) with Job · Where · Money sections (no Money for a template).
+- **Status is not a field.** It moves only through the header stepper, which runs
+  the accepted-quote, blocking-discussion and confirm-impact checks. (The update
+  mutation still accepts `status` for API callers; closing that is a contract
+  change, deferred.)
+- **Save sends only the changed fields** (`buildProjectUpdate` with `before`,
+  `src/lib/project-edit-patch.ts`), so a pricing-locked job never has an
+  untouched `discountPercent`/`taxRate` in the payload (the old full payload made
+  every save fail on a locked job). `Save changes` is disabled until something
+  changed; the footer names what.
+- **D25:** moving the rental dates carries a set project window by the same
+  calendar-day offset (`shiftWindowWithRental`, `src/lib/project-form-dates.ts`);
+  a blank window stays blank.
+- The #1227 date-move gate runs only when the gear window moved and the status is
+  Confirmed or later (`DateMoveImpactDialog` over the sheet, fails open).
+- The save toast has **no Undo yet**: an exact one needs `fieldEditUndo` and a
+  money-safe audit snapshot (the activity log redacts money by field diff; a
+  `details.fieldEdit` blob would carry the discount unredacted). Tracked for the
+  Phase 9 follow-up.
+
+## New job wizard (`src/components/projects/new-job/`, UX Phase 9)
+
+`/projects/new` → `<NewJobWizard />`: three steps as words, **Who and when · What n ·
+Review** (no Site step, no helper rail). Step one is the shared `ProjectFields` (job +
+schedule), with Site, location and discount folded under it; a dates-and-availability
+line sits under the rental calendar (`projects.windowOverlap`: other jobs whose gear
+window overlaps, plus busy-day dots on the calendar via `RangeCalendar`'s optional
+`busyDays`; the gear line reads the draft's own lines).
+- **Draft (D24).** The job row is written the first time it has a valid name
+  (`useJobDraft`): an ordinary Enquiry through the normal create, the number allocated
+  in that mutation when the org auto-numbers, then kept in step with diff updates
+  (debounced, single-flight). `Create job` finishes the same row (a Quoting start goes
+  through the normal status path); `Create as enquiry` finishes from step one. An
+  abandoned wizard is just an empty Enquiry. `Discard draft…` (page ⋯, confirm) cancels
+  then deletes it (delete needs `project:delete`; without it the draft is only
+  cancelled); its Undo exists only for a draft with no lines.
+- **What** is the Equipment tab's own `EquipmentAddBar` and write path pointed at the
+  draft, plus the draft's lines (qty inline, price, `short n` / `unpriced`, ⋯, bulk
+  `Remove n`). Sub-hire, custom and sale lines are added from the job's Equipment tab.
+- `?clientId=` pre-picks the client; an org switch resets the wizard (the draft is left).
+- The e2e harness drives it with Next, Next, Create job.
+
+## Template create wizard (`src/components/projects/project-wizard.tsx`)
+
+The previous four-step wizard remains ONLY for template create until the templates
+slice replaces it (it no longer has a reachable edit mode). Route:
 - `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
-- `/projects/[id]/edit` → `<ProjectWizard project={project} />` (edit)
 
 **Edit mode** is engaged by passing the `project` prop (the `getProject`/
 `useProjectDetail` composite, typed loosely as `EditableProject`). In edit mode:
@@ -305,8 +351,10 @@ taxableAmount = subtotal - discountAmount
 taxAmount = taxableAmount × taxRate / 100
 total = taxableAmount + taxAmount
 
-margin = total - (serviceCostTotal + labourCostTotal + saleCostTotal)   -- saleCostTotal added WS11 #950
-marginPercent = margin / total × 100
+margin = taxableAmount - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal)   -- EX GST
+marginPercent = margin / taxableAmount × 100
+-- UX Phase 10 fix: this used `total` (which includes tax), so "Margin ex GST" overstated the margin by the GST.
+-- One definition: `marginExGst()` in convex/lib/recalc.ts (the operational P&L uses the same base).
 ```
 
 ### Tax Rate Cascade
@@ -693,7 +741,7 @@ Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files
     Kit and Loose item labels, whose lists load the first time the menu opens;
     Call sheet; Job timeline; then `Quote & invoice PDFs → Finance`. It never
     renders a sent quote or an issued invoice, which are stored bytes (#987).
-  - **`Edit`** goes to `/projects/[id]/edit` until Phase 9.
+  - **`Edit`** opens the job edit sheet in place (`?edit=1`, see "Job edit sheet").
   - **⋯:** Comments & discussion (with the live blocking count), Warehouse page,
     Runsheet, the `Version ▸` submenu (switch · New version from vN · Compare ·
     Manage versions… `V`), Duplicate job, Save as template, then Cancel job… or,

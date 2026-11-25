@@ -170,10 +170,11 @@ test.describe("harness: primary revenue path", () => {
       // query resolves) works here either.
       await page.locator('input[name="projectNumber"]').fill(`E2E-${unique}`);
 
-      // Basics -> Schedule -> Site -> Review: every other field is optional, so
-      // three plain "Continue" activations get through from here.
+      // Who and when -> What -> Review (UX Phase 9): every other field is optional, so
+      // two "Next" activations then "Create job" get through from here (the first Next
+      // writes the draft).
       //
-      // .focus()+Enter, not .click(): a raw .click() on this exact 3x-Continue
+      // .focus()+Enter, not .click(): a raw .click() on this exact Next
       // sequence is prone to a Playwright locator-retry race against the
       // wizard's step-transition unmount (the just-clicked button detaches
       // mid-retry, so .click() times out waiting for a stable target even
@@ -181,11 +182,12 @@ test.describe("harness: primary revenue path", () => {
       // already succeeded). Root-caused chasing #858/R-8.8.3; this sidesteps
       // it without masking the real (tracked separately, #894) step-transition
       // focus-loss bug.
-      await page.getByRole("button", { name: "Continue" }).focus();
+      // `exact`: the calendar's "Next month" button also contains the word.
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
       await page.keyboard.press("Enter");
-      await page.getByRole("button", { name: "Continue" }).focus();
-      await page.keyboard.press("Enter");
-      await page.getByRole("button", { name: "Continue" }).focus();
+      // The first Next writes the draft job (async): wait for the What step before the second press.
+      await expect(page.getByRole("button", { name: /^What/ })).toHaveAttribute("aria-current", "step", { timeout: 30000 });
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
       await page.keyboard.press("Enter");
       await page.getByRole("button", { name: "Create job" }).focus();
       await page.keyboard.press("Enter");

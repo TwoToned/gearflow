@@ -96,6 +96,15 @@ describe("gates and limits", () => {
     expect((await get(t, "crewMembers", "a"))?.status).toBe("ACTIVE");
   });
 
+  test("the client gate fails closed too: a client whose jobs cannot all be read is skipped, never archived", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { for (let i = 0; i < 2001; i++) await ctx.db.insert("projects", { id: `pj${i}`, organizationId: ORG, projectNumber: `#${i}`, name: "Old", clientId: "k1", status: "COMPLETED", isTemplate: false }); });
+    const out = await setActive(t, "client", ["k1"], false);
+    expect(out.changed).toEqual([]);
+    expect(out.skipped).toEqual([{ id: "k1", name: "Idle", reason: "too many records to check" }]);
+    expect((await get(t, "clients", "k1"))?.isActive).toBe(true);
+  });
+
   test("a batch over the human cap is refused before anything is written", async () => {
     const t = makeT(); await seed(t);
     const ids = Array.from({ length: 501 }, (_, i) => `x${i}`);

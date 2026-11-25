@@ -175,7 +175,7 @@ describe("ProjectQuoteRail — viewing a non-live version (#1233 UI follow-up)",
     quotesFixture = [{ id: "q2", version: 2, effectiveStatus: "SENT", versionId: "pv2", sentAt: 2000 }];
     revisionStateFixture = { revision: 2, liveRevision: 1, hasAcceptedQuote: false, draftQuoteId: null, liveQuote: null };
     render(<ProjectQuoteRail {...baseProps} versionContext={{ versions: [V1, V2], viewing: V2 }} />);
-    await waitFor(() => expect(screen.getByText("SENT")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Sent")).toBeTruthy());
     expect(screen.queryByRole("button", { name: /send v2.s quote/i })).toBeNull();
   });
 
@@ -219,8 +219,35 @@ describe("ProjectQuoteRail — multiple simultaneously-SENT quotes across versio
       liveQuote: { id: "q1", version: 1, status: "SENT", sentAt: 1000, validUntil: null, snapshotId: null },
     };
     render(<ProjectQuoteRail {...baseProps} />);
-    await waitFor(() => expect(screen.getByText("SENT")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Sent")).toBeTruthy());
     expect(screen.queryByText(/quotes are currently with the client at once/i)).toBeNull();
     expect(screen.queryByText(/for project version/i)).toBeNull();
+  });
+});
+
+describe("ProjectQuoteRail — row verbs live in the row ⋯ (UX Phase 10, spec §8b)", () => {
+  it("the open draft's ⋯ offers Send…, which opens the send dialog; no Send button is on the row itself", async () => {
+    quotesFixture = [{ id: "q1", version: 1, effectiveStatus: "DRAFT" }];
+    revisionStateFixture = { revision: 1, liveRevision: 1, hasAcceptedQuote: false, draftQuoteId: "q1", liveQuote: null };
+    const user = userEvent.setup();
+    render(<ProjectQuoteRail {...baseProps} />);
+    await user.click(await screen.findByRole("button", { name: /v1 actions/i }));
+    const menu = await screen.findByRole("menu");
+    await user.click(within(menu).getByRole("menuitem", { name: /Send…/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /send/i })).toBeTruthy();
+  });
+
+  it("a sent quote's ⋯ offers Mark accepted (and no Send); the status is a human word, not the enum", async () => {
+    quotesFixture = [{ id: "q1", version: 1, effectiveStatus: "SENT", sentAt: 1000 }];
+    revisionStateFixture = { revision: 1, liveRevision: 1, hasAcceptedQuote: false, draftQuoteId: null, liveQuote: null };
+    const user = userEvent.setup();
+    render(<ProjectQuoteRail {...baseProps} />);
+    expect(await screen.findByText("Sent")).toBeTruthy();
+    expect(screen.queryByText("SENT")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /v1 actions/i }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /Mark accepted/ })).toBeTruthy();
+    expect(within(menu).queryByRole("menuitem", { name: /Send…/ })).toBeNull();
   });
 });

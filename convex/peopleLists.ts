@@ -308,8 +308,10 @@ function addOrder(f: SupplierFacts, o: Doc<"supplierOrders">, yearStart: number,
   if (showMoney && spendsThisYear(o, status, yearStart)) f.spendYtd = (f.spendYtd ?? 0) + Number(o.total ?? 0);
 }
 
-const spendsThisYear = (o: Doc<"supplierOrders">, status: string, yearStart: number) =>
-  COMMITTED.has(status) && (o.orderDate ?? o.createdAt ?? 0) >= yearStart;
+/** The ONE date an order's spend is keyed on (spend and the partial test both read it). */
+const orderSpendKey = (o: Doc<"supplierOrders">) => o.orderDate ?? o.createdAt ?? 0;
+
+const spendsThisYear = (o: Doc<"supplierOrders">, status: string, yearStart: number) => COMMITTED.has(status) && orderSpendKey(o) >= yearStart;
 
 /** An order still on hire: counts, its due day (the earliest wins) and how late the most overdue one is. */
 function addHire(f: SupplierFacts, o: Doc<"supplierOrders">, today: number) {
@@ -354,10 +356,10 @@ async function loadSuppliers(ctx: QueryCtx, orgId: string, nowArg: number | unde
   ]);
   const facts = supplierFacts(suppliers.rows, orders.rows, yearStart, showMoney, today);
   await addHireUnits(ctx, orgId, orders.rows, facts);
-  // Spend this year is a floor only when the read stopped while still inside the year; if it reached
-  // an order from before the year the year is fully covered and only older history was dropped.
-  const oldest = orders.rows.at(-1)?._creationTime ?? 0;
-  const spendPartial = orders.truncated && oldest >= yearStart;
+  // Spend this year is a floor only when the read stopped while every order it read is still inside the
+  // year (by the SAME key the spend uses); if it reached an order dated before the year, the year is fully
+  // covered and only older history was dropped.
+  const spendPartial = orders.truncated && orders.rows.every((o) => orderSpendKey(o) >= yearStart);
   return { suppliers: suppliers.rows, facts, showMoney, truncated: suppliers.truncated || orders.truncated, spendPartial };
 }
 

@@ -54,6 +54,7 @@ import { dayLabel } from "@/lib/list-views/people";
 import { fileSizeLabel } from "@/lib/file-size";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { isOnHire, orderHireState, returnLateDays } from "../../../../../../../convex/lib/orderHireState";
+import { SUPPLIER_INVOICE_FOLDER } from "../../../../../../../convex/lib/supplierRecordCore";
 
 const ORDER_STATUS_OPTIONS = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
 type OrderStatus = (typeof ORDER_STATUS_OPTIONS)[number];
@@ -280,7 +281,7 @@ function InvoiceSection({ order, orderId }: { order: OrderDetail; orderId: strin
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("folder", "supplier-order-invoices");
+      formData.append("folder", SUPPLIER_INVOICE_FOLDER);
       formData.append("entityId", orderId);
       const res = await fetch("/api/uploads", { method: "POST", body: formData });
       if (!res.ok) {

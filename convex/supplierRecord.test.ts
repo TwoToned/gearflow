@@ -9,7 +9,7 @@ import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { documentExpiry } from "./lib/supplierRecordCore";
+import { documentExpiry, SUPPLIER_DOCUMENTS_FOLDER as DOCS, SUPPLIER_ORDER_FILES_FOLDER as FILES, SUPPLIER_INVOICE_FOLDER as INVOICES } from "./lib/supplierRecordCore";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -31,10 +31,15 @@ async function seed(t: T, role = "admin") {
     await ctx.db.insert("suppliers", { id: "s1", organizationId: ORG, name: "Scene", isActive: true });
     await ctx.db.insert("suppliers", { id: "sx", organizationId: OTHER, name: "Foreign", isActive: true });
     await ctx.db.insert("supplierOrders", { id: "o1", organizationId: ORG, supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", status: "ORDERED" });
-    for (const [id, org] of [["f1", ORG], ["f2", ORG], ["fx", OTHER]] as const) {
-      await ctx.db.insert("fileUploads", { id, organizationId: org, fileName: `${id}.pdf`, fileSize: 10, mimeType: "application/pdf", storageKey: `k_${id}`, url: `/api/files/k_${id}`, uploadedById: USER });
-      await ctx.db.insert("storedFiles", { storageId: `k_${id}`, organizationId: org });
+    // f1/f2: documents; g1/g2: order files; f3: another user's upload; f4: wrong folder; f5: the order's invoice; fx: another org's.
+    for (const [id, org, by, folder] of [
+      ["f1", ORG, USER, DOCS], ["f2", ORG, USER, DOCS], ["g1", ORG, USER, FILES], ["g2", ORG, USER, FILES], ["f3", ORG, "someone-else", DOCS],
+      ["f4", ORG, USER, "misc"], ["f5", ORG, USER, INVOICES], ["fx", OTHER, USER, DOCS],
+    ] as const) {
+      await ctx.db.insert("fileUploads", { id, organizationId: org, fileName: `${id}.pdf`, fileSize: 10, mimeType: "application/pdf", storageKey: `k_${id}`, url: `/api/files/k_${id}`, uploadedById: by });
+      await ctx.db.insert("storedFiles", { storageId: `k_${id}`, organizationId: org, folder });
     }
+    await ctx.db.patch((await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", "o1")).first())!._id, { invoiceFileId: "f5" });
   });
 }
 const rows = (t: T, table: "supplierContacts" | "supplierDocuments" | "supplierOrderFiles") =>
@@ -46,7 +51,7 @@ const addContact = (t: T, over: Record<string, unknown> = {}, who = as(t)) =>
 const addDoc = (t: T, over: Record<string, unknown> = {}, who = as(t)) =>
   who.mutation(api.supplierRecordWrites.addDocumentNative, { id: "d1", orgId: ORG, supplierId: "s1", fileId: "f1", name: "Insurance", kind: "Insurance", expiryDate: NOW + 10 * DAY, now: NOW, actor, auditId: "a2", ...over });
 const addOrderFile = (t: T, over: Record<string, unknown> = {}, who = as(t)) =>
-  who.mutation(api.supplierRecordWrites.addOrderFileNative, { id: "of1", orgId: ORG, orderId: "o1", fileId: "f1", kind: "PO", now: NOW, actor, auditId: "a3", ...over });
+  who.mutation(api.supplierRecordWrites.addOrderFileNative, { id: "of1", orgId: ORG, orderId: "o1", fileId: "g1", kind: "PO", now: NOW, actor, auditId: "a3", ...over });
 
 describe("documentExpiry (pure)", () => {
   test("derived, never stored", () => {
@@ -188,13 +193,13 @@ describe("order files", () => {
   test("add reads back; Undo detaches the row and keeps the file; remove deletes the file", async () => {
     const t = makeT(); await seed(t);
     await addOrderFile(t);
-    await addOrderFile(t, { id: "of2", fileId: "f2", kind: "DOCKET", auditId: "a8" });
+    await addOrderFile(t, { id: "of2", fileId: "g2", kind: "DOCKET", auditId: "a8" });
     const files = await as(t).query(api.supplierRecord.orderFiles, { orgId: ORG, orderId: "o1" });
     expect(files.map((f) => f.kind)).toEqual(["PO", "DOCKET"]);
     expect((await as(t).mutation(api.supplierRecordWrites.undoOrderFileAddNative, { orgId: ORG, orderId: "o1", forwardAuditId: "a3", now: NOW, actor })).restored).toBe(true);
-    expect(await fileRow(t, "f1")).not.toBeNull();
+    expect(await fileRow(t, "g1")).not.toBeNull();
     await as(t).mutation(api.supplierRecordWrites.removeOrderFileNative, { orgId: ORG, orderId: "o1", fileRowId: "of2", now: NOW, actor, auditId: "r2" });
-    expect(await fileRow(t, "f2")).toBeNull();
+    expect(await fileRow(t, "g2")).toBeNull();
     expect(await rows(t, "supplierOrderFiles")).toHaveLength(0);
   });
 
@@ -211,6 +216,6 @@ describe("order files", () => {
     await addOrderFile(t);
     await as(t).mutation(api.supplierOrdersWrites.deleteNative, { id: "o1", orgId: ORG, now: NOW, actor, auditId: "d9" });
     expect(await rows(t, "supplierOrderFiles")).toHaveLength(0);
-    expect(await fileRow(t, "f1")).toBeNull();
+    expect(await fileRow(t, "g1")).toBeNull();
   });
 });

@@ -8,8 +8,9 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
-import { deleteStoredFile } from "./lib/deleteStoredFile";
-import { MAX_FILES_PER_ORDER } from "./lib/supplierRecordCore";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { MAX_FILES_PER_ORDER, SUPPLIER_INVOICE_FOLDER } from "./lib/supplierRecordCore";
+import { assertAttachableUpload } from "./lib/attachableUpload";
 import * as enums from "./lib/validators";
 
 /**
@@ -238,10 +239,11 @@ export const deleteNative = mutation({
 
     const items = await ctx.db.query("supplierOrderItems").withIndex("by_orderId", (q) => q.eq("orderId", a.id)).collect();
     for (const it of items) await ctx.db.delete(it._id);
-    if (order.invoiceFileId) await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     await deleteOrderFiles(ctx, a.orgId, a.id);
 
     await ctx.db.delete(order._id);
+    // After the order is gone, so the invoice file is no longer held by it; deleted only if nothing else holds it.
+    if (order.invoiceFileId) await deleteStoredFileIfUnreferenced(ctx, a.orgId, order.invoiceFileId);
 
     await writeActivityLog(ctx, {
       id: a.auditId,
@@ -283,14 +285,18 @@ export const attachInvoiceNative = mutation({
     const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
 
-    const file = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", a.fileId)).first();
-    if (!file || file.organizationId !== a.orgId) throw new ConvexError("File not found");
-
-    if (order.invoiceFileId && order.invoiceFileId !== a.fileId) {
-      await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
+    // Re-attaching the file the order already holds is a no-op; any other file must be the actor's own recent
+    // upload into the invoice folder, so a replace/remove can only ever delete a file this order just received
+    // (never another order's invoice, a check photo or someone else's upload).
+    if (order.invoiceFileId !== a.fileId) {
+      await assertAttachableUpload(ctx.db, { orgId: a.orgId, actorUserId: actor.userId, fileId: a.fileId, folder: SUPPLIER_INVOICE_FOLDER });
     }
 
     await ctx.db.patch(order._id, { invoiceFileId: a.fileId, updatedAt: a.now });
+    // After the swap, so the superseded file is no longer held by this order; deleted only if nothing else holds it.
+    if (order.invoiceFileId && order.invoiceFileId !== a.fileId) {
+      await deleteStoredFileIfUnreferenced(ctx, a.orgId, order.invoiceFileId);
+    }
 
     await writeActivityLog(ctx, {
       id: a.auditId,
@@ -322,8 +328,8 @@ export const removeInvoiceNative = mutation({
     if (!order || order.organizationId !== a.orgId) throw new ConvexError("Order not found");
     if (!order.invoiceFileId) return { id: a.id }; // idempotent — nothing to remove
 
-    await deleteStoredFile(ctx, order.invoiceFileId, a.orgId);
     await ctx.db.patch(order._id, { invoiceFileId: undefined, updatedAt: a.now });
+    await deleteStoredFileIfUnreferenced(ctx, a.orgId, order.invoiceFileId);
 
     await writeActivityLog(ctx, {
       id: a.auditId,
@@ -346,8 +352,8 @@ export const removeInvoiceNative = mutation({
 async function deleteOrderFiles(ctx: MutationCtx, orgId: string, orderId: string): Promise<void> {
   const files = await ctx.db.query("supplierOrderFiles").withIndex("by_orderId", (q) => q.eq("orderId", orderId)).take(MAX_FILES_PER_ORDER + 1);
   for (const f of files.filter((x) => x.organizationId === orgId)) {
-    await deleteStoredFile(ctx, f.fileId, orgId);
     await ctx.db.delete(f._id);
+    await deleteStoredFileIfUnreferenced(ctx, orgId, f.fileId);
   }
 }
 

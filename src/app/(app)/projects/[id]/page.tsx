@@ -10,7 +10,7 @@ import { useMiraPageContext } from "@/hooks/use-mira-page-context";
 import { EquipmentTab } from "@/components/projects/equipment-tab";
 import { PackingTab } from "@/components/projects/packing-tab";
 import { LogisticsTab } from "@/components/projects/logistics/logistics-tab";
-import { TasksPanel } from "@/components/projects/tasks-panel";
+import { TasksNotesTab } from "@/components/projects/tasks-notes/tasks-notes-tab";
 import {
   ProjectContextRail,
   type ProjectContextRailProject,
@@ -22,8 +22,6 @@ import { useActivationMilestones } from "@/hooks/use-activation-milestones";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { DetailPageSkeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useMediaWrites } from "@/hooks/use-media-writes";
-import { MediaUploader, type MediaItem } from "@/components/media/media-uploader";
 import { useOptimisticProjectNotes } from "@/hooks/use-native-project-writes";
 import { getProjectWindowDates } from "@/lib/project-window";
 import { RequirePermission } from "@/components/auth/require-permission";
@@ -34,9 +32,10 @@ import { VersionsTab } from "@/components/projects/versions/versions-tab";
 import { VersionOverlays } from "@/components/projects/versions/version-overlays";
 import { composeProjectWithVersion } from "@/lib/project-version-compose";
 import { JobHeader, type JobHeaderProject } from "@/components/projects/job-header";
+import { JobEditSheet } from "@/components/projects/job-edit-sheet";
 import { JobTabRow } from "@/components/projects/job-tab-row";
-import { FinanceTabSlot, NotesTabSlot } from "@/components/projects/job-tab-slots";
-import { JOB_TAB_KEYS, availableJobTabs, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
+import { FinanceTabSlot } from "@/components/projects/job-tab-slots";
+import { JOB_TAB_KEYS, availableJobTabs, jobTabSection, resolveJobTab, type JobTabKey } from "@/lib/job-tabs";
 
 export default function ProjectDetailPage({
   params,
@@ -97,12 +96,11 @@ export default function ProjectDetailPage({
   // ⋯ › Version › Manage versions… and the `V` key open the Versions TAB (D19).
   // Stable: `useVersionsShortcut` binds `V` to it, and a fresh closure per render re-bound the key every render.
   const openVersions = useCallback(() => setRequestedTab("versions"), []);
-  // The comments panel: the header ⋯ and Overview's blocking-discussion row
-  // and `Discussion ›` all open the ONE panel the header mounts.
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  // The discussion lives on the Tasks & notes tab (UX Phase 10): the header ⋯ and badge and
+  // Overview's blocking-discussion row all land on its Discussion section.
+  const openDiscussion = useCallback(() => setRequestedTab("discussion"), []);
 
   const { data: project, isLoading } = useProjectDetail(id);
-  const media = useMediaWrites("project");
 
   // Phase 3 browser-direct: optimistic project-notes save (always native — the notes
   // are safe to optimistic; a wrong save just re-renders, nothing irreversible happens).
@@ -192,7 +190,7 @@ export default function ProjectDetailPage({
         project={project as OverviewTabProject}
         isTemplate={isTemplate}
         onOpenTab={setRequestedTab}
-        onOpenDiscussion={() => setCommentsOpen(true)}
+        onOpenDiscussion={openDiscussion}
       />
     ),
     equipment: (
@@ -245,47 +243,25 @@ export default function ProjectDetailPage({
           discountAmount={project.discountAmount as number | null}
           taxRate={project.taxRate as number | null}
           margin={project.margin as number | null}
-          depositPaid={project.depositPaid as number | null}
-          invoicedTotal={project.invoicedTotal as number | null}
         />
       </div>
     ),
-    // Tasks — projectTasks isn't in the snapshot; stays live.
+    // Tasks & notes (UX Phase 10): Tasks, Notes and Files merged into one tab.
+    // Tasks and Files are not in the version snapshot (stay live); the three note
+    // fields ARE captured, so a viewed version shows its own text, read-only.
     tasks: (
-      <>
-        <VersionNotTrackedNote what="Tasks" />
-        <TasksPanel projectId={id} />
-      </>
-    ),
-    // Notes — the three note fields ARE captured, so a viewed version shows
-    // its own text, read-only.
-    notes: (
-      <NotesTabSlot
-        liveCrewNotes={(composedProject.crewNotes as string) || ""}
-        liveInternalNotes={(composedProject.internalNotes as string) || ""}
-        liveClientNotes={(composedProject.clientNotes as string) || ""}
-        onChanged={() => refreshProjectDetail(id)}
-        onSave={saveProjectNotes}
+      <TasksNotesTab
+        projectId={id}
+        orgId={orgId}
+        section={jobTabSection(requestedTab)}
+        onOpenTab={setRequestedTab}
+        composedNotes={{
+          crewNotes: (composedProject.crewNotes as string) || "",
+          internalNotes: (composedProject.internalNotes as string) || "",
+          clientNotes: (composedProject.clientNotes as string) || "",
+        }}
+        onSaveNote={saveProjectNotes}
       />
-    ),
-    // Files — projectMedia isn't in the snapshot; stays live.
-    files: (
-      <>
-        <VersionNotTrackedNote what="Files" />
-        <MediaUploader
-          entityType="project"
-          entityId={id}
-          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.txt"
-          existingMedia={(project.media || []) as MediaItem[]}
-          onChanged={() => refreshProjectDetail(id)}
-          onUploadComplete={async (fileUpload) => {
-            await media.add({ parentId: id, fileId: fileUpload.id, type: "OTHER" });
-          }}
-          onRemove={async (mediaId) => {
-            await media.remove(mediaId);
-          }}
-        />
-      </>
     ),
     // Versions (D19, UX Phase 8): the dated list; Compare and Make live open the
     // sheet and dialog `VersionOverlays` hosts.
@@ -309,8 +285,7 @@ export default function ProjectDetailPage({
             onOpenTab={setRequestedTab}
             onOpenVersions={openVersions}
             onMakeLive={versionState.openMakeLive}
-            commentsOpen={commentsOpen}
-            onCommentsOpenChange={setCommentsOpen}
+            onOpenDiscussion={openDiscussion}
           />
 
           {/* ── Tabs + context sidebar ───────────────────────────────────────
@@ -327,7 +302,6 @@ export default function ProjectDetailPage({
                 available={available}
                 value={activeTab}
                 onValueChange={setRequestedTab}
-                filesCount={(project.media || []).length}
               />
               <div role="tabpanel" id={`job-tabpanel-${activeTab}`} aria-labelledby={`job-tab-${activeTab}`} className="pt-4">
                 {panels[activeTab]}
@@ -353,6 +327,7 @@ export default function ProjectDetailPage({
 
           {/* The ONE Compare sheet and ONE Make-live dialog, for every entry point (R-3.1). */}
           {!isTemplate && orgId && <VersionOverlays />}
+          <JobEditSheet projectId={id} />
         </div>
         </ProjectVersionProvider>
       </FadeIn>

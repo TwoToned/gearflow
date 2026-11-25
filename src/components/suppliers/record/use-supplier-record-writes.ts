@@ -5,7 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { toast } from "sonner";
 
 import { api } from "../../../../convex/_generated/api";
-import type { OrderFileKind } from "../../../../convex/lib/supplierRecordCore";
+import { SUPPLIER_DOCUMENTS_FOLDER, SUPPLIER_ORDER_FILES_FOLDER, type OrderFileKind } from "../../../../convex/lib/supplierRecordCore";
 
 import { useSession } from "@/lib/auth-client";
 import { announceListWrite } from "@/lib/list-write-toast";
@@ -100,7 +100,7 @@ export function useSupplierRecordWrites(orgId: string | undefined) {
 
     addDocument: (supplierId: string, file: File, v: DocumentValues) =>
       attempt("Could not add the document", async () => {
-        const fileId = await uploadFile(file, "supplier-documents", supplierId);
+        const fileId = await uploadFile(file, SUPPLIER_DOCUMENTS_FOLDER, supplierId);
         const auditId = createId();
         await addDocumentM({ id: createId(), orgId: orgId!, supplierId, fileId, ...v, now: Date.now(), actor: actor(), auditId });
         announceListWrite({
@@ -131,7 +131,7 @@ export function useSupplierRecordWrites(orgId: string | undefined) {
 
     addOrderFile: (orderId: string, file: File, kind: OrderFileKind, name?: string) =>
       attempt("Could not attach the file", async () => {
-        const fileId = await uploadFile(file, "supplier-order-files", orderId);
+        const fileId = await uploadFile(file, SUPPLIER_ORDER_FILES_FOLDER, orderId);
         const auditId = createId();
         await addOrderFileM({ id: createId(), orgId: orgId!, orderId, fileId, kind, ...(name ? { name } : {}), now: Date.now(), actor: actor(), auditId });
         announceListWrite({

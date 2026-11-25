@@ -150,6 +150,31 @@ describe("undoClientMergeNative", () => {
     await expect(undo(t)).rejects.toThrow(/already undone/);
   });
 
+  test("mergedInto skips a merge that was undone (the marker), and finds the live one after a re-merge", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await undo(t);
+    const setActiveFlag = (active: boolean) => t.run(async (ctx) => { const g = await ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", "gone")).first(); await ctx.db.patch(g!._id, { isActive: active }); });
+    await setActiveFlag(false);
+    expect(await as(t).query(api.clientMergeWrites.mergedInto, { orgId: ORG, id: "gone" })).toBeNull(); // the only merge on record was undone
+    await setActiveFlag(true);
+    await merge(t, { auditId: "aM2", receivedAuditId: "aR2", now: NOW + 5 });
+    expect(await as(t).query(api.clientMergeWrites.mergedInto, { orgId: ORG, id: "gone" })).toMatchObject({ id: "keep", forwardAuditId: "aM2" });
+  });
+
+  test("mergedInto picks the NEWEST live merge when more than one is on record (sort direction)", async () => {
+    const t = makeT(); await seed(t);
+    await merge(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "k3", organizationId: ORG, name: "Older survivor", isActive: true });
+      const fwd = (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "aM")).first())!;
+      const { _id, _creationTime, ...rest } = fwd;
+      void _id; void _creationTime;
+      await ctx.db.insert("activityLogs", { ...rest, id: "aOld", createdAt: (fwd.createdAt ?? NOW) - 10_000, details: { ...(fwd.details as object), survivorId: "k3" } } as never);
+    });
+    expect(await as(t).query(api.clientMergeWrites.mergedInto, { orgId: ORG, id: "gone" })).toMatchObject({ id: "keep", forwardAuditId: "aM" });
+  });
+
   test("another org cannot undo this org's merge, and a planted foreign id in the snapshot is never touched", async () => {
     const t = makeT(); await seed(t);
     await merge(t);

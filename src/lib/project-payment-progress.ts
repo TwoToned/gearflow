@@ -1,3 +1,5 @@
+import { deriveInvoicingState } from "@/lib/project-invoicing-state";
+
 /**
  * The money phase, DERIVED (#1236).
  *
@@ -70,24 +72,6 @@ export interface PaymentProgress {
   allSettled: boolean;
 }
 
-/** A finance document that still counts — issued and not voided. */
-function isLiveIssued(inv: PaymentProgressInvoice): boolean {
-  return inv.status === "ISSUED";
-}
-
-/**
- * A CREDIT note is money going BACK to the client, and `createCreditNative`
- * stores its `total` as `-original.total`. It is therefore never "an invoice
- * sent" (the step would light up on a refund), and its own `paymentStatus` must
- * not gate `allSettled` — a negative total makes `amountPaid >= total` true for
- * any positive amount, which is what produced the "$1,000.00 of $0.00" strip.
- * Its value still counts: it reduces what the client owes, so it folds into
- * `invoicedTotal` as the negative it is.
- */
-function isCredit(inv: PaymentProgressInvoice): boolean {
-  return inv.kind === "CREDIT";
-}
-
 /**
  * Compute the three sub-steps and the money position for a project's money phase.
  *
@@ -105,18 +89,16 @@ export function computePaymentProgress(input: {
   const { quotes, invoices, formatDate, formatMoney } = input;
 
   const accepted = quotes.find((q) => q.effectiveStatus === "ACCEPTED") ?? null;
-  const live = invoices.filter(isLiveIssued);
-  const issued = live.filter((i) => !isCredit(i));
-  const creditedTotal = live.filter(isCredit).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
-  const invoicedTotal = issued.reduce((sum, i) => sum + (Number(i.total) || 0), 0) + creditedTotal;
-  const paidTotal = issued.reduce((sum, i) => sum + (Number(i.amountPaid) || 0), 0);
-  const outstanding = Math.max(0, round2(invoicedTotal - paidTotal));
-  // `issued.length > 0` matters: a project with no invoice at all is not "settled",
-  // it simply hasn't been billed — `every` over an empty list would say otherwise.
-  // `outstanding === 0` is the second way in: a credit note can cancel what is
-  // owed without any invoice row ever reaching PAID.
-  const allSettled =
-    issued.length > 0 && (issued.every((i) => i.paymentStatus === "PAID") || outstanding === 0);
+  // ONE derivation (UX Phase 10): the Overview card and the Finance tab read the
+  // same `deriveInvoicingState`; credit notes fold into the total, never count
+  // as "an invoice sent", and a credit that cancels the balance settles it.
+  const state = deriveInvoicingState(
+    invoices.map((i, n) => ({ ...i, id: String(n) })),
+    0,
+    null,
+  );
+  const { issuedInvoices: issued, invoicedTotal, paidTotal, allSettled } = state;
+  const outstanding = round2(state.outstanding);
 
   // The first step that hasn't happened is what we're waiting on; everything
   // after it is pending. Computed as one pass so two steps can never both read

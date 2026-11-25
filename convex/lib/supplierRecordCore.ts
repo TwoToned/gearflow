@@ -13,6 +13,11 @@ export const orderFileKind = v.union(v.literal("PO"), v.literal("DOCKET"), v.lit
 
 export const ORDER_FILE_KIND_LABELS: Record<OrderFileKind, string> = { PO: "Purchase order", DOCKET: "Docket", OTHER: "Other" };
 
+/** The `storedFiles.folder` each surface uploads into; an attach is refused for any other folder. */
+export const SUPPLIER_DOCUMENTS_FOLDER = "supplier-documents";
+export const SUPPLIER_ORDER_FILES_FOLDER = "supplier-order-files";
+export const SUPPLIER_INVOICE_FOLDER = "supplier-order-invoices";
+
 /** Caps that bound the child lists every read collects. */
 export const MAX_CONTACTS_PER_SUPPLIER = 50;
 export const MAX_DOCUMENTS_PER_SUPPLIER = 100;

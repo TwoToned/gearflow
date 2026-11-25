@@ -112,7 +112,7 @@ describe("projectTasksWrites", () => {
     const res = await t.withIdentity(asUser).mutation(api.projectTasksWrites.bulkUpdateNative, {
       ids: ["t1", "tX"], orgId: ORG, priority: "HIGH", now: NOW, actor, auditId: "a1",
     });
-    expect(res).toEqual({ updated: 1, skipped: 1 });
+    expect(res).toEqual({ updated: 1, skipped: 1, changedIds: ["t1"] });
     expect((await tasks(t)).find((r) => r.id === "t1")?.priority).toBe("HIGH");
   });
 
@@ -125,7 +125,7 @@ describe("projectTasksWrites", () => {
     const res = await t.withIdentity(asUser).mutation(api.projectTasksWrites.bulkDeleteNative, {
       ids: ["t1", "tX"], orgId: ORG, now: NOW, actor, auditId: "a1",
     });
-    expect(res).toEqual({ deleted: 1, skipped: 1 });
+    expect(res).toEqual({ deleted: 1, skipped: 1, deletedIds: ["t1"] });
     expect((await tasks(t)).map((r) => r.id)).toEqual(["tX"]);
   });
 
@@ -170,6 +170,169 @@ describe("projectTasksWrites", () => {
     expect(foreign?.updatedAt).toBe(NOW); // untouched
   });
 
+});
+
+const W = api.projectTasksWrites;
+const events = (t: T) => t.run(async (ctx) => ctx.db.query("activityEvents").collect());
+const seedTask = (t: T, over: Record<string, unknown> = {}) =>
+  t.run(async (ctx) => {
+    await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "A", status: "TODO", sortOrder: 1, createdAt: NOW, updatedAt: NOW, ...over } as never);
+  });
+
+describe("activityEvents (UX Phase 10)", () => {
+  test("create, complete, update and delete each write one Activity row on the job, with no note text", async () => {
+    const t = makeT(); await seed(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.createNative, { id: "t1", projectId: "P1", orgId: ORG, title: "Print call sheets", now: NOW, actor, auditId: "c1" });
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, status: "DONE", now: NOW + 1, actor, auditId: "u1" });
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, priority: "HIGH", now: NOW + 2, actor, auditId: "u2" });
+    await u.mutation(W.deleteNative, { id: "t1", orgId: ORG, now: NOW + 3, actor, auditId: "d1" });
+    const ev = await events(t);
+    expect(ev.map((e) => e.action)).toEqual(["task_created", "task_completed", "task_updated", "task_deleted"]);
+    expect(ev.every((e) => e.entityType === "project" && e.entityId === "P1" && e.orgId === ORG)).toBe(true);
+  });
+
+  test("an update that changes nothing writes nothing and reports changed:false", async () => {
+    const t = makeT(); await seed(t); await seedTask(t);
+    const r = await t.withIdentity(asUser).mutation(W.updateNative, { id: "t1", orgId: ORG, title: "A", now: NOW + 1, actor, auditId: "u1" });
+    expect(r.changed).toBe(false);
+    expect(await events(t)).toHaveLength(0);
+  });
+});
+
+describe("task Undo (exact, ids only)", () => {
+  test("undoCreate deletes only the unedited task, once", async () => {
+    const t = makeT(); await seed(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.createNative, { id: "t1", projectId: "P1", orgId: ORG, title: "X", now: NOW, actor, auditId: "c1" });
+    await u.mutation(W.undoCreateNative, { id: "t1", orgId: ORG, auditId: "c1", now: NOW + 1, actor });
+    expect(await tasks(t)).toHaveLength(0);
+    await expect(u.mutation(W.undoCreateNative, { id: "t1", orgId: ORG, auditId: "c1", now: NOW + 2, actor })).rejects.toThrow(/already undone|no longer exists/i);
+  });
+
+  test("undoCreate refuses once the task was edited", async () => {
+    const t = makeT(); await seed(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.createNative, { id: "t1", projectId: "P1", orgId: ORG, title: "X", now: NOW, actor, auditId: "c1" });
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, priority: "HIGH", now: NOW + 1, actor, auditId: "u1" });
+    await expect(u.mutation(W.undoCreateNative, { id: "t1", orgId: ORG, auditId: "c1", now: NOW + 2, actor })).rejects.toThrow(/edited since/i);
+    expect(await tasks(t)).toHaveLength(1);
+  });
+
+  test("undoUpdate restores exactly the changed fields (incl. completedAt) and refuses a replay", async () => {
+    const t = makeT(); await seed(t); await seedTask(t, { assigneeCrewId: "c1" });
+    const u = t.withIdentity(asUser);
+    const r = await u.mutation(W.updateNative, { id: "t1", orgId: ORG, status: "DONE", assigneeUserId: "u2", now: NOW + 1, actor, auditId: "u1" });
+    expect(r.changed).toBe(true);
+    expect((await tasks(t))[0]).toMatchObject({ status: "DONE", assigneeUserId: "u2", completedAt: NOW + 1 });
+    const out = await u.mutation(W.undoUpdateNative, { orgId: ORG, auditId: "u1", ids: ["t1"], now: NOW + 2, actor });
+    expect(out).toEqual({ restoredIds: ["t1"], skippedIds: [] });
+    const row = (await tasks(t))[0];
+    expect(row).toMatchObject({ status: "TODO", assigneeCrewId: "c1" });
+    expect(row.assigneeUserId).toBeUndefined();
+    expect(row.completedAt).toBeUndefined();
+    await expect(u.mutation(W.undoUpdateNative, { orgId: ORG, auditId: "u1", ids: ["t1"], now: NOW + 3, actor })).rejects.toThrow(/already undone/i);
+  });
+
+  test("undoUpdate refuses when a later edit moved a field, changing nothing", async () => {
+    const t = makeT(); await seed(t); await seedTask(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, priority: "HIGH", now: NOW + 1, actor, auditId: "u1" });
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, priority: "LOW", now: NOW + 2, actor, auditId: "u2" });
+    await expect(u.mutation(W.undoUpdateNative, { orgId: ORG, auditId: "u1", ids: ["t1"], now: NOW + 3, actor })).rejects.toThrow(/changed since/i);
+    expect((await tasks(t))[0].priority).toBe("LOW");
+  });
+
+  test("bulk update + undo reverse exactly the changed tasks; unchanged and foreign rows are untouched", async () => {
+    const t = makeT(); await seed(t);
+    await seedTask(t, { id: "t1" });
+    await seedTask(t, { id: "t2", priority: "HIGH" }); // already HIGH: not changed by the bulk write
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "tX", organizationId: OTHER, projectId: "P1", title: "F", status: "TODO", sortOrder: 9, createdAt: NOW, updatedAt: NOW });
+    });
+    const u = t.withIdentity(asUser);
+    const res = await u.mutation(W.bulkUpdateNative, { ids: ["t1", "t2", "tX"], orgId: ORG, priority: "HIGH", now: NOW + 1, actor, auditId: "b1" });
+    expect(res.changedIds).toEqual(["t1"]);
+    const out = await u.mutation(W.undoUpdateNative, { orgId: ORG, auditId: "b1", ids: res.changedIds, now: NOW + 2, actor });
+    expect(out.restoredIds).toEqual(["t1"]);
+    const rows = await tasks(t);
+    expect(rows.find((r) => r.id === "t1")?.priority).toBeUndefined(); // exactly as before: absent
+    expect(rows.find((r) => r.id === "t2")?.priority).toBe("HIGH");
+    // A foreign id smuggled into the Undo's ids is never touched.
+    await expect(u.mutation(W.undoUpdateNative, { orgId: ORG, auditId: "b1", ids: ["tX"], now: NOW + 3, actor })).rejects.toThrow();
+  });
+
+  test("restoreDeleted re-creates the task with its id, order and fields; drops an assignee who left; once", async () => {
+    const t = makeT(); await seed(t); await seedTask(t, { assigneeUserId: "u2", description: "d", sortOrder: 7 });
+    const u = t.withIdentity(asUser);
+    const del = await u.mutation(W.bulkDeleteNative, { ids: ["t1"], orgId: ORG, now: NOW + 1, actor, auditId: "x1" });
+    expect(await tasks(t)).toHaveLength(0);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", ORG).eq("userId", "u2")).first();
+      if (m) await ctx.db.delete(m._id); // the assignee leaves the org
+    });
+    const out = await u.mutation(W.restoreDeletedNative, { orgId: ORG, auditId: "x1", ids: del.deletedIds, now: NOW + 2, actor });
+    expect(out.restoredIds).toEqual(["t1"]);
+    const row = (await tasks(t))[0];
+    expect(row).toMatchObject({ id: "t1", title: "A", description: "d", sortOrder: 7, createdAt: NOW });
+    expect(row.assigneeUserId).toBeUndefined();
+    await expect(u.mutation(W.restoreDeletedNative, { orgId: ORG, auditId: "x1", ids: ["t1"], now: NOW + 3, actor })).rejects.toThrow(/already undone/i);
+  });
+
+  test("restoreDeleted refuses another person's delete and a task that exists again", async () => {
+    const t = makeT(); await seed(t); await seedTask(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.deleteNative, { id: "t1", orgId: ORG, now: NOW + 1, actor, auditId: "d1" });
+    await seedTask(t);
+    await expect(u.mutation(W.restoreDeletedNative, { orgId: ORG, auditId: "d1", ids: ["t1"], now: NOW + 2, actor })).rejects.toThrow(/exists again/i);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("members").withIndex("by_org_user", (q) => q.eq("organizationId", ORG).eq("userId", "u2")).first();
+      if (m) await ctx.db.patch(m._id, { role: "manager" });
+    });
+    const other = { userId: "u2", userName: "Bob" };
+    await expect(
+      t.withIdentity({ subject: "u2", orgId: ORG, role: "manager" }).mutation(W.restoreDeletedNative, { orgId: ORG, auditId: "d1", ids: ["t1"], now: NOW + 3, actor: other }),
+    ).rejects.toThrow(/Only the person|exists again/i);
+  });
+
+  test("a cross-org caller cannot undo another org's task changes", async () => {
+    const t = makeT(); await seed(t); await seedTask(t);
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.updateNative, { id: "t1", orgId: ORG, priority: "HIGH", now: NOW + 1, actor, auditId: "u1" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mo", organizationId: OTHER, userId: "o1", role: "manager", createdAt: 1 });
+    });
+    await expect(
+      t.withIdentity({ subject: "o1", orgId: OTHER, role: "manager" }).mutation(W.undoUpdateNative, {
+        orgId: OTHER, auditId: "u1", ids: ["t1"], now: NOW + 2, actor: { userId: "o1", userName: "O" },
+      }),
+    ).rejects.toThrow();
+    expect((await tasks(t))[0].priority).toBe("HIGH");
+  });
+
+  test("reorder + undoReorder restore each task's previous order only while untouched", async () => {
+    const t = makeT(); await seed(t);
+    await seedTask(t, { id: "t1", sortOrder: 5 });
+    await seedTask(t, { id: "t2", sortOrder: 6 });
+    const u = t.withIdentity(asUser);
+    const r = await u.mutation(W.reorderNative, { orgId: ORG, orderedIds: ["t2", "t1"], now: NOW + 1, auditId: "r1", actor });
+    expect(r.changed).toBe(true);
+    expect((await tasks(t)).map((x) => [x.id, x.sortOrder]).sort()).toEqual([["t1", 1], ["t2", 0]]);
+    const back = await u.mutation(W.undoReorderNative, { orgId: ORG, auditId: "r1", projectId: "P1", now: NOW + 2, actor });
+    expect(back.restored).toBe(2);
+    expect((await tasks(t)).map((x) => [x.id, x.sortOrder]).sort()).toEqual([["t1", 5], ["t2", 6]]);
+    await expect(u.mutation(W.undoReorderNative, { orgId: ORG, auditId: "r1", projectId: "P1", now: NOW + 3, actor })).rejects.toThrow(/already undone/i);
+  });
+
+  test("undoReorder refuses when a later reorder moved the tasks", async () => {
+    const t = makeT(); await seed(t);
+    await seedTask(t, { id: "t1", sortOrder: 5 });
+    await seedTask(t, { id: "t2", sortOrder: 6 });
+    const u = t.withIdentity(asUser);
+    await u.mutation(W.reorderNative, { orgId: ORG, orderedIds: ["t2", "t1"], now: NOW + 1, auditId: "r1", actor });
+    await u.mutation(W.reorderNative, { orgId: ORG, orderedIds: ["t1", "t2"], now: NOW + 2, auditId: "r2", actor });
+    await expect(u.mutation(W.undoReorderNative, { orgId: ORG, auditId: "r1", projectId: "P1", now: NOW + 3, actor })).rejects.toThrow(/changed since/i);
+  });
 });
 
 describe("projectTasks read composites", () => {

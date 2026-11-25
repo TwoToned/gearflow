@@ -15,8 +15,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
  *
  * Pass `undefined` to skip (e.g. before org context loads).
  *
- * NOTE: `useProjects` returns ALL projects for the org (including templates). Filter
- * `isTemplate: false` in the consumer when showing the active project list.
  */
 
 export type ProjectDoc = Doc<"projects">;
@@ -27,11 +25,6 @@ export type ProjectServiceDoc = Doc<"projectServices">;
 export type ProjectTaskDoc = Doc<"projectTasks">;
 export type ProjectLineItemDoc = Doc<"projectLineItems">;
 export type SubHireDoc = Doc<"subHires">;
-
-/** All projects for an org (includes templates — filter isTemplate in consumer). */
-export function useProjects(orgId: string | undefined): ProjectDoc[] | undefined {
-  return useAuthedQuery(api.projects.list, orgId ? { orgId } : "skip");
-}
 
 /** Single project by cuid. Returns undefined while loading, null if not found. */
 export function useProject(id: string | undefined): ProjectDoc | null | undefined {

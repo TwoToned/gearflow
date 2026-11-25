@@ -131,16 +131,29 @@ describe("projectTasks.myOpenTasks", () => {
     expect(dueDates).toEqual([...dueDates].sort((a, b) => a - b));
   });
 
-  test("computes overdue against the client-passed `now`, not server time", async () => {
+  test("computes overdue by the ONE due-day rule against the client-passed `now`, not server time", async () => {
+    const t = convexTest(schema, modules);
+    await baseSeed(t);
+    // A due date is stored as UTC midnight of its day; "today" is read in the org's zone (UTC here).
+    const dueDay = Date.UTC(2026, 10, 24);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "Borderline", status: "TODO", assigneeUserId: USER, dueDate: dueDay });
+    });
+    const q = (now: number) => t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now });
+    expect((await q(dueDay + 20 * 3_600_000))[0].overdue).toBe(false); // due today: still on time late in the day
+    expect((await q(dueDay + 25 * 3_600_000))[0].overdue).toBe(true); // the next day
+  });
+
+  test("overdue reads today in the ORG's timezone (a Sydney org is already on the next day)", async () => {
     const t = convexTest(schema, modules);
     await baseSeed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "Borderline", status: "TODO", assigneeUserId: USER, dueDate: NOW });
+      await ctx.db.insert("projectTasks", { id: "t1", organizationId: ORG, projectId: "P1", title: "Tz", status: "TODO", assigneeUserId: USER, dueDate: Date.UTC(2026, 10, 24) });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ timezone: "Australia/Sydney" }) } as never);
     });
-    const before = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW - 1 });
-    expect(before[0].overdue).toBe(false); // dueDate (NOW) is not < now (NOW - 1)
-    const after = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: NOW + 1 });
-    expect(after[0].overdue).toBe(true); // dueDate (NOW) < now (NOW + 1)
+    const late = Date.UTC(2026, 10, 24, 15); // 25 Nov 02:00 in Sydney, 24 Nov in UTC
+    const r = await t.withIdentity(asUser(ORG)).query(api.projectTasks.myOpenTasks, { orgId: ORG, now: late });
+    expect(r[0].overdue).toBe(true);
   });
 
   test("includes a personal task (no project) — projectId/projectName/projectNumber come back null/empty", async () => {

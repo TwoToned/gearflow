@@ -6,6 +6,8 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
+import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { MAX_CONTACTS_PER_SUPPLIER, MAX_DOCUMENTS_PER_SUPPLIER } from "./lib/supplierRecordCore";
 
 /**
  * Native SUPPLIER write mutations (Phase 3 browser-direct — replaces createSupplier/
@@ -112,6 +114,17 @@ export const updateNative = mutation({
   },
 });
 
+/** A supplier's contacts and documents (stored bytes included) go with it (B3). */
+async function deleteSupplierPeople(ctx: MutationCtx, orgId: string, supplierId: string): Promise<void> {
+  const contacts = await ctx.db.query("supplierContacts").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).take(MAX_CONTACTS_PER_SUPPLIER + 1);
+  for (const c of contacts.filter((x) => x.organizationId === orgId)) await ctx.db.delete(c._id);
+  const docs = await ctx.db.query("supplierDocuments").withIndex("by_supplierId", (q) => q.eq("supplierId", supplierId)).take(MAX_DOCUMENTS_PER_SUPPLIER + 1);
+  for (const d of docs.filter((x) => x.organizationId === orgId)) {
+    await ctx.db.delete(d._id);
+    await deleteStoredFileIfUnreferenced(ctx, orgId, d.fileId);
+  }
+}
+
 export const removeNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
@@ -136,6 +149,7 @@ export const removeNative = mutation({
     const rates = (await ctx.db.query("supplierModelRates").withIndex("by_supplierId", (q) => q.eq("supplierId", a.id)).collect()).filter((r) => r.organizationId === a.orgId);
     for (const r of rates) await ctx.db.delete(r._id);
 
+    await deleteSupplierPeople(ctx, a.orgId, a.id);
     await ctx.db.delete(doc._id);
     await logSupplier(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name: doc.name, summary: `Deleted supplier ${doc.name}`, details: { deleted: { name: doc.name } } });
     return { id: a.id };

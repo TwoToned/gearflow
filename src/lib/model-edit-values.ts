@@ -29,6 +29,7 @@ interface StoredModel {
   saleStockQuantity?: number | null;
   weight?: number | null;
   powerDraw?: number | null;
+  maintenanceIntervalDays?: number | null;
   requiresTestAndTag?: boolean | null;
   testAndTagIntervalDays?: number | null;
   defaultTestProfileId?: string | null;
@@ -50,6 +51,7 @@ const TEXT_KEYS: Key[] = ["manufacturer", "modelNumber", "sku", "categoryId", "d
 const NUMBER_KEYS: Key[] = [
   "defaultRentalPrice", "dailyRate", "weeklyRate", "monthlyRate", "defaultPurchasePrice", "replacementCost",
   "salePrice", "saleStockQuantity", "weight", "powerDraw",
+  "maintenanceIntervalDays", // deprecated, no field edits it, but the write would clear it if absent
 ];
 /** Optional picks where a falsy stored value (0, "") also means "not set". */
 const BLANK_KEYS: Key[] = [

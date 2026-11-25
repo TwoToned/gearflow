@@ -31,7 +31,7 @@
  */
 import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
-import { writeActivityLog } from "./audit";
+import { assertAuditIdFree, writeActivityLog } from "./audit";
 import { assertWithinUndoWindow } from "./undoWindow";
 
 export type FieldValue = string | number | boolean | null | FieldValue[] | { [k: string]: FieldValue };
@@ -169,6 +169,7 @@ export async function recordFieldEdit(
     extraDetails?: Record<string, unknown>;
   },
 ): Promise<void> {
+  await assertAuditIdFree(ctx, a.auditId);
   const fieldEdit: FieldEditSnapshot = {
     before: a.diff.before,
     after: a.diff.after,

@@ -59,7 +59,7 @@ export function computeStockBreakdown(model: {
 }
 
 /** Project statuses whose bookings are released (mirrors server literal list). */
-const DEAD_PROJECT_STATUSES = ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"];
+export const DEAD_PROJECT_STATUSES: readonly string[] = ["CANCELLED", "RETURNED", "COMPLETED", "INVOICED"];
 
 // ─── Two-layer hard/pencilled availability (WS3 #942) ─────────────────────────
 // Byte-for-byte duplicate of `src/lib/overbooking-core.ts`'s

@@ -175,52 +175,99 @@ Project
   → ProjectManager (multi-PM via join table)
 ```
 
-## Project Wizard (`src/components/projects/project-wizard.tsx`)
+## Job edit sheet (UX Phase 9, D22)
 
-A single 4-step wizard (Basics → Schedule → Site → Review) backs **create, edit,
-and templates** — there is no separate flat form (the old `project-form.tsx` was
-retired). Routes:
-- `/projects/new` → `<ProjectWizard />` (create)
-- `/projects/templates/new` → `<ProjectWizard isTemplate />` (template create)
-- `/projects/[id]/edit` → `<ProjectWizard project={project} />` (edit)
+`/projects/[id]/edit` is a redirect to `?edit=1` on the record. `JobEditSheet`
+(`src/components/projects/job-edit-sheet.tsx`, hosted once by the job page, built
+on `FormSheet`) opens from the header `Edit`, the readiness fixes and the
+Overview `Edit` links; it renders the shared `ProjectFields`
+(`project-fields.tsx`, the ONE field list in `projectSchema` order, also used by
+the wizard) with Job · Where · Money sections (no Money for a template).
+- **Status is not a field.** It moves only through the header stepper, which runs
+  the accepted-quote, blocking-discussion and confirm-impact checks. (The update
+  mutation still accepts `status` for API callers; closing that is a contract
+  change, deferred.)
+- **Save sends only the changed fields** (`buildProjectUpdate` with `before`,
+  `src/lib/project-edit-patch.ts`), so a pricing-locked job never has an
+  untouched `discountPercent`/`taxRate` in the payload (the old full payload made
+  every save fail on a locked job). `Save changes` is disabled until something
+  changed; the footer names what.
+- **D25:** moving the rental dates carries a set project window by the same
+  calendar-day offset (`shiftWindowWithRental`, `src/lib/project-form-dates.ts`);
+  a blank window stays blank.
+- The #1227 date-move gate runs only when the gear window moved and the status is
+  Confirmed or later (`DateMoveImpactDialog` over the sheet, fails open).
+- The save toast has **no Undo yet**: an exact one needs `fieldEditUndo` and a
+  money-safe audit snapshot (the activity log redacts money by field diff; a
+  `details.fieldEdit` blob would carry the discount unredacted). Tracked for the
+  Phase 9 follow-up.
 
-**Edit mode** is engaged by passing the `project` prop (the `getProject`/
-`useProjectDetail` composite, typed loosely as `EditableProject`). In edit mode:
-- `defaultValues` are pre-filled from the project across all steps; stored dates
-  are normalised to the form's `yyyy-MM-dd` shape via `normalizeDate`, times stay
-  `HH:mm`. Existing project managers seed `managerIds`.
-- One edit-only field appears that create mode hides: **Status** (basics step).
-  The wizard's old "Financial" block (site step, hand-typed Deposit %/Deposit
-  paid/Invoiced total inputs with no server-side math) is **REMOVED** as of
-  #940 (WS1 — finance model): deposit % now lives on the **client payment
-  profile** (client detail page — `paymentProfile`/`profileDepositPercent`,
-  see [FEATUREDOCS/66-finance-quotes-invoices-xero.md](./66-finance-quotes-invoices-xero.md)),
-  and deposit-paid/invoiced-total are derived from the project's real
-  Quote/Invoice rows (Project page → Finance tab), never hand-typed here.
-  **Discount (%)** moved out of that block (QW-4 / #953) to the basics step,
-  always visible in both create and edit mode, right after the Client
-  picker — see "Discount default cascade" below.
-- Submit calls `updateProject(id, data)` and **reconciles managers** by diffing
-  the initial set vs the selected set (`addProjectManager`/`removeProjectManager`
-  on the delta only — no dupes, no accidental removals), then routes to
-  `/projects/{id}`. The final CTA reads "Save changes".
-- The next-project-number peek is skipped, and all steps are freely reachable
-  (every step is already valid). Create mode is unchanged.
+## New job wizard (`src/components/projects/new-job/`, UX Phase 9)
 
-- **Project code is required.** Pre-filled from `peekNextProjectNumber()` (create
-  only); the user accepts or overrides. `next()` blocks step 0 if blank (the Zod
-  schema still allows blank for auto-gen, so the requirement is enforced in the
-  wizard).
-- **Step-transition focus management (R-8.1.7, #894).** Continue/Back unmounts the
-  just-clicked button, so the wizard explicitly moves focus on every step change
-  instead of leaving it to the browser's `document.body` fallback (WCAG "focus is
-  never silently lost"). A `tabIndex={-1}` heading ("Step N: <label>") sits at the
-  top of the step-content card and is focused via `stepHeadingRef` in a `useEffect`
-  keyed on `step`, skipping the very first render. Step 0 is excluded from that
-  effect — its Name field already carries `autoFocus`, which re-fires on every
-  (re)mount (the step content is conditionally rendered, so returning to step 0
-  remounts the field) and would otherwise race the heading-focus effect.
-- **Schedule step — two windows (WS2 #941).** Two `RangeCalendar` blocks
+`/projects/new` → `<NewJobWizard />`: three steps as words, **Who and when · What n ·
+Review** (no Site step, no helper rail). Step one is the shared `ProjectFields` (job +
+schedule), with Site, location and discount folded under it; a dates-and-availability
+line sits under the rental calendar (`projects.windowOverlap`: other jobs whose gear
+window overlaps, plus busy-day dots on the calendar via `RangeCalendar`'s optional
+`busyDays`; the gear line reads the draft's own lines).
+- **Draft (D24).** The job row is written the first time it has a valid name
+  (`useJobDraft`): an ordinary Enquiry through the normal create, the number allocated
+  in that mutation when the org auto-numbers, then kept in step with diff updates
+  (debounced, single-flight). `Create job` finishes the same row (a Quoting start goes
+  through the normal status path); `Create as enquiry` finishes from step one. An
+  abandoned wizard is just an empty Enquiry. `Discard draft…` (page ⋯, confirm) cancels
+  then deletes it (delete needs `project:delete`; without it the draft is only
+  cancelled); its Undo exists only for a draft with no lines.
+- **What** is the Equipment tab's own `EquipmentAddBar` and write path pointed at the
+  draft, plus the draft's lines (qty inline, price, `short n` / `unpriced`, ⋯, bulk
+  `Remove n`). Sub-hire, custom and sale lines are added from the job's Equipment tab.
+- `?clientId=` pre-picks the client; an org switch resets the wizard (the draft is left).
+- The e2e harness drives it with Next, Next, Create job.
+
+## Templates (UX Phase 9, D23)
+
+There is no templates page and no separate template wizard. `/projects/templates` redirects to
+`/projects?templates=1` and `/projects/templates/new` to `?templates=new`; `projects/layout.tsx` hosts
+`TemplatesHost`, so the same dialog opens over any `/projects/*` page (nav row, palette, the Jobs ⋯,
+the wizard's own menu).
+- **`Manage templates…`** (`templates/manage-templates-dialog.tsx`): always-on checkboxes with shift
+  range, a row ⋯ built by `buildTemplateRowActions` (`Use for a new job` → `/projects/new?template=<id>`,
+  `Edit template…` → the job edit sheet on the template, `Delete…` red), a bulk `Delete n`. Each
+  action is absent without its permission (`project:create` / `update` / `delete`). Data:
+  `projects.listTemplates` (newest updated first, capped AFTER the filter with `truncated`, gear line
+  counts, sell-side only). Usage isn't stored, so the picker is "recently updated".
+- **Delete ARCHIVES** (status `CANCELLED` on the template row, no schema change) with an exact Undo:
+  `projectTemplateWrites.archiveTemplatesNative` returns each forward audit id and
+  `unarchiveTemplatesNative` takes ids only and reads them (`fieldEditUndo`: author, 10-minute server
+  window, once, every field still as left, all-or-nothing). The **Archived** word lists archived
+  templates, where `Delete forever…` (bulk asks for the typed word) is the real delete
+  (`deleteTemplateNative`, which refuses a template that is not archived). No Undo for that.
+- **`Start from template ▾`** on wizard step one (`new-job/start-from-template.tsx`): the five most
+  recently updated, `Start from scratch` once one is set, `Manage templates…`, `New template…`. A pick
+  applies onto the draft with `applyTemplateNative` (the same copy `duplicateNative` runs,
+  `duplicateCore`): gear, categories, groups, managers, and type / tags / description / discount only
+  where the draft has none; dates are not copied; it refuses a draft that already has gear, a
+  non-draft, another org's or an archived template. A pick before the job is named waits and applies
+  when the draft exists. Its Undo (`undoApplyTemplateNative`, ids only) removes exactly what the apply
+  made and refuses if any of it was edited since; `Start from scratch` is that same Undo.
+- **`New template…`** (`templates/new-template-sheet.tsx`): the shared `ProjectFields` job block in a
+  `FormSheet` (name, type, tags, description, client, managers; no code, discount or dates); it creates
+  the template through the ordinary create and opens its page, where gear is added.
+- **Restore** (Archived tab, row ⋯ and bulk `Restore n`): `restoreTemplatesNative` returns an archived
+  template to a live Enquiry. Gated like archive (`project:delete`), no confirm, and its own exact Undo
+  (`unrestoreTemplatesNative`, ids only; both Undos share one helper over `fieldEditUndo`). A live template in
+  the list is skipped. The bulk bar sits INSIDE the dialog (`BulkBar inDialog`, sticky, no body portal): a Radix
+  modal sets `pointer-events: none` on `<body>`, so a portaled bar would swallow every click on a phone.
+- **The wizard form adopts what an apply writes.** `applyTemplateNative` returns the scalars it filled
+  (`applied`) and what the draft had (`previous`); the Undo returns `restored`. `useJobDraft.adopt` puts them in
+  the form AND the saved baseline, so the next autosave diff never sends a stale form value over them (and the
+  Undo, which checks the draft is as the apply left it, keeps working).
+
+## Job fields
+
+- **Project code is required.** In the wizard the draft allocates it (see above); the field is blank
+  until then, or typed by the org that numbers its own jobs.
+- **Schedule — two windows (WS2 #941).** Two `RangeCalendar` blocks
   (`src/components/ui/range-calendar.tsx`, a custom date-fns range calendar — no
   external calendar dep): **Rental** (the chargeable window, `rentalStartDate`/
   `rentalEndDate` — duration preset chips: 1 day / 2 days / Weekend / 1 week) and
@@ -238,6 +285,21 @@ retired). Routes:
   **DEPRECATED** — the wizard reads them (pre-migration projects) but never
   writes them. See [11-availability.md](./11-availability.md) for the full
   two-window design and `getProjectWindow`.
+
+### Edit-sheet Undo (UX Phase 9 follow-up)
+
+The edit sheet's Save toast offers **Undo**, backed by the exact, guarded
+`projectEditUndo.undoUpdateNative` (ids only: project + the save's `auditId`). `updateNative` writes ONE audit
+row carrying `details.fieldEdit` (before/after of only the changed fields, `lib/fieldEditUndo.ts`); the Undo
+reads that back and refuses as a whole, changing nothing, unless the caller is the author, it is inside the
+10-minute server-clock window, it has not already been undone, every changed field still holds what the save
+left (`CHANGED_SINCE`), and a restored locked money field (`discountPercent`/`taxRate`) is not on a
+pricing-locked job. Restoring a recalc input recalculates in the same transaction. It restores ONLY fields
+the edit sheet may write: `updateNative` is also reachable directly, so a snapshot holding `status`, `packerUserId`
+or any server-owned field (`PROJECT_UPDATE_IMMUTABLE`) is refused (`NOT_UNDOABLE`), never raw-patched past
+`transitionProjectStatus`; a restored `clientId` / `locationId` / `clientContactId` is re-checked against the org. The sheet offers no Undo
+when the manager set changed in the same Save (a separate write the Undo does not cover). The activity readers
+redact `details.fieldEdit` by field name with the same lists as `details.changes` (`lib/activityPay.ts`).
 
 ### Discount default cascade (QW-4 / #953)
 
@@ -305,8 +367,10 @@ taxableAmount = subtotal - discountAmount
 taxAmount = taxableAmount × taxRate / 100
 total = taxableAmount + taxAmount
 
-margin = total - (serviceCostTotal + labourCostTotal + saleCostTotal)   -- saleCostTotal added WS11 #950
-marginPercent = margin / total × 100
+margin = taxableAmount - (serviceCostTotal + labourCostTotal + subHireCostTotal + saleCostTotal)   -- EX GST
+marginPercent = margin / taxableAmount × 100
+-- UX Phase 10 fix: this used `total` (which includes tax), so "Margin ex GST" overstated the margin by the GST.
+-- One definition: `marginExGst()` in convex/lib/recalc.ts (the operational P&L uses the same base).
 ```
 
 ### Tax Rate Cascade
@@ -693,7 +757,7 @@ Overview  Equipment  Packing 36/44  Logistics  Finance  Tasks 9/14  Notes  Files
     Kit and Loose item labels, whose lists load the first time the menu opens;
     Call sheet; Job timeline; then `Quote & invoice PDFs → Finance`. It never
     renders a sent quote or an issued invoice, which are stored bytes (#987).
-  - **`Edit`** goes to `/projects/[id]/edit` until Phase 9.
+  - **`Edit`** opens the job edit sheet in place (`?edit=1`, see "Job edit sheet").
   - **⋯:** Comments & discussion (with the live blocking count), Warehouse page,
     Runsheet, the `Version ▸` submenu (switch · New version from vN · Compare ·
     Manage versions… `V`), Duplicate job, Save as template, then Cancel job… or,

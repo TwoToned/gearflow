@@ -41,7 +41,7 @@ interface KitFormProps {
   initialData?: KitFormValues & { id: string };
 }
 
-const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "INCOMPLETE"] as const;
+const STATUS_ORDER = ["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED"] as const;
 const CONDITION_ORDER = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 const CHECK_MODE_LABELS: Record<string, string> = {
   KIT_LEVEL: "Kit level",
@@ -224,9 +224,11 @@ export function KitForm({ initialData }: KitFormProps) {
                 />
               )} />
             </SmartFormField>
-            <SmartFormField label="Status">
+            <SmartFormField label="Status" hint={initialData?.status === "INCOMPLETE" ? "Reported missing: use Mark complete on the kit to clear it." : undefined}>
               <Controller control={form.control} name="status" render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
+                // Incomplete is never a choice here: a MISSING return sets it and only Mark complete clears it.
+                // A kit that carries it keeps it (the select is locked) so saving the form cannot clear it by accident.
+                <Select value={field.value} onValueChange={field.onChange} disabled={field.value === "INCOMPLETE"}>
                   <SelectTrigger>
                     <SelectValue>{kitStatusLabels[field.value ?? "AVAILABLE"] ?? "Available"}</SelectValue>
                   </SelectTrigger>

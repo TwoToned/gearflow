@@ -4,6 +4,8 @@ import type { Doc } from "./_generated/dataModel";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { gearBundleCostGuard } from "./lib/gearCostRedact";
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 
@@ -235,7 +237,8 @@ export const assetsPage = query({
     const total = filtered.length;
     const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
     const models = new Map((await ctx.db.query("models").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect()).map((m) => [m.id, m])); // r9.8-ok: server-side filter/sort/paginate over the org set (perf design); accepted R-9.8 tradeoff — see docs/exceptions.md R-8.3.3
-    return { assets: rows.map((a) => ({ ...a, model: a.modelId ? models.get(a.modelId) ?? null : null })), total };
+    const cost = await gearBundleCostGuard(ctx); // what the gear cost to buy is absent for a `noFinancials` key
+    return { assets: rows.map((a) => ({ ...cost.asset(a), model: cost.model(a.modelId ? models.get(a.modelId) ?? null : null) })), total };
   },
 });
 
@@ -253,6 +256,7 @@ function mapSubHireRow(
   sh: Doc<"subHires">,
   projById: Map<string, Doc<"projects">>,
   orderById: Map<string, Doc<"supplierOrders">>,
+  showCost: boolean,
 ) {
   const totalCost = sh.totalCost ?? 0;
   const totalCharge = sh.totalCharge ?? 0;
@@ -260,9 +264,8 @@ function mapSubHireRow(
     id: sh.id,
     orderNumber: sh.orderNumber,
     status: sh.status ?? "DRAFT",
-    totalCost,
-    totalCharge,
-    margin: round(totalCharge - totalCost),
+    // Cost, charge and margin are the job-cost line (`canSeeJobCost`): ABSENT, never zeroed, without it.
+    ...(showCost ? { totalCost, totalCharge, margin: round(totalCharge - totalCost) } : {}),
     project: subHireRowProject(sh.projectId ? projById.get(sh.projectId) : undefined),
     linkedOrder: subHireRowLinkedOrder(sh.supplierOrderId ? orderById.get(sh.supplierOrderId) : undefined),
   };
@@ -280,6 +283,7 @@ export const subhiresPage = query({
   args: { orgId: v.string(), supplierId: v.string(), page: v.number(), pageSize: v.number() },
   handler: async (ctx, { orgId, supplierId, page, pageSize }) => {
     await requireOrgReadFor(ctx, orgId, "supplier");
+    const showCost = await canSeeJobCost(ctx, orgId);
     const matching = (
       await ctx.db
         .query("subHires")
@@ -299,7 +303,7 @@ export const subhiresPage = query({
     );
 
     return {
-      subHires: rows.map((sh) => mapSubHireRow(sh, projById, orderById)),
+      subHires: rows.map((sh) => mapSubHireRow(sh, projById, orderById, showCost)),
       total,
     };
   },
@@ -336,13 +340,14 @@ export const detail = query({
     updatedAt: v.string(),
     _count: v.object({ assets: v.number(), orders: v.number(), lineItems: v.number() }),
     // WS7 #946 — supplier spend rollups (see the de-dup algorithm below).
-    spend: v.object({
+    // Absent without the job-cost line (`canSeeJobCost`), never zeroed.
+    spend: v.optional(v.object({
       committedOrderSpend: v.number(),
       subHireSpend: v.number(),
       totalSpend: v.number(),
       openOrderCount: v.number(),
       variance: v.object({ total: v.number(), linkedCount: v.number() }),
-    }),
+    })),
   }),
   handler: async (ctx, { orgId, id }) => {
     await requireOrgReadFor(ctx, orgId, "supplier");
@@ -368,10 +373,10 @@ export const detail = query({
       .query("subHires")
       .withIndex("by_organizationId_supplierId", (q) => q.eq("organizationId", orgId).eq("supplierId", id))
       .collect();
-    const spend = computeSupplierSpend(allOrders, allSubHires);
+    const spend = (await canSeeJobCost(ctx, orgId)) ? computeSupplierSpend(allOrders, allSubHires) : undefined;
 
     return {
-      spend,
+      ...(spend ? { spend } : {}),
       id: doc.id,
       organizationId: doc.organizationId,
       name: doc.name,

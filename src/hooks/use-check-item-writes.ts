@@ -26,6 +26,7 @@ export function useCheckItemWrites() {
   const removeModelM = useMutation(api.checkItemsWrites.removeCheckItemFromModelNative);
   const reorderModelM = useMutation(api.checkItemsWrites.reorderModelCheckItemsNative);
   const bulkAddModelM = useMutation(api.checkItemsWrites.bulkAddCheckItemsToModelsNative);
+  const undoAssignM = useMutation(api.checkItemsWrites.undoAssignChecksNative);
   const addKitM = useMutation(api.checkItemsWrites.addCheckItemToKitNative);
   const removeKitM = useMutation(api.checkItemsWrites.removeCheckItemFromKitNative);
   const reorderKitM = useMutation(api.checkItemsWrites.reorderKitCheckItemsNative);
@@ -63,8 +64,15 @@ export function useCheckItemWrites() {
       removeModelM({ orgId: requireOrg(), modelId, checkItemId, now: Date.now(), actor: actor(), auditId: createId() }),
     reorderModelCheckItems: async (modelId: string, orderedCheckItemIds: string[]) =>
       reorderModelM({ orgId: requireOrg(), modelId, orderedCheckItemIds }),
-    bulkAddCheckItemsToModels: async (modelIds: string[], checkItemIds: string[]): Promise<{ count: number; modelNames: string[] }> =>
-      bulkAddModelM({ orgId: requireOrg(), modelIds, checkItemIds, rowIds: modelIds.flatMap(() => checkItemIds.map(() => createId())), now: Date.now(), actor: actor(), auditId: createId() }),
+    /** Returns the batch's `auditId`: the exact Undo (`undoAssignChecks`) takes it. */
+    bulkAddCheckItemsToModels: async (modelIds: string[], checkItemIds: string[]): Promise<{ count: number; modelNames: string[]; auditId: string }> => {
+      const auditId = createId();
+      const r = await bulkAddModelM({ orgId: requireOrg(), modelIds, checkItemIds, rowIds: modelIds.flatMap(() => checkItemIds.map(() => createId())), now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    /** Removes exactly the assignments that bulk assign created, and only those still as it left them. */
+    undoAssignChecks: async (auditId: string): Promise<{ removed: number; left: number }> =>
+      undoAssignM({ orgId: requireOrg(), auditId, now: Date.now(), actor: actor() }),
 
     addCheckItemToKit: async (kitId: string, checkItemId: string) =>
       addKitM({ id: createId(), orgId: requireOrg(), kitId, checkItemId, now: Date.now(), actor: actor(), auditId: createId() }),

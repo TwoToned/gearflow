@@ -1,8 +1,14 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/auth";
+import { binLabelState, locationFill } from "./lib/locationFacts";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { loadKitStates } from "./lib/kitState";
+import { ReadBudget } from "./lib/readBudget";
+
+/** Documents the record page's kit list may read to derive states (one budget; an uncovered kit prints its stored status). */
+const KIT_STATE_BUDGET = 3000;
 
 /**
  * Thin CRUD for Location (Convex table "locations"). GENERATED — Phase 2/5.
@@ -91,18 +97,26 @@ export const detail = query({
     const parentRow = self.parentId ? locs.find((l) => l.id === self.parentId) : undefined;
     const parent = parentRow ? { id: parentRow.id, name: parentRow.name, address: parentRow.address ?? null, latitude: parentRow.latitude ?? null, longitude: parentRow.longitude ?? null } : null;
 
-    const children = [...childrenAll].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({
-      id: c.id, name: c.name,
-      _count: { assets: assets.filter((a) => a.locationId === c.id).length, bulkAssets: bulk.filter((b) => b.locationId === c.id).length },
-    }));
+    // Bins: each child with its own derived facts (capacity, fill, label state, last movement), the Bins tab's rows.
+    const children = [...childrenAll].sort((a, b) => a.name.localeCompare(b.name)).map((c) => {
+      const counts = { assets: assets.filter((a) => a.locationId === c.id).length, bulkAssets: bulk.filter((b) => b.locationId === c.id).length, kits: kits.filter((k) => k.locationId === c.id).length };
+      const stored = counts.assets + counts.bulkAssets + counts.kits;
+      return {
+        id: c.id, name: c.name, _count: counts, stored,
+        capacity: c.capacity ?? null, fill: locationFill(stored, c.capacity),
+        lastMovement: c.lastMovementAt ?? null, labelState: binLabelState(c.labelPrintedAt),
+      };
+    });
 
     const byTag = (a: { assetTag: string }, b: { assetTag: string }) => (a.assetTag < b.assetTag ? -1 : a.assetTag > b.assetTag ? 1 : 0);
     const assetsOut = assetsHere.filter((a) => a.isActive !== false).sort(byTag).slice(0, 50)
       .map((a) => ({ id: a.id, assetTag: a.assetTag, status: a.status ?? "AVAILABLE", model: a.modelId ? { name: modelName.get(a.modelId) ?? "" } : null }));
     const bulkOut = bulkHere.filter((b) => b.isActive !== false).sort(byTag).slice(0, 50)
       .map((b) => ({ id: b.id, assetTag: b.assetTag, status: b.status ?? "ACTIVE", model: b.modelId ? { name: modelName.get(b.modelId) ?? "" } : null }));
-    const kitsOut = kitsHere.filter((k) => k.isActive !== false).sort(byTag).slice(0, 50)
-      .map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: k.status ?? "AVAILABLE" }));
+    // A kit's state is DERIVED (convex/lib/kitState.ts): the record prints that, never the stored status.
+    const shownKits = kitsHere.filter((k) => k.isActive !== false).sort(byTag).slice(0, 50);
+    const kitStates = await loadKitStates(ctx, orgId, shownKits, Date.now(), new ReadBudget(KIT_STATE_BUDGET));
+    const kitsOut = shownKits.map((k) => ({ id: k.id, assetTag: k.assetTag, name: k.name, status: kitStates.get(k.id)?.key ?? "UNKNOWN" /* the budget bit: unknown, never the stored status */ }));
 
     const projectsOut = [];
     for (const p of [...projectsHere].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)).slice(0, 20)) {
@@ -130,6 +144,8 @@ export const detail = query({
       address: self.address ?? null, latitude: self.latitude ?? null, longitude: self.longitude ?? null,
       type: self.type ?? "WAREHOUSE", isDefault: self.isDefault ?? false, parentId: self.parentId ?? null,
       notes: self.notes ?? null, tags: self.tags ?? [],
+      capacity: self.capacity ?? null, fill: locationFill(_count.assets + _count.bulkAssets + _count.kits, self.capacity),
+      lastMovement: self.lastMovementAt ?? null, labelState: binLabelState(self.labelPrintedAt),
       createdAt: new Date(self.createdAt ?? 0).toISOString(), updatedAt: new Date(self.updatedAt ?? 0).toISOString(),
       parent, children, assets: assetsOut, bulkAssets: bulkOut, kits: kitsOut, projects: projectsOut, media, _count,
     };

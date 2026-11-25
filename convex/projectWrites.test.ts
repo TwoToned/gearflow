@@ -386,6 +386,46 @@ describe("projectWrites.updateNative", () => {
       expect(log?.summary).toContain("Renamed Gig");
     });
   });
+  test("pricing-locked job: a full payload (clears the locked fields) is refused, the diff payload saves", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "CONFIRMED");
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { pricingLocked: true });
+    });
+    const run = (set: Record<string, unknown>, clear: string[]) =>
+      t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set, clear });
+    // What the old edit form sent for an unrelated change: blank locked fields as `clear`.
+    await expect(run({ name: "Renamed", updatedAt: NOW }, ["discountPercent", "taxRate"])).rejects.toThrow();
+    // What `buildProjectUpdate` sends now: only what changed.
+    await run({ name: "Renamed", updatedAt: NOW }, []);
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.name).toBe("Renamed");
+    });
+  });
+  test("a discount-only edit recalculates the stored totals in the same transaction", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { versionId: "v1", lineageId: "li1", id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, unitPrice: 1000, duration: 1, lineTotal: 1000, status: "QUOTED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { discountPercent: 10, updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.discountPercent).toBe(10);
+      expect(p?.discountAmount).toBe(100);
+    });
+  });
+  test("an edit that touches no recalc input leaves the totals alone", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "QUOTED");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { name: "Renamed", updatedAt: NOW }, clear: [] });
+    await t.run(async (ctx) => {
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      expect(p?.discountAmount).toBeUndefined();
+    });
+  });
   test("clear removes a field", async () => {
     const t = makeT();
     await t.run(async (ctx) => {
@@ -526,7 +566,8 @@ describe("projectWrites.updateNative", () => {
       const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
       expect(p?.siteContactEmail).toBe("crew@example.com");
     });
-    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
+    // A second forward write needs its own audit id (`assertAuditIdFree`: an Undo trusts the row with its id).
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...uargs, auditId: "log2", set: { siteContactEmail: "", updatedAt: NOW }, clear: [] });
   });
   test("rejects crewNotes/internalNotes/clientNotes over the 5000-char bound", async () => {
     const t = makeT();
@@ -593,7 +634,7 @@ describe("projectWrites.updateNative", () => {
       // Switch clients WITHOUT touching clientContactId — the stale cc1 pick must
       // not silently carry over onto c2's documents.
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
+        ...uargs, auditId: "log2", set: { clientId: "c2", updatedAt: NOW + 1 }, clear: [],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBe("c2");
@@ -608,7 +649,7 @@ describe("projectWrites.updateNative", () => {
         ...uargs, set: { clientId: "c1", clientContactId: "cc1", updatedAt: NOW }, clear: [],
       });
       await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, {
-        ...uargs, set: { updatedAt: NOW + 1 }, clear: ["clientId"],
+        ...uargs, auditId: "log2", set: { updatedAt: NOW + 1 }, clear: ["clientId"],
       });
       const p = await t.run(async (ctx) => ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first());
       expect(p?.clientId).toBeUndefined();
@@ -938,10 +979,11 @@ describe("projectWrites.deleteNative", () => {
 describe("projectWrites.deleteTemplateNative", () => {
   const targs = { id: "t1", orgId: ORG, actor: ACTOR, now: NOW };
 
-  async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true) {
+  // A template is archived (status CANCELLED) before it can be deleted for real.
+  async function seedTemplate(t: ReturnType<typeof convexTest>, role = "owner", isTemplate = true, status = "CANCELLED") {
     await t.run(async (ctx) => {
       await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
-      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("projects", { liveVersionId: "v-t1", id: "t1", organizationId: ORG, projectNumber: "T1", name: "Template", isTemplate, status: status as "CANCELLED", createdAt: NOW, updatedAt: NOW });
     await ctx.db.insert("projectVersions", { id: "v-t1", organizationId: ORG, projectId: "t1", number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
       await ctx.db.insert("projectLineItems", { versionId: "v-t1", lineageId: "tli1", id: "tli1", organizationId: ORG, projectId: "t1", type: "EQUIPMENT", quantity: 1, status: "CONFIRMED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
       await ctx.db.insert("projectManagers", { id: "tpm1", organizationId: ORG, projectId: "t1", userId: USER, addedAt: NOW });
@@ -950,6 +992,15 @@ describe("projectWrites.deleteTemplateNative", () => {
       await ctx.db.insert("projectModelRevenues", { id: "tpmr1", organizationId: ORG, projectId: "t1", modelId: "model1", allocatedRevenue: 0, updatedAt: NOW });
     });
   }
+
+  test("refuses a template that is not archived first (the delete guard)", async () => {
+    const t = makeT();
+    await seedTemplate(t, "owner", true, "ENQUIRY");
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.deleteTemplateNative, targs)).rejects.toThrow(/Archive the template first/);
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "t1")).first()).not.toBeNull();
+    });
+  });
 
   test("deletes a template + its lines/grouping/rollup (no audit)", async () => {
     const t = makeT();

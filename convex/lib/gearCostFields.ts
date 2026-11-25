@@ -9,7 +9,8 @@
 export const MODEL_COST_FIELDS = ["replacementCost", "defaultPurchasePrice"] as const;
 export const ASSET_COST_FIELDS = ["purchasePrice"] as const;
 export const BULK_ASSET_COST_FIELDS = ["purchasePricePerUnit"] as const;
-
+/** What a kit as a whole cost to assemble (the kit row's own `purchasePrice`). */
+export const KIT_COST_FIELDS = ["purchasePrice"] as const;
 // ── Sort keys ──────────────────────────────────────────────────────────────────
 // A list that sorts by a field it hides leaks the ORDER of that field, so list sorts are
 // an explicit allow-list (never `r[sortBy]`), and a cost key from a redacted caller falls

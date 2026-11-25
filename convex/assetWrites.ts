@@ -9,10 +9,11 @@ import { bumpAssetCounters, bumpCountersForTable } from "./lib/counters";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { registerAssetTestTag, backfillTestTagAssetsCore } from "./lib/testtagBackfill";
-import { retireAssetCore, type RetiredTestTag } from "./lib/assetRetire";
+import { assertNoRetireBypass, retireAssetCore, type RetiredTestTag } from "./lib/assetRetire";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { assertRefInOrg } from "./lib/orgRef";
+import { LocationMovements, stampLocationMovement } from "./lib/locationMovement";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -51,6 +52,13 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
  * entirely (R-8.6.2). `assetTag` presence is checked separately by the dup-tag path;
  * only its length is a shared concern here.
  */
+/** The warranty rule, ONE copy: create checks the two it is given; update checks the EFFECTIVE pair (a patch that sets one is checked against the stored other). */
+function assertWarrantyOrder(purchaseDate: number | null | undefined, warrantyExpiry: number | null | undefined): void {
+  if (purchaseDate != null && warrantyExpiry != null && warrantyExpiry < purchaseDate) {
+    throw new ConvexError("Warranty can't end before the purchase date");
+  }
+}
+
 function assertAssetFields(f: {
   assetTag?: string;
   serialNumber?: string;
@@ -63,9 +71,7 @@ function assertAssetFields(f: {
   purchaseDate?: number;
   warrantyExpiry?: number;
 }): void {
-  if (f.purchaseDate != null && f.warrantyExpiry != null && f.warrantyExpiry < f.purchaseDate) {
-    throw new ConvexError("Warranty can't end before the purchase date");
-  }
+  assertWarrantyOrder(f.purchaseDate, f.warrantyExpiry);
   if (f.assetTag != null) assertStrLen(f.assetTag, "assetTag", { min: 1, max: 50 });
   assertStrLen(f.serialNumber, "serialNumber", { max: 100 });
   assertStrLen(f.customName, "customName", { max: 200 });
@@ -153,6 +159,12 @@ export const archiveNative = mutation({
       .first();
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+
+    // A unit that is out on a job comes back first: retiring it would strand the job's hold on it, and the
+    // return / check-in would then have to un-retire it (RETIRED is one-way, no writer overwrites it).
+    if (asset.status === "CHECKED_OUT") {
+      throw new ConvexError({ code: "ASSET_CHECKED_OUT", message: `${asset.assetTag} is out on a job. Return it before retiring it.` });
+    }
 
     const { diff, testTags } = await retireAssetCore(ctx, orgId, asset, now);
 
@@ -375,7 +387,11 @@ const assetSet = v.object({
   kitId: v.optional(v.string()),
   parentAssetId: v.optional(v.string()),
 });
-const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag"]);
+// `status` / `isActive` are never cleared: Retire and Reinstate own them (and `assertNoRetireBypass` checks the result anyway).
+const ASSET_NEVER_CLEAR = new Set(["id", "organizationId", "modelId", "assetTag", "status", "isActive"]);
+
+/** A `clear` list that removes the location (a clear wins over a `set` of the same key). */
+const clearsLocation = (clear: readonly string[]): boolean => clear.includes("locationId");
 
 /**
  * createNative — insert an asset with the dup-tag guard + CREATE audit in ONE
@@ -461,6 +477,7 @@ export const createNative = mutation({
     if (fields.kitId) await assertRefInOrg(ctx, "kits", fields.kitId, fields.organizationId);
 
     await ctx.db.insert("assets", fields);
+    await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     await bumpAssetCounters(ctx, fields.organizationId, null, fields);
     const createNow = fields.createdAt ?? fields.updatedAt ?? 0;
     // Advance the asset-tag counter + auto-register T&T (parity with createAsset).
@@ -519,6 +536,8 @@ export const updateNative = mutation({
     if (!doc) throw new ConvexError("Asset not found: " + id);
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertAssetFields(set);
+    const effective = (k: "purchaseDate" | "warrantyExpiry") => (clear.includes(k) ? undefined : (set[k] ?? doc[k]));
+    assertWarrantyOrder(effective("purchaseDate"), effective("warrantyExpiry"));
 
     // DUP GUARD only when the tag changed (mirrors updateAsset).
     if (set.assetTag && set.assetTag !== doc.assetTag) {
@@ -548,6 +567,13 @@ export const updateNative = mutation({
     // Apply set (+ clear-to-null) — the patchAsset pattern. Stamp updatedAt from the
     // mutation `now` (the client `set` omits it; parity with the old updateAsset).
     const setWithTs = { ...set, updatedAt: now };
+    // The doc this edit RESULTS in (set, then clear): the retire guard compares it to the stored one, so no
+    // combination of `set` / `clear` can reinstate or retire an asset.
+    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
+    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
+    assertNoRetireBypass(doc, after);
+    // `lastMovementAt`: a set locationId moves it; clearing it (unless that key is protected) removes it.
+    await stampLocationMovement(ctx, orgId, doc.locationId, clearsLocation(clear) ? null : set.locationId, now);
     if (clear.length === 0) {
       await ctx.db.patch(doc._id, setWithTs);
       await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...setWithTs });
@@ -564,8 +590,6 @@ export const updateNative = mutation({
 
     const finalTag = set.assetTag ?? doc.assetTag;
     // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
-    const after = { ...doc, ...setWithTs } as Record<string, unknown>;
-    for (const k of clear) if (!ASSET_NEVER_CLEAR.has(k)) delete after[k];
     // absent tags / images / custom fields == empty (the sheet always sends them), on BOTH sides
     const emptyDefaults = (r: Record<string, unknown>) => ({ ...r, tags: r.tags ?? [], images: r.images ?? [], customFieldValues: r.customFieldValues ?? {} });
     const diff = diffFields(emptyDefaults(doc), emptyDefaults(after), EDIT_TRACKED_FIELDS);
@@ -702,6 +726,7 @@ export const createManyNative = mutation({
       const { auditId: _auditId, ...assetFields } = a;
       const fields = { ...assetFields, organizationId: orgId, createdAt: now, updatedAt: now };
       await ctx.db.insert("assets", fields);
+      await stampLocationMovement(ctx, orgId, null, fields.locationId ?? null, now);
       await bumpCountersForTable(ctx, "assets", null, fields);
       await registerAssetTestTag(ctx, { organizationId: orgId, assetId: a.id, assetTag: a.assetTag, serialNumber: a.serialNumber, modelId: a.modelId }, now);
       await actorLog(ctx, { orgId, actor, auditId: a.auditId, now, id: a.id, assetTag: a.assetTag, modelId: a.modelId });
@@ -726,7 +751,8 @@ export const bulkUpdateNative = mutation({
   args: {
     orgId: v.string(),
     ids: v.array(v.string()),
-    set: v.object({ status: v.optional(enums.AssetStatus), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
+    // No RETIRED (and no SOLD, the sale flow's): Retire and Reinstate are the only paths across it.
+    set: v.object({ status: v.optional(v.union(v.literal("AVAILABLE"), v.literal("CHECKED_OUT"), v.literal("IN_MAINTENANCE"), v.literal("RESERVED"), v.literal("LOST"))), condition: v.optional(enums.AssetCondition), locationId: v.optional(v.string()) }),
     clear: v.array(v.literal("locationId")),
     now: v.number(),
   },
@@ -742,9 +768,13 @@ export const bulkUpdateNative = mutation({
 
     const patch = { ...set, updatedAt: now };
     let count = 0;
+    const moves = new LocationMovements();
     for (const id of ids) {
       const doc = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!doc || doc.organizationId !== orgId) continue; // per-item org re-check (by_cuid is GLOBAL)
+      // A retired unit can't be moved out of RETIRED by a bulk status change (and nothing moves into it).
+      assertNoRetireBypass(doc, { ...doc, ...patch });
+      moves.record(doc.locationId, clearsLocation(clear) ? null : set.locationId);
       if (clear.length === 0) {
         await ctx.db.patch(doc._id, patch);
         await bumpAssetCounters(ctx, orgId, doc, { ...doc, ...patch });
@@ -757,6 +787,7 @@ export const bulkUpdateNative = mutation({
       }
       count++;
     }
+    await moves.flush(ctx, orgId, now);
     return { count };
   },
 });

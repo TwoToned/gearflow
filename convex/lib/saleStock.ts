@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
-import { writeActivityLog } from "./audit";
+import { assertAuditIdFree, writeActivityLog } from "./audit";
 import { bumpAssetCounters, bumpBulkCounters } from "./counters";
 import { findAssetConflict } from "./availabilityCore";
 
@@ -57,8 +57,10 @@ export async function adjustModelSaleStock(
     reason?: string;
     actor: SaleActor;
     now: number;
+    /** Optional caller-minted audit id; the exact Undo (`modelWrites.undoSaleStockNative`) finds the row by it. */
+    auditId?: string;
   },
-): Promise<{ from: number; to: number }> {
+): Promise<{ from: number; to: number; auditId?: string }> {
   const model = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", args.modelId)).first();
   if (!model || model.organizationId !== args.orgId) return { from: 0, to: 0 };
 
@@ -67,8 +69,10 @@ export async function adjustModelSaleStock(
   const to = from + args.delta;
   await ctx.db.patch(model._id, { saleStockQuantity: to, updatedAt: args.now });
 
+  const auditId = args.auditId ?? createId();
+  if (args.auditId) await assertAuditIdFree(ctx, auditId); // a caller-minted id the Undo will trust must name no other row
   await writeActivityLog(ctx, {
-    id: createId(),
+    id: auditId,
     organizationId: args.orgId,
     action: "UPDATE",
     entityType: "model",
@@ -77,11 +81,12 @@ export async function adjustModelSaleStock(
     userId: args.actor.userId,
     userName: args.actor.userName,
     summary: saleStockSummary(model.name, args, from, to),
-    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId, reason: args.reason } },
+    // `serverSavedAt` (server clock) lets the exact Undo enforce its window without trusting the caller's `now`.
+    details: { saleStock: { from, to, projectId: args.projectId, lineItemId: args.lineItemId, reason: args.reason, ...(args.projectId ? {} : { serverSavedAt: Date.now() }) } },
     projectId: args.projectId,
     createdAt: args.now,
   });
-  return { from, to };
+  return { from, to, auditId };
 }
 
 /** A line-item-driven adjustment reads "sold"/"restored"; a manual one (no
@@ -205,6 +210,15 @@ export async function unsellSerializedAsset(
 }
 
 /**
+ * The ONE derivation of a bulk row's stock-driven status: out of stock at zero, otherwise
+ * active. Sale/restore (`adjustBulkTotal`) and Reinstate (`bulkAssetsWrites`) both read it,
+ * so a reinstated empty row is never claimed ACTIVE.
+ */
+export function bulkStatusForTotal(totalQuantity: number): "ACTIVE" | "OUT_OF_STOCK" {
+  return totalQuantity <= 0 ? "OUT_OF_STOCK" : "ACTIVE";
+}
+
+/**
  * Sell-from-rental-stock, BULK: decrements `totalQuantity` AND `availableQuantity`
  * together, FLOORED at the currently-deployed quantity (`totalQuantity -
  * availableQuantity` — units out on a job right now can't be sold out from under
@@ -255,8 +269,8 @@ export async function adjustBulkTotal(
     availableQuantity: availableAfter,
     updatedAt: args.now,
   };
-  if (totalAfter <= 0) patch.status = "OUT_OF_STOCK";
-  else if (bulk.status === "OUT_OF_STOCK") patch.status = "ACTIVE";
+  // A RETIRED row keeps its status: stock movement never reinstates it (Retire / Reinstate are the only doors).
+  if (bulk.status !== "RETIRED" && (totalAfter <= 0 || bulk.status === "OUT_OF_STOCK")) patch.status = bulkStatusForTotal(totalAfter);
 
   await ctx.db.patch(bulk._id, patch);
   await bumpBulkCounters(

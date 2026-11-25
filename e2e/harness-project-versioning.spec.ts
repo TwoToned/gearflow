@@ -95,10 +95,12 @@ test.describe("harness: project versioning v2", () => {
     await test.step("create a project", async () => {
       await page.goto("/projects/new");
       await page.getByPlaceholder("e.g. Summer Festival 2026").fill(projectName);
-      await page.getByRole("button", { name: "Continue" }).focus();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByRole("button", { name: "Continue" }).click();
+      await page.locator('input[name="projectNumber"]').fill(`E2E-${Date.now()}`);
+      await page.getByRole("button", { name: "Next", exact: true }).focus();
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      // The first Next writes the draft job (async): wait for the What step before the second press.
+      await expect(page.getByRole("button", { name: /^What/ })).toHaveAttribute("aria-current", "step", { timeout: 30000 });
+      await page.getByRole("button", { name: "Next", exact: true }).click();
       await page.getByRole("button", { name: "Create job" }).click();
       await expect(page).toHaveURL(/\/projects\/(?!new$)[^/]+$/, { timeout: 20000 });
       projectUrl = page.url();
@@ -255,7 +257,7 @@ test.describe("harness: project versioning v2", () => {
    * sandbox has no live Convex deployment and no way to run the seeded
    * harness — this spec is written and believed correct against the actual
    * app UI (every selector below is read from the real component source,
-   * not guessed — `project-wizard.tsx`'s edit-mode step reachability,
+   * not guessed — `job-edit-sheet.tsx`'s Save changes,
    * `combobox-picker.tsx`'s "New client" affordance, `quick-create-client.tsx`'s
    * field labels, `project-quote-rail.tsx`/`send-quote-dialog.tsx`'s own
    * accessible names) but it has NOT been executed and confirmed green here.
@@ -267,9 +269,8 @@ test.describe("harness: project versioning v2", () => {
 
     // ProjectQuoteRail requires a client before it'll render the quote
     // workflow at all (ASSIGN_CLIENT_FOR_QUOTES_MESSAGE) — the creation
-    // wizard's "Continue" x3 flow in `setUpProjectWithOneLineItem` never set
-    // one, so assign it now via the edit page (same `ProjectWizard`, all
-    // steps reachable directly in edit mode).
+    // wizard's Next, Next, Create job flow in `setUpProjectWithOneLineItem` never set
+    // one, so assign it now via the job edit sheet (`/projects/[id]/edit` redirects to `?edit=1`).
     await test.step("assign a client to the project (quick-create, then Save changes)", async () => {
       await page.goto(`${projectUrl}/edit`);
       await page.getByRole("button", { name: /select client/i }).click();
@@ -280,9 +281,7 @@ test.describe("harness: project versioning v2", () => {
       await quickCreate.getByRole("button", { name: "Create" }).click();
       await expect(quickCreate).toBeHidden();
 
-      // Edit mode: every step is reachable directly (no need to click
-      // through Schedule/Site) — jump straight to Review and save.
-      await page.getByRole("button", { name: /review/i }).click();
+      // The edit sheet has one Save changes (enabled once something changed).
       await page.getByRole("button", { name: "Save changes" }).click();
       await expect(page).toHaveURL(/\/projects\/[^/]+$/, { timeout: 20000 });
     });

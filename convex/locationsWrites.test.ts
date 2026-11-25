@@ -121,7 +121,11 @@ describe("locations.detail + listSimple", () => {
     const d = (await t.withIdentity(asUser).query(api.locations.detail, { id: "l1", orgId: ORG }))!;
     expect(d.parent?.id).toBe("root");
     expect(d._count).toEqual({ assets: 1, bulkAssets: 0, kits: 1, children: 1, projects: 1 });
-    expect(d.children[0]).toEqual({ id: "l1a", name: "Bay", _count: { assets: 1, bulkAssets: 0 } });
+    // 14b-1: each bin also carries its own derived facts (stored count incl. kits, capacity, fill, label, last movement).
+    expect(d.children[0]).toEqual({
+      id: "l1a", name: "Bay", _count: { assets: 1, bulkAssets: 0, kits: 0 }, stored: 1,
+      capacity: null, fill: null, lastMovement: null, labelState: "not-printed",
+    });
     expect(d.assets[0]).toEqual({ id: "a1", assetTag: "A-1", status: "AVAILABLE", model: { name: "Mixer" } });
     expect(d.projects[0].client).toEqual({ name: "Acme" });
     expect(d.projects[0].createdAt).toBe(new Date(NOW).toISOString());

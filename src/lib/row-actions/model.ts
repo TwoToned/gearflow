@@ -1,6 +1,46 @@
-import { Archive, Copy, Pencil, Plus, Printer, RotateCcw } from "lucide-react";
+import { Archive, ClipboardCheck, Copy, DollarSign, ExternalLink, Pencil, Plus, Printer, RotateCcw } from "lucide-react";
 
-import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
+import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
+
+/**
+ * Models list verbs (UX Phase 14, 14a-1). An omitted handler means the caller cannot do it, so the
+ * item is ABSENT, never disabled. One definition feeds the row ⋯ and the bulk bar.
+ *
+ * Not here on purpose: Archive / Restore live on the model page (`buildModelPageActions`, each with its
+ * exact Undo), and Add accessory (needs the model accessories editor adapted for many models).
+ */
+export interface ModelActionCtx {
+  onOpen: () => void;
+  /** Opens the model edit sheet (`?edit-model=<id>`, Phase 12). */
+  onEdit?: () => void;
+}
+
+type Entry = ActionItem | false | undefined | null;
+const compact = (entries: Entry[]): ActionItem[] => entries.filter((e): e is ActionItem => !!e);
+
+export function buildModelActions(ctx: ModelActionCtx): ActionMenuSpec {
+  return {
+    items: compact([
+      { key: "open", label: "Open", group: "edit", icon: ExternalLink, onSelect: ctx.onOpen },
+      ctx.onEdit && { key: "edit", label: "Edit", group: "edit", icon: Pencil, kbd: "E", onSelect: ctx.onEdit },
+    ]),
+  };
+}
+
+export interface ModelBulkCtx {
+  onEditRates?: () => void;
+  onAssignChecks?: () => void;
+}
+
+export function buildModelBulkActions(ctx: ModelBulkCtx): BulkAction[] {
+  const actions: (BulkAction | false | undefined)[] = [
+    ctx.onEditRates && { key: "edit-rates", label: (n) => `Edit rates ${n}`, group: "edit", icon: DollarSign, onSelect: ctx.onEditRates },
+    ctx.onAssignChecks && { key: "assign-checks", label: (n) => `Assign checks ${n}`, group: "organise", icon: ClipboardCheck, onSelect: ctx.onAssignChecks },
+  ];
+  return actions.filter((a): a is BulkAction => !!a);
+}
+
+// ─── The model page's ⋯ (UX Phase 12, slice 3) ────────────────────────────────
 
 /** What the model page's menu depends on. */
 export interface ModelPageRow {

@@ -35,10 +35,9 @@ import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
   useLineItemWrites,
-  buildLineItemSetClear,
+  updateLineItemFromPayload,
   type BulkLineItemPatch,
 } from "@/hooks/use-line-item-writes";
-import { lineItemSchema } from "@/lib/validations/line-item";
 import {
   computeInlineLineItemPayload,
   computeRowSheetPayload,
@@ -90,6 +89,7 @@ import { visibleRowIds } from "@/components/ui/line-row";
 import { useRowSelection } from "@/lib/primitives/use-row-selection";
 import { buildBulkEquipmentActions } from "@/lib/row-actions/bulk-equipment";
 import { ReportIssueDialog } from "@/components/warehouse/report-issue-dialog";
+import { AttachToTaskDialog } from "@/components/projects/tasks-notes/attach-to-task-dialog";
 import { useCollaborationWrites } from "@/hooks/use-collaboration-writes";
 import { EquipmentList } from "./equipment-list";
 import { buildOrdersSection, type OrderSource } from "./equipment-orders-section";
@@ -195,6 +195,8 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // pricing lock, so there is no longer a locked state to also disable it for.
   const canDragEquipment = useCanDo("project", "manage_line_items");
   const canCreateSubHire = useCanDo("subHire", "create");
+  const canLinkTasks = useCanDo("project", "update");
+  const [attachItem, setAttachItem] = useState<LineItemData | null>(null);
 
   // Native read-layer path (Phase 4 — the six server-action shared-resource reads +
   // the useProjectEquipmentLiveSync doorbell are retired here). ALL six equipment
@@ -816,13 +818,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // Shared by the full edit dialog AND inline cell edits below — one write path,
   // two entry points (POLICY.md R-3.1).
   const updateLineItemMutationFn = ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
-    if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-    const parsed = lineItemSchema.parse(data);
-    const { set, clear } = buildLineItemSetClear(parsed);
-    return lineItemWrites.update(id, set, clear, {
-      entityName: parsed.description || "Line item",
-      allowOverbook: allowOverbook ?? false,
-    });
+    return updateLineItemFromPayload(lineItemWrites, id, data, allowOverbook ?? false);
   };
 
   const updateLineItemMut = useServerMutation({
@@ -1272,6 +1268,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
     toggleLinePriceReveal: (item) => togglePriceRevealMut.mutate({ item }),
     toggleLineDisclosure: (item) => toggleGroupChildDisclosureMut.mutate({ item }),
     toggleLineRoi: (item) => toggleRoiExclusionMut.mutate({ item }),
+    attachToTask: canLinkTasks ? setAttachItem : undefined,
     setMarker: (id, status) => {
       setReviewMarker("project", projectId, "lineItem", id, status)
         .then(() => toast.success(status === "resolved" ? "Marker resolved" : "Marker updated"))
@@ -1501,6 +1498,13 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
           onDelete: () => setBulkDeleteOpen(true),
         })}
       />
+      {attachItem && (
+        <AttachToTaskDialog
+          projectId={projectId}
+          target={{ kind: "lineItem", id: attachItem.id, label: attachItem.description ?? attachItem.model?.name ?? "Line item" }}
+          onClose={() => setAttachItem(null)}
+        />
+      )}
       {reportIssueItem && (
         <ReportIssueDialog
           open

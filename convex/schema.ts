@@ -583,6 +583,10 @@ export default defineSchema({
     // than migrating/dropping, to avoid a churny schema edit for an inert field.
     salePrice: v.optional(v.number()),
     saleStockQuantity: v.optional(v.number()),
+    // UX Phase 14 (D41, owner-approved 2026-11-24) — re-order point for the
+    // new-stock sale pool. Whole units >= 0. Absent = no reorder level set (never
+    // read as 0). `Reserved`/`On hand` are DERIVED (convex/lib/saleStockFacts.ts).
+    reorderLevel: v.optional(v.number()),
     weight: v.optional(v.number()),
     powerDraw: v.optional(v.number()),
     requiresTestAndTag: v.optional(v.boolean()),
@@ -690,6 +694,14 @@ export default defineSchema({
     // multi-file/primary-photo machinery in convex/mediaWrites.ts would be
     // over-engineering for this shape (R-3.1 — model the actual cardinality).
     invoiceFileId: v.optional(v.string()),
+    // UX Phase 13 (D71, owner-approved 2026-11-24). SUBHIRE orders only (the write layer
+    // refuses other types). Optional, no backfill, no index. `returnDueDate`: the date the
+    // supplier expects the gear back, moved by `extendHireNative` (never the sub-hire's
+    // `hireEnd`). `returnedDate`: the date it actually went back, set only by
+    // `markReturnedNative`. `On hire` / `Returned` are DERIVED from these
+    // (`convex/lib/orderHireState.ts`); the stored `status` vocabulary is untouched.
+    returnDueDate: v.optional(v.number()),
+    returnedDate: v.optional(v.number()),
   })
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
@@ -1076,6 +1088,17 @@ export default defineSchema({
     parentId: v.optional(v.string()),
     notes: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    // UX Phase 14 (D42/D78, owner-approved 2026-11-24). All optional, no backfill.
+    // Max stored items (assets + bulk lines + kits) the place is meant to hold. Absent
+    // = unset (the UI says "not set", never 0%). Whole number >= 1.
+    capacity: v.optional(v.number()),
+    // When this location's bin label was last printed (epoch ms). Absent = never printed.
+    labelPrintedAt: v.optional(v.number()),
+    // When an asset, bulk asset or kit last moved INTO or OUT OF this location (epoch ms),
+    // stamped by convex/lib/locationMovement.ts from every write that changes a stock
+    // row's locationId (guarded by locationMovementGuard.test.ts). Absent = no movement
+    // since this field shipped: printed "—", never guessed.
+    lastMovementAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
@@ -1273,6 +1296,61 @@ export default defineSchema({
     .index("by_cuid", ["id"])
     .index("by_organizationId", ["organizationId"])
     .index("by_clientId", ["clientId"]),
+
+  // SupplierContact (UX Phase 13, B3, owner-approved 2026-11-25). DIRECT. More people at a
+  // supplier than the one embedded `suppliers.contactName/email/phone` (which stays). No
+  // primary flag: the embedded contact IS the primary. Cap 50/supplier in the write layer.
+  supplierContacts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    supplierId: v.string(),
+    name: v.optional(v.string()),
+    role: v.optional(v.string()),
+    email: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_supplierId", ["supplierId"]),
+
+  // SupplierDocument (B3). DIRECT. A file on the supplier (insurance, contract, licence) with
+  // an optional expiry. `fileId` points at `fileUploads`; expiry STATE is derived on read
+  // (`documentExpiry`), never stored. Cap 100/supplier in the write layer.
+  supplierDocuments: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    supplierId: v.string(),
+    fileId: v.string(),
+    name: v.string(),
+    kind: v.optional(v.string()),
+    expiryDate: v.optional(v.number()),
+    notes: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_supplierId", ["supplierId"])
+    .index("by_fileId", ["fileId"]),
+
+  // SupplierOrderFile (B3). DIRECT. The order's PO / docket / other files. The invoice keeps
+  // its own 1:1 slot (`supplierOrders.invoiceFileId`), so there is no INVOICE kind here.
+  supplierOrderFiles: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    orderId: v.string(),
+    fileId: v.string(),
+    kind: v.union(v.literal("PO"), v.literal("DOCKET"), v.literal("OTHER")),
+    name: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_orderId", ["orderId"])
+    .index("by_fileId", ["fileId"]),
 
   // Project
   projects: defineTable({
@@ -3632,6 +3710,26 @@ export default defineSchema({
     .index("by_organizationId_status_dueDate", ["organizationId", "status", "dueDate"])
     .index("by_parentId", ["parentId"])
     .searchIndex("search_title", { searchField: "title", filterFields: ["organizationId"] }),
+
+  // ProjectTaskLinks (UX Phase 10 Slice E, owner-approved 2026-11-24) — a task may point at
+  // a line item, a file or a discussion thread on its own job: "Book the truck" -> the
+  // transport line. One row per (taskId, linkedKind, linkedId). It stores ONLY the pointer:
+  // nothing about the target is copied, so a renamed line or file never goes stale. The
+  // target's row id (a line/file `id`, or a thread's Convex `_id`) is checked to belong to
+  // the task's job and org on every write and every read. Deliberately NOT the retired
+  // `workItemLinks` shape (no typed relations, no cross-job links).
+  projectTaskLinks: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    taskId: v.string(),
+    linkedKind: v.union(v.literal("lineItem"), v.literal("file"), v.literal("discussion")),
+    linkedId: v.string(),
+    createdById: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_taskId", ["taskId"])
+    .index("by_linked", ["linkedKind", "linkedId"]),
 
   // WorkSignalState — a human's decision (snoozed/dismissed/promoted) about a
   // DERIVED Triage signal (#1243, design §10.3/§9). Nothing else about a

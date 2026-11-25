@@ -51,9 +51,9 @@ describe("getKitAllocation — view assembly", () => {
     // Sorted by suggestedPercent desc → the dear receiver first.
     expect(view.rows[0].modelId).toBe("rx");
     expect(view.rows[0].allocationPercent).toBeNull();
-    expect(view.rows[0].suggestedPercent).toBeGreaterThan(view.rows[1].suggestedPercent);
+    expect(view.rows[0].suggestedPercent).toBeGreaterThan(view.rows[1].suggestedPercent!);
     // Cost-weighted suggestion sums to exactly 100.
-    expect(view.rows.reduce((s, r) => s + r.suggestedPercent, 0)).toBeCloseTo(100, 2);
+    expect(view.rows.reduce((s, r) => s + (r.suggestedPercent ?? 0), 0)).toBeCloseTo(100, 2);
   });
 
   test("a saved split that still covers the kit is not stale", async () => {

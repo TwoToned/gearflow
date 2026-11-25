@@ -2,6 +2,25 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
+## The Test & tag list (UX Phase 14, 14a-3, `/test-and-tag`)
+`/test-and-tag` IS the list (`src/components/test-tag/test-tag-list.tsx`, config `src/lib/list-views/test-tag.ts`) on
+`ListPage` over `testTagList.listPage` / `segmentCounts`. The old overview page and the registry table are gone;
+`/test-and-tag/registry` redirects to `/test-and-tag?seg=all` (D44).
+- **State is derived, never the stored word** (`convex/lib/testTagListState.ts`, the ONE definition): Retired
+  (retired or inactive) > Failed (stored `FAILED`, cleared by the next pass) > Overdue (`nextDueDate` in the past)
+  > Due (inside the due-soon window, or never tested) > Passed. The stored `DUE_SOON` / `OVERDUE` the cron writes
+  can lag and is not read. The window is the org's own `dueSoonThresholdDays` (Settings > Test & tag, clamped 1 to
+  90, default 14), passed by the client. The More sheet's Test & tag count (`navCounts` `testTagOverdue`) uses the
+  same derived Overdue, so the number on the row is the number on the page it opens.
+- Strip `Due · Overdue · Passed · Failed · All · Retired` (All = not retired; Retired stays reachable and offers
+  `Reactivate` with its existing exact Undo). Filters: Class, Type, Profile, Link. Columns: Last test, Result, Next due
+  (a failed item prints `After repair`), Tester; opt-in Class, Appliance type, Profile, Linked asset. The sort is an
+  explicit allow-list; reads are bounded and say `truncated`.
+- Primary `Register item` (`/test-and-tag/new`). Page menu: `Sync from assets` (the backfill), `Quick test` (the Scan
+  page's Test & tag mode), `Reports…` (still the reports page).
+- Deferred to the record slice (14b-4): `Edit` / `Retire…` / `Schedule…` / `Print tags` / `Export report` verbs and
+  the `Reports…` dialog; retire has no exact reverse yet.
+
 ## Equipment Classes
 - `CLASS_I` — Earth continuity + insulation/leakage
 - `CLASS_II` — Insulation/leakage only (no earth)

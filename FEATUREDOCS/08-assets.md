@@ -94,6 +94,74 @@ reimplementing it. `asset-form.tsx` is intentionally **not** refactored onto it
 crew-member form (see [31-crew-management](./31-crew-management.md)), the
 **model form** (`model-form.tsx`), and future forms.
 
+### Locations list (UX Phase 14, `/locations`)
+A `ListPage` (`src/components/locations/locations-list.tsx`, config `src/lib/list-views/locations.ts`) over
+`locationsList.listPage`. Strip `All · Warehouses · Vehicles · Sites · Empty` (Sites = Venue + Offsite;
+Empty = nothing in the place or any bin under it). Columns: Assets (assets + bulk lines + kits stored
+here), Capacity (`412 / 600 · 69%`, `not set` without one, never 0%), Last movement (a date, `—` when none
+was ever recorded); opt-in Address, Tags. Bins are child locations. Row ⋯: Open, Edit, Move contents…,
+Print bin label, Delete… (the existing guarded delete: refused while the place has bins or contents; there
+is no archived state; no Undo). Bulk: `Move contents n` and `Print bin labels n`.
+- **Move contents** (`locationsWrites.moveContentsNative`): everything stored at the selected locations
+  moves to the chosen one. Units out on a job, kit members, accessories, kits that are out and partly-out
+  bulk lines stay and are counted by reason in the toast. At most 500 rows per call. Its Undo
+  (`undoMoveContentsNative`, ids only) is by the same person, within 10 minutes on the server clock, once;
+  it puts back only rows still exactly where the move left them and says how many had moved on.
+- **Bin labels** are print-only: a sheet of the location's name and a QR code of its page address.
+  Printing stamps `locations.labelPrintedAt` on exactly the locations printed; no Undo (reprint instead).
+- **`locations.lastMovementAt`** (optional, no backfill) is stamped ONLY by `convex/lib/locationMovement.ts`,
+  on BOTH the location a stock row left and the one it entered, from every write that sets, changes or
+  clears the `locationId` of an asset, bulk asset or kit. `convex/locationMovementGuard.test.ts` discovers
+  every such write in `convex/**` and fails if one does not reach the helper, so a new write path cannot
+  skip it. Deletes and a job's own `locationId` (a venue) are not movements. Sites covered: asset create /
+  createMany / update / bulk update (`assetWrites`), the service-only mirrors (`assets`, `bulkAssets`,
+  `kits` create / createIfMissing / update / patch / bulkUpdate), bulk-asset create / update
+  (`bulkAssetsWrites`), kit create / update (`kitWrites`), kit membership (`kits.assignAssetToKit`),
+  accessory attach (`assetAccessoriesWrites`), warehouse check-out / check-in / de-prep / force return
+  (`warehouseOps`: `setAssetsStatus`, `patchKitStatusAt`, `releaseKitToLocation`, the two check-out
+  patches), `lib/fulfillment.setAssetStatus`, `projectWrites` (kits freed on cancel), and Move contents.
+- `capacity` is a whole number >= 1 (`locationsWrites` create / update; update treats an absent value as
+  "leave alone" and `null` as "clear", so a form that does not know the field never wipes it). It is set
+  from the location sheet.
+
+### Location sheet and record (UX Phase 14b-1, `/locations/[id]`)
+- **One sheet** (`src/components/locations/location-sheet.tsx`, on `FormSheet`) creates and edits: Identity
+  (name, type) · Place (parent search-first, excluding itself and everything beneath it; address; capacity,
+  blank = no limit) · More details (notes, tags, default for new assets; open on edit). Create offers
+  `Save and add another` (keeps parent and type). `LocationSheetHost` opens it from the URL: `?new=1` on
+  `/locations`, `?edit=1` on the record; `/locations/new` and `/locations/[id]/edit` are server redirects.
+  Closing drops the param (replace).
+- **Undo is exact and ids-only.** `locationsWrites.updateNative` returns `{ id, changed, undoable }` and records
+  the field diff through `convex/lib/fieldEditUndo.ts`; `undoUpdateNative` refuses if a changed field was
+  edited since, outside the 10-minute server window, for a non-author, or twice. A save that changed nothing
+  toasts "Nothing changed" with no Undo; one that changes `isDefault` offers none (it moves another
+  location's flag). `createNative` logs a snapshot; `undoCreateNative` removes the location only while it is
+  unedited, empty (no bins, contents or files), not the default and the author's. Both toasts share ONE
+  closure through `announceListWrite`.
+- `updateNative` refuses a parent that is the location itself or one of its own bins
+  (`assertNoParentCycle`).
+- **The record** (`locations.detail`) now also returns `capacity`, `fill`, `lastMovement`, `labelState` and,
+  per bin, its own stored count, capacity, fill, label state and last movement. Header: Edit and a ⋯ menu
+  (Move contents…, Print bin label, Delete…) built by the same `buildLocationActions` the list uses; the Notes
+  tab is gone (notes are a sheet field and show in the sidebar).
+- Deferred: put-away `Scan` primary and per-row `Move n to…` in Contents; the full `DetailHeader`/`TabStrip`
+  rebuild of the record page.
+
+### Models list (UX Phase 14, `/assets/models`)
+A `ListPage` (`src/components/assets/models-list.tsx`, config in `src/lib/list-views/models.ts`) over
+`modelsList.listPage`: server-side search/filter/sort/paging, strip `All · With stock · No stock · Due for
+T&T · Archived` (counts from `modelsList.segmentCounts`; Due reuses the Assets list's `dueAssetMap` rule).
+Columns: Owned, Available (units available now: active serialised units + bulk `availableQuantity`), Day rate;
+opt-in from ⋯ › Columns: Value (replacement cost, redacted for a `noFinancials` key), Type, Tags. Page ⋯:
+Export CSV, Import CSV, Import rates…. Bulk: `Edit rates n` and `Assign checks n` (the two moved dialogs in
+`model-bulk-dialogs.tsx`), each with ONE toast Undo. Edit rates writes one field-edit audit row per model
+(`convex/lib/fieldEditUndo.ts`) and `modelWrites.undoModelFieldEditsNative` restores them atomically (refused
+as a whole by another person, past 10 minutes, already undone, or when any model's rate changed since).
+Assign checks' batch audit row lists the assignment rows it created and `checkItemsWrites.undoAssignChecksNative`
+removes exactly those still as it left them (a check item itself is never deleted). Archive stays on
+the model page: a model archive deletes the model's assets, so it has no exact reverse. `models.reorderLevel`
+(optional, never read as 0) feeds the Sales stock list ([67](./67-sales-line-items.md)).
+
 The **model form** (`/assets/models/new` + `/assets/models/[id]/edit`, both
 render `ModelForm` — edit pre-fills, reusing create) uses the shell with these
 sections: Identity (name, manufacturer, model number, SKU, category via
@@ -237,9 +305,28 @@ UX Phase 12 (§9d, D30-D34): a record page in the calm language of the job page.
 - **Move to…** is one field through `updateNative` (so it has the exact edit Undo);
   **Schedule service…** creates a scheduled PREVENTATIVE maintenance job (Undo:
   `undoCreate`); **Print label…** is a browser-print QR sheet (no PDF type).
-- Not built yet (deferred, listed in the PR): the 8-week lane strip on Availability,
-  bulk Mark done / Reschedule on Maintenance, bulk actions on Files, the `Changes`
-  filter beyond the activity feed.
+- Not built yet (deferred; the PR body carries the same table), each with its reason:
+
+  | Deferred | Why |
+  | --- | --- |
+  | 8-week lane strip on Availability | `BookingCalendar` already answers "is it free" and is the shared calendar; a second renderer is a design-system decision, not a Phase 12 one. |
+  | Bulk Mark done / Reschedule on Maintenance | No existing mutation backs a bulk verb (a row/bulk verb exists only if one does, `ListPage` rule); a new bulk write needs its own Undo. |
+  | Bulk actions on Files (`Download n`, `Set as photo`) | Same rule: no bulk media write exists, and `Set as photo` is single-select by definition. |
+  | History `Changes` filter beyond the activity feed | The feed is the only change source; a richer filter needs per-field audit rows the edit Undo does not write. |
+  | Next-tag hint on each model-picker result | The tag is reserved on save; peeking it per model would take one counter read per option. |
+  | Phone ⋯-as-bottom-sheet smoke test for the asset menu | `ActionMenu`'s phone sheet is covered by its own tests; the asset menu adds no phone-specific code. |
+  | Screenshots at 1440x900 and 390x844 | No live Convex backend in the build environment; taken against a local self-hosted Convex before merge. |
+
+- **Cost is absent, not zeroed, for a `noFinancials` key** across the whole gear surface:
+  `gearCostFields.ts` holds the ONE list per record (`MODEL_`, `ASSET_`, `BULK_ASSET_`,
+  `KIT_COST_FIELDS`); asset, bulk, kit, kit-picker, kit-detail, allocation and ROI reads go
+  through `gearCostRedact.ts` (or `redactFields` with the same lists), and a hidden cost column
+  is not a sort key. `convex/kitCostRedaction.test.ts` and `roiCostRedaction.test.ts` are the
+  sentinel sweeps. A new read that returns a unit, kit or model row joins them.
+- **Retire and Reinstate are the only paths** into and out of `RETIRED` (and Archive / Restore for
+  a model): `updateNative` refuses a status move into or out of `RETIRED` and any `isActive`
+  change (`USE_RETIRE` / `USE_ARCHIVE`); the edit sheets do not offer RETIRED as a status. A bulk
+  Reinstate takes its status from stock (`bulkStatusForTotal`: out of stock at zero).
 
 Bulk stock has no page of its own: `?type=bulk` forwards to its model's page.
 

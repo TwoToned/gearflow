@@ -82,6 +82,7 @@ sentence (`Out — the gear has left the warehouse.`), with only a failing
 | Lines unpriced | `forProject` | `warning` | Equipment | never |
 | Lines not planned (no container) | `forProject` | `warning` | Packing | no plannable equipment |
 | Open incidents on this job's gear | `forProject` (`incidents`, bounded) | `warning` | the job's warehouse page | never |
+| Overdue tasks (UX Phase 10) | `forProject` (`tasks`, bounded, needs the caller's clock: `useReadinessArgs`) | `warning`; `unknown` with no clock or a truncated scan with none | the `Tasks & notes` tab | never |
 
 **Phase 10 must not build the blocking-discussions row again** — it moved into
 Phase 7 (overseer ruling Q4).
@@ -154,9 +155,12 @@ figure whatever it is (`$0.00` and `$0.40` included), and the derivation's own
   balance, only while something is left to raise), `Record payment`,
   `All invoices` (`InvoiceManagerDialog`), `Finance ›`. No client → "Assign a
   client to this job to raise quotes and invoices."
-- **Out of Phase 7, into Phase 10:** merging `deriveInvoicingState` with
-  `computePaymentProgress` (they disagree on credit notes and drafts) and adding
-  `Deposit paid` as an invoicing state.
+- **Merged in Phase 10 (slice A):** `computePaymentProgress` now calls
+  `deriveInvoicingState` (one derivation: a credit note folds into the total and is never
+  "an invoice sent"). `deriveInvoicingState` gained `Deposit paid` (a paid DEPOSIT with the
+  rest still to raise) and `Overdue` (D56: outranks Partially paid; needs the optional `now`
+  argument, the card passes `useStableNow()`). The per-invoice word is
+  `invoicePillState` in `convex/lib/invoiceOverdue.ts`.
 - **No invented gates**, and these lines are not a second quote rail: recall,
   correction, reprice, issuing, voiding, crediting and Xero all stay on Finance;
   the dialogs here are the SAME components `ProjectQuoteRail` uses.

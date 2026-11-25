@@ -679,6 +679,30 @@ on one document — which is also why `buildFinanceLines` needs no counterpart
 (the group still bills as one line). Kit parents are excluded, and expand
 (warehouse) mode ignores the flag entirely — packers need the full list.
 
+### People lists and records (UX Phase 13) — one renderer, derived facts, server-side exact Undos
+`/crew`, `/clients`, `/suppliers` are three configs (`src/lib/list-views/people.ts`) of ONE `PeopleList`
+(`src/components/people/`) over `ListPage`; the crew manager dashboard and the client / supplier stat tiles
+are gone (their numbers are strip counts). Reads are `convex/peopleLists.ts`; everything derived is a pure
+`convex/lib/{crewListFacts,clientListFacts,orderHireState}.ts` function, **never stored**: crew status
+(Unconfirmed > On a job > Available, "this week" = the next 7 days, undated live calls included), client open
+jobs / quoted / outstanding, an order's `On hire` / `Returned` (from `returnedDate`; `returnDueDate` is the
+supplier's date and `Extend hire` never touches a sub-hire's `hireEnd`). A pay or money field is **absent,
+never zero, never a sort key** below its line (`canSeeCrewPay` for the crew rate; `canSeeJobCost` for client
+quoted / outstanding / lifetime and supplier spend, cost, margin). **Every People bulk write has a SERVER-side
+exact Undo** built on `convex/lib/fieldEditUndo` (`peopleBulkWrites.{addTagMany,setActiveMany,undoMany}Native`,
+`crewAssignmentsWrites.undoCreateManyNative`): ids only, author + server window + once + compare-and-set, keeps
+and names anything that changed since. `Assign to job` creates unsent PENDING calls; its Undo deletes only
+calls still exactly as created, never via `bulkDeleteNative` (that cascades to shifts and time entries).
+**Client Merge** (`convex/clientMergeWrites.ts`) moves jobs, their `projectVersions.clientId` (a plan field
+Make live projects back, so skipping it silently reverts the job), invoices, contacts (never primary), media
+and work-item links; NOT activity history, stored PDFs or either Xero mapping; its Undo reverses exactly the
+recorded ids still where the merge left them. Record pages share `RecordShell` (DetailHeader, `?tab=` with an
+Overview fallback, a rail on every tab but Overview). **Supplier Contacts / Documents and an order's Files**
+(B3, FEATUREDOCS/22): three small tables; an add is undone by DETACHING the row (an Undo never deletes a stored
+file), removing a document or order file deletes its bytes and is a confirmed verb with no Undo, and a
+document's expiry state is derived on read, never stored. A People list that reads a capped set reads it
+newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
+
 ### Project status advances itself — add a TRIGGER, never a second patch site
 `convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
 effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item
@@ -847,6 +871,27 @@ reverse writes for the exact ids it touched (`markUnreadManyNative`, `undismissM
 3. **A custom unit keeps the model's accessories.** Its share is per-parent rows on the existing accessory child lines keyed `parentUnitAssetId = customUnitScope(unitId)` (`custom:<unitId>`). Any new accessory cascade that scopes by `parentUnitAssetId` must treat that as a valid parent key, and anything that sums accessory demand per parent must add `offInventoryQuantity × per-parent` (`expandAccessoriesForAsset` does).
 4. **A whole-line deploy must include prepped generic units on a mixed line** (`expandPrepUnitAssignments`) — otherwise the custom unit is stranded.
 
+### Kit state is DERIVED, and a location's last movement has ONE writer
+- **Never branch on a kit's stored `status === "INCOMPLETE"` yourself** (UX Phase 14, D75, FEATUREDOCS/09). A
+  kit's Incomplete / Reserved / Available come from `convex/lib/kitState.ts` (`deriveKitState`, `loadKitStates`,
+  `loadKitBookingGate`): a missing member (LOST / retired / absent asset, a bulk member short of the kit's
+  quantity) OR the stored `INCOMPLETE` marker is Incomplete; a live booking on a confirmed-or-later job is
+  Reserved. The marker is "reported missing": a MISSING kit return WRITES it (a bulk-only kit has nothing else to
+  derive from) and only `kitWrites.markCompleteNative` clears it. The physical statuses (`CHECKED_OUT`,
+  `IN_MAINTENANCE`, `RETIRED`) stay stored and win. Every "can this kit go on a job" gate uses
+  `loadKitBookingGate` (Convex) or `kitsList.bookingGate` (server actions); never re-test the stored value.
+  Check-out has its own gate on the same state (`checkoutKitPreflight` → `KIT_REPORTED_MISSING`), because the
+  add-line gate cannot see a kit reported missing AFTER it was booked.
+- **A list read that fans out per row draws from ONE `ReadBudget`** (`convex/lib/readBudget.ts`): a row the budget
+  cannot cover returns `null` (printed as a dash) and the response sets `truncated`. A list's sort is an explicit
+  allow-list with no generic field fallback, and a cost key from a caller who cannot see cost falls back to the
+  default order ascending (asc and desc identical).
+- **`locations.lastMovementAt` is written only by `convex/lib/locationMovement.ts`** (`stampLocationMovement`,
+  `LocationMovements` for batches), on both ends of any write that sets, changes or clears an asset, bulk asset
+  or kit `locationId`. A new write path that touches `locationId` MUST call it:
+  `convex/locationMovementGuard.test.ts` discovers location writes and fails otherwise (add the new file to its
+  `EXPECTED_DISCOVERED` map only after it stamps). An absent value prints `—`, never a guess.
+
 ### Custom accessories — free text, but still a real accessory child
 A not-in-inventory accessory (`modelCustomAccessories` per model, `accessoryPlan.custom` per line,
 FEATUREDOCS/48) is an ordinary ACCESSORY child line keyed by `customAccessoryKey` (no asset/bulkAsset).
@@ -944,6 +989,28 @@ ABOVE the tabs: its progress line and lock glyph change what you can do in every
 tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a chip
 (D92). A header action that doesn't apply is absent, and each gate is the
 server's own permission (`src/lib/job-header.ts`).
+
+**Editing a job is a SHEET, not a page (UX Phase 9, D22).** `?edit=1` on the record
+opens `JobEditSheet` (hosted once by `[id]/page.tsx`, on `FormSheet`); every entry
+point builds its URL with `jobEditHref` (`src/lib/job-edit-url.ts`) or
+`useOpenJobEdit()`, and `/projects/[id]/edit` is only a redirect. The field list is
+ONE `ProjectFields` (`project-fields.tsx`, `projectSchema` order) shared with the
+wizard; status is NOT a field (the header stepper owns it). A save sends only the
+CHANGED fields through `buildProjectUpdate(parsed, { before })`: a full payload
+puts `discountPercent`/`taxRate` in `set`/`clear`, and `updateNative` refuses ANY
+touch of those on a pricing-locked job, so never go back to sending every field.
+Moving the rental dates carries a set project window by the same calendar-day
+offset (`shiftWindowWithRental`); a blank window stays blank.
+
+**Templates are a dialog, not a page (UX Phase 9, D23).** `/projects/templates` and
+`/projects/templates/new` only redirect to `?templates=1|new` on `/projects`; `projects/layout.tsx`
+hosts the one `ManageTemplatesDialog` / `NewTemplateSheet`. A template's `Delete…` ARCHIVES it
+(status `CANCELLED`, exact `fieldEditUndo` Undo from the audit ids the archive returns); only an
+archived template can be deleted for real (`deleteTemplateNative` refuses otherwise, no Undo).
+`Start from template ▾` applies through `applyTemplateNative` onto the wizard's EMPTY draft, which
+runs `duplicateCore` (`projectWrites.ts`), the same deep copy `duplicateNative` runs: never write
+a second copy of how a plan is copied. Its Undo reads its own audit row and refuses if any copied
+row changed.
 
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
 EXCEPT Overview** (#1063). Overview composes the schedule, location and team
@@ -1125,7 +1192,9 @@ Versions is a job tab (`?tab=versions`; `V` and ⋯ › Version › Manage versi
 surface. On a phone it is **portaled to `<body>`** and pinned above the bottom nav:
 the app-shell `<main>` keeps a lingering `transform` from its page-enter animation, so a
 `fixed` bar left in place resolves against `<main>` and an inline one reflows the list on
-every tap. Don't remove the portal. A verb with no `confirm` fires immediately (the
+every tap. Don't remove the portal. **Inside a modal Radix `Dialog`, pass `inDialog`** (Manage templates):
+the body portal inherits the Dialog's `pointer-events: none` lock and every click is swallowed, so there the bar
+stays in `DialogContent`, sticky, on every breakpoint. A verb with no `confirm` fires immediately (the
 surface owns its own dialog, as the three legacy consumers' `BulkDeleteDialog` does).
 
 `ScanStrip`'s `undo` MUST be `AnnouncedWrite.scanUndo` from `announceWarehouseWrite`,

@@ -179,7 +179,7 @@ const cols: ColumnDef<Row>[] = [
 The `columns` `cell` renderers MUST be pure/presentational (they render on both
 breakpoints). Reuse the exact JSX the desktop `<TableCell>` renders. Converted so far:
 `clients/[id]`, `suppliers/[id]`, `locations/[id]`, `assets/registry/[id]`,
-`assets/categories/[id]`, `assets/models/[id]`, `kits/[id]`, `projects/templates`,
+`assets/categories/[id]`, `assets/models/[id]`, `kits/[id]`,
 `settings/check-items`, `settings/services`, `settings/test-and-tag/profiles`,
 `model-roi-tab` (projects list), `auditor/[token]` (public report),
 `model-checks-tab` + `kit-checks-tab` (checklist editors — reorder ▲▼ is
@@ -453,7 +453,7 @@ the same way as `resolve` (one `safeTag` helper).
 Dialogs that benefit from edge-to-edge space on phones switch to a full-screen
 sheet when `useIsMobile()` is true: `h-[100dvh] max-h-[100dvh] w-full max-w-full
 rounded-none border-0` plus `env(safe-area-inset-*)` padding. Examples:
-`CommandSearch` dialog and the task edit dialog in `tasks-panel.tsx`.
+`CommandSearch` dialog and the task sheet in `tasks-notes/task-sheet.tsx`.
 
 ## One phone breakpoint (D68) and the tablet rail (D67)
 

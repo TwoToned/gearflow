@@ -22,7 +22,8 @@ import { useAssetSheetLookups } from "./use-asset-sheet-lookups";
 import { useBulkSave } from "./use-bulk-save";
 import { useTagTaken } from "./use-tag-taken";
 
-const STATUS_ORDER = ["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK", "RETIRED"] as const;
+// RETIRED is not a pick: Retire and Reinstate are its only paths (the server refuses the move).
+const STATUS_ORDER = ["ACTIVE", "LOW_STOCK", "OUT_OF_STOCK"] as const;
 
 export interface BulkSheetProps {
   mode: "create" | "edit";

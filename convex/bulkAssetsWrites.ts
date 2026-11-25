@@ -10,8 +10,11 @@ import { reserveAssetTagCounter } from "./lib/assetTagCounter";
 import { assertRefInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { stampLocationMovement } from "./lib/locationMovement";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
+import { bulkStatusForTotal } from "./lib/saleStock";
+import { assertNoRetireBypass } from "./lib/assetRetire";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 
 /**
@@ -111,6 +114,7 @@ export const createNative = mutation({
       updatedAt: a.now,
     };
     await ctx.db.insert("bulkAssets", doc);
+    await stampLocationMovement(ctx, a.orgId, null, doc.locationId ?? null, a.now);
     await bumpCountersForTable(ctx, "bulkAssets", null, doc);
     await reserveAssetTagCounter(ctx, a.orgId, 1, a.now); // advance counter (parity)
 
@@ -158,11 +162,13 @@ export const updateNative = mutation({
       assetTag: a.assetTag,
       totalQuantity: newTotal,
       availableQuantity: newAvailable,
-      status: (a.status as "ACTIVE") ?? "ACTIVE",
-      isActive: a.isActive ?? true,
       tags: a.tags ?? [],
       updatedAt: a.now,
     };
+    // An omitted status / isActive keeps its STORED value on update (never a default that would reinstate a retired row).
+    if (a.status !== undefined) merged.status = a.status;
+    if (a.isActive !== undefined) merged.isActive = a.isActive;
+    assertNoRetireBypass(doc, merged);
     if (a.purchasePricePerUnit != null) merged.purchasePricePerUnit = Number(a.purchasePricePerUnit);
     else delete merged.purchasePricePerUnit;
     if (a.locationId) merged.locationId = a.locationId;
@@ -171,6 +177,7 @@ export const updateNative = mutation({
     else delete merged.notes;
 
     await ctx.db.replace(doc._id, merged as typeof rest);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, a.locationId || null, a.now);
     await bumpCountersForTable(ctx, "bulkAssets", doc, merged);
 
     // The audit row IS the exact-Undo snapshot of what this edit changed (`undoUpdateNative`).
@@ -251,7 +258,7 @@ export const deleteNative = mutation({
   },
 });
 
-/** Retire (`RETIRED`) or reinstate (`ACTIVE`) one bulk row, audited with the exact-Undo snapshot. */
+/** Retire (`RETIRED`) or reinstate (the stock-derived status) one bulk row, audited with the exact-Undo snapshot. */
 async function setBulkRetired(
   ctx: MutationCtx,
   a: { id: string; orgId: string; now: number; actor: Actor; auditId: string },
@@ -259,12 +266,12 @@ async function setBulkRetired(
 ) {
   const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
   if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
-  // Reinstate is the way back from RETIRED only. Nothing derives LOW_STOCK / OUT_OF_STOCK
-  // in the backend, so a reinstated row is ACTIVE; the status is never client-supplied.
+  // Reinstate is the way back from RETIRED only. The status it returns to is DERIVED from the
+  // stock (`bulkStatusForTotal`: out of stock at zero, else active), never hardcoded or client-supplied.
   if (!retired && doc.status !== "RETIRED") {
     throw new ConvexError({ code: "NOT_RETIRED", message: `Bulk asset ${doc.assetTag} is not retired, so it can't be reinstated.` });
   }
-  const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: "ACTIVE" as const };
+  const set = retired ? { isActive: false, status: "RETIRED" as const } : { isActive: true, status: bulkStatusForTotal(doc.totalQuantity ?? 0) };
   const diff = diffFields(doc, { ...doc, ...set }, ["status", "isActive"]);
   if (!diff) return { id: a.id, undoable: false };
   await ctx.db.patch(doc._id, { ...set, updatedAt: a.now });

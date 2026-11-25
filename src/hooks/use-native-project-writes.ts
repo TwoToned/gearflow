@@ -1,7 +1,6 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { logger } from "@/lib/logger";
 import type { FunctionArgs } from "convex/server";
 import { ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
@@ -18,6 +17,7 @@ import {
   type ProjectFormValues,
   type ProjectSchedulePatch,
 } from "@/lib/validations/project";
+import { buildProjectUpdate } from "@/lib/project-edit-patch";
 import { datePartsInTimezone } from "@/lib/project-number";
 import {
   getProjectNumberConfig,
@@ -224,7 +224,8 @@ export function useProjectWrites(orgId: string | undefined) {
   const duplicateM = useMutation(api.projectWrites.duplicateNative);
   const saveAsTemplateM = useMutation(api.projectWrites.saveAsTemplateNative);
   const deleteM = useMutation(api.projectWrites.deleteNative);
-  const recalcM = useMutation(api.lineItemWrites.recalcNative);
+  const discardDraftM = useMutation(api.projectDraftWrites.discardDraftNative);
+  const undoUpdateM = useMutation(api.projectEditUndo.undoUpdateNative);
 
   const locations = useLocations(orgId);
 
@@ -271,6 +272,9 @@ export function useProjectWrites(orgId: string | undefined) {
    */
   const create = async (
     data: ProjectFormValues & { isTemplate?: boolean },
+    /** The wizard mints these ONCE per draft: a retried create (a lost response) then
+     *  returns the row it already made, never a second job or number. */
+    ids?: { id: string; auditId: string },
   ): Promise<{ id: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchema.parse(data);
@@ -297,7 +301,7 @@ export function useProjectWrites(orgId: string | undefined) {
     const templateNumber =
       isTemplate && !parsed.projectNumber ? await peekNextTemplateCode() : null;
 
-    const id = createId();
+    const id = ids?.id ?? createId();
     const now = new Date();
     const baseArgs = {
       id,
@@ -353,7 +357,7 @@ export function useProjectWrites(orgId: string | undefined) {
             }
           : { projectNumber: templateNumber ?? parsed.projectNumber! }),
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
-        auditId: createId(),
+        auditId: ids?.auditId ?? createId(),
       });
       // A manual/template number clash is a hard duplicate (auto retries in-mutation).
       if (!created.created) {
@@ -385,11 +389,15 @@ export function useProjectWrites(orgId: string | undefined) {
     id: string,
     data: ProjectFormValues,
     isTemplate = false,
-  ): Promise<{ id: string }> => {
+    /** The form values as loaded. When given, only the fields that changed are
+     *  written (never `status`, never an untouched locked money field). */
+    before?: ProjectFormValues,
+  ): Promise<{ id: string; /** The audit id of the write (absent when nothing was written): what `undoUpdate` takes. */ auditId?: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchema.parse(data);
+    const parsedBefore = before ? projectSchema.parse(before) : undefined;
 
-    if (parsed.projectNumber) {
+    if (parsed.projectNumber && (!parsedBefore || parsed.projectNumber !== parsedBefore.projectNumber)) {
       const { available } = await checkProjectNumberAvailable(parsed.projectNumber, id);
       if (!available) {
         throw new UserFacingError({
@@ -401,51 +409,12 @@ export function useProjectWrites(orgId: string | undefined) {
       }
     }
 
-    const set: Record<string, unknown> = {
-      projectNumber: parsed.projectNumber,
-      name: parsed.name,
-      status: parsed.status,
-      type: parsed.type,
-      tags: parsed.tags,
-      updatedAt: Date.now(),
-    };
-    const clear: string[] = [];
-    const setOrClear = (key: string, value: unknown) => {
-      if (value === null || value === undefined || value === "") clear.push(key);
-      else set[key] = value;
-    };
-    setOrClear("clientId", parsed.clientId || null);
-    setOrClear("clientContactId", parsed.clientContactId || null);
-    setOrClear("description", parsed.description || null);
-    setOrClear("locationId", parsed.locationId || null);
-    setOrClear("siteContactName", parsed.siteContactName || null);
-    setOrClear("siteContactPhone", parsed.siteContactPhone || null);
-    setOrClear("siteContactEmail", parsed.siteContactEmail || null);
-    setOrClear("loadInDate", parsed.loadInDate?.getTime() ?? null);
-    setOrClear("loadInTime", parsed.loadInTime || null);
-    setOrClear("eventStartDate", parsed.eventStartDate?.getTime() ?? null);
-    setOrClear("eventStartTime", parsed.eventStartTime || null);
-    setOrClear("eventEndDate", parsed.eventEndDate?.getTime() ?? null);
-    setOrClear("eventEndTime", parsed.eventEndTime || null);
-    setOrClear("loadOutDate", parsed.loadOutDate?.getTime() ?? null);
-    setOrClear("loadOutTime", parsed.loadOutTime || null);
-    setOrClear("projectStartDate", parsed.projectStartDate?.getTime() ?? null);
-    setOrClear("projectStartTime", parsed.projectStartTime || null);
-    setOrClear("projectEndDate", parsed.projectEndDate?.getTime() ?? null);
-    setOrClear("projectEndTime", parsed.projectEndTime || null);
-    setOrClear("rentalStartDate", parsed.rentalStartDate?.getTime() ?? null);
-    setOrClear("rentalEndDate", parsed.rentalEndDate?.getTime() ?? null);
-    // #943: absent = derived billing summary; a set value is the manual override
-    // (0 is a legitimate override — e.g. "0 weeks" — so use `!= null`, not `||`,
-    // unlike the retired defaultRentalPeriod/Quantity fields this replaces).
-    setOrClear("billingWeeksOverride", parsed.billingWeeksOverride ?? null);
-    setOrClear("billingDaysOverride", parsed.billingDaysOverride ?? null);
-    setOrClear("taxRate", parsed.taxRate ?? null);
-    setOrClear("crewNotes", parsed.crewNotes || null);
-    setOrClear("internalNotes", parsed.internalNotes || null);
-    setOrClear("clientNotes", parsed.clientNotes || null);
-    setOrClear("discountPercent", parsed.discountPercent ?? null);
+    // ONE builder (src/lib/project-edit-patch.ts). #943: 0 is a legitimate
+    // billing override and discount, so only blank (never 0) clears a field.
+    const { set, clear } = buildProjectUpdate(parsed, { before: parsedBefore, now: Date.now() });
+    if (parsedBefore && clear.length === 0 && Object.keys(set).length === 0) return { id };
 
+    const auditId = createId();
     try {
       await updateM({
         id,
@@ -453,25 +422,30 @@ export function useProjectWrites(orgId: string | undefined) {
         set,
         clear,
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
-        auditId: createId(),
+        auditId,
         now: Date.now(),
       });
     } catch (e) {
       throw mapProjectWriteError(e, isTemplate);
     }
 
-    // Recalculate totals if tax rate changed. Best-effort: the project patch already
-    // committed, so a transient recalc failure must not reject an otherwise-successful
-    // update. Totals are derived and self-heal on the next line-item write / recalc.
-    if (parsed.taxRate !== undefined) {
-      try {
-        await recalcM({ projectId: id, orgId, now: Date.now() });
-      } catch (e) {
-        logger.error("post-update recalc failed (non-fatal)", { error: e });
-      }
-    }
+    // No client recalc: `updateNative` recalculates in its own transaction whenever it
+    // writes a field the totals read (taxRate, discountPercent).
+    return { id, auditId };
+  };
 
-    return { id };
+  /** The exact Undo of a job edit, from the audit id its save returned (ids only; the server restores what that edit changed). */
+  const undoUpdate = async (projectId: string, auditId: string): Promise<void> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      await undoUpdateM({
+        orgId, projectId, auditId,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
   };
 
   /**
@@ -610,5 +584,29 @@ export function useProjectWrites(orgId: string | undefined) {
   const addTag = tagBatch(addTagM);
   const removeTag = tagBatch(removeTagM);
 
-  return { enabled, archive, deleteTemplate, create, update, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove };
+  /**
+   * Discard a wizard draft (and the `Create as enquiry` Undo) through the ONE
+   * server-guarded verb: it deletes only an empty draft the caller made and nobody
+   * else touched (`via: "undo"` also needs the 10-minute window and runs once), and
+   * otherwise cancels while still an Enquiry. Never a client-side archive + delete.
+   */
+  const discardDraft = async (
+    projectId: string,
+    createAuditId: string,
+    via: "undo" | "discard",
+  ): Promise<{ outcome: "deleted" | "cancelled" }> => {
+    if (!orgId || !session?.user) throw new Error("Not ready");
+    try {
+      return await discardDraftM({
+        orgId, projectId, createAuditId, via,
+        actor: { userId: session.user.id, userName: session.user.name ?? "" },
+        auditId: createId(),
+        now: Date.now(),
+      });
+    } catch (e) {
+      throw mapProjectWriteError(e, false);
+    }
+  };
+
+  return { enabled, archive, deleteTemplate, create, update, undoUpdate, updateSchedule, addTag, removeTag, duplicate, saveAsTemplate, remove, discardDraft };
 }

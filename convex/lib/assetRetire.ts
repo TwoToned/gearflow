@@ -1,7 +1,34 @@
+import { ConvexError } from "convex/values";
 import type { MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { bumpAssetCounters } from "./counters";
 import { diffFields } from "./fieldEditUndo";
+
+/**
+ * The status a status WRITER should store: `next`, unless the unit is RETIRED, which no writer
+ * overwrites (kit release, return correction, check-in, sale stock). Retire / Reinstate are the
+ * only doors; every low-level writer funnels its `status` through this so RETIRED stays one-way.
+ */
+export function nextStatusUnlessRetired<S extends string>(current: string | null | undefined, next: S): S | "RETIRED" {
+  return current === "RETIRED" ? "RETIRED" : next;
+}
+
+type RetireFacts = { status?: string | null; isActive?: boolean | null };
+
+/**
+ * Retire and Reinstate are the ONLY paths into and out of RETIRED (each has its gates, its
+ * T&T handling and an exact Undo), and `isActive` follows them. The ONE guard compares the STORED
+ * doc with the doc an edit RESULTS in (after set, clear and any defaults), so no way of writing
+ * the fields (set, clear, omit, a bulk verb) can cross it: status may not cross RETIRED in either
+ * direction, and `isActive` may not change at all (absent means active).
+ */
+export function assertNoRetireBypass(before: RetireFacts, after: RetireFacts): void {
+  const statusMoves = (before.status === "RETIRED") !== (after.status === "RETIRED");
+  const activeMoves = (before.isActive ?? true) !== (after.isActive ?? true);
+  if (statusMoves || activeMoves) {
+    throw new ConvexError({ code: "USE_RETIRE", message: "Use Retire or Reinstate to move an asset into or out of retired." });
+  }
+}
 
 /** A linked T&T row as the retire found it (absent fields are `null`). */
 export interface RetiredTestTag {

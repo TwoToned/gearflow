@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import { collectCapped } from "./lib/pagination";
+import { assetCostGuard } from "./lib/gearCostRedact";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -26,6 +27,7 @@ export const availableSerialized = query({
     for (const a of assets) if (a.parentAssetId) parentIds.add(a.parentAssetId);
     for (const c of bulkChildren) if (c.parentAssetId) parentIds.add(c.parentAssetId);
 
+    const cost = await assetCostGuard(ctx); // what a candidate cost to buy is absent for a `noFinancials` key
     return assets
       .filter((a) =>
         a.isActive !== false &&
@@ -36,7 +38,7 @@ export const availableSerialized = query({
         !parentIds.has(a.id),
       )
       .sort((x, y) => x.assetTag.localeCompare(y.assetTag))
-      .map((a) => ({ ...a, model: a.modelId ? { name: modelName.get(a.modelId) ?? "" } : null }));
+      .map((a) => ({ ...cost.row(a), model: a.modelId ? { name: modelName.get(a.modelId) ?? "" } : null }));
   },
 });
 

@@ -20,6 +20,11 @@ describe("buildGearLineActions", () => {
     expect(keys(row, {})).toEqual([]);
   });
 
+  it("offers Attach to a task… only when the caller can link tasks", () => {
+    expect(keys(row, all)).not.toContain("attach-task");
+    expect(keys(row, { ...all, onAttachToTask: vi.fn() })).toContain("attach-task");
+  });
+
   it("offers Report issue only while the line is CHECKED_OUT", () => {
     expect(keys(row, all)).not.toContain("report-issue");
     expect(keys({ ...row, status: "CHECKED_OUT" }, all)).toContain("report-issue");

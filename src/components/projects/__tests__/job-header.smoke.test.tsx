@@ -21,7 +21,11 @@ let mockIsMobile = false;
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => mockIsMobile }));
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: vi.fn() }),
+  usePathname: () => "/projects/p1",
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("next/link", () => ({ default: ({ href, children, ...p }: { href: string; children: React.ReactNode }) => <a href={href} {...p}>{children}</a> }));
 
 let perms: Record<string, boolean> = {};
@@ -83,8 +87,13 @@ const toastSuccess = vi.fn();
 vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => toastSuccess(...a), error: vi.fn() } }));
 
 // Heavy dialogs have their own tests; stubs prove they open.
-vi.mock("@/components/collaboration/comment-thread-panel", () => ({
-  CommentThreadPanel: ({ open }: { open?: boolean }) => (open ? <div data-testid="comments-panel" /> : null),
+// The discussion count badge has its own read; here it is a stub that proves it jumps.
+vi.mock("@/components/projects/discussion-badge", () => ({
+  DiscussionBadge: ({ onOpen }: { onOpen: () => void }) => (
+    <button type="button" onClick={onOpen}>
+      discussion badge
+    </button>
+  ),
 }));
 vi.mock("@/components/projects/call-sheet-dialog", () => ({
   CallSheetDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="call-sheet" /> : null),
@@ -112,8 +121,9 @@ function setup(over: Partial<JobHeaderProject> = {}) {
   const onOpenTab = vi.fn();
   const onOpenVersions = vi.fn();
   const onMakeLive = vi.fn();
-  render(<JobHeader project={{ ...PROJECT, ...over }} orgId="org1" onOpenTab={onOpenTab} onOpenVersions={onOpenVersions} onMakeLive={onMakeLive} />);
-  return { onOpenTab, onOpenVersions, onMakeLive };
+  const onOpenDiscussion = vi.fn();
+  render(<JobHeader project={{ ...PROJECT, ...over }} orgId="org1" onOpenTab={onOpenTab} onOpenVersions={onOpenVersions} onMakeLive={onMakeLive} onOpenDiscussion={onOpenDiscussion} />);
+  return { onOpenTab, onOpenVersions, onMakeLive, onOpenDiscussion };
 }
 
 beforeEach(() => {
@@ -170,11 +180,17 @@ describe("JobHeader", () => {
     expect(openLabel).toHaveBeenCalledWith("p1", "kit-label", "k1");
   });
 
-  it("⋯ opens: Comments (with the blocking count) opens the panel", async () => {
-    setup();
+  it("⋯ opens: Comments (with the blocking count) jumps to the Discussion section of Tasks & notes", async () => {
+    const { onOpenDiscussion } = setup();
     await userEvent.click(screen.getByRole("button", { name: "More actions" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Comments & discussion · 2 blocking" }));
-    expect(await screen.findByTestId("comments-panel")).toBeTruthy();
+    expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
+  });
+
+  it("the discussion count badge jumps to the same section", async () => {
+    const { onOpenDiscussion } = setup();
+    await userEvent.click(screen.getByRole("button", { name: "discussion badge" }));
+    expect(onOpenDiscussion).toHaveBeenCalledTimes(1);
   });
 
   it("⋯ › Version submenu switches versions and Manage opens Versions", async () => {

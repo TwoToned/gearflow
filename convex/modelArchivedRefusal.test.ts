@@ -81,4 +81,37 @@ describe("MODEL_ARCHIVED", () => {
       }),
     ).rejects.toThrow(/archived/);
   });
+
+  test("the warehouse quick add refuses an archived model and inserts no line", async () => {
+    const t = makeT();
+    await seed(t, true);
+    await expect(
+      t.withIdentity(asUser).mutation(api.warehouseWrites.quickAddAndCheckOut, { orgId: ORG, projectId: "p1", modelId: "mdl1", now: NOW, actor: ACTOR }),
+    ).rejects.toThrow(/archived/);
+    const lines = await t.run((ctx) => ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", "mdl1")).collect());
+    expect(lines.map((l) => l.id)).toEqual(["old"]); // only the pre-existing line
+  });
+
+  test("a packing case for an archived model is refused", async () => {
+    const t = makeT();
+    await seed(t, true);
+    await t.run((ctx) => ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "mdl1", assetTag: "A-1", status: "AVAILABLE", isActive: true } as never));
+    await expect(
+      t.withIdentity(asUser).mutation(api.projectContainersWrites.createNative, {
+        id: "c1", orgId: ORG, projectId: "p1", kind: "ASSET", assetId: "a1", modelId: "mdl1", label: "LX-01", now: NOW, actor: ACTOR, auditId: "c-log",
+      }),
+    ).rejects.toThrow(/archived/);
+  });
+
+  test("a sub-hire item for an archived model is refused, an active one is accepted", async () => {
+    const t = makeT();
+    await seed(t, true);
+    await t.run((ctx) => ctx.db.insert("subHires", { id: "sh1", organizationId: ORG, supplierId: "s1", createdById: USER, orderNumber: "SH-1", status: "DRAFT" } as never));
+    const item = (modelId: string, id: string) => ({
+      id, orgId: ORG, subHireId: "sh1", modelId, description: "Fixture", quantity: 1, unitCost: 10, unitCharge: 20,
+      pricingType: "FLAT" as const, duration: 1, discount: 0, now: NOW, actor: ACTOR, auditId: `${id}-log`,
+    });
+    await expect(t.withIdentity(asUser).mutation(api.subHiresWrites.addSubHireItemNative, item("mdl1", "i1"))).rejects.toThrow(/archived/);
+    await t.withIdentity(asUser).mutation(api.subHiresWrites.addSubHireItemNative, item("mdl2", "i2"));
+  });
 });

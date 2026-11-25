@@ -17,7 +17,7 @@ export interface WhereaboutsInput {
   }[];
 }
 
-export interface JobRef {
+interface JobRef {
   projectId: string;
   name: string;
   number: string;

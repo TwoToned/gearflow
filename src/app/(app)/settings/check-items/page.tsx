@@ -451,7 +451,7 @@ function CheckItemDialog({
 
   const watchType = form.watch("type");
 
-  // No invalidation: every check-item-library reader (this page + the model-table
+  // No invalidation: every check-item-library reader (this page + the Models list's
   // bulk-assign dialog) subscribes to Convex, so the dual-write server action's
   // Convex write pushes the update live.
   const writes = useCheckItemWrites();

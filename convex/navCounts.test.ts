@@ -76,12 +76,14 @@ describe("navCounts.get — figures", () => {
 
   test("Test & tag: overdue, active only", async () => {
     const t = await makeT();
+    // Derived from the due date (the list's own Overdue), so the stored word is irrelevant: t3 says CURRENT but is late.
     await t.run(async (ctx) => {
-      await ctx.db.insert("testTagAssets", { id: "t1", organizationId: ORG, testTagId: "T1", description: "Lead", status: "OVERDUE", isActive: true });
-      await ctx.db.insert("testTagAssets", { id: "t2", organizationId: ORG, testTagId: "T2", description: "Lead", status: "OVERDUE", isActive: false });
-      await ctx.db.insert("testTagAssets", { id: "t3", organizationId: ORG, testTagId: "T3", description: "Lead", status: "CURRENT", isActive: true });
+      await ctx.db.insert("testTagAssets", { id: "t1", organizationId: ORG, testTagId: "T1", description: "Lead", status: "OVERDUE", isActive: true, nextDueDate: NOW - DAY });
+      await ctx.db.insert("testTagAssets", { id: "t2", organizationId: ORG, testTagId: "T2", description: "Lead", status: "OVERDUE", isActive: false, nextDueDate: NOW - DAY });
+      await ctx.db.insert("testTagAssets", { id: "t3", organizationId: ORG, testTagId: "T3", description: "Lead", status: "CURRENT", isActive: true, nextDueDate: NOW - 2 * DAY });
+      await ctx.db.insert("testTagAssets", { id: "t4", organizationId: ORG, testTagId: "T4", description: "Lead", status: "OVERDUE", isActive: true, nextDueDate: NOW + DAY });
     });
-    expect(await count(t, "testTagOverdue")).toEqual({ value: 1, truncated: false });
+    expect(await count(t, "testTagOverdue")).toEqual({ value: 2, truncated: false });
   });
 
   test("Assets is null until the counters are seeded (unknown, not zero)", async () => {

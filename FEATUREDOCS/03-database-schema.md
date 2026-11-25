@@ -69,7 +69,8 @@ Grouped by area (table names are the Convex identifiers, e.g. `assets`,
   `docs/designs/archive/line-item-fulfillment-model.md`), `lineItemMergeMaps`,
   `projectCategories`, `categorySlots`, `projectGroups`, `projectManagers`,
   `projectModelRevenues`, `groupTemplates` + `groupTemplateItems`,
-  `projectTasks`, `projectNumberSequences`.
+  `projectTasks`, `projectTaskLinks` (a task's pointers to a line item / file / discussion on
+  its job, FEATUREDOCS/50), `projectNumberSequences`.
 - **Clients** — `clients`, `clientContacts` (multiple contacts per client — see
   [FEATUREDOCS/63](./63-client-contacts.md)). `defaultDiscount` snapshots onto
   `Project.discountPercent` at project-create time only (server-side in

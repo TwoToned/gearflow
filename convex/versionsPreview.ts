@@ -11,6 +11,7 @@ import { resolveOrgDefaultTaxRate } from "./lib/orgSettings";
 import { classifyCompareRows } from "./lib/versionCompare";
 import { effectiveQuoteStatus, findQuoteForVersion } from "./lib/quoteState";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { ReadBudget } from "./lib/readBudget";
 
 /**
  * UX Phase 8 (§7b.4) — two COUNTS-ONLY reads for the Versions tab and the
@@ -39,18 +40,6 @@ const MAX_VERSIONS_WITH_FACTS = 3; // each costs a FULL totals bundle, so only t
 /** Of those, how many also get `plannedCount` (it reads units); the rest show `null`. */
 const MAX_VERSIONS_WITH_PLANNED = 3;
 
-/** A running allowance of documents one query may still read; `truncated` once it bites. */
-class ReadBudget {
-  truncated = false;
-  constructor(public left: number) {}
-  /** Reserve up to `want`; returns how many were granted (0 = spent). */
-  take(want: number): number {
-    const got = Math.max(0, Math.min(want, this.left));
-    this.left -= got;
-    if (got < want) this.truncated = true;
-    return got;
-  }
-}
 
 /** The lines a packing plan is about: top-level equipment, not containers. */
 

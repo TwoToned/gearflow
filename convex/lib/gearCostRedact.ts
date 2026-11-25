@@ -5,6 +5,7 @@ import {
   ASSET_SORT_KEYS,
   BULK_ASSET_COST_FIELDS,
   BULK_ASSET_SORT_KEYS,
+  KIT_COST_FIELDS,
   MODEL_COST_FIELDS,
   resolveSortKey,
 } from "./gearCostFields";
@@ -37,5 +38,19 @@ async function guard(ctx: QueryCtx | MutationCtx, fields: readonly string[], sor
   };
 }
 
+const KIT_SORT_KEYS = ["assetTag", "name", "status", "condition", "category", "location", "createdAt", "updatedAt"] as const;
+
+/** Kit rows: the kit's own `purchasePrice`. A kit sort is an allow-list too, so `purchasePrice` is never a sort key for a hidden caller. */
+export const kitCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, KIT_COST_FIELDS, KIT_SORT_KEYS);
 export const assetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, ASSET_COST_FIELDS, ASSET_SORT_KEYS);
 export const bulkAssetCostGuard = (ctx: QueryCtx | MutationCtx) => guard(ctx, BULK_ASSET_COST_FIELDS, BULK_ASSET_SORT_KEYS);
+
+/**
+ * The per-row redactors a job's gear bundle (equipment tab, project equipment, warehouse job) needs: the
+ * units, bulk stock, kits and models it embeds all carry what they COST to own. Sell rates are not cost
+ * and stay. ONE call per bundle, then `.map(bundle.asset)` etc. (R-3.1: no per-bundle copy of the lists).
+ */
+export async function gearBundleCostGuard(ctx: QueryCtx | MutationCtx) {
+  const [asset, bulk, kit] = await Promise.all([assetCostGuard(ctx), bulkAssetCostGuard(ctx), kitCostGuard(ctx)]);
+  return { asset: asset.row, bulk: bulk.row, kit: kit.row, model: asset.model };
+}

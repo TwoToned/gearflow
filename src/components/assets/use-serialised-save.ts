@@ -22,7 +22,7 @@ export function errorText(e: unknown): string {
 }
 
 /** `Save and add another` keeps model, location, condition, status and purchase context; the tag advances, the serial and name clear. */
-export function nextAfterAdd(v: AssetFormValues, nextTag: string): AssetFormValues {
+function nextAfterAdd(v: AssetFormValues, nextTag: string): AssetFormValues {
   return { ...v, assetTag: nextTag, serialNumber: "", customName: "", barcode: undefined };
 }
 

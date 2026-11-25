@@ -28,7 +28,7 @@ export interface HealthActions {
 const TONE = { "Ready to go": "clear", "Nearly ready": "warning", "Can't go out": "blocking" } as const;
 
 /** Maps `assetHealth()`'s rows onto the checklist; an action the caller cannot do is left off (the row still reads). */
-export function healthRows(health: AssetHealth, a: HealthActions): ChecklistRow[] {
+function healthRows(health: AssetHealth, a: HealthActions): ChecklistRow[] {
   const handler = (fix?: HealthFix): (() => void) | undefined => {
     if (!fix) return undefined;
     switch (fix.kind) {

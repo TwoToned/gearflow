@@ -329,7 +329,19 @@ this reason — don't revert them to `@base-ui/react/popover`. See FEATUREDOCS/0
 - **Delete is only for a bare row, ONE rule:** `convex/lib/assetHistory.ts` (`assetHistoryReason`),
   enforced by `deleteNative` (`ASSET_HAS_HISTORY`), never a second client-side check.
 - **Model Archive is a soft archive** (`isActive: false`). It does NOT touch the model's assets
-  (it once hard-deleted them; that was a data-loss bug).
+  (it once hard-deleted them; that was a data-loss bug). An archived model takes no NEW job lines
+  (`assertModelNotArchived`, `MODEL_ARCHIVED`: add, smart add, a model swap on patch, a group
+  template apply, a packing case, a sub-hire item); existing lines are untouched. Restore needs an
+  archived model, Reinstate needs a RETIRED unit (`NOT_ARCHIVED` / `NOT_RETIRED`).
+- **The asset page** (`src/components/assets/detail/`) is controlled by `?tab=` (`asset-tabs.ts`) and
+  `?edit=1`; create and edit are `AssetSheet` on `FormSheet` (`?new=serialized|bulk` on the Assets list,
+  `?edit-asset=` on the model page for bulk stock). Its ⋯ is `buildAssetPageActions` (Delete is NOT in
+  it: only inside the Retire dialog, only when `facts.canDelete`). An edit has an exact Undo
+  (`updateNative` records the snapshot, `undoUpdateNative` reverses it); the sheet holds every field the
+  write sets so an edit never clears notes, tags, images or custom fields.
+- **Sorting a gear list is an allow-list** (`ASSET_SORT_KEYS` / `BULK_ASSET_SORT_KEYS`,
+  `resolveSortKey` in `gearCostFields.ts`): never `r[sortBy]`, and a cost column is not a sort key for a
+  `noFinancials` key. Models and Kits lists use the same helper.
 - **`assetHealth()`** (`convex/lib/assetHealth.ts`) is the asset Overview checklist, derived on
   read: `unknown` ("not checked") never passes, so an unchecked unit is never `Ready to go`.
 - **Cost on gear reads** (`purchasePrice`, `replacementCost`, `defaultPurchasePrice`, `fleetCost`)

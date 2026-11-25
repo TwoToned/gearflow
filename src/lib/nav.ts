@@ -157,7 +157,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/maintenance/due": "a filter view reached from Maintenance",
   "/maintenance/new": "create flow",
   "/assets/models/new": "create flow",
-  "/assets/registry/new": "create flow",
+  "/assets/registry/new": "redirect to the Assets list's create sheet (`/assets/registry?new=serialized|bulk`, Phase 12)",
   "/clients/new": "create flow",
   "/crew/new": "create flow",
   "/kits/new": "create flow",

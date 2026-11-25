@@ -24,7 +24,7 @@ const CONDITION_ORDER = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 const modelOption = (m: Lookups["models"][number]) => ({ value: m.id, label: `${m.manufacturer ? `${m.manufacturer} ` : ""}${m.name}`, description: m.modelNumber || undefined });
 const locationOption = (l: Lookups["locations"][number]) => ({ value: l.id, label: l.parent ? `${l.parent.name} → ${l.name}` : l.name, description: l.type });
 
-export const dateText = (d: unknown) => (d instanceof Date ? d.toISOString().slice(0, 10) : (d as string | undefined));
+const dateText =(d: unknown) => (d instanceof Date ? d.toISOString().slice(0, 10) : (d as string | undefined));
 
 export function IdentityFields({ form, lookups, editing, taken, onCheckTag, onTagChange, onNewModel }: {
   form: Form; lookups: Lookups; editing: boolean; taken: string | null;

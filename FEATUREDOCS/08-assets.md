@@ -44,11 +44,15 @@ Stored in `Organization.metadata` JSON:
 - `reserveAssetTags(count)` — Atomic increment, called ONLY after successful creation
 - Users can override suggested tags. Adding/removing form rows doesn't burn numbers
 
-## Smart Asset Form (`AssetForm`)
-`src/components/assets/asset-form.tsx` — the create/edit form for serialized
-assets, served by `/assets/registry/new` and `/assets/registry/[id]/edit` (the
-bulk path routes to `BulkAssetForm`, now also on the shared shell — see below).
-This is the **reference
+## Asset form rules (the old `AssetForm`, now `AssetSheet`)
+**Superseded (UX Phase 12):** `asset-form.tsx` and `bulk-asset-form.tsx` and their
+`/new` + `/edit` pages are gone; the same fields, schemas and rules live in
+`AssetSheet` (see "AssetSheet" below). The notes on this page about the helper rail
+and live preview describe the old full-page form, which no longer exists (the preview
+rail is dropped); the field rules (tag pre-fill, supplier-scoped order combobox,
+custom fields, tags) still hold.
+
+Historical note, the old form was the **reference
 "smart single-page form"** that sets the bar for the app's moderate forms —
 modelled on the new-project wizard's quality (helper rail, smart inputs, inline
 quick-create, RVLT tokens, fun microcopy) but as ONE clean page, not multi-step.
@@ -188,36 +192,72 @@ The old list page (`page.tsx`) was a thin auth-gated wrapper that rendered `<Ass
   are intentionally **not** shared into the Gallery — the Grid keeps its own search only.
 
 ## Asset Record Page (`/assets/registry/[id]`)
-The serialized-asset detail page mirrors the project-detail "bar" as it stood
-when this page was built (`projects/[id]` and its since-deleted
-`project-lifecycle.tsx` hero; UX Phase 7 replaced that hero with
-`job-header.tsx` on `DetailHeader`, FEATUREDOCS/10). Layout/composition only — all data,
-mutations, handlers and permission gates are unchanged.
+UX Phase 12 (§9d, D30-D34): a record page in the calm language of the job page.
+`page.tsx` is a thin wrapper; the page is `src/components/assets/detail/`
+(`asset-detail.tsx`, `asset-overview.tsx`, `asset-tab-bodies.tsx`,
+`asset-dialogs-host.tsx`, `asset-facts.tsx`).
 
-- **Hero card** — breadcrumb, photo (`MediaThumbnail`, `resolveAssetPhotoUrl`),
-  big `font-display text-page-title` identity, meta line (tag `t-mono` · category ·
-  model link), asset + condition status pills, and a prominent **"where is it
-  now?"** locator line derived from `status` + the active (`CHECKED_OUT`,
-  not-yet-returned) `lineItem` + home `location`: "Deployed on {project}" /
-  "Available · {home location}" / "In maintenance" / status + location fallback.
-  Actions: comments, **QR** (Popover holding `AssetQRCode`, moved out of the
-  tabs), **Edit**, and a single `⋯` overflow `DropdownMenu` for Force-return
-  (CHECKED_OUT only) / Archive (isActive only) / Delete — all behind
-  `CanDo resource="asset" action="update"`.
-- **Tabs (6, down from 8)** — History (default; project check-out **timeline**,
-  not a table) · Availability (real `BookingCalendar`) · Maintenance (table-fixed
-  grid) · Checks (`AssetChecksTab`) · **Files** (merged Photos + Model documents)
-  · Notes. The old standalone QR tab is gone (QR → hero); Photos + Documents
-  merged into Files.
-- **Sidebar (4 calm `SidebarSection`s)** — Details (tag/serial/barcode/category/
-  model/condition/purchase/cost/supplier/warranty, plus folded Test & tag) ·
-  Location (home location + parent-of / accessories manager) · Specs (model
-  specifications + operator custom fields, hidden when empty) · Activity
-  (`ActivityTimeline`). Unset rows are omitted or show one faint "Not set" —
-  no stacks of em-dashes. `KvRow` helper renders the compact key·value rows.
+- **Header** (`DetailHeader`): the tag as the title (`AURA-01`), a dot-word status,
+  and a muted identity line (custom name · model link · category · home location);
+  breadcrumb from `PageMeta`. One primary, `Edit` (opens `AssetSheet`, `?edit=1`, key
+  `e`). Everything else is in ⋯ (`buildAssetPageActions`, absent-not-disabled):
+  `Scan a tag…` (key `/`) · Move to… · Schedule service… · New asset like this… (key
+  `n`) · Report issue… · Print label… · Force return… (only when deployed) ·
+  Retire…, last and red (a retired unit shows Reinstate…). **Delete is not in the
+  menu**: it is a second step inside the Retire dialog, and only for a unit with no
+  history (`facts.canDelete`, the server's rule). On a phone the sticky primary is
+  `Scan` (Edit moves to ⋯).
+- **Tabs** are controlled by `?tab=` (`src/lib/asset-tabs.ts`; an unknown or
+  unavailable key lands on Overview): Overview · Availability · Checks · Maintenance
+  `n` · History `n` · Notes · Files `n`. The strip has underlined words with counts.
+- **Overview** shows no table. The health checklist (`assetHealth()`, `ChecklistSection`:
+  `Ready to go` / `Nearly ready` / `Can't go out`, `n of m checks clear`, each
+  non-clear row with one action, the clear ones as a muted line), then `Now · Last
+  scan · Value` (`asset-facts.tsx`: one component each, the same ones the context
+  rail prints on every other tab, so nothing shows twice), the identity, and the
+  accessories as rows (`AssetAccessoriesManager`, read-only for callers without
+  `asset:update`). `Last scan` is read from records that already exist (scan logs and
+  check records); there is no scan-write. Cost is printed only when the server sent
+  it (absent for a `noFinancials` key). Flow stores no owner, so there is none.
+- **Where is it now** (`src/lib/asset-whereabouts.ts`): deployed (job link) /
+  maintenance / available / **sold on job** (WS11) / status + home. ONE function.
+- **Bookings** feed the double-booked row: `availability.assetBookings` over the next
+  year (stable window), counted by `countOverlappingBookings`. Until the read lands
+  the row says `not checked`.
+- **Tab bodies**: Availability keeps `BookingCalendar` (`?date=` still seeds it); Checks
+  is `AssetChecksTab`; Maintenance, History (jobs + the activity feed, `All · Jobs ·
+  Changes`, `Show 8 more · n left`, bounded at 60 with `jobsTruncated`) and Files are
+  rows; Notes holds the note (`NotesEditor`) and the discussion.
+- **Edit and create** are `AssetSheet` (see below). `/assets/registry/[id]/edit`
+  redirects to `?edit=1` (bulk: to the model page's `?edit-asset=`), and
+  `/assets/registry/new` redirects to the Assets list's `?new=serialized|bulk`.
+- **Scan** is the page's `ScanTarget`: the same tag just confirms (a toast, no write),
+  a different tag opens that asset, an unknown tag says so. The camera is the shell's
+  (`CameraScannerDialog`, opened from the tap).
+- **Move to…** is one field through `updateNative` (so it has the exact edit Undo);
+  **Schedule service…** creates a scheduled PREVENTATIVE maintenance job (Undo:
+  `undoCreate`); **Print label…** is a browser-print QR sheet (no PDF type).
+- Not built yet (deferred, listed in the PR): the 8-week lane strip on Availability,
+  bulk Mark done / Reschedule on Maintenance, bulk actions on Files, the `Changes`
+  filter beyond the activity feed.
 
-Bulk assets still redirect to the model page; the not-found / loading states are
-unchanged.
+Bulk stock has no page of its own: `?type=bulk` forwards to its model's page.
+
+## AssetSheet (create and edit, UX Phase 12, D62/D63)
+
+`src/components/assets/asset-sheet.tsx` on `FormSheet` replaces `asset-form`,
+`bulk-asset-form` and their pages. Create offers the words `Serialised unit · Bulk
+stock`; edit opens the record's own kind. Sections in the live order (Identity ·
+Condition & location · Purchase and more details; bulk: Identity · Status & location ·
+More), inline errors as you type (tag required / ≤ 50 / unique, price ≥ 0 or blank,
+warranty not before purchase, bulk quantity ≥ 1 on create). `Save and add another`
+keeps the model, location and condition, advances the tag and clears the serial (it
+replaces the old add-row buttons). Edit saves with the exact Undo
+(`updateNative` writes the before/after snapshot, `undoUpdateNative` reverses it);
+create's Undo removes exactly the unit it made. The sheet holds every field the write
+sets (notes, tags, images, custom fields), so an edit never clears what the Notes tab
+or the registry owns. The activation hand-off (`Create your first job`), the quick-create
+dialogs and the onboarding tour anchor are kept.
 
 ## Retire, Reinstate and Delete (UX Phase 12, D32/D33)
 

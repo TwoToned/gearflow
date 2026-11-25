@@ -225,6 +225,25 @@ describe("locations.detail for the record page", () => {
     expect(Object.fromEntries(d!.kits.map((k) => [k.assetTag, k.status]))).toEqual({ "K-A": "INCOMPLETE", "K-B": "INCOMPLETE", "K-C": "AVAILABLE" });
   });
 
+  test("a kit the read budget cannot cover prints a dash (UNKNOWN), never its stored status", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      // The stored status says Available; a state read that cannot finish must NOT fall back to it.
+      for (const n of [1, 2, 3, 4]) await ctx.db.insert("kits", { id: `kb${n}`, organizationId: ORG, assetTag: `K-${n}`, name: `Case ${n}`, status: "AVAILABLE", isActive: true, locationId: "wh" });
+      // Three kits of 500 members (the per-kit ceiling) spend the detail read's whole 3000-document budget
+      // (each member is a row read plus a lookup), so the fourth kit cannot be covered.
+      for (const n of [1, 2, 3]) {
+        for (let i = 0; i < 500; i++) await ctx.db.insert("kitSerializedItems", { id: `ks${n}-${i}`, organizationId: ORG, kitId: `kb${n}`, assetId: `ghost${n}-${i}`, addedById: USER });
+      }
+    });
+    const d = await t.withIdentity(asUser).query(api.locations.detail, { id: "wh", orgId: ORG });
+    const byTag = Object.fromEntries(d!.kits.map((k) => [k.assetTag, k.status]));
+    expect(byTag["K-1"]).toBe("INCOMPLETE"); // covered: its members are missing, derived
+    // The stored status says AVAILABLE, but the budget was spent: unknown, never the stored status.
+    expect(byTag["K-4"]).toBe("UNKNOWN");
+  }, 60_000);
+
   test("another org gets nothing", async () => {
     const t = makeT();
     await seed(t);

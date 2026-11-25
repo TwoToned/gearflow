@@ -36,7 +36,11 @@ and unbookable too.
   `kit:update`, with the same Undo) and its status select no longer offers Incomplete (and is hidden while the kit
   is reported missing). The kit sheet's Status is locked on a reported-missing kit. `kitWrites.updateNative` /
   `createNative` refuse to set the marker (only a MISSING return does) or clear it (only Mark complete does);
-  re-saving a kit that carries it, unchanged, is fine.
+  re-saving a kit that carries it, unchanged, is fine. **Check-out refuses a kit reported missing**
+  (`warehouseOps.checkoutKitPreflight`, shared by the single and batch deploy: `KIT_REPORTED_MISSING`, the same
+  derived-OR-marker state as `loadKitBookingGate`, for the kit and each nested kit). The booking gate only runs at
+  add-line, so a kit already booked on job B and then reported missing on job A's return would otherwise go out on
+  B and have its marker overwritten; Mark complete is the way through.
 - **Reads are budgeted.** `kitsList.listPage` / `segmentCounts` draw every member, booking-line and
   member-count read from ONE per-call budget (`convex/lib/readBudget.ts`). A kit the budget cannot cover has
   `state: null` (the row prints a dash, never a guess), and the response says `truncated`. The strip is

@@ -25,7 +25,7 @@ import { sendEmail } from "@/lib/email";
 import { getModelMap } from "@/lib/models-read";
 import { getProjectsByOrg } from "@/lib/projects-read";
 import { getAssetsByOrg } from "@/lib/assets-read";
-import { getMaintenanceRecordsByOrg } from "@/lib/maintenance-read";
+import { getMaintenanceRecordsByOrg, overdueMaintenanceRecords } from "@/lib/maintenance-read";
 import { getMaintenanceAssetLinksByRecordIds } from "@/lib/maintenance-record-asset-read";
 import {
   getCrewAssignmentsByOrg,
@@ -133,16 +133,9 @@ async function buildOrgNotifications(ctx: BuildContext): Promise<NotificationToS
 
   // 1. Overdue maintenance
   // maintenanceRecord is Convex-only (Phase C). Read the org's records, replicate
-  // the old `where` (status in [SCHEDULED, IN_PROGRESS], scheduledDate < now) +
-  // `take: 50` in JS. The maintenanceRecordAsset join + assets live in Convex.
-  const overdueMaintenance = (await getMaintenanceRecordsByOrg(organizationId))
-    .filter(
-      (m) =>
-        (m.status === "SCHEDULED" || m.status === "IN_PROGRESS") &&
-        m.scheduledDate != null &&
-        m.scheduledDate.getTime() < now.getTime(),
-    )
-    .slice(0, 50);
+  // the old `where` through the ONE overdue rule (`overdueMaintenanceRecords`: SCHEDULED / IN_PROGRESS with the
+  // scheduled DAY before today) + `take: 50` in JS. The maintenanceRecordAsset join + assets live in Convex.
+  const overdueMaintenance = overdueMaintenanceRecords(await getMaintenanceRecordsByOrg(organizationId), now).slice(0, 50);
 
   const overdueRecordIds = overdueMaintenance.map((m) => m.id);
   const overdueLinks = await getMaintenanceAssetLinksByRecordIds(overdueRecordIds);

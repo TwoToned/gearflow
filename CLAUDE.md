@@ -826,6 +826,8 @@ reverse writes for the exact ids it touched (`markUnreadManyNative`, `undismissM
   derive from) and only `kitWrites.markCompleteNative` clears it. The physical statuses (`CHECKED_OUT`,
   `IN_MAINTENANCE`, `RETIRED`) stay stored and win. Every "can this kit go on a job" gate uses
   `loadKitBookingGate` (Convex) or `kitsList.bookingGate` (server actions); never re-test the stored value.
+  Check-out has its own gate on the same state (`checkoutKitPreflight` → `KIT_REPORTED_MISSING`), because the
+  add-line gate cannot see a kit reported missing AFTER it was booked.
 - **A list read that fans out per row draws from ONE `ReadBudget`** (`convex/lib/readBudget.ts`): a row the budget
   cannot cover returns `null` (printed as a dash) and the response sets `truncated`. A list's sort is an explicit
   allow-list with no generic field fallback, and a cost key from a caller who cannot see cost falls back to the

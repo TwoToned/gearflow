@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (716 agent-reachable)
+## Operations (719 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -288,9 +288,12 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `kitWrites.archiveNative` (mutation, scope: kit:delete)
 - `kitWrites.createNative` (mutation, scope: kit:create)
 - `kitWrites.deleteNative` (mutation, scope: kit:delete)
+- `kitWrites.editNative` (mutation, scope: kit:update)
 - `kitWrites.markCompleteNative` (mutation, scope: kit:update)
 - `kitWrites.removeBulkItemNative` (mutation, scope: kit:update)
 - `kitWrites.removeSerializedItemNative` (mutation, scope: kit:update)
+- `kitWrites.undoCreateNative` (mutation, scope: kit:delete)
+- `kitWrites.undoEditNative` (mutation, scope: kit:update)
 - `kitWrites.undoMarkCompleteNative` (mutation, scope: kit:update)
 - `kitWrites.updateNative` (mutation, scope: kit:update)
 - `kitWrites.updateNotesNative` (mutation, scope: kit:update)

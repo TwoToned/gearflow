@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
-import { assetHistoryReason } from "./lib/assetHistory";
+import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
 import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgPermission } from "./lib/auth";
 import { ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import { pick, FILE_META_FIELDS } from "./lib/dto";
@@ -63,8 +63,10 @@ async function readHealthFacts(
     lastCheckResult: prepOrReturn[0]?.result ?? null,
     lastScanAt: Math.max(newestScan ?? 0, newestCheck ?? 0) || null,
     dueBackAt,
-    /** The Delete gate, answered by the server's one rule. `null` = a bare row (deletable). */
+    /** The Delete gate, answered by the server's one rule (`assetHistoryReason`), the same one `deleteNative` enforces. */
+    canDelete: history == null,
     deleteBlockedBy: history,
+    deleteBlockedText: history ? assetHistoryText(history) : null,
   };
 }
 

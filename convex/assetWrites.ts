@@ -297,39 +297,13 @@ export const deleteNative = mutation({
     if (!asset) throw new ConvexError("Asset not found: " + id);
     if (asset.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
 
-    const lineItems = await ctx.db
-      .query("projectLineItems")
-      .withIndex("by_assetId", (q) => q.eq("assetId", id))
-      .collect();
-    if (lineItems.some((li) => li.organizationId === orgId)) {
-      throw new ConvexError({ code: "ASSET_IN_USE", message: "This asset is referenced by project line items." });
-    }
-
-    const kitMember = await ctx.db
-      .query("kitSerializedItems")
-      .withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", id))
-      .first();
-    if (kitMember) {
-      throw new ConvexError({ code: "ASSET_IN_KIT", message: "This asset is part of a kit." });
-    }
-
-    const childAssets = await ctx.db
-      .query("assets")
-      .withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id))
-      .collect();
-    const childBulk = await ctx.db
-      .query("assetBulkChildren")
-      .withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id))
-      .collect();
-    if (childAssets.some((c) => c.organizationId === orgId) || childBulk.some((c) => c.organizationId === orgId)) {
-      throw new ConvexError({ code: "ASSET_HAS_ACCESSORIES", message: "This asset has accessories attached." });
-    }
-
-    // D32: Delete is only for a bare row. The ONE history rule (also the UI's `canDelete`).
+    // D32: Delete is only for a bare row. The ONE history rule (`assetHistoryReason`, which
+    // also covers a job, a kit and attached accessories); the UI's `canDelete` is its answer.
     const history = await assetHistoryReason(ctx, orgId, { assetId: id });
     if (history) {
       throw new ConvexError({
         code: "ASSET_HAS_HISTORY",
+        reason: history,
         message: `This asset can't be deleted because ${assetHistoryText(history)}. Retire it instead.`,
       });
     }

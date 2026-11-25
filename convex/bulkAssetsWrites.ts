@@ -190,19 +190,13 @@ export const deleteNative = mutation({
     const doc = await ctx.db.query("bulkAssets").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Bulk asset not found");
 
-    // Reference guards (org-filtered — by_bulkAssetId is GLOBAL).
-    const refLines = (await ctx.db.query("projectLineItems").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", a.id)).collect())
-      .filter((li) => li.organizationId === a.orgId);
-    if (refLines.length > 0) throw new ConvexError("Cannot delete — this bulk asset is referenced by project line items. Archive it instead.");
-    const kitRefs = (await ctx.db.query("kitBulkItems").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", a.id)).collect())
-      .filter((ki) => ki.organizationId === a.orgId);
-    if (kitRefs.length > 0) throw new ConvexError("Cannot delete — this bulk asset is part of a kit. Remove it from the kit first.");
-
-    // D32 / Q-11: Delete is only for a bare row (the same rule as a serialised unit).
+    // D32 / Q-11: Delete is only for a bare row (the same ONE rule as a serialised unit,
+    // which also covers a job and a kit; every candidate row is org-checked inside it).
     const history = await assetHistoryReason(ctx, a.orgId, { bulkAssetId: a.id });
     if (history) {
       throw new ConvexError({
         code: "ASSET_HAS_HISTORY",
+        reason: history,
         message: `This bulk asset can't be deleted because ${assetHistoryText(history)}. Retire it instead.`,
       });
     }

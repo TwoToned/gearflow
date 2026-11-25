@@ -199,7 +199,7 @@ describe("assetWrites.deleteNative — RBAC + orphan guards (5b)", () => {
     });
     await expect(
       t.withIdentity(SERVICE).mutation(api.assetWrites.deleteNative, deleteArgs),
-    ).rejects.toThrow(/referenced by project line items/i);
+    ).rejects.toThrow(/been on a job/i);
   });
 
   test("blocked when the asset is a kit member (ASSET_IN_KIT)", async () => {

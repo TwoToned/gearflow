@@ -22,7 +22,11 @@ export type AssetHistoryReason =
   | "CHECK"
   | "SCAN"
   | "KIT"
-  | "ACCESSORY";
+  | "ACCESSORY"
+  | "ORDER"
+  | "MEDIA"
+  | "CASE"
+  | "MODEL_ACCESSORY";
 
 const REASON_TEXT: Record<AssetHistoryReason, string> = {
   JOB: "it has been on a job",
@@ -32,6 +36,10 @@ const REASON_TEXT: Record<AssetHistoryReason, string> = {
   SCAN: "it has scan history",
   KIT: "it is part of a kit",
   ACCESSORY: "it has accessories attached",
+  ORDER: "it is on a supplier order",
+  MEDIA: "it has photos",
+  CASE: "it is a case on a job",
+  MODEL_ACCESSORY: "it is a default accessory of a model",
 };
 
 export const assetHistoryText = (r: AssetHistoryReason) => REASON_TEXT[r];
@@ -52,7 +60,7 @@ export async function assetHistoryReason(
 
 async function serialisedReason(ctx: QueryCtx, orgId: string, id: string): Promise<AssetHistoryReason | null> {
   const db = ctx.db;
-  const [lines, units, maint, checks, scans, kit, kids, bulkKids, tt] = await Promise.all([
+  const [lines, units, maint, checks, scans, kit, kids, bulkKids, tt, orderItems, media, cases] = await Promise.all([
     db.query("projectLineItems").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
     db.query("projectLineItemUnits").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
     db.query("maintenanceRecordAssets").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
@@ -62,20 +70,28 @@ async function serialisedReason(ctx: QueryCtx, orgId: string, id: string): Promi
     db.query("assets").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id)).take(3),
     db.query("assetBulkChildren").withIndex("by_parentAssetId", (q) => q.eq("parentAssetId", id)).take(3),
     db.query("testTagAssets").withIndex("by_organizationId_assetId", (q) => q.eq("organizationId", orgId).eq("assetId", id)).take(5),
+    db.query("supplierOrderItems").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
+    db.query("assetMedia").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
+    db.query("projectContainers").withIndex("by_assetId", (q) => q.eq("assetId", id)).take(3),
   ]);
+  // (`projectLineItemUnits.parentUnitAssetId` has no index: an accessory unit under this
+  // unit sits on a job line, which the JOB rule above already covers.)
   if (inOrg(lines, orgId) || inOrg(units, orgId)) return "JOB";
+  if (inOrg(cases, orgId)) return "CASE";
   if (await maintenanceInOrg(ctx, orgId, maint)) return "MAINTENANCE";
   if (await hasTestRecord(ctx, orgId, tt)) return "TEST_AND_TAG";
   if (checks.length > 0) return "CHECK";
   if (inOrg(scans, orgId)) return "SCAN";
   if (kit.length > 0) return "KIT";
   if (inOrg(kids, orgId) || inOrg(bulkKids, orgId)) return "ACCESSORY";
+  if (await orderItemsInOrg(ctx, orgId, orderItems)) return "ORDER";
+  if (inOrg(media, orgId)) return "MEDIA";
   return null;
 }
 
 async function bulkReason(ctx: QueryCtx, orgId: string, id: string): Promise<AssetHistoryReason | null> {
   const db = ctx.db;
-  const [lines, units, maint, checks, scans, kit, tt, kids] = await Promise.all([
+  const [lines, units, maint, checks, scans, kit, tt, kids, cases, modelAcc] = await Promise.all([
     db.query("projectLineItems").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
     db.query("projectLineItemUnits").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
     db.query("maintenanceRecordAssets").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
@@ -84,14 +100,18 @@ async function bulkReason(ctx: QueryCtx, orgId: string, id: string): Promise<Ass
     db.query("kitBulkItems").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
     db.query("testTagAssets").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(5),
     db.query("assetBulkChildren").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
+    db.query("projectContainers").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
+    db.query("modelBulkAccessories").withIndex("by_bulkAssetId", (q) => q.eq("bulkAssetId", id)).take(3),
   ]);
   if (inOrg(lines, orgId) || inOrg(units, orgId)) return "JOB";
+  if (inOrg(cases, orgId)) return "CASE";
   if (await maintenanceInOrg(ctx, orgId, maint)) return "MAINTENANCE";
   if (await hasTestRecord(ctx, orgId, tt.filter((r) => r.organizationId === orgId))) return "TEST_AND_TAG";
   if (inOrg(checks, orgId)) return "CHECK";
   if (inOrg(scans, orgId)) return "SCAN";
   if (inOrg(kit, orgId)) return "KIT";
   if (inOrg(kids, orgId)) return "ACCESSORY";
+  if (inOrg(modelAcc, orgId)) return "MODEL_ACCESSORY";
   return null;
 }
 
@@ -100,6 +120,15 @@ async function maintenanceInOrg(ctx: QueryCtx, orgId: string, links: { maintenan
   for (const l of links) {
     const rec = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", l.maintenanceRecordId)).first();
     if (rec && rec.organizationId === orgId) return true;
+  }
+  return false;
+}
+
+/** An order line carries no org of its own: the order does. */
+async function orderItemsInOrg(ctx: QueryCtx, orgId: string, items: { orderId: string }[]) {
+  for (const it of items) {
+    const order = await ctx.db.query("supplierOrders").withIndex("by_cuid", (q) => q.eq("id", it.orderId)).first();
+    if (order && order.organizationId === orgId) return true;
   }
   return false;
 }

@@ -81,7 +81,7 @@ describe("bulkAssetsWrites", () => {
     const t = makeT(); await seedMember(t);
     await t.withIdentity(asUser).mutation(api.bulkAssetsWrites.createNative, base);
     await t.run(async (ctx) => { await ctx.db.insert("projectLineItems", { id: "li1", organizationId: ORG, projectId: "p", bulkAssetId: "bk1", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT" }); });
-    await expect(t.withIdentity(asUser).mutation(api.bulkAssetsWrites.deleteNative, { id: "bk1", orgId: ORG, now: NOW, actor, auditId: "d1" })).rejects.toThrow(/line items/i);
+    await expect(t.withIdentity(asUser).mutation(api.bulkAssetsWrites.deleteNative, { id: "bk1", orgId: ORG, now: NOW, actor, auditId: "d1" })).rejects.toThrow(/been on a job/i);
     await t.run(async (ctx) => { const li = await ctx.db.query("projectLineItems").withIndex("by_cuid", (q) => q.eq("id", "li1")).first(); if (li) await ctx.db.delete(li._id); await ctx.db.insert("kitBulkItems", { id: "kb1", organizationId: ORG, kitId: "k1", bulkAssetId: "bk1", quantity: 1, addedById: USER }); });
     await expect(t.withIdentity(asUser).mutation(api.bulkAssetsWrites.deleteNative, { id: "bk1", orgId: ORG, now: NOW, actor, auditId: "d2" })).rejects.toThrow(/part of a kit/i);
     await t.run(async (ctx) => { const kb = await ctx.db.query("kitBulkItems").withIndex("by_cuid", (q) => q.eq("id", "kb1")).first(); if (kb) await ctx.db.delete(kb._id); });

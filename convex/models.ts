@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, requireService, getAuthContext, isAgentNoFinancials, redactFields } from "./lib/auth";
+import { MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
@@ -8,7 +9,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  *  unit — cost data, distinct from the model's own RENTAL rates (`dailyRate`
  *  etc.), which are the sell price an agent needs to operate (quoting/booking)
  *  and stay visible regardless of the `noFinancials` flag. */
-const MODEL_COST_FIELDS = ["replacementCost", "defaultPurchasePrice"] as const;
+// (the list lives in ./lib/gearCostFields, shared with the asset detail read)
 
 /**
  * Thin CRUD for Model (Convex table "models"). GENERATED — Phase 2/5.

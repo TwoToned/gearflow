@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
-import { requireOrgPermission } from "./lib/auth";
+import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgPermission } from "./lib/auth";
+import { ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import { pick, FILE_META_FIELDS } from "./lib/dto";
 
 /**
@@ -108,6 +109,15 @@ export const bundle = query({
   args: { assetId: v.string(), orgId: v.string() },
   handler: async (ctx, { assetId, orgId }) => {
     await requireOrgPermission(ctx, orgId, "asset", "read");
-    return readAssetDetail(ctx, assetId, orgId);
+    const detail = await readAssetDetail(ctx, assetId, orgId);
+    if (!detail || !(await isAgentNoFinancials(ctx, await getAuthContext(ctx)))) return detail;
+    // A `noFinancials` key never sees what the unit or its model COST: ABSENT, never zeroed.
+    const noModelCost = <M extends Record<string, unknown> | null>(m: M): M => (m ? redactFields(m, MODEL_COST_FIELDS) : m);
+    return {
+      ...detail,
+      asset: redactFields(detail.asset, ASSET_COST_FIELDS),
+      model: noModelCost(detail.model),
+      models: detail.models.map((m) => redactFields(m, MODEL_COST_FIELDS)),
+    };
   },
 });

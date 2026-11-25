@@ -44,8 +44,11 @@ describe("mediaWrites — asset (photo kind)", () => {
     expect(rows.map((r) => r.id)).toEqual(["am1", "am2"]);
     expect(rows[0].isPrimary).toBe(true);
     expect(rows[1].isPrimary).toBe(false); // only first PHOTO primary
-    // dup id
-    await expect(t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am1", orgId: ORG, parentId: "a1", fileId: "f1", type: "PHOTO", now: NOW })).rejects.toThrow(/already exists/i);
+    // dup id, with a FRESH own upload so only the duplicate-id rule can refuse it
+    await seedFile(t, "f3");
+    await expect(t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am1", orgId: ORG, parentId: "a1", fileId: "f3", type: "PHOTO", now: NOW })).rejects.toThrow(/already exists/i);
+    // re-attaching a file something already holds is its own refusal
+    await expect(t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am7", orgId: ORG, parentId: "a1", fileId: "f1", type: "PHOTO", now: NOW })).rejects.toThrow(/already attached/i);
     // parent in another org
     await seedAsset(t, "aX", OTHER);
     await expect(t.withIdentity(asUser).mutation(api.mediaWrites.addNative, { kind: "asset", id: "am9", orgId: ORG, parentId: "aX", fileId: "f1", type: "PHOTO", now: NOW })).rejects.toThrow(/Parent not found/i);

@@ -27,12 +27,13 @@ const JOB_TAB_ALIASES: Readonly<Record<string, JobTabKey>> = {
   logistics: "labour",
   notes: "tasks",
   files: "tasks",
+  discussion: "tasks",
 };
 
 /** The section of the merged tab a `?tab=` value names, if it names one. */
 export type TasksNotesSection = "tasks" | "notes" | "files" | "discussion";
 export function jobTabSection(param: string | null | undefined): TasksNotesSection | null {
-  return param === "notes" || param === "files" ? param : null;
+  return param === "notes" || param === "files" || param === "discussion" ? param : null;
 }
 
 /** Tabs a template never has (it has no pipeline, no finance and no versions). */

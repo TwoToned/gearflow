@@ -254,6 +254,8 @@ function InvoiceDocumentAction({ invoice: inv, projectId }: { invoice: InvoiceRo
   // and it says "NOT SENT" on every page. `invoiceId` matters: without it the
   // preview showed the live PROJECT total regardless of this invoice's own kind.
   if (inv.issuedAt == null) {
+    // A voided never-issued draft has no document and nothing to preview.
+    if (inv.status === "VOID") return null;
     return (
       <Button variant="line" size="sm" asChild>
         <a href={`/api/documents/${projectId}?type=invoice&preview=1&invoiceId=${inv.id}`} target="_blank" rel="noopener noreferrer">

@@ -3,6 +3,8 @@ import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor, requireOrgReadDocFor, getAuthContext, isMemberAuth } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
+import { isTaskOverdue } from "./lib/taskDue";
 
 // Work-or-project RBAC transition (#1243): task reads were gated on `project:read`
 // before the `work` resource existed. Any already-issued API key/OAuth scope still
@@ -268,6 +270,7 @@ function serializeMyOpenTask(
   t: MyOpenTaskDoc,
   projects: Map<string, { name: string; projectNumber: string }>,
   now: number,
+  timezone: string | undefined,
 ) {
   const project = projectFieldsFor(t, projects);
   return {
@@ -276,7 +279,8 @@ function serializeMyOpenTask(
     status: t.status ?? "TODO",
     priority: t.priority ?? "NORMAL",
     dueDate: t.dueDate ?? null,
-    overdue: t.dueDate != null && t.dueDate < now,
+    // THE one overdue rule (taskDue.ts): the stored due DAY against today in the org's zone.
+    overdue: isTaskOverdue(t, now, timezone),
     projectId: t.projectId ?? null,
     projectName: project.name,
     projectNumber: project.projectNumber,
@@ -298,7 +302,8 @@ export const myOpenTasks = query({
     const bounded = sortMyOpenTasks([...byId.values()]).slice(0, MY_OPEN_TASKS_LIMIT);
     const projects = await resolveProjectsFor(ctx, bounded);
 
-    return bounded.map((t) => serializeMyOpenTask(t, projects, now));
+    const { timezone } = await resolveOrgInvoiceConfig(ctx, orgId);
+    return bounded.map((t) => serializeMyOpenTask(t, projects, now, timezone));
   },
 });
 

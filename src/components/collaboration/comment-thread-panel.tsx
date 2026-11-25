@@ -298,6 +298,127 @@ function ThreadView({ orgId, thread, members, allowBlocking }: ThreadViewProps) 
   );
 }
 
+interface ThreadScope {
+  orgId: string;
+  entityType: string;
+  entityId: string;
+  targetType?: string;
+  targetId?: string;
+}
+
+/**
+ * The threads on one entity / sub-target and their open and blocking counts. Read
+ * only while `enabled`. Shared by the Sheet panel (its title) and the body below, so
+ * the job's inline Discussion section and the Sheet are ONE component, never two.
+ */
+export function useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled }: ThreadScope & { enabled: boolean }) {
+  const threads = useAuthedQuery(
+    api.collaboration.listThreads,
+    enabled ? { orgId, entityType, entityId, targetType, targetId } : "skip",
+  ) as Thread[] | undefined;
+  // Filter to this sub-target — listThreads without a targetId returns ALL
+  // threads on the entity, so a project-level panel must drop line-item threads.
+  const visibleThreads = useMemo(() => {
+    if (!threads) return undefined;
+    if (targetId) return threads;
+    return threads.filter((t) => !(t as Thread & { targetId?: string }).targetId);
+  }, [threads, targetId]);
+  const openThreads = (visibleThreads ?? []).filter((t) => t.status === "open");
+  return { visibleThreads, openCount: openThreads.length, blockingCount: openThreads.filter((t) => t.isBlocking).length };
+}
+
+/**
+ * The thread list plus the composer (`@ Mention ▾`, the `Blocking` switch, Post): the
+ * body of the Sheet panel AND of the job's inline Discussion section (UX Phase 10).
+ * Who may block or resolve is unchanged: the same mutations, the same server gates.
+ */
+export function CommentThreadBody({
+  orgId,
+  entityType,
+  entityId,
+  targetType,
+  targetId,
+  projectId,
+  enabled,
+  className,
+}: ThreadScope & { projectId?: string; enabled: boolean; className?: string }) {
+  const [newComment, setNewComment] = useState("");
+  const [blocking, setBlocking] = useState(false);
+  const [mentions, setMentions] = useState<string[]>([]);
+  const { createThread } = useCollaborationWrites();
+  // Blocking comments gate project prep / send-out. They are meaningless on
+  // other entities (assets, clients, …), so the toggle is project-only.
+  const allowBlocking = entityType === "project";
+  const { visibleThreads } = useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled });
+
+  const { data: members } = useServerQuery({
+    queryKey: ["mentionable-members", orgId],
+    queryFn: getMentionableMembers,
+    enabled,
+  });
+  const memberList = (members ?? []) as Member[];
+
+  const createMut = useServerMutation({
+    mutationFn: ({ body }: { body: string }) =>
+      createThread(entityType, entityId, body, targetType, targetId, {
+        isBlocking: blocking,
+        mentionUserIds: mentions.length ? mentions : undefined,
+        projectId,
+      }),
+    onSuccess: () => {
+      setNewComment("");
+      setBlocking(false);
+      setMentions([]);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
+      <div className="flex-1 space-y-3 overflow-y-auto py-2">
+        {(visibleThreads ?? []).length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">No comments yet. Start a discussion below.</p>
+        )}
+        {(visibleThreads ?? []).map((t) => (
+          <ThreadView key={t._id} orgId={orgId} thread={t} members={memberList} allowBlocking={allowBlocking} />
+        ))}
+      </div>
+
+      <div className="space-y-2 border-t pt-3">
+        <Textarea
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          placeholder="Start a new discussion…"
+          aria-label="New discussion"
+          className="resize-none text-base md:text-sm"
+          rows={3}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && newComment.trim()) {
+              createMut.mutate({ body: newComment.trim() });
+            }
+          }}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <MentionPicker members={memberList} selected={mentions} onChange={setMentions} />
+          {allowBlocking && (
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+              <ShieldAlert className={cn("h-3.5 w-3.5", blocking && "text-red-600")} />
+              Blocking
+              <Switch checked={blocking} onCheckedChange={setBlocking} aria-label="Blocking: holds prep and dispatch" />
+            </label>
+          )}
+        </div>
+        <MentionChips ids={mentions} members={memberList} />
+        {allowBlocking && blocking && <p className="text-[10px] text-red-600">Blocks prepping &amp; sending out until resolved.</p>}
+        <Button className="w-full gap-1" disabled={!newComment.trim() || createMut.isPending} onClick={() => createMut.mutate({ body: newComment.trim() })}>
+          <Send className="h-4 w-4" />
+          Post comment
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface CommentThreadPanelProps {
   orgId: string;
   entityType: string;
@@ -342,53 +463,7 @@ export function CommentThreadPanel({
     setInnerOpen(next);
     onOpenChange?.(next);
   };
-  const [newComment, setNewComment] = useState("");
-  const [blocking, setBlocking] = useState(false);
-  const [mentions, setMentions] = useState<string[]>([]);
-  const { createThread } = useCollaborationWrites();
-
-  // Blocking comments gate project prep / send-out. They are meaningless on
-  // other entities (assets, clients, …), so the toggle is project-only.
-  const allowBlocking = entityType === "project";
-
-  const threads = useAuthedQuery(
-    api.collaboration.listThreads,
-    open ? { orgId, entityType, entityId, targetType, targetId } : "skip"
-  ) as Thread[] | undefined;
-
-  // Filter to this sub-target — listThreads without a targetId returns ALL
-  // threads on the entity, so a project-level panel must drop line-item threads.
-  const visibleThreads = useMemo(() => {
-    if (!threads) return undefined;
-    if (targetId) return threads;
-    return threads.filter((t) => !(t as Thread & { targetId?: string }).targetId);
-  }, [threads, targetId]);
-
-  const { data: members } = useServerQuery({
-    queryKey: ["mentionable-members", orgId],
-    queryFn: getMentionableMembers,
-    enabled: open,
-  });
-  const memberList = (members ?? []) as Member[];
-
-  const createMut = useServerMutation({
-    mutationFn: ({ body }: { body: string }) =>
-      createThread(entityType, entityId, body, targetType, targetId, {
-        isBlocking: blocking,
-        mentionUserIds: mentions.length ? mentions : undefined,
-        projectId,
-      }),
-    onSuccess: () => {
-      setNewComment("");
-      setBlocking(false);
-      setMentions([]);
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const openThreads = (visibleThreads ?? []).filter((t) => t.status === "open");
-  const openCount = openThreads.length;
-  const blockingCount = openThreads.filter((t) => t.isBlocking).length;
+  const { openCount, blockingCount } = useCommentThreads({ orgId, entityType, entityId, targetType, targetId, enabled: open });
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -430,55 +505,7 @@ export function CommentThreadPanel({
           </SheetTitle>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-3 py-2">
-          {(visibleThreads ?? []).length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              No comments yet. Start a discussion below.
-            </p>
-          )}
-          {(visibleThreads ?? []).map((t) => (
-            <ThreadView key={t._id} orgId={orgId} thread={t} members={memberList} allowBlocking={allowBlocking} />
-          ))}
-        </div>
-
-        <div className="border-t pt-3 space-y-2">
-          <Textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Start a new discussion…"
-            className="resize-none text-sm"
-            rows={3}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && newComment.trim()) {
-                createMut.mutate({ body: newComment.trim() });
-              }
-            }}
-          />
-          <div className="flex items-center justify-between gap-2">
-            <MentionPicker members={memberList} selected={mentions} onChange={setMentions} />
-            {allowBlocking && (
-              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                <ShieldAlert className={cn("h-3.5 w-3.5", blocking && "text-red-600")} />
-                Blocking
-                <Switch checked={blocking} onCheckedChange={setBlocking} />
-              </label>
-            )}
-          </div>
-          <MentionChips ids={mentions} members={memberList} />
-          {allowBlocking && blocking && (
-            <p className="text-[10px] text-red-600">
-              Blocks prepping &amp; sending out until resolved.
-            </p>
-          )}
-          <Button
-            className="w-full gap-1"
-            disabled={!newComment.trim() || createMut.isPending}
-            onClick={() => createMut.mutate({ body: newComment.trim() })}
-          >
-            <Send className="h-4 w-4" />
-            Post comment
-          </Button>
-        </div>
+        <CommentThreadBody orgId={orgId} entityType={entityType} entityId={entityId} targetType={targetType} targetId={targetId} projectId={projectId} enabled={open} />
       </SheetContent>
     </Sheet>
   );

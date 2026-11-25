@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, test } from "vitest";
-import { isTaskOverdue, taskDueBucket } from "./taskDue";
+import { dueClockZone, isTaskOverdue, taskDueBucket, todayDayNumber } from "./taskDue";
 
 const due = Date.UTC(2026, 10, 24); // typed "2026-11-24"
 describe("taskDue", () => {
@@ -10,6 +10,24 @@ describe("taskDue", () => {
     expect(isTaskOverdue({ status: "TODO", dueDate: due }, now, "UTC")).toBe(false);
     expect(isTaskOverdue({ status: "TODO", dueDate: due }, now, "Australia/Sydney")).toBe(true);
   });
+  test("a missing or invalid timezone reads as UTC, whatever the host zone is", () => {
+    const prev = process.env.TZ;
+    try {
+      process.env.TZ = "Pacific/Kiritimati"; // UTC+14: the host's "today" is a day ahead of UTC
+      const now = Date.UTC(2026, 10, 24, 15); // 25 Nov 05:00 in the host zone, 24 Nov in UTC
+      expect(dueClockZone(undefined)).toBe("UTC");
+      expect(dueClockZone("Not/AZone")).toBe("UTC");
+      expect(dueClockZone("Australia/Sydney")).toBe("Australia/Sydney");
+      expect(todayDayNumber(now, undefined)).toBe(todayDayNumber(now, "UTC"));
+      expect(todayDayNumber(now, "Not/AZone")).toBe(todayDayNumber(now, "UTC"));
+      expect(isTaskOverdue({ status: "TODO", dueDate: due }, now, undefined)).toBe(false);
+      expect(isTaskOverdue({ status: "TODO", dueDate: due }, now, "Not/AZone")).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.TZ;
+      else process.env.TZ = prev;
+    }
+  });
+
   test("done, cancelled and dateless tasks are never overdue", () => {
     const now = Date.UTC(2026, 11, 1);
     expect(isTaskOverdue({ status: "DONE", dueDate: due }, now)).toBe(false);

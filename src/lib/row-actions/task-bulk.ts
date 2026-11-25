@@ -17,6 +17,21 @@ export interface Assignable {
 
 export type AssignTarget = { userId: string } | { crewId: string } | "none";
 
+/** An assign target as the write's patch (a user XOR a crew member; `none` clears both). */
+export function assignPatch(target: AssignTarget): { assigneeUserId: string | null; assigneeCrewId: string | null } {
+  if (target === "none") return { assigneeUserId: null, assigneeCrewId: null };
+  if ("userId" in target) return { assigneeUserId: target.userId, assigneeCrewId: null };
+  return { assigneeUserId: null, assigneeCrewId: target.crewId };
+}
+
+/** The name an assign target reads as in a toast. */
+export function assignLabel(target: AssignTarget, assignees: Assignable | undefined): string {
+  if (target === "none") return "Unassigned";
+  if ("userId" in target) return assignees?.users.find((u) => u.id === target.userId)?.name ?? "assigned";
+  const c = assignees?.crew.find((x) => x.id === target.crewId);
+  return c ? `${c.firstName} ${c.lastName}` : "assigned";
+}
+
 export interface TaskBulkHandlers {
   onAssign: (target: AssignTarget) => void;
   onDue: (when: DueShortcut) => void;

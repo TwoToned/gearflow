@@ -60,10 +60,30 @@ Reads in [`convex/projectTasks.ts`](../convex/projectTasks.ts); browser-direct w
   use; UTC when the org stores none). Open tasks (TODO / IN_PROGRESS) due before today are
   overdue. The tab badge, the `projectReadiness.forProject` overdue count and the grouping
   all call it.
-- **Tasks section** (`src/components/projects/tasks-panel.tsx`, replaced in Phase 10 slice C): add box, open list (tick to
-  complete), a "Closed" section (tick to reopen), and an edit dialog (title, notes, status,
-  priority, due date, assignee, delete). Data via `src/hooks/use-project-task-list.ts`, which
-  refetches the composite read when the live `projectTasks` subscription changes.
+- **Tasks section** (`src/components/projects/tasks-notes/tasks-section.tsx`; replaced
+  `tasks-panel.tsx`): tasks grouped by WHEN (Overdue · Today · Tomorrow · This week · Later ·
+  No date, then a collapsed `Done · n · m cancelled`) by `src/lib/project-task-groups.ts`;
+  chips `Open · Mine · Done · All` + search; an add row at the top (`Due ▾`, `Assign ▾`); each
+  row has a completion circle, `High`/`Low`, `In progress` only when it is, the assignee and
+  due words as menus, and ⋯ (`src/lib/row-actions/task-row.ts`); Select mode + the one
+  `BulkBar` (Assign · Due · Mark done · Delete, `task-bulk.ts`) over `bulkUpdateNative` /
+  `bulkDeleteNative`; drag a grip to reorder WITHIN a group (`reorderNative`; `sortOrder` is
+  one value per project, so a drag never crosses groups); a Radix task `Sheet` with every
+  field and a history line. Data via `src/hooks/use-project-task-list.ts`, which refetches
+  the composite read when the live `projectTasks` subscription changes.
+- **Every task write is exactly undoable by ids** (`src/hooks/use-task-actions.ts`: one
+  toast + one closure). The forward write stores what it changed in its own audit row(s)
+  (`${auditId}:${taskId}` per task; one row for a reorder); `undoCreateNative`,
+  `undoUpdateNative`, `restoreDeletedNative`, `undoReorderNative` take ids only and refuse
+  a stale target (author, 10-minute server-clock window, once, per-field compare-and-set
+  through `convex/lib/fieldEditUndo.ts`). A task owns no stored file, so an Undo never
+  touches one. Every write also emits an `activityEvents` row (`task_created` /
+  `task_completed` / `task_updated` / `task_deleted` / `task_restored`) so the Activity rail
+  shows task work.
+- **Discussion** is inline on the same tab (`discussion-section.tsx`, the SAME
+  `CommentThreadBody` the Sheet panel uses), with `@ Mention ▾` and the `Blocking` switch;
+  the header ⋯ item, the header's discussion count badge and Overview's blocking row all jump
+  to it (`?tab=discussion`). `Blocking` holds prep and dispatch exactly as before.
   `?tab=work` (the old name) still resolves to this tab.
 - **`/my-tasks`** (`src/app/(app)/my-tasks/page.tsx`) and the **My tasks** dashboard widget
   (`MyTasksWidget`).

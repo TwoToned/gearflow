@@ -97,9 +97,9 @@ export default function ProjectDetailPage({
   // ⋯ › Version › Manage versions… and the `V` key open the Versions TAB (D19).
   // Stable: `useVersionsShortcut` binds `V` to it, and a fresh closure per render re-bound the key every render.
   const openVersions = useCallback(() => setRequestedTab("versions"), []);
-  // The comments panel: the header ⋯ and Overview's blocking-discussion row
-  // and `Discussion ›` all open the ONE panel the header mounts.
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  // The discussion lives on the Tasks & notes tab (UX Phase 10): the header ⋯ and badge and
+  // Overview's blocking-discussion row all land on its Discussion section.
+  const openDiscussion = useCallback(() => setRequestedTab("discussion"), []);
 
   const { data: project, isLoading } = useProjectDetail(id);
   const media = useMediaWrites("project");
@@ -192,7 +192,7 @@ export default function ProjectDetailPage({
         project={project as OverviewTabProject}
         isTemplate={isTemplate}
         onOpenTab={setRequestedTab}
-        onOpenDiscussion={() => setCommentsOpen(true)}
+        onOpenDiscussion={openDiscussion}
       />
     ),
     equipment: (
@@ -254,7 +254,9 @@ export default function ProjectDetailPage({
     tasks: (
       <TasksNotesTab
         projectId={id}
+        orgId={orgId}
         section={jobTabSection(requestedTab)}
+        onOpenTab={setRequestedTab}
         notes={
           <NotesTabSlot
             liveCrewNotes={(composedProject.crewNotes as string) || ""}
@@ -303,8 +305,7 @@ export default function ProjectDetailPage({
             onOpenTab={setRequestedTab}
             onOpenVersions={openVersions}
             onMakeLive={versionState.openMakeLive}
-            commentsOpen={commentsOpen}
-            onCommentsOpenChange={setCommentsOpen}
+            onOpenDiscussion={openDiscussion}
           />
 
           {/* ── Tabs + context sidebar ───────────────────────────────────────

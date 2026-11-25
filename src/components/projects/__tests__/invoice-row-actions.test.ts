@@ -25,6 +25,7 @@ describe("invoiceRowMenuActions", () => {
     const actions = invoiceRowMenuActions({ status: "DRAFT", kind: "FULL" }, ALL, handlers());
     expect(keys(actions)).toEqual(["issue", "delete-draft"]);
     expect(actions[1].danger).toBe(true);
+    expect(actions[1].confirm).toMatchObject({ confirmLabel: "Delete draft" }); // a hard delete asks first
   });
 
   it("a DRAFT hides Issue without invoice:issue and Delete draft without invoice:delete", () => {

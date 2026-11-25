@@ -39,7 +39,20 @@ const when = (cond: boolean, item: ActionItem): ActionItem[] => (cond ? [item] :
 function draftActions(perms: Perms, h: Handlers): ActionItem[] {
   return [
     ...when(perms.canIssue, { key: "issue", label: "Issue…", group: "organise", icon: Send, onSelect: h.onIssue }),
-    ...when(perms.canDelete, { key: "delete-draft", label: "Delete draft", group: "danger", icon: Trash2, onSelect: h.onDeleteDraft, danger: true }),
+    // A hard delete with no Undo, sitting right under Issue…: it asks first.
+    ...when(perms.canDelete, {
+      key: "delete-draft",
+      label: "Delete draft",
+      group: "danger",
+      icon: Trash2,
+      onSelect: h.onDeleteDraft,
+      danger: true,
+      confirm: {
+        title: "Delete this draft?",
+        body: "The draft invoice is removed permanently. Nothing has been issued or sent, and this cannot be undone.",
+        confirmLabel: "Delete draft",
+      },
+    }),
   ];
 }
 

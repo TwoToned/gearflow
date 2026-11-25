@@ -5,8 +5,6 @@
  */
 export type FinanceView = "quotes" | "invoices";
 
-export const FINANCE_VIEWS: readonly FinanceView[] = ["quotes", "invoices"];
-
 export function parseFinanceView(param: string | null | undefined): FinanceView {
   return param === "invoices" ? "invoices" : "quotes";
 }

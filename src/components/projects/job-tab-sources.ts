@@ -54,14 +54,17 @@ function usePackingTabCount(projectId: string): JobTabCounts["packing"] {
 /** Every count the strip shows. Must render inside `ProjectVersionProvider`. */
 export function useJobTabCounts(projectId: string): JobTabCounts {
   const { tasks } = useProjectTaskList(projectId);
-  const { timezone, now } = useTaskDueClock();
+  const { timezone, now, ready } = useTaskDueClock();
   const { versions } = useProjectVersion();
   const packing = usePackingTabCount(projectId);
   return {
     tasks: {
       done: tasks.filter((t) => t.status === "DONE").length,
       total: tasks.filter((t) => t.status !== "CANCELLED").length,
-      overdue: tasks.filter((t) => isTaskOverdue({ status: t.status, dueDate: t.dueDate ? new Date(t.dueDate).getTime() : null }, now, timezone)).length,
+      // Unknown (absent) until the org's timezone has loaded: never a count read in the wrong zone.
+      overdue: ready
+        ? tasks.filter((t) => isTaskOverdue({ status: t.status, dueDate: t.dueDate ? new Date(t.dueDate).getTime() : null }, now, timezone)).length
+        : undefined,
     },
     packing,
     versions: versions.length,

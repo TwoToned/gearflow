@@ -22,6 +22,8 @@ describe("job tabs", () => {
     expect(resolveJobTab("notes", a)).toBe("tasks");
     expect(resolveJobTab("files", a)).toBe("tasks");
     expect(jobTabSection("files")).toBe("files");
+    expect(resolveJobTab("discussion", a)).toBe("tasks");
+    expect(jobTabSection("discussion")).toBe("discussion");
     expect(jobTabSection("tasks")).toBeNull();
     expect(resolveJobTab("logistics", a)).toBe("labour");
     expect(resolveJobTab("nope", a)).toBe("overview");

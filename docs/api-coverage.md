@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 467 | 331 | 132 | 2 | 2 |
-| Mutations | 842 | 343 | 485 | 0 | 14 |
-| **Total** | **1309** | **674** | **617** | **2** | **16** |
+| Queries | 470 | 331 | 133 | 2 | 4 |
+| Mutations | 847 | 343 | 485 | 0 | 19 |
+| **Total** | **1317** | **674** | **618** | **2** | **23** |
 
 <!-- reachability-floor: 674 -->
 
@@ -74,6 +74,8 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `categorySlots` | 11 |
 | `checkRecordOps` | 8 |
 | `clientXeroWrites` | 2 |
+| `crewDocumentsWrites` | 5 |
+| `crewDocuments` | 3 |
 | `crewShifts` | 9 |
 | `emails` | 1 |
 | `financeArtifacts` | 5 |
@@ -134,6 +136,14 @@ fails the build otherwise.
 | `categorySlots.listBySubHireGroupId` | No organizationId column and no orgId arg; org-scoping needs a parent subHireGroup lookup not done here — revisit under a projects-domain slice. |
 | `clientMedia.getById` | Fetches by global cuid index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3). |
 | `clientMedia.listByParent` | Fetches by global by_clientId index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3). |
+| `crewDocuments.getForDownload` | Service-only: the gated download route decides for the real caller. |
+| `crewDocuments.healthForMember` | A document's expiry is as private as the document: same rule as the list (owner ruling B2), never an API key. |
+| `crewDocuments.listForMember` | Crew documents are identity and licence material: visible only to the member themself or crew:update on a user session (owner ruling B2), never an API key. |
+| `crewDocumentsWrites.addNative` | Crew documents are identity and licence material: user sessions with crew:update only, never an API key (owner ruling B2). |
+| `crewDocumentsWrites.removeNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.undoAddNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.undoUpdateNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.updateNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
 | `crewShifts.getById` | crewShifts has no organizationId column; fetches by global cuid with no org check, so opening it risks a cross-tenant read (R-8.4.3). |
 | `crewShifts.list` | crewShifts has no organizationId column; this query has no orgId to check the assignmentId argument against, so opening it risks a cross-tenant read (R-8.4.3). |
 | `crewShifts.listByAssignmentIds` | crewShifts has no organizationId column; this query has no orgId to check the assignmentIds argument against, so opening it risks a cross-tenant read (R-8.4.3). |

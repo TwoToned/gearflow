@@ -17,8 +17,12 @@ beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
 });
 
+// The record page keeps its tab in `?tab=`; each tab is rendered by setting it.
+let tab = "";
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), back: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), back: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(tab ? `tab=${tab}` : ""),
+  usePathname: () => "/suppliers/s1/orders/o1",
 }));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org1" } }),
@@ -30,9 +34,12 @@ vi.mock("@/components/auth/require-permission", () => ({
 vi.mock("@/components/auth/permission-gate", () => ({
   CanDo: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+// The order's PO / docket / other files (B3) come from `supplierRecord.orderFiles` via useAuthedQuery.
+let orderFiles: unknown[] = [];
 vi.mock("convex/react", () => ({
   useMutation: () => vi.fn(async () => undefined),
 }));
+vi.mock("@/hooks/use-authed-query", () => ({ useAuthedQuery: () => orderFiles }));
 
 let orderDetail: unknown;
 vi.mock("@/hooks/use-supplier-orders", () => ({
@@ -84,12 +91,22 @@ describe("SupplierOrderDetailPage (smoke)", () => {
       assets: [{ id: "a1", assetTag: "TAG-1", status: "AVAILABLE", model: { id: "m1", name: "Console" } }],
       invoice: { id: "f1", fileName: "invoice.pdf", fileSize: 2048, mimeType: "application/pdf", url: "/api/files/sk1" },
     };
-    await renderPage();
+    const first = await renderPage();
     expect((await screen.findAllByText("PO-1")).length).toBeGreaterThan(0);
+    first.unmount();
+    tab = "lines";
+    const lines = await renderPage();
     expect(screen.getAllByText("Console x1").length).toBeGreaterThan(0);
     expect(screen.getAllByText("TAG-1").length).toBeGreaterThan(0);
+    lines.unmount();
+    tab = "files";
+    orderFiles = [{ id: "of1", kind: "DOCKET", name: "Delivery docket", createdAt: 1, file: { id: "f9", fileName: "docket.pdf", fileSize: 1024, mimeType: "application/pdf", url: "/api/files/k9" } }];
+    await renderPage();
     expect(screen.getAllByText("invoice.pdf").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Replace invoice").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Delivery docket").length).toBeGreaterThan(0); // a B3 order file sits above the invoice slot
+    orderFiles = [];
+    tab = "";
   });
 
   it("renders a not-found state (not a crash) when getDetail returns null", async () => {

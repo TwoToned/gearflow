@@ -22,11 +22,11 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 456 | 320 | 132 | 2 | 2 |
-| Mutations | 829 | 333 | 485 | 0 | 11 |
-| **Total** | **1285** | **653** | **617** | **2** | **13** |
+| Queries | 468 | 332 | 132 | 2 | 2 |
+| Mutations | 851 | 352 | 485 | 0 | 14 |
+| **Total** | **1319** | **684** | **617** | **2** | **16** |
 
-<!-- reachability-floor: 653 -->
+<!-- reachability-floor: 684 -->
 
 The reachability floor above is a CI gate: the agent-reachable count may not drop
 below it. Lowering it is allowed but must be a visible, explained line in a PR
@@ -42,9 +42,9 @@ idempotency key, already required of every mutation) at the dispatcher — see
 
 | Tier | Agent-reachable mutations |
 |---|---|
-| `high` | 106 |
-| `medium` | 160 |
-| `low` | 67 |
+| `high` | 115 |
+| `medium` | 164 |
+| `low` | 73 |
 
 ## Modules with no agent-reachable operation
 
@@ -94,6 +94,7 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `parity` | 1 |
 | `pendingOrgJoinRequests` | 6 |
 | `pendingSSOApprovals` | 5 |
+| `peopleBulkWrites` | 3 |
 | `projectNumberSequences` | 7 |
 | `projectVersionsWrites` | 1 |
 | `repairOrphanedGroupLines` | 1 |

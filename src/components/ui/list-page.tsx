@@ -82,6 +82,9 @@ export interface ListPageProps {
   renderView?: (view: string) => React.ReactNode | null;
   /** Additive (UX Phase 15, Q-I2): page-level view words in the head, each its own route. */
   headWords?: HeadWords;
+  /** Additive (UX Phase 13): a muted sub line under the title, and the phone's title switcher menu. */
+  subline?: React.ReactNode;
+  titleMenu?: ActionMenuSpec;
 }
 
 const SEARCH_DEBOUNCE_MS = 200;
@@ -229,6 +232,8 @@ export function ListPage(props: ListPageProps) {
         primary={props.primary}
         pageMenu={withColumnsItem(props.pageMenu, cols.item)}
         headWords={props.headWords}
+        subline={props.subline}
+        titleMenu={props.titleMenu}
       />
       {props.segments.length > 0 && (
         <ListSegments segments={props.segments} value={state.seg} onChange={(seg) => setState(withPatch(state, { seg }))} />

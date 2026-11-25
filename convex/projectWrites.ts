@@ -403,7 +403,7 @@ const PROJECT_SERVER_OWNED = ["revision", "liveRevision"] as const;
  * server-owned fields + `isTemplate` (a project is never flipped to a template in
  * place — that's a saveAsTemplate copy). `projectNumber` stays editable (a legit
  * code edit). */
-const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, ...PROJECT_SERVER_OWNED, "isTemplate"] as const;
+export const PROJECT_UPDATE_IMMUTABLE = [...PROJECT_MONEY_ANCHORS, ...PROJECT_SERVER_OWNED, "isTemplate"] as const;
 
 const PROJECT_NEVER_CLEAR = new Set<string>([
   "id", "organizationId", "projectNumber", ...PROJECT_UPDATE_IMMUTABLE,

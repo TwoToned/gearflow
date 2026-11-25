@@ -143,4 +143,57 @@ describe("projectEditUndo.undoUpdateNative", () => {
     ).rejects.toThrow();
     expect((await row(t))?.name).toBe("Renamed");
   });
+
+  test("restoring a discount recalculates the stored totals in the same transaction", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projectLineItems", { versionId: "v1", lineageId: "li1", id: "li1", organizationId: ORG, projectId: "p1", type: "EQUIPMENT", quantity: 1, unitPrice: 1000, duration: 1, lineTotal: 1000, status: "QUOTED", sortOrder: 0, createdAt: NOW, updatedAt: NOW });
+    });
+    await save(t, { discountPercent: 20 }, "a1");
+    expect((await row(t))?.discountAmount).toBe(200);
+    await undo(t, "a1");
+    expect((await row(t))?.discountAmount).toBe(100);
+  });
+
+  test("an undo that touches no recalc input leaves the totals alone", async () => {
+    const t = makeT();
+    await seed(t);
+    await save(t, { name: "Renamed" }, "a1");
+    await undo(t, "a1");
+    expect((await row(t))?.discountAmount).toBeUndefined();
+  });
+
+  test("needs project:update: a viewer who somehow holds the audit id is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    await save(t, { name: "Renamed" }, "a1");
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "m4", organizationId: ORG, userId: "user_v", role: "viewer" }); });
+    await expect(undo(t, "a1", "user_v")).rejects.toThrow();
+    expect((await row(t))?.name).toBe("Renamed");
+  });
+
+  test("a status entry in the snapshot is never raw-patched back", async () => {
+    const t = makeT();
+    await seed(t);
+    // updateNative records whatever it is handed; the Undo must still refuse a status restore.
+    await save(t, { status: "PREPPING" }, "a1");
+    expect((await row(t))?.status).toBe("PREPPING");
+    await expect(undo(t, "a1")).rejects.toThrow(/never restores/);
+    expect((await row(t))?.status).toBe("PREPPING");
+  });
+
+  test("a restored client reference must still be in this org", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("clients", { id: "cOwn", organizationId: ORG, name: "Own" });
+      await ctx.db.insert("clients", { id: "cForeign", organizationId: "org_2", name: "Foreign" });
+      const p = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", "p1")).first();
+      await ctx.db.patch(p!._id, { clientId: "cForeign" });
+    });
+    await save(t, { clientId: "cOwn" }, "a1");
+    await expect(undo(t, "a1")).rejects.toThrow();
+    expect((await row(t))?.clientId).toBe("cOwn");
+  });
 });

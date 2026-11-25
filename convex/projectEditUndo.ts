@@ -1,12 +1,14 @@
-import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { v, ConvexError } from "convex/values";
+import { mutation, type MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { assertRefInOrg, assertClientContactBelongsToClient } from "./lib/orgRef";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { undoFieldEdit } from "./lib/fieldEditUndo";
 import { LOCKED_PROJECT_FIELDS, assertPricingUnlocked } from "./lib/projectLocks";
-import { recalcIfInputsWritten } from "./projectWrites";
+import { recalcIfInputsWritten, PROJECT_UPDATE_IMMUTABLE } from "./projectWrites";
 
 /**
  * The exact Undo of a job edit (UX Phase 9 follow-up): the edit sheet's Save writes ONE audit row
@@ -18,6 +20,34 @@ import { recalcIfInputsWritten } from "./projectWrites";
  * write to it, and a restore that touches a total's input recalculates in the same transaction.
  */
 const actorValidator = v.object({ userId: v.string(), userName: v.string() });
+
+/**
+ * Only fields the edit sheet may write are restorable. `updateNative` is also reachable directly (it records
+ * whatever it was given), so a `status` or server-owned entry in the snapshot must never be raw-patched back:
+ * that would skip `transitionProjectStatus`'s gates, snapshot and counters, or rewind a counter/pointer.
+ */
+const NEVER_RESTORE: ReadonlySet<string> = new Set<string>([...PROJECT_UPDATE_IMMUTABLE, "status", "packerUserId", "id", "organizationId"]);
+
+function assertRestorable(plan: { set: Record<string, unknown>; clear: string[] }): void {
+  const bad = [...Object.keys(plan.set), ...plan.clear].filter((f) => NEVER_RESTORE.has(f));
+  if (bad.length > 0) {
+    throw new ConvexError({ code: "NOT_UNDOABLE", message: `That change touched ${bad.join(", ")}, which an edit Undo never restores.` });
+  }
+}
+
+/** A restored reference must still be in this org (the value in the snapshot is old, the check is now). */
+async function assertRestoredRefsInOrg(
+  ctx: MutationCtx, orgId: string, project: Doc<"projects">, plan: { set: Record<string, unknown> },
+): Promise<void> {
+  const { clientId, locationId, clientContactId } = plan.set;
+  if (typeof clientId === "string") await assertRefInOrg(ctx, "clients", clientId, orgId);
+  if (typeof locationId === "string") await assertRefInOrg(ctx, "locations", locationId, orgId);
+  if (typeof clientContactId === "string") {
+    const client = typeof clientId === "string" ? clientId : project.clientId;
+    if (!client) throw new ConvexError({ code: "FORBIDDEN", message: "Referenced client contact not found on this project's client." });
+    await assertClientContactBelongsToClient(ctx, clientContactId, client, orgId);
+  }
+}
 
 export const undoUpdateNative = mutation({
   returns: v.object({ restored: v.array(v.string()) }),
@@ -34,6 +64,8 @@ export const undoUpdateNative = mutation({
         return p && p.organizationId === a.orgId ? p : null;
       },
       apply: async (project, plan) => {
+        assertRestorable(plan);
+        await assertRestoredRefsInOrg(ctx, a.orgId, project, plan);
         if (LOCKED_PROJECT_FIELDS.some((f) => f in plan.set || plan.clear.includes(f))) assertPricingUnlocked(project);
         const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
         for (const f of plan.clear) patch[f] = undefined;

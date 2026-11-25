@@ -28,6 +28,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+const perms = vi.hoisted(() => ({ allowed: new Set<string>() }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: (resource: string, action: string) => perms.allowed.has(`${resource}:${action}`) }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org1" } }) }));
 vi.mock("@/components/ui/url-saved-views", () => ({ UrlSavedViewsMenu: () => <button type="button">Views</button> }));
 
@@ -61,6 +63,7 @@ beforeEach(() => {
   nav.push.mockClear();
   nav.replace.mockClear();
   board.days = 0;
+  perms.allowed = new Set(["subHire:create", "model:read"]);
 });
 
 describe("OverbookingsList (smoke)", () => {
@@ -116,6 +119,34 @@ describe("OverbookingsList (smoke)", () => {
     await user.click(screen.getByRole("button", { name: "Gaffer Tape actions" }));
     await user.click(await screen.findByText("Reorder"));
     expect(nav.push).toHaveBeenCalledWith("/assets/sales-stock?q=Gaffer%20Tape");
+  });
+
+  it("Sub-hire… is ABSENT (not disabled) without subHire:create, while Open model stays", async () => {
+    perms.allowed = new Set(["model:read"]);
+    const user = userEvent.setup();
+    render(<OverbookingsList />);
+    await user.click(screen.getByRole("button", { name: "SM58 actions" }));
+    expect(await screen.findByText("Open model")).toBeTruthy();
+    expect(screen.queryByText("Sub-hire…")).toBeNull();
+  });
+
+  it("Reorder is ABSENT without model:read (the Sales stock page it opens needs it)", async () => {
+    perms.allowed = new Set(["subHire:create"]);
+    const user = userEvent.setup();
+    render(<OverbookingsList />);
+    await user.click(screen.getByRole("button", { name: "Gaffer Tape actions" }));
+    expect(await screen.findByText("Open job")).toBeTruthy();
+    expect(screen.queryByText("Reorder")).toBeNull();
+  });
+
+  it("Open model is ABSENT without model:read, and a caller with neither right still gets Open job", async () => {
+    perms.allowed = new Set();
+    const user = userEvent.setup();
+    render(<OverbookingsList />);
+    await user.click(screen.getByRole("button", { name: "SM58 actions" }));
+    expect(await screen.findByText("Open job")).toBeTruthy();
+    expect(screen.queryByText("Open model")).toBeNull();
+    expect(screen.queryByText("Sub-hire…")).toBeNull();
   });
 
   it("the old ?days= link becomes the strip word and is dropped from the URL", () => {

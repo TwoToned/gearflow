@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (643 agent-reachable)
+## Operations (647 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -34,6 +34,10 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `projectTasksWrites.createNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.deleteNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.reorderNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.restoreDeletedNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.undoCreateNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.undoReorderNative` (mutation, scope: work:update,project:update)
+- `projectTasksWrites.undoUpdateNative` (mutation, scope: work:update,project:update)
 - `projectTasksWrites.updateNative` (mutation, scope: work:update,project:update)
 - `subHiresWrites.coverShortfallNative` (mutation, scope: subHire:update,subHire:create,project:manage_line_items)
 - `subHiresWrites.undoShortfallNative` (mutation, scope: subHire:update,project:manage_line_items,subHire:delete)

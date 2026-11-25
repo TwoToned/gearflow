@@ -44723,7 +44723,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "a12d4885e3521cab",
-    "returnsSha": "bec0cd60d81a5175",
+    "returnsSha": "cac4c3fad72134b3",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -44804,7 +44804,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "c91a4761b711c1b8",
-    "returnsSha": "04471d174c91281a",
+    "returnsSha": "60da36639ea41b88",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -44985,6 +44985,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -45001,11 +45011,235 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "1aaef5e812b9cdb9",
-    "returnsSha": "efde83ecf2efd768",
+    "argsSha": "0083e57f85b783b9",
+    "returnsSha": "03f3db641059a5f0",
     "stability": "tracks-app",
     "summary": "Reassign sortOrder for a set of tasks after a drag-reorder.",
     "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.restoreDeletedNative",
+    "module": "projectTasksWrites",
+    "fn": "restoreDeletedNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b917ee228425e048",
+    "returnsSha": "651ae7a4328eaa1d",
+    "stability": "tracks-app",
+    "summary": "Undo a task delete (single or bulk) by its audit id and the deleted task ids: re-creates each task from the snapshot the delete stored. Once per task.",
+    "danger": "medium",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.undoCreateNative",
+    "module": "projectTasksWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Undo adding a task by its audit id: deletes only that task, only while it is unedited. Once.",
+    "danger": "high",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.undoReorderNative",
+    "module": "projectTasksWrites",
+    "fn": "undoReorderNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "projectId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ef87968b5d436b9a",
+    "returnsSha": "6da4cf9843d65868",
+    "stability": "tracks-app",
+    "summary": "Undo a task reorder by its audit id: puts each task back to its previous order only where it is still as that write left it. Once.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "projectTasksWrites.undoUpdateNative",
+    "module": "projectTasksWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": null,
+    "action": null,
+    "scopePairs": [
+      {
+        "resource": "work",
+        "action": "update"
+      },
+      {
+        "resource": "project",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "b917ee228425e048",
+    "returnsSha": "651ae7a4328eaa1d",
+    "stability": "tracks-app",
+    "summary": "Undo a task update (single or bulk) by its audit id and the changed task ids: restores only fields still as that write left them. Once per task.",
+    "danger": "medium",
     "mcpTier": 3,
     "agentAccess": null,
     "deniedReason": null
@@ -45093,7 +45327,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "privilegedArgs": [],
     "argsSha": "f92e9149bb5dab55",
-    "returnsSha": "8b114161049d5d20",
+    "returnsSha": "1cb2a7e9146018e1",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -65822,10 +66056,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1275,
-  agentReachable: 643,
+  total: 1279,
+  agentReachable: 647,
   queries: 455,
-  mutations: 820,
+  mutations: 824,
   agentReachableQueries: 319,
-  agentReachableMutations: 324,
+  agentReachableMutations: 328,
 } as const;

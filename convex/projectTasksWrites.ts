@@ -186,6 +186,98 @@ async function writeUndoMarker(
   });
 }
 
+/**
+ * Delete one task (org-checked) and write its per-task audit row, with the snapshot
+ * `restoreDeletedNative` re-inserts from. `null` = not found / another org's.
+ */
+async function deleteTaskLogged(
+  ctx: MutationCtx,
+  a: { orgId: string; id: string; actor: Actor; auditId: string; now: number },
+): Promise<Doc<"projectTasks"> | null> {
+  const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+  if (!doc || doc.organizationId !== a.orgId) return null;
+  const row = snapshotTask(doc);
+  await ctx.db.delete(doc._id);
+  await logTask(ctx, {
+    orgId: a.orgId, projectId: doc.projectId, actor: a.actor, auditId: rowAuditId(a.auditId, a.id), now: a.now, action: "deleted",
+    entityId: a.id, entityName: doc.title, summary: `Deleted task "${doc.title}"`,
+    details: { deletedTask: { authorId: a.actor.userId, serverSavedAt: Date.now(), row } },
+  });
+  return doc;
+}
+
+/** Drop an assignee who is no longer valid in the org rather than failing an Undo that restores it. */
+async function dropInvalidAssignees(ctx: MutationCtx, orgId: string, fields: Record<string, unknown>): Promise<void> {
+  for (const f of ["assigneeUserId", "assigneeCrewId"] as const) {
+    const id = fields[f];
+    if (typeof id !== "string") continue;
+    try {
+      await assertAssigneeInOrg(ctx, orgId, f === "assigneeUserId" ? id : null, f === "assigneeCrewId" ? id : null);
+    } catch {
+      fields[f] = undefined; // cleared (Convex drops an undefined field on write)
+    }
+  }
+}
+
+/** The `deletedTask` block of a delete's audit row, checked to be THIS org's snapshot of THIS task. */
+function parseDeletedRow(details: unknown, orgId: string, taskId: string): { authorId: string; serverSavedAt: number; snap: Doc<"projectTasks"> } {
+  const d = (details as { deletedTask?: { authorId?: string; serverSavedAt?: number; row?: Record<string, unknown> } } | undefined)?.deletedTask;
+  const snap = d?.row as unknown as Doc<"projectTasks"> | undefined;
+  if (!d || !snap || typeof d.authorId !== "string" || typeof d.serverSavedAt !== "number" || snap.organizationId !== orgId || snap.id !== taskId) {
+    throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone." });
+  }
+  return { authorId: d.authorId, serverSavedAt: d.serverSavedAt, snap };
+}
+
+/**
+ * What a delete's Undo may re-insert: the snapshot its own delete row stored, after
+ * every refusal (not this org's / not this task / not yours / expired / already
+ * undone / the task exists again / its job is gone).
+ */
+async function readRestorableSnapshot(ctx: MutationCtx, a: { orgId: string; auditId: string; id: string; actor: Actor }): Promise<Doc<"projectTasks">> {
+  const rowId = rowAuditId(a.auditId, a.id);
+  const row = await readForwardRow(ctx, a.orgId, rowId, a.id);
+  const { authorId, serverSavedAt, snap } = parseDeletedRow(row.details, a.orgId, a.id);
+  await assertNotUndone(ctx, a.orgId, rowId);
+  assertAuthorWithinWindow(authorId, a.actor.userId, serverSavedAt);
+  const again = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+  if (again) throw new ConvexError({ code: "CHANGED_SINCE", message: "That task already exists again." });
+  const project = snap.projectId ? await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", snap.projectId!)).first() : null;
+  if (snap.projectId && (!project || project.organizationId !== a.orgId)) {
+    throw new ConvexError({ code: "NOT_FOUND", message: "The job this task belonged to no longer exists." });
+  }
+  return snap;
+}
+
+/** Re-insert ONE deleted task from its snapshot (see `restoreDeletedNative`). */
+async function restoreOneDeleted(ctx: MutationCtx, a: { orgId: string; auditId: string; id: string; actor: Actor; now: number }): Promise<void> {
+  const snap = await readRestorableSnapshot(ctx, a);
+  const restored = { ...snap } as Record<string, unknown>;
+  await dropInvalidAssignees(ctx, a.orgId, restored);
+  await ctx.db.insert("projectTasks", { ...(restored as Omit<Doc<"projectTasks">, "_id" | "_creationTime">), updatedAt: a.now });
+  const rowId = rowAuditId(a.auditId, a.id);
+  await writeUndoMarker(ctx, { orgId: a.orgId, projectId: snap.projectId, actor: a.actor, now: a.now, rowId, taskId: a.id, title: snap.title, summary: `Restored task "${snap.title}"` });
+  await taskEvent(ctx, { orgId: a.orgId, projectId: snap.projectId, actor: a.actor, now: a.now, action: "task_restored", summary: `restored task "${snap.title}"`, taskId: a.id });
+}
+
+/** Assign `sortOrder = index` to each org-owned task in `orderedIds`; report what moved (task id → previous / new order). */
+async function applyOrder(ctx: MutationCtx, orgId: string, orderedIds: string[], now: number) {
+  const before: Record<string, FieldValue> = {};
+  const after: Record<string, FieldValue> = {};
+  let projectId: string | undefined;
+  for (let index = 0; index < orderedIds.length; index++) {
+    const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).first();
+    if (!doc || doc.organizationId !== orgId) continue;
+    if ((doc.sortOrder ?? null) !== index) {
+      before[doc.id] = doc.sortOrder ?? null;
+      after[doc.id] = index;
+    }
+    projectId ??= doc.projectId;
+    await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
+  }
+  return { before, after, projectId };
+}
+
 /** Run an Undo over several tasks: a stale one is skipped; if NONE could be undone, say why. */
 async function undoEach(ids: string[], run: (id: string) => Promise<void>): Promise<{ restoredIds: string[]; skippedIds: string[] }> {
   const restoredIds: string[] = [];
@@ -440,17 +532,10 @@ export const bulkDeleteNative = mutation({
     let projectId: string | undefined;
     const deletedIds: string[] = [];
     for (const id of a.ids) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-      if (!doc || doc.organizationId !== a.orgId) continue;
-      const row = snapshotTask(doc);
-      await ctx.db.delete(doc._id);
-      projectId ??= doc.projectId;
+      const deleted = await deleteTaskLogged(ctx, { orgId: a.orgId, id, actor, auditId: a.auditId, now: a.now });
+      if (!deleted) continue;
+      projectId ??= deleted.projectId;
       deletedIds.push(id);
-      await logTask(ctx, {
-        orgId: a.orgId, projectId: doc.projectId, actor, auditId: rowAuditId(a.auditId, id), now: a.now, action: "deleted",
-        entityId: id, entityName: doc.title, summary: `Deleted task "${doc.title}"`,
-        details: { deletedTask: { authorId: actor.userId, serverSavedAt: Date.now(), row } },
-      });
     }
 
     if (deletedIds.length > 0) {
@@ -485,20 +570,7 @@ export const reorderNative = mutation({
     await assertBulkSizeOk(ctx, orderedIds.length);
     await requireWorkOrProjectOrgUpdate(ctx, orgId);
     const actor = auditId && suppliedActor ? await resolveActor(ctx, suppliedActor) : null;
-    const before: Record<string, FieldValue> = {};
-    const after: Record<string, FieldValue> = {};
-    let projectId: string | undefined;
-    for (let index = 0; index < orderedIds.length; index++) {
-      const doc = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", orderedIds[index])).first();
-      if (doc && doc.organizationId === orgId) {
-        if ((doc.sortOrder ?? null) !== index) {
-          before[doc.id] = doc.sortOrder ?? null;
-          after[doc.id] = index;
-        }
-        projectId ??= doc.projectId;
-        await ctx.db.patch(doc._id, { sortOrder: index, updatedAt: now });
-      }
-    }
+    const { before, after, projectId } = await applyOrder(ctx, orgId, orderedIds, now);
     const changed = Object.keys(after).length > 0;
     if (changed && actor && auditId && projectId) {
       await recordFieldEdit(ctx, {
@@ -577,15 +649,7 @@ export const undoUpdateNative = mutation({
         apply: async (doc, plan) => {
           const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
           for (const f of plan.clear) patch[f] = undefined;
-          // A restored assignee may have left the org since: drop it rather than fail the Undo.
-          for (const f of ["assigneeUserId", "assigneeCrewId"] as const) {
-            if (typeof patch[f] !== "string") continue;
-            try {
-              await assertAssigneeInOrg(ctx, a.orgId, f === "assigneeUserId" ? (patch[f] as string) : null, f === "assigneeCrewId" ? (patch[f] as string) : null);
-            } catch {
-              patch[f] = undefined;
-            }
-          }
+          await dropInvalidAssignees(ctx, a.orgId, patch); // a restored assignee may have left the org since
           await ctx.db.patch(doc._id, patch);
         },
       });
@@ -610,41 +674,7 @@ export const restoreDeletedNative = mutation({
     await requireWorkOrProjectOrgUpdate(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
 
-    return await undoEach(a.ids, async (id) => {
-      const rowId = rowAuditId(a.auditId, id);
-      const row = await readForwardRow(ctx, a.orgId, rowId, id);
-      const deleted = (row.details as { deletedTask?: { authorId?: string; serverSavedAt?: number; row?: Record<string, unknown> } } | undefined)?.deletedTask;
-      if (!deleted?.row || typeof deleted.authorId !== "string" || typeof deleted.serverSavedAt !== "number") {
-        throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone." });
-      }
-      await assertNotUndone(ctx, a.orgId, rowId);
-      assertAuthorWithinWindow(deleted.authorId, actor.userId, deleted.serverSavedAt);
-
-      const snap = deleted.row as unknown as Doc<"projectTasks">;
-      if (snap.organizationId !== a.orgId || snap.id !== id) {
-        throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change can't be undone." });
-      }
-      const again = await ctx.db.query("projectTasks").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-      if (again) throw new ConvexError({ code: "CHANGED_SINCE", message: "That task already exists again." });
-      const project = snap.projectId
-        ? await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", snap.projectId!)).first()
-        : null;
-      if (snap.projectId && (!project || project.organizationId !== a.orgId)) {
-        throw new ConvexError({ code: "NOT_FOUND", message: "The job this task belonged to no longer exists." });
-      }
-      const restored = { ...snap } as Record<string, unknown>;
-      for (const f of ["assigneeUserId", "assigneeCrewId"] as const) {
-        if (typeof restored[f] !== "string") continue;
-        try {
-          await assertAssigneeInOrg(ctx, a.orgId, f === "assigneeUserId" ? (restored[f] as string) : null, f === "assigneeCrewId" ? (restored[f] as string) : null);
-        } catch {
-          delete restored[f];
-        }
-      }
-      await ctx.db.insert("projectTasks", { ...(restored as Omit<Doc<"projectTasks">, "_id" | "_creationTime">), updatedAt: a.now });
-      await writeUndoMarker(ctx, { orgId: a.orgId, projectId: snap.projectId, actor, now: a.now, rowId, taskId: id, title: snap.title, summary: `Restored task "${snap.title}"` });
-      await taskEvent(ctx, { orgId: a.orgId, projectId: snap.projectId, actor, now: a.now, action: "task_restored", summary: `restored task "${snap.title}"`, taskId: id });
-    });
+    return await undoEach(a.ids, (id) => restoreOneDeleted(ctx, { orgId: a.orgId, auditId: a.auditId, id, actor, now: a.now }));
   },
 });
 

@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -121,36 +122,25 @@ function assertProjectFields(f: {
   assertStrLen(f.clientNotes, "clientNotes", { max: 5000 });
 }
 
-export const updateStatusNative = mutation({
-  returns: v.object({ id: v.string() }),
-  args: {
-    id: v.string(),
-    orgId: v.string(),
-    status: enums.ProjectStatus,
-    actor: actorValidator,
-    auditId: v.string(),
-    // Gate for the folded `project.status_changed` webhook. OPTIONAL + only honored
-    // when `=== true`, so the pre-fold app image (never passes it) does NOT double-emit
-    // — its own server tail still emits during the deploy window; the new app/browser
-    // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
-    // Expand-contract (mirrors convex/lineItemWrites.ts).
-    emitSideEffects: v.optional(v.boolean()),
-    now: v.number(),
+/**
+ * THE project status transition (its gates, snapshot, lock raise, audit row and
+ * webhook). `updateStatusNative` and `discardDraftNative`'s cancel both run through
+ * it, so no caller can move a job's status around those rules with a raw patch.
+ * The caller has already checked permission, the project's org and that it is not a template.
+ */
+export async function transitionProjectStatus(
+  ctx: MutationCtx,
+  { orgId, project, status, actor, auditId, emitSideEffects, now }: {
+    orgId: string;
+    project: Doc<"projects">;
+    status: Doc<"projects">["status"] & string;
+    actor: { userId: string; userName: string };
+    auditId: string;
+    emitSideEffects?: boolean;
+    now: number;
   },
-  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
-    await assertWritesEnabled(ctx, "project");
-    await enforceBrowserWriteLimit(ctx);
-    await requireOrgPermission(ctx, orgId, "project", "update");
-    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
-    const actor = await resolveActor(ctx, suppliedActor);
-
-    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
-    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
-    if (project.isTemplate) {
-      throw new ConvexError({ code: "TEMPLATE_STATUS", message: "Templates don't have a status." });
-    }
-
+): Promise<{ id: string }> {
+    const id = project.id;
     const from = project.status ?? "";
     // Open blocking comments gate a FORWARD move into PREPPING/CHECKED_OUT/ON_SITE (parity
     // with the deleted server action). Only on an actual status change (template excluded above).
@@ -246,6 +236,38 @@ export const updateStatusNative = mutation({
     }
 
     return { id };
+}
+
+export const updateStatusNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: {
+    id: v.string(),
+    orgId: v.string(),
+    status: enums.ProjectStatus,
+    actor: actorValidator,
+    auditId: v.string(),
+    // Gate for the folded `project.status_changed` webhook. OPTIONAL + only honored
+    // when `=== true`, so the pre-fold app image (never passes it) does NOT double-emit
+    // — its own server tail still emits during the deploy window; the new app/browser
+    // passes emitSideEffects:true once its tail is gated off by `!nativeProjectWrites()`.
+    // Expand-contract (mirrors convex/lineItemWrites.ts).
+    emitSideEffects: v.optional(v.boolean()),
+    now: v.number(),
+  },
+  handler: async (ctx, { id, orgId, status, actor: suppliedActor, auditId, emitSideEffects, now }) => {
+    await assertWritesEnabled(ctx, "project");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, orgId, "project", "update");
+    await assertEmitSideEffectsAgentTrue(ctx, emitSideEffects);
+    const actor = await resolveActor(ctx, suppliedActor);
+
+    const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
+    if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (project.isTemplate) {
+      throw new ConvexError({ code: "TEMPLATE_STATUS", message: "Templates don't have a status." });
+    }
+    return transitionProjectStatus(ctx, { orgId, project, status, actor, auditId, emitSideEffects, now });
   },
 });
 
@@ -436,6 +458,39 @@ async function assertClientContactOnCreate(
   await assertClientContactBelongsToClient(ctx, clientContactId, clientId, orgId);
 }
 
+/** True when `existing` was made by this very create call retried: the caller's own CREATE audit row, this org and project. */
+async function isReplayOfCreate(
+  ctx: MutationCtx,
+  existing: { id: string; organizationId: string },
+  orgId: string,
+  auditId: string,
+  userId: string,
+): Promise<boolean> {
+  if (existing.organizationId !== orgId) return false;
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+  return !!row && row.organizationId === orgId && row.entityId === existing.id && row.action === "CREATE" && row.userId === userId;
+}
+
+/**
+ * The project fields `recalcProjectTotals` reads (its INPUTS; the outputs are
+ * `PROJECT_MONEY_ANCHORS`). Writing one without recalculating leaves the stored
+ * totals stale until some later line write, so `updateNative` decides here, in the
+ * same transaction, rather than trusting each client to remember a follow-up call.
+ */
+const RECALC_INPUT_FIELDS = ["taxRate", "discountPercent"] as const;
+
+async function recalcIfInputsWritten(
+  ctx: MutationCtx,
+  orgId: string,
+  id: string,
+  setObj: Record<string, unknown>,
+  clear: string[],
+  now: number,
+): Promise<void> {
+  if (!RECALC_INPUT_FIELDS.some((f) => f in setObj || clear.includes(f))) return;
+  await recalcProjectTotals(ctx, id, orgId, await resolveOrgDefaultTaxRate(ctx, orgId), now);
+}
+
 /**
  * updateNative — general project field patch (set/clear) + UPDATE audit, atomic.
  * RBAC(project, update). STALE-COMMENT FIX: the former `updateProject` server action
@@ -558,6 +613,8 @@ export const updateNative = mutation({
       await ctx.db.replace(project._id, merged as typeof rest);
       await bumpProjectCounters(ctx, orgId, project, merged);
     }
+
+    await recalcIfInputsWritten(ctx, orgId, id, setObj, clear, now);
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
     await writeActivityLog(ctx, {
@@ -828,7 +885,14 @@ export const createNative = mutation({
     // manual callers retry with a NEW number): a cuid collision is a hard error,
     // else another org's by_cuid reads get muddied.
     const dupId = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", fields.id)).first();
-    if (dupId) throw new ConvexError("Project already exists");
+    if (dupId) {
+      // A retry of THIS create (a lost response) returns the row it already made:
+      // same id, same org, and the create's own audit row, written by this caller.
+      if (await isReplayOfCreate(ctx, dupId, fields.organizationId, auditId, actor.userId)) {
+        return { created: true as const, id: dupId.id };
+      }
+      throw new ConvexError("Project already exists");
+    }
 
     // The counter row's updatedAt / render `now` — the server used one `now` for
     // both the create timestamps and the counter (byte-identical here).

@@ -934,6 +934,18 @@ tab. The header's version lives in ⋯ (`Version ▸`) and under `V`, never as a
 (D92). A header action that doesn't apply is absent, and each gate is the
 server's own permission (`src/lib/job-header.ts`).
 
+**Editing a job is a SHEET, not a page (UX Phase 9, D22).** `?edit=1` on the record
+opens `JobEditSheet` (hosted once by `[id]/page.tsx`, on `FormSheet`); every entry
+point builds its URL with `jobEditHref` (`src/lib/job-edit-url.ts`) or
+`useOpenJobEdit()`, and `/projects/[id]/edit` is only a redirect. The field list is
+ONE `ProjectFields` (`project-fields.tsx`, `projectSchema` order) shared with the
+wizard; status is NOT a field (the header stepper owns it). A save sends only the
+CHANGED fields through `buildProjectUpdate(parsed, { before })`: a full payload
+puts `discountPercent`/`taxRate` in `set`/`clear`, and `updateNative` refuses ANY
+touch of those on a pricing-locked job, so never go back to sending every field.
+Moving the rental dates carries a set project window by the same calendar-day
+offset (`shiftWindowWithRental`); a blank window stays blank.
+
 **The context sidebar (Schedule/Location/Team/Activity) renders on every tab
 EXCEPT Overview** (#1063). Overview composes the schedule, location and team
 facts into its own When · Where · Who columns (`overview/context-cards.tsx`) —

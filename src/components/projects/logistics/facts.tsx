@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useOpenJobEdit } from "@/hooks/use-open-job-edit";
 import { useProjectWrites } from "@/hooks/use-native-project-writes";
 import { dayShortLabel } from "@/lib/logistics-model";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,7 @@ export function LogisticsFacts({
   canEdit: boolean;
 }) {
   const [contactOpen, setContactOpen] = React.useState(false);
+  const openEdit = useOpenJobEdit();
   const inDay = schedule.loadIn || schedule.rentalStart;
   const outDay = schedule.loadOut || schedule.rentalEnd;
   const editable = canEdit ? onEditDates : () => {};
@@ -69,7 +71,7 @@ export function LogisticsFacts({
       <Fact label="Rental · charged" value={range(schedule.rentalStart, schedule.rentalEnd)} onClick={editable} mono />
       <Fact label="Load in" value={withTime(inDay, schedule.loadInTime)} sub={schedule.loadIn ? "job window starts" : "same as rental"} onClick={editable} mono />
       <Fact label="Load out" value={withTime(outDay, schedule.loadOutTime)} sub={schedule.loadOut ? "job window ends" : "same as rental"} onClick={editable} mono />
-      <Fact label="Venue" value={site.venue} sub={site.access || site.address} href={`/projects/${projectId}/edit`} />
+      <Fact label="Venue" value={site.venue} sub={site.access || site.address} onClick={canEdit ? openEdit : () => {}} />
       <Fact
         label="Site contact"
         value={site.contactName}

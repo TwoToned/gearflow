@@ -35,10 +35,9 @@ import { useGroupTemplates } from "@/hooks/use-group-templates";
 import { useGroupTemplateWrites } from "@/hooks/use-group-templates-writes";
 import {
   useLineItemWrites,
-  buildLineItemSetClear,
+  updateLineItemFromPayload,
   type BulkLineItemPatch,
 } from "@/hooks/use-line-item-writes";
-import { lineItemSchema } from "@/lib/validations/line-item";
 import {
   computeInlineLineItemPayload,
   computeRowSheetPayload,
@@ -816,13 +815,7 @@ export function EquipmentTab({ projectId, rentalStartDate, rentalEndDate, autoOp
   // Shared by the full edit dialog AND inline cell edits below — one write path,
   // two entry points (POLICY.md R-3.1).
   const updateLineItemMutationFn = ({ id, data, allowOverbook }: { id: string; data: Record<string, unknown>; allowOverbook?: boolean; baseUpdatedAt?: string | number | null }) => {
-    if (!lineItemWrites.enabled) throw new Error("Not ready — try again in a moment.");
-    const parsed = lineItemSchema.parse(data);
-    const { set, clear } = buildLineItemSetClear(parsed);
-    return lineItemWrites.update(id, set, clear, {
-      entityName: parsed.description || "Line item",
-      allowOverbook: allowOverbook ?? false,
-    });
+    return updateLineItemFromPayload(lineItemWrites, id, data, allowOverbook ?? false);
   };
 
   const updateLineItemMut = useServerMutation({

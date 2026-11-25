@@ -17,17 +17,15 @@ export function JobTabRow({
   available,
   value,
   onValueChange,
-  filesCount,
 }: {
   projectId: string;
   orgId: string | undefined;
   available: readonly JobTabKey[];
   value: JobTabKey;
   onValueChange: (tab: JobTabKey) => void;
-  filesCount: number;
 }) {
   const isMobile = useIsMobile();
-  const counts = useJobTabCounts(projectId, filesCount);
+  const counts = useJobTabCounts(projectId);
   const Primary = isMobile ? undefined : JOB_TAB_PRIMARY[value];
   return (
     <div className="flex min-w-0 items-end gap-4 border-b border-line">

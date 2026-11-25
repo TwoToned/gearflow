@@ -14,6 +14,7 @@ import {
   type MappedCrewAssignment,
 } from "@/lib/crew-scheduling-read";
 import { getCrewMemberMap, getCrewRoleMap } from "@/lib/crew-read";
+import { crewNotesLines } from "@/lib/crew-notes-print";
 import { renderPdfTemplate } from "../pdf-render";
 import { buildDocumentData } from "../build-document-data";
 import type { PageHeaderConfig, FooterConfig } from "../types";
@@ -45,6 +46,35 @@ const CONT_TABLE_AVAIL_HEIGHT = TABLE_END_Y - CONT_TABLE_START_Y; // 142mm
 
 const SERVICE_TYPE_LABELS: Record<string, string> = SERVICE_TYPE_WORDS;
 
+// Crew notes print under the info block on the first page (UX Phase 10, spec §8c).
+const NOTES_LINE_MM = 4; // 8pt at lineHeight 1.4, rounded up so the box never clips
+const NOTES_CHARS_PER_LINE = 150; // conservative for Helvetica 8pt across CONTENT_W
+const NOTES_MAX_LINES = 12;
+
+/**
+ * The crew-notes block: a `CREW NOTES` heading and the notes as plain lines, with the
+ * height it needs (long lines count as the rows they wrap to). Capped at
+ * `NOTES_MAX_LINES` rows; a longer note ends with a pointer back to the job instead of
+ * running into the table. `null` when there are no notes, so the sheet is unchanged.
+ */
+export function crewNotesBlock(raw: string | null | undefined): { content: string; height: number } | null {
+  const lines = crewNotesLines(raw, "- ");
+  if (lines.length === 0) return null;
+  const out: string[] = [];
+  let rows = 0;
+  for (const line of lines) {
+    const need = Math.max(1, Math.ceil(line.length / NOTES_CHARS_PER_LINE));
+    if (rows + need > NOTES_MAX_LINES) {
+      out.push("... (the rest is in the job's Crew notes)");
+      rows += 1;
+      break;
+    }
+    out.push(line);
+    rows += need;
+  }
+  return { content: ["CREW NOTES", ...out].join("\n"), height: (rows + 1) * NOTES_LINE_MM + 2 };
+}
+
 interface ServiceRow {
   crewName: string;
   service: string;
@@ -71,12 +101,13 @@ function buildColumns(): DataTableColumn[] {
  */
 function paginateSections(
   sections: DataTableSection[],
+  notesHeight = 0,
 ): DataTableSection[][] {
   const pages: DataTableSection[][] = [];
   let currentPageSections: DataTableSection[] = [];
   let currentHeight = TABLE_HEADER_HEIGHT_MM;
   let isFirstPage = true;
-  const maxHeight = () => isFirstPage ? TABLE_AVAIL_HEIGHT : CONT_TABLE_AVAIL_HEIGHT;
+  const maxHeight = () => isFirstPage ? TABLE_AVAIL_HEIGHT - notesHeight : CONT_TABLE_AVAIL_HEIGHT;
 
   for (const section of sections) {
     const sectionHeaderH = SECTION_HEADER_HEIGHT_MM;
@@ -138,12 +169,13 @@ function paginateSections(
   return pages.length > 0 ? pages : [[]];
 }
 
-function buildTemplate(pageCount: number): Template {
+function buildTemplate(pageCount: number, notes: { height: number } | null): Template {
   const schemas: Template["schemas"] = [];
+  const notesH = notes?.height ?? 0;
 
   for (let i = 0; i < pageCount; i++) {
     const isFirstPage = i === 0;
-    const tableY = isFirstPage ? TABLE_START_Y : CONT_TABLE_START_Y;
+    const tableY = isFirstPage ? TABLE_START_Y + notesH : CONT_TABLE_START_Y;
 
     const pageSchemas: Template["schemas"][number] = [
       {
@@ -181,6 +213,19 @@ function buildTemplate(pageCount: number): Template {
           lineHeight: 1.4,
         },
       );
+      if (notes) {
+        pageSchemas.push({
+          name: "crewNotes",
+          type: "text",
+          content: "",
+          position: { x: MARGIN, y: TABLE_START_Y },
+          width: CONTENT_W,
+          height: notes.height,
+          fontSize: 8,
+          fontColor: "#333333",
+          lineHeight: 1.4,
+        });
+      }
     }
 
     pageSchemas.push({
@@ -382,9 +427,10 @@ export async function buildCallSheetFromServices(
 
   // 6. Paginate and build template
   const columns = buildColumns();
-  const paginatedSections = paginateSections(sections);
+  const notes = crewNotesBlock(data.crew_notes);
+  const paginatedSections = paginateSections(sections, notes?.height ?? 0);
   const pageCount = paginatedSections.length;
-  const template = buildTemplate(pageCount);
+  const template = buildTemplate(pageCount, notes);
 
   // 7. Build header config
   const headerConfig: PageHeaderConfig = {
@@ -429,6 +475,7 @@ export async function buildCallSheetFromServices(
     if (i === 0) {
       pageInput.projectInfo = projectLines.join("\n");
       pageInput.venueInfo = venueLines.join("\n") || "-";
+      if (notes) pageInput.crewNotes = notes.content;
     }
 
     pageInput[`table_${i}`] = JSON.stringify({

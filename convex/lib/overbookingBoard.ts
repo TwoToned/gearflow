@@ -141,9 +141,9 @@ export interface GearBoardResult {
  *  project shares the same window (`getProjectWindow` is a function of the
  *  project, not the line item), so one claim per project is exact, not an
  *  approximation. */
-type ProjectClaim = { qty: number; claimedAt: number; start: number; end: number };
+export type ProjectClaim = { qty: number; claimedAt: number; start: number; end: number };
 
-type ModelAgg = {
+export type ModelAgg = {
   hardClaims: Map<string, ProjectClaim>; // projectId -> claim
   pencilledClaims: Map<string, ProjectClaim>;
 };
@@ -171,7 +171,7 @@ function allocateFifo(claims: Map<string, ProjectClaim>, capacity: number): Map<
 }
 
 /** Fold `lineItems` into a per-model hard/pencilled demand aggregate. */
-function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardProject>): boolean {
+export function isRelevantDemandLine(li: BoardLineItem, projectById: Map<string, BoardProject>): boolean {
   if (li.modelId == null) return false;
   if ((li.status ?? "") === "CANCELLED") return false;
   if (li.subHireId != null) return false;
@@ -212,7 +212,7 @@ function applyDemandLine(agg: ModelAgg, li: BoardLineItem, p: BoardProject, clam
   bumpClaim(isPencilled ? agg.pencilledClaims : agg.hardClaims, p.id, qty, claimedAt, clampedStart, clampedEnd);
 }
 
-function aggregateDemandByModel(
+export function aggregateDemandByModel(
   range: DateRange,
   lineItems: BoardLineItem[],
   projectById: Map<string, BoardProject>,
@@ -234,7 +234,7 @@ function aggregateDemandByModel(
 
 // ─── Sweep-line: real day-by-day overlap, not "anywhere in range" pooling ─────
 
-type ConflictSegment = { start: number; end: number; overByProject: Map<string, number> };
+export type ConflictSegment = { start: number; end: number; overByProject: Map<string, number> };
 
 /** A stable string key for "which projects are over by how much" — used to
  *  merge adjacent time segments that reached the identical outcome, so one
@@ -312,7 +312,7 @@ function allocateSegment(
  * non-adjacent-duplicate segments per layer — each one a genuine, date-bounded
  * conflict.
  */
-function sweepModelConflicts(
+export function sweepModelConflicts(
   hardClaims: Map<string, ProjectClaim>,
   pencilledClaims: Map<string, ProjectClaim>,
   effectiveStock: number,
@@ -345,7 +345,7 @@ function sweepModelConflicts(
   return { hardSegments: mergeAdjacentSegments(rawHard), pencilledSegments: mergeAdjacentSegments(rawPencilled) };
 }
 
-function groupByModelId<T extends { modelId?: string | null; isActive?: boolean | null }>(rows: T[]): Map<string, T[]> {
+export function groupByModelId<T extends { modelId?: string | null; isActive?: boolean | null }>(rows: T[]): Map<string, T[]> {
   const map = new Map<string, T[]>();
   for (const r of rows) {
     if (!r.modelId || r.isActive === false) continue;
@@ -356,7 +356,7 @@ function groupByModelId<T extends { modelId?: string | null; isActive?: boolean 
 }
 
 /** Effective (bookable) stock for one model, mirroring overbooking-core.ts. */
-function effectiveStockForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]): number {
+export function effectiveStockForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]): number {
   const assetType = resolveModelAssetType(model.assetType, bulksForModel.length > 0, assetsForModel.length > 0);
   return computeStockBreakdown({
     assetType,

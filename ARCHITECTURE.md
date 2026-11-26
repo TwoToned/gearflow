@@ -47,7 +47,7 @@ Detailed docs for each system are in the [`FEATUREDOCS/`](./FEATUREDOCS/) folder
 | 08 | [Assets](./FEATUREDOCS/08-assets.md) | Serialized/bulk assets, auto-incrementing tags, categories |
 | 09 | [Kits](./FEATUREDOCS/09-kits.md) | Kit system, pricing modes, nested kits, verification |
 | 10 | [Projects](./FEATUREDOCS/10-projects.md) | Project management, line items, groups, templates, subhire, custom items |
-| 11 | [Availability](./FEATUREDOCS/11-availability.md) | Overbooking engine, reduced stock |
+| 11 | [Availability](./FEATUREDOCS/11-availability.md) | Overbooking engine, reduced stock, and the Schedule page (`/availability`: Jobs timeline, derived clash / would-clash from the board math, one ReadBudget) |
 | 12 | [Warehouse](./FEATUREDOCS/12-warehouse.md) | Deploy/return flows, kit verification, conflict detection, org-wide returns station |
 | 13 | [PDFs](./FEATUREDOCS/13-pdfs.md) | Document generation, nested kit rendering, T&T reports |
 | 14 | [Test & Tag](./FEATUREDOCS/14-test-and-tag.md) | AS/NZS 3760:2022 compliance module |

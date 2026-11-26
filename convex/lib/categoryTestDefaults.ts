@@ -37,15 +37,15 @@ export interface EffectiveTestDefaults {
 /** A model's interval in whole months (30-day months, at least 1), as every registration path has always converted it. */
 export const daysToMonths = (days: number): number => Math.max(1, Math.round(days / 30));
 
+/** One field: the model's own value if set, else its category's, remembering where it came from. */
+function pick<V>(own: V | null | undefined, inherited: V | null | undefined): { value: V | null; from: DefaultSource } {
+  if (own != null) return { value: own, from: "model" };
+  if (inherited != null) return { value: inherited, from: "category" };
+  return { value: null, from: null };
+}
+
 export function effectiveTestDefaults(model: ModelTestDefaults, category: CategoryTestDefaultsSource | null | undefined): EffectiveTestDefaults {
-  const modelClass = model.defaultEquipmentClass as EquipmentClass | null | undefined;
-  const catClass = category?.defaultEquipmentClass as EquipmentClass | null | undefined;
-  const modelMonths = model.testAndTagIntervalDays ? daysToMonths(model.testAndTagIntervalDays) : null;
-  const catMonths = category?.defaultTestIntervalMonths || null;
-  return {
-    equipmentClass: modelClass || catClass || null,
-    classFrom: modelClass ? "model" : catClass ? "category" : null,
-    intervalMonths: modelMonths ?? catMonths,
-    intervalFrom: modelMonths != null ? "model" : catMonths != null ? "category" : null,
-  };
+  const cls = pick(model.defaultEquipmentClass as EquipmentClass | null | undefined || null, category?.defaultEquipmentClass as EquipmentClass | null | undefined || null);
+  const months = pick(model.testAndTagIntervalDays ? daysToMonths(model.testAndTagIntervalDays) : null, category?.defaultTestIntervalMonths || null);
+  return { equipmentClass: cls.value, classFrom: cls.from, intervalMonths: months.value, intervalFrom: months.from };
 }

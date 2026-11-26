@@ -215,20 +215,13 @@ async function loadUndoableDelete(ctx: MutationCtx, a: { orgId: string; id: stri
 
 /** Every moved row must still be exactly as the delete left it; otherwise nothing is restored. */
 async function assertStillAsLeft(ctx: MutationCtx, orgId: string, s: DeleteSnapshot): Promise<void> {
-  const changed = () => refuse("CHANGED_SINCE", "Can't undo: something it moved has changed since.");
-  for (const id of s.models) {
-    const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!m || m.organizationId !== orgId || m.categoryId !== undefined) throw changed();
-  }
-  for (const id of s.kits) {
-    const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!k || k.organizationId !== orgId || k.categoryId !== undefined) throw changed();
-  }
   const formerParent = s.category.parentId as string | undefined;
-  for (const id of s.children) {
-    const c = await ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).first();
-    if (!c || c.organizationId !== orgId || c.parentId !== formerParent) throw changed();
-  }
+  const rows = [
+    ...(await Promise.all(s.models.map((id) => ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", id)).first()))).map((r) => ({ r, left: r?.categoryId === undefined })),
+    ...(await Promise.all(s.kits.map((id) => ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", id)).first()))).map((r) => ({ r, left: r?.categoryId === undefined })),
+    ...(await Promise.all(s.children.map((id) => ctx.db.query("categories").withIndex("by_cuid", (q) => q.eq("id", id)).first()))).map((r) => ({ r, left: r?.parentId === formerParent })),
+  ];
+  if (rows.some(({ r, left }) => !r || r.organizationId !== orgId || !left)) throw refuse("CHANGED_SINCE", "Can't undo: something it moved has changed since.");
 }
 
 export const undoDeleteNative = mutation({

@@ -100,39 +100,49 @@ function useDeleteCategory(c: CategoryDetail | null | undefined) {
   };
 }
 
-function RecordBody({ c, includeSub, setIncludeSub, orgId }: { c: CategoryDetail; includeSub: boolean; setIncludeSub: (v: boolean) => void; orgId: string | undefined }) {
+/** The Models tab: the rows plus the two quiet verbs (`Including subcategories`, `Add model`). */
+function ModelsPanel({ c, includeSub, setIncludeSub, canUpdate }: { c: CategoryDetail; includeSub: boolean; setIncludeSub: (v: boolean) => void; canUpdate: boolean }) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-3">
+        <Button variant="ghost" size="sm" className="text-muted" aria-pressed={includeSub} onClick={() => setIncludeSub(!includeSub)}>
+          {includeSub ? "Including subcategories ✕" : "Including subcategories"}
+        </Button>
+        {canUpdate ? <Button variant="ghost" size="sm" className="text-muted" asChild><Link href="/assets/models/new">Add model</Link></Button> : null}
+      </div>
+      <RecordRows noun="model" empty={includeSub ? "No models in this category or below it." : "No models in this category."} rows={c.models.map(modelRowOf)} />
+    </div>
+  );
+}
+
+/** Edit (the sheet through `?edit=1`, keeping the tab) and the menu, each present only when the caller may. */
+function useHeaderActions(c: CategoryDetail) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const canUpdate = useCanDo("model", "update");
   const canDelete = useCanDo("model", "delete");
-  const allCategories = useCategories(orgId) ?? [];
   const remove = useDeleteCategory(c);
+  const edit = () => {
+    const q = new URLSearchParams(params.toString());
+    q.set("edit", "1");
+    router.push(`${pathname}?${q.toString()}`);
+  };
+  return {
+    canUpdate,
+    edit: canUpdate ? edit : undefined,
+    menu: buildCategoryRecordActions({ name: c.name, counts: c._count, parentName: c.parent?.name ?? null, onDelete: canDelete ? () => void remove() : undefined }),
+  };
+}
+
+function RecordBody({ c, includeSub, setIncludeSub, orgId }: { c: CategoryDetail; includeSub: boolean; setIncludeSub: (v: boolean) => void; orgId: string | undefined }) {
+  const allCategories = useCategories(orgId) ?? [];
+  const act = useHeaderActions(c);
   const unrated = modelsWithoutRates(c.models);
   const word = categoryStateWord(c._count, unrated);
-  const edit = canUpdate
-    ? () => {
-        const q = new URLSearchParams(params.toString());
-        q.set("edit", "1");
-        router.push(`${pathname}?${q.toString()}`);
-      }
-    : undefined;
   const tabs: RecordTab[] = [
     { value: "overview", label: "Overview", panel: <Overview c={c} unrated={unrated} /> },
-    {
-      value: "models", label: "Models", count: c.models.length,
-      panel: (
-        <div>
-          <div className="mb-2 flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="text-muted" aria-pressed={includeSub} onClick={() => setIncludeSub(!includeSub)}>
-              {includeSub ? "Including subcategories ✕" : "Including subcategories"}
-            </Button>
-            {canUpdate ? <Button variant="ghost" size="sm" className="text-muted" asChild><Link href="/assets/models/new">Add model</Link></Button> : null}
-          </div>
-          <RecordRows noun="model" empty={includeSub ? "No models in this category or below it." : "No models in this category."} rows={c.models.map(modelRowOf)} />
-        </div>
-      ),
-    },
+    { value: "models", label: "Models", count: c.models.length, panel: <ModelsPanel c={c} includeSub={includeSub} setIncludeSub={setIncludeSub} canUpdate={act.canUpdate} /> },
     { value: "kits", label: "Kits", count: c.kits.length, panel: <RecordRows noun="kit" empty="No kits in this category." rows={c.kits.map(kitRowOf)} /> },
     { value: "subcategories", label: "Subcategories", count: c.children.length, panel: <RecordRows noun="subcategory" empty="No subcategories." rows={c.children.map(childRowOf)} /> },
     { value: "history", label: "History", panel: <ActivityTimeline entityType="category" entityId={c.id} limit={25} /> },
@@ -144,8 +154,8 @@ function RecordBody({ c, includeSub, setIncludeSub, orgId }: { c: CategoryDetail
         title={`${c.icon ? `${c.icon} ` : ""}${c.name}`}
         status={{ label: word.label, intent: word.intent, outline: word.outline }}
         meta={[c.parent?.name ?? "Top level", plural(c._count.models, "model"), plural(c._count.kits, "kit")]}
-        onEdit={edit}
-        menu={buildCategoryRecordActions({ name: c.name, counts: c._count, parentName: c.parent?.name ?? null, onDelete: canDelete ? () => void remove() : undefined })}
+        onEdit={act.edit}
+        menu={act.menu}
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Parent", value: c.parent?.name ?? "Top level" }, { label: "Test & tag", value: testDefaultsText(c) ?? "No default" }, { label: "Models", value: c._count.models }, { label: "Kits", value: c._count.kits }]} />}
       />

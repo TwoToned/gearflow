@@ -54,7 +54,7 @@ export function maintenanceStateWord(f: Pick<MaintenanceFacts, "status" | "sched
 /** Where a failing check's one muted action goes. */
 export type CheckFix = "edit" | "parts" | "assets" | "complete";
 
-export interface MaintenanceCheck {
+interface MaintenanceCheck {
   key: string;
   text: string;
   tone: "error" | "warning" | "neutral";

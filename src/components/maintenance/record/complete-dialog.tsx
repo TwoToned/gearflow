@@ -47,7 +47,7 @@ interface CompleteDraft {
 }
 
 /** The dialog's boxes as the write takes them, or the one message that says what to fix. Only what the person changed is sent. */
-export function buildCompleteInput(d: CompleteDraft): { input: CompleteInput } | { error: string } {
+function buildCompleteInput(d: CompleteDraft): { input: CompleteInput } | { error: string } {
   const completedDate = d.date ? fromDateInput(d.date) : NaN;
   if (!Number.isFinite(completedDate)) return { error: "Choose the date it was completed." };
   const labour = changeOf(d.labour, d.storedLabour, Number);

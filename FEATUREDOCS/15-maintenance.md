@@ -15,8 +15,39 @@ Status, Result. Search matches title, description, tags and (within a read budge
   (`maintenanceBulkWrites`): open records only (finished or cancelled ones are skipped and named in the toast), one
   field-edit audit row per changed record, and ONE toast Undo (`undoBulkEditNative`, ids only, all or nothing,
   author, 10 minutes, once, refuses if a record changed since). Neither verb touches an asset hold: that follows
-  STATUS. `Mark done` (Complete/Reopen), `Check off cycle` and the parts table arrive with the record slice (14b-3).
+  STATUS. Complete/Reopen and the parts table are on the record (below); the row's `Mark done` and `Check off cycle` arrive with the dialogs slice (14a-3b).
 - The page menu links to `/maintenance/due` (service schedules and per-cycle check-off) until that moves into dialogs.
+
+## The Maintenance record (UX Phase 14, 14b-3, `/maintenance/[id]`)
+`RecordShell` (`src/components/maintenance/record/maintenance-record.tsx`): a `DetailHeader` whose one word is DERIVED
+(`src/lib/maintenance-record-facts.ts`: `Awaiting parts`, `18d overdue`, `Completed`; overdue is THE rule in
+`convex/lib/maintenanceOpen.ts`, held work is not late), then Overview · Assets · Parts · History · Files. Overview is
+`n of m checks clear` (gear linked, a date that is not past, parts in, someone assigned; a parts read that has not
+arrived is `not checked`, never a pass) with each failing check's one muted action, then Dates · Job · Cost facts.
+`Edit` is still the existing edit page until the sheet slice; `Complete…` (open jobs only) and `Reopen` (completed
+only) sit in the ⋯ with `Delete…` red and last (`buildMaintenanceRecordActions`); an unavailable verb is absent.
+- **Parts are rows** (`maintenanceParts`: name, supplier, quantity, unit price, ETA, arrived; D76). On order versus
+  arrived is derived (`arrivedAt` absent = on order). `maintenancePartsWrites.{add,edit,remove,markArrived}Native`
+  each write ONE audit row on the record and have an exact Undo, `undoNative` (ids only: author, 10-minute server
+  window, once, only while the part is exactly as the write left it). `markArrivedNative` moves an `Awaiting parts`
+  job to `In progress` when the LAST part arrives (both are holding statuses, so no asset changes); its Undo reverses
+  both. A job holds at most 200 parts. The old free-text `partsUsed` stays readable under Parts as `Earlier note` and
+  is never written by the new UI.
+- **Cost is DERIVED, never stored** (`convex/lib/maintenanceCost.ts`): parts (Σ quantity × unit price over the PRICED
+  rows; an unpriced part is counted, never $0) plus labour, where `maintenanceRecords.cost` is the LABOUR. `total` is
+  `null` when there is neither labour nor a priced part. It is job cost: ABSENT (never zeroed) for a caller who fails
+  `canSeeJobCost` on `maintenanceRecords.{list,getById,recordsPage,recordDetail}` and `maintenanceParts.listForRecord`
+  (`unitPrice` too), a hidden cost is not a sort key, and a hidden caller can neither set nor clear a part's price, nor
+  labour on `createNative` / `updateNative` / `completeNative`.
+- **Complete and Reopen** (`maintenanceLifecycleWrites`): `completeNative` writes the outcome (result, date, labour,
+  next due) and applies a per-asset disposition. The SERVER defaults each asset from the result (Fail keeps it out of
+  service, anything else returns it; the existing still-held-elsewhere rule applies); the dialog sends only the
+  overrides. `reopenNative` puts a completed job back In progress and re-holds the assets it released. Both leave one
+  audit row with the record's before/after fields AND exactly the assets they moved; `undoNative` takes ids only and
+  refuses unless it is the author, inside the window, the first Undo, and the record and every moved asset are exactly
+  as the write left them. Retire is terminal, so a Complete that retired an asset reports `undoable: false` (no Undo).
+- `convex/lib/maintenanceRecordAccess.ts` is the shared front door of these writes. Its permission check is PASSED IN
+  from each handler because the API registry reads an operation's scope from that literal call in the handler's source.
 
 ## Multi-Asset Records
 One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` join table. The form adds assets via a `ComboboxPicker` builder that appends each pick as a removable chip (see Maintenance Form below).
@@ -108,6 +139,14 @@ clean page, "More details" accordion.
 
 ## Photos
 `MaintenanceRecord.photos` (`String[]`, default `[]`) holds before/after repair photos — URLs from `/api/uploads` (the `DamageEvent` model this used to share a shape with was removed along with the Damage Capture feature — `chore: remove Damage Capture feature`). The maintenance form uses the reusable `PhotoGridInput` component (`src/components/ui/photo-grid-input.tsx`), now inside the form's "More details" accordion.
+
+**Photos pass the attach rule** (`convex/lib/maintenancePhotos.ts`; the uploader sends `folder=maintenance-photos`,
+`convex/lib/maintenancePhotoFolder.ts`). A photo that is NEW on a `createNative` / `updateNative` must be the actor's own
+upload from the last few minutes, this org's, in that folder and held by nothing (`assertAttachableUpload`); any other
+URL is refused (`INVALID_PHOTO`). A photo already on the record is NEVER re-validated on a save. A photo a save drops,
+and a deleted job's photos, have their bytes deleted only through `deleteStoredFileIfUnreferenced`, after the record row
+changed, so a file anything else still holds survives; an Undo never deletes a stored file. A removed URL's upload row is
+found by a bounded scan of the org's uploads (no URL index): when it cannot be found the bytes are left, never guessed.
 
 ## Notifications
 Overdue maintenance generates notifications. Shows first asset name + count for multi-asset records. Schedule-generated PM cycles (below) flow into the same `overdue_maintenance` bell type automatically via their `scheduledDate` — no separate notification type was added in v1 (org digest deferred).

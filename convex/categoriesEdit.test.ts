@@ -219,6 +219,52 @@ describe("deleteNative", () => {
   });
 });
 
+describe("deleting a category the org's settings name (no dangling id)", () => {
+  const setSettings = (t: T, settings: string) =>
+    t.run(async (ctx) => { await ctx.db.insert("orgSettings", { organizationId: ORG, settings } as never); });
+
+  test("a container category (containerCategoryIds) or the deprecated prep-kit category cannot be deleted; nothing moves", async () => {
+    const t = makeT();
+    await seed(t);
+    await setSettings(t, JSON.stringify({ containerCategoryIds: ["mid"], prepKitCategoryId: "other" }));
+    await expect(del(t, "mid", "d1")).rejects.toMatchObject({ data: { code: "USED_BY_SETTINGS" } });
+    await expect(del(t, "other", "d2")).rejects.toMatchObject({ data: { code: "USED_BY_SETTINGS" } });
+    expect(await cat(t, "mid")).not.toBeNull();
+    expect((await model(t, "mo1")).categoryId).toBe("mid");
+    expect((await cat(t, "leaf"))!.parentId).toBe("mid");
+    // A category the settings do not name is still deletable.
+    await del(t, "leaf", "d3");
+    expect(await cat(t, "leaf")).toBeNull();
+  });
+
+  test("once the reference is removed from Settings the delete works; an unreadable or empty blob blocks nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    await setSettings(t, "{ not json");
+    await del(t, "other", "d1");
+    expect(await cat(t, "other")).toBeNull();
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).first();
+      await ctx.db.patch(row!._id, { settings: JSON.stringify({ containerCategoryIds: ["mid"] }) });
+    });
+    await expect(del(t, "mid", "d2")).rejects.toMatchObject({ data: { code: "USED_BY_SETTINGS" } });
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).first();
+      await ctx.db.patch(row!._id, { settings: JSON.stringify({ containerCategoryIds: [] }) });
+    });
+    await del(t, "mid", "d3");
+    expect(await cat(t, "mid")).toBeNull();
+  });
+
+  test("another org's settings never block this org's delete", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("orgSettings", { organizationId: "org_2", settings: JSON.stringify({ containerCategoryIds: ["mid"] }) } as never); });
+    await del(t, "other", "d1");
+    expect(await cat(t, "other")).toBeNull();
+  });
+});
+
 describe("the exact Delete Undo", () => {
   afterEach(() => vi.useRealTimers());
 

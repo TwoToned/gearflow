@@ -121,6 +121,20 @@ describe("categoriesWrites", () => {
   });
 });
 
+describe("removeNative and the org's container-category settings", () => {
+  test("an empty category the settings still name as a packing-container category is refused; others delete", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", { id: "cont", organizationId: ORG, name: "Cases", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "free", organizationId: ORG, name: "Free", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ containerCategoryIds: ["cont"] }) });
+    });
+    await expect(t.withIdentity(asUser).mutation(api.categoriesWrites.removeNative, { id: "cont", orgId: ORG, now: NOW, actor, auditId: "a1" })).rejects.toMatchObject({ data: { code: "USED_BY_SETTINGS" } });
+    await t.withIdentity(asUser).mutation(api.categoriesWrites.removeNative, { id: "free", orgId: ORG, now: NOW, actor, auditId: "a2" });
+    expect((await cats(t)).map((c) => c.id)).toEqual(["cont"]);
+  });
+});
+
 describe("categories.detail composite", () => {
   test("assembles parent, children (+counts), kits (+member counts), models (+asset count & photo)", async () => {
     const t = makeT(); await seedMember(t);

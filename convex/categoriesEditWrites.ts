@@ -10,6 +10,7 @@ import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange, assertTags } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit, undoMarkerId } from "./lib/fieldEditUndo";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
+import { assertNotUsedBySettings } from "./lib/categorySettingsRefs";
 import * as enums from "./lib/validators";
 
 /**
@@ -176,6 +177,7 @@ export const deleteNative = mutation({
     const actor = await resolveActor(ctx, a.actor);
     const cat = await loadCategory(ctx, a.orgId, a.id);
     await assertAuditIdFree(ctx, a.auditId);
+    await assertNotUsedBySettings(ctx, a.orgId, a.id);
     const { models, kits, children } = await rowsToMove(ctx, a.orgId, a.id);
 
     for (const m of models) await ctx.db.patch(m._id, { categoryId: undefined });

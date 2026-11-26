@@ -32,13 +32,21 @@ state. It is NOT a second availability formula: `convex/lib/scheduleBoard.ts` ru
 - `unknown` ("not checked") — the check could not run for this job. It is never shown as "no clash".
 Each clash row carries the model, the job's own shortfall, the run and the other jobs on it (the job sheet prints them).
 
-**Bounded by ONE `ReadBudget`** (`convex/lib/scheduleFetch.ts`, 14,000 documents, no `.collect()`): projects, live lines,
-models, their units and client names all draw from it. Scan order makes a cut safe for the visible window: every job
-that STARTS inside the window is read first and complete; older jobs are read nearest-first under their own allowance
-(1,500), so a cut can only hide a job that started before the window and before every older job already read, and
-`truncated` says so (the page prints a note). A job with more lines than the cap, or on a model whose stock the budget
-could not cover, is `unknown`. Pinned in `convex/scheduleBoard.test.ts` (mutation-proven: reversing the older scan
-order fails it). The query is read-only, `danger: "low"`, `requireOrgReadFor` + `callerMayRead("project")`.
+**Bounded by ONE `ReadBudget`** (`convex/lib/scheduleFetch.ts`, 14,000 documents, no whole-set read, no new
+`r9.8-ok`): projects, live lines, models, their units and client names all draw from it.
+- **Gear claims never depend on history.** Every ALIVE job (enquiry through on site) is read through the existing
+  `by_organizationId_status` index, so a hire that started years ago still counts. Only the display of FINISHED jobs
+  reads by start date: jobs that start inside the window first (complete), then older ones nearest-first under their own
+  allowance.
+- **A job's word does not depend on the view.** The claim range is the view widened to the whole project window of every
+  alive job drawn in it, so the same job reads the same in Week, Month and a deep link.
+- **Never a confident `none` from an incomplete read.** `unknown` ("not checked") is returned for a job whose lines
+  exceeded the per-job cap or the budget (the exact-spend case included), on a model whose stock the budget could not
+  cover, and for EVERY alive job when the alive scan itself was cut (`claimsComplete: false`).
+- **`truncated`** is true whenever any part of the read was incomplete (a finished older job missing, any job's lines or
+  model's stock unread, the alive scan cut); the page prints a note.
+Pinned in `convex/scheduleBoard.test.ts` (each guard mutation-proven). The query is read-only, `danger: "low"`,
+`requireOrgReadFor` + `callerMayRead("project")`.
 
 ## The Two-Window Date Model (WS2 #941)
 

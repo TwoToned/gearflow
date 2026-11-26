@@ -4,7 +4,8 @@ import type { QueryCtx } from "./_generated/server";
 import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeCrewPay, canSeeJobCost } from "./lib/crewPayVisibility";
-import { activityMoneyRedactor, type ActivityRedactor } from "./lib/activityPay";
+import { activityMoneyRedactor, crewDocumentRedactor, crewDocumentRowMember } from "./lib/activityPay";
+import { canSeeCrewDocuments } from "./lib/crewDocumentAccess";
 
 /**
  * Native reads for the activity-log SCREENS (Phase 5c audit-read migration). Parity
@@ -23,12 +24,6 @@ import { activityMoneyRedactor, type ActivityRedactor } from "./lib/activityPay"
  */
 
 const SCAN_CAP = 10000;
-
-/** Money in a field diff (`details.changes`) only for a caller who sees it: pay by the pay line, job cost by the job-cost rule (lib/activityPay.ts). */
-async function payRedactor(ctx: QueryCtx, orgId: string): Promise<ActivityRedactor> {
-  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
-  return activityMoneyRedactor({ pay, jobCost });
-}
 
 type LogDoc = {
   id: string;
@@ -142,6 +137,25 @@ async function attachUsers(ctx: QueryCtx, rows: LogDoc[]) {
   });
 }
 
+/**
+ * Redact a page of rows for the live caller: money in a field diff only for a caller who sees it (pay by the pay
+ * line, job cost by the job-cost rule), and a crew DOCUMENT row's `details` (label, kind, expiry) only for a caller
+ * who passes `canSeeCrewDocuments` for the row's member (lib/activityPay.ts). The service identity (the CSV action)
+ * is no user session, so it fails the document rule: the export never carries them.
+ */
+async function redactRows<R extends LogDoc>(ctx: QueryCtx, orgId: string, rows: R[]): Promise<R[]> {
+  const [pay, jobCost] = await Promise.all([canSeeCrewPay(ctx, orgId), canSeeJobCost(ctx, orgId)]);
+  const money = activityMoneyRedactor({ pay, jobCost });
+  const owners = [...new Set(rows.map(crewDocumentRowMember).filter((m): m is string => typeof m === "string"))];
+  const visible = new Set<string>();
+  for (const id of owners) {
+    const member = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+    if (member && member.organizationId === orgId && (await canSeeCrewDocuments(ctx, orgId, member))) visible.add(id);
+  }
+  const documents = crewDocumentRedactor(visible);
+  return rows.map((r) => documents(money(r)));
+}
+
 export const list = query({
   args: {
     orgId: v.string(),
@@ -174,7 +188,7 @@ export const list = query({
 
     const total = filtered.length;
     const pageRows = filtered.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
-    const items = await attachUsers(ctx, pageRows.map(await payRedactor(ctx, args.orgId)));
+    const items = await attachUsers(ctx, await redactRows(ctx, args.orgId, pageRows));
 
     return {
       items,
@@ -204,7 +218,7 @@ export const listByEntity = query({
       .collect()) as unknown as LogDoc[];
     rows.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     const total = rows.length;
-    const items = await attachUsers(ctx, rows.slice(0, limit ?? 5).map(await payRedactor(ctx, orgId)));
+    const items = await attachUsers(ctx, await redactRows(ctx, orgId, rows.slice(0, limit ?? 5)));
     return { items, total };
   },
 });
@@ -227,7 +241,7 @@ export const recentForProject = query({
       .withIndex("by_organizationId_projectId", (q) => q.eq("organizationId", orgId).eq("projectId", projectId))
       .order("desc")
       .take(take)) as unknown as LogDoc[];
-    return { items: await attachUsers(ctx, rows.map(await payRedactor(ctx, orgId))) };
+    return { items: await attachUsers(ctx, await redactRows(ctx, orgId, rows)) };
   },
 });
 
@@ -238,11 +252,12 @@ export const exportRows = query({
     await requireOrgReadFor(ctx, args.orgId, "project"); // Phase 5 domain slice (#1001)
     const window = await scanWindow(ctx, args.orgId);
     const filtered = applyFilters(window, args);
-    // The CSV export calls this with the service identity, which always passes:
-    // `exportActivityLogCSV` redacts for its real caller (`callerSeesCrewPay`).
-    const redact = await payRedactor(ctx, args.orgId);
-    return filtered.map((r) => ({
-      ...redact(r),
+    // The CSV export calls this with the service identity, which passes the project read and sees money:
+    // `exportActivityLogCSV` redacts money for its real caller (`callerSeesCrewPay`). Crew-document details
+    // fail closed here (the service identity is no user session), so the export never carries them.
+    const redacted = await redactRows(ctx, args.orgId, filtered);
+    return redacted.map((r) => ({
+      ...r,
       createdAt: new Date(r.createdAt ?? 0).toISOString(),
     }));
   },

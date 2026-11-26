@@ -8,7 +8,7 @@ import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import type { DatabaseReader, MutationCtx } from "./_generated/server";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
-import { ATTACH_UPLOAD_MAX_AGE_MS, FILE_HOLDERS, NOT_FILE_HOLDERS, FINANCE_FOLDER_PREFIX, INVOICE_UPLOAD_FOLDER, assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
+import { ATTACH_UPLOAD_MAX_AGE_MS, FILE_HOLDERS, NOT_FILE_HOLDERS, NOT_FILE_HOLDER_SETTINGS, FINANCE_FOLDER_PREFIX, INVOICE_UPLOAD_FOLDER, assertAttachableUpload, isFileReferenced } from "./lib/attachableUpload";
 
 type T = TestConvex<typeof schema>;
 const ORG = "org_1", OTHER = "org_2", USER = "user_1";
@@ -113,6 +113,9 @@ describe("isFileReferenced: every holder", () => {
     const t = makeT(); await addFile(t, "f");
     await t.run(async (ctx) => { for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `m${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
     expect(await referenced(t, "f")).toBe(true);
+    // ...and an attach says WHY, distinctly from "already attached" (still refused: fail closed).
+    await expect(attach(t)).rejects.toThrow(/Too many records to check this file safely/);
+    await expect(attach(t)).rejects.not.toThrow(/already attached/);
     const t2 = makeT(); await addFile(t2, "f");
     await t2.run(async (ctx) => {
       for (let i = 0; i < 2001; i++) await ctx.db.insert("checkRecords", { id: `c${i}`, organizationId: ORG, context: "AD_HOC", checkItemId: "ci", checkItemLabelSnapshot: "l", checkItemTypeSnapshot: "PASS_FAIL", result: "PASS", performedById: "u" } as never);
@@ -141,6 +144,10 @@ describe("the holder registry", () => {
     expect(found.filter((h) => !registered.has(h)), "register these in FILE_HOLDERS and isFileReferenced").toEqual([]);
     expect([...registered].filter((h) => !found.includes(h)), "FILE_HOLDERS / NOT_FILE_HOLDERS names a field that no longer exists").toEqual([]);
     for (const [field, reason] of Object.entries(NOT_FILE_HOLDERS)) expect(reason.length, `${field} needs a reason`).toBeGreaterThan(20);
+    // URLs inside the settings JSON blob are invisible to the walk: the blob must still exist, and each is on record with a reason.
+    expect(Object.keys((schema.tables.orgSettings as unknown as { validator: { fields: Record<string, unknown> } }).validator.fields)).toContain("settings");
+    for (const [path, reason] of Object.entries(NOT_FILE_HOLDER_SETTINGS)) expect(reason.length, `${path} needs a reason`).toBeGreaterThan(20);
+    expect(Object.keys(NOT_FILE_HOLDER_SETTINGS)).toEqual(expect.arrayContaining(["settings.branding.logoUrl", "settings.branding.iconUrl"]));
   });
 });
 
@@ -155,6 +162,13 @@ describe("deleteStoredFileIfUnreferenced (the one remove rule)", () => {
     expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).toBe(true);
     expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).toBeNull();
     expect(await t.run(async (ctx) => ctx.db.query("storedFiles").collect())).toEqual([]); // the original and the thumbnail record
+  });
+
+  test("when the state cannot be proven it THROWS FILE_REFS_UNVERIFIABLE and deletes nothing (never a silent keep)", async () => {
+    const t = makeT(); await addFile(t, "f");
+    await t.run(async (ctx) => { for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `m${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
+    await expect(t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).rejects.toThrow(/Too many records to check this file safely/);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).not.toBeNull();
   });
 
   test("never deletes another org's file", async () => {

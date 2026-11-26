@@ -22,9 +22,9 @@ convention:
 
 | | Total public | Agent-reachable | SERVICE-only | Org-read (fails closed for agents) | Unclassified |
 |---|---|---|---|---|---|
-| Queries | 486 | 350 | 132 | 2 | 2 |
-| Mutations | 889 | 387 | 485 | 0 | 17 |
-| **Total** | **1375** | **737** | **617** | **2** | **19** |
+| Queries | 488 | 350 | 133 | 2 | 3 |
+| Mutations | 895 | 387 | 486 | 0 | 22 |
+| **Total** | **1383** | **737** | **619** | **2** | **25** |
 
 <!-- reachability-floor: 737 -->
 
@@ -74,6 +74,8 @@ add a redacted sibling, or record as permanently denied with a reason.
 | `categorySlots` | 11 |
 | `checkRecordOps` | 8 |
 | `clientXeroWrites` | 2 |
+| `crewDocumentsWrites` | 5 |
+| `crewDocuments` | 2 |
 | `crewShifts` | 9 |
 | `emails` | 1 |
 | `financeArtifacts` | 5 |
@@ -134,11 +136,19 @@ fails the build otherwise.
 | `categorySlots.listBySubHireGroupId` | No organizationId column and no orgId arg; org-scoping needs a parent subHireGroup lookup not done here — revisit under a projects-domain slice. |
 | `clientMedia.getById` | Fetches by global cuid index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3). |
 | `clientMedia.listByParent` | Fetches by global by_clientId index with no orgId argument to check against; opening it risks a cross-tenant read (R-8.4.3). |
+| `crewDocuments.getForDownload` | Service-only: the gated download route decides for the real caller. |
+| `crewDocuments.listForMember` | Crew documents are identity and licence material: visible only to the member themself or crew:update on a user session (owner ruling B2), never an API key. |
+| `crewDocumentsWrites.addNative` | Crew documents are identity and licence material: user sessions with crew:update only, never an API key (owner ruling B2). |
+| `crewDocumentsWrites.removeNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.undoAddNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.undoUpdateNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
+| `crewDocumentsWrites.updateNative` | Crew documents: user sessions with crew:update only (owner ruling B2). |
 | `crewShifts.getById` | crewShifts has no organizationId column; fetches by global cuid with no org check, so opening it risks a cross-tenant read (R-8.4.3). |
 | `crewShifts.list` | crewShifts has no organizationId column; this query has no orgId to check the assignmentId argument against, so opening it risks a cross-tenant read (R-8.4.3). |
 | `crewShifts.listByAssignmentIds` | crewShifts has no organizationId column; this query has no orgId to check the assignmentIds argument against, so opening it risks a cross-tenant read (R-8.4.3). |
 | `fileUploads.getByThumbnailUrl` | Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment). |
 | `fileUploads.isReferencedByMedia` | Cross-org lookup with no orgId argument to check the caller's org against — structurally not an org-scoped read (see the function's own doc comment). |
+| `fileUploads.removeIfUnreferenced` | Service-only: the legacy server removal path decides for the real caller. |
 | `financeArtifacts.invoiceArtifactContext` | Same as quoteArtifactContext: SERVICE-gated by design (module docstring), exposes pdfFileId into the deliberately-closed finance-document subsystem; non-sensitive fields are already agent-reachable via invoices.ts. |
 | `financeArtifacts.quoteArtifactContext` | Module docstring is explicit: SERVICE-gated with NO agent escape hatch for any function here, mirroring convex/files.ts. Exposes pdfFileId (a _storage pointer into the render-once/stored-bytes subsystem); the non-sensitive fields (status/dates) are already agent-reachable via quotes.ts, so widening only adds a new pointer surface into the deliberately-closed finance-document pipeline for no net capability gain. |
 | `financeArtifacts.versionPreviewContext` | SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render. |

@@ -1,5 +1,5 @@
 import { v, ConvexError } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, type MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import { MEMBER_RATE_FIELDS } from "./lib/crewPayFields";
@@ -12,6 +12,8 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { deleteStoredFilesIfUnreferenced } from "./lib/deleteStoredFile";
+import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
 import * as enums from "./lib/validators";
 
 /** Fields diffed for the crew-member UPDATE audit (parity with the old updateCrewMember). */
@@ -238,6 +240,20 @@ export const updateNative = mutation({
   },
 });
 
+/** Only an INACTIVE or ARCHIVED member (or one the list shows inactive through a legacy `isActive:false`) may be deleted. */
+function isDeletableCrewStatus(m: { status?: string; isActive?: boolean }): boolean {
+  return m.status === "INACTIVE" || m.status === "ARCHIVED" || m.isActive === false;
+}
+
+/** A member's documents go with them, stored files included (identity material is never orphaned). */
+async function deleteCrewDocuments(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<void> {
+  const docs = await ctx.db.query("crewDocuments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).take(MAX_CREW_DOCUMENTS + 1);
+  const mine = docs.filter((x) => x.organizationId === orgId);
+  for (const d of mine) await ctx.db.delete(d._id);
+  // After every row is gone (so a file two of them shared is free), with ONE set of holder scans for all of them.
+  await deleteStoredFilesIfUnreferenced(ctx, orgId, mine.map((d) => d.fileId));
+}
+
 /**
  * deleteNative — remove a crew member row + DELETE audit, atomic. RBAC(crew, delete).
  * Option A: the server action runs the scheduling cascade (assignments→shifts/time-
@@ -261,6 +277,9 @@ export const deleteNative = mutation({
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "Crew member not found." });
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    // C2 (server half of the record's "Delete only when Inactive"): a member who is still active (or on
+    // leave) cannot be deleted, so the API cannot do what the UI hides. Deactivate or archive first.
+    if (!isDeletableCrewStatus(doc)) throw new ConvexError({ code: "NOT_INACTIVE", message: "Deactivate this crew member before deleting them." });
     const name = `${doc.firstName} ${doc.lastName}`;
 
     // Scheduling cascade (folded in — was 3 separate server round-trips). All by
@@ -283,6 +302,7 @@ export const deleteNative = mutation({
     const avails = (await ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", id)).collect())
       .filter((av) => av.organizationId == null || av.organizationId === orgId);
     for (const av of avails) await ctx.db.delete(av._id);
+    await deleteCrewDocuments(ctx, orgId, id);
 
     await ctx.db.delete(doc._id);
     await bumpCrewMemberCounters(ctx, orgId, doc, null);

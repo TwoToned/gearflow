@@ -1113,6 +1113,56 @@ columns keep their order and the raw status enum; `Query reason` is appended,
 and `Rate (pay)` / `Total` only for a signed-in manager+ (never an API-key
 actor), from the same `deriveEntryMoney`.
 
+## Crew record and documents (UX Phase 13, spec §9m, D72)
+
+`/crew/[id]` is a `RecordShell` page (the same shell as Client / Supplier): `Overview · Calls · Timesheets ·
+Availability · Documents · History`, plus the pre-existing `Calendar` tab (the member's calendar-feed card) kept
+at the end so nothing is lost. `?tab=` is the URL (an unknown or absent tab falls back to Overview; the old
+slash-command tab names `assignments` / `time-entries` map to `calls` / `timesheets`). Overview is a headline
+(`Next call 12 Dec`), health rows (the worst document expiry, calls awaiting an answer, unavailable now), and
+Contact / Work / Rates columns; **Rates exist only when the server sent them** (the pay line,
+`canSeeCrewPay`): absent, never zero or a dash. ⋯: Email, Calendar feed…, Reactivate / Deactivate…, and
+**Delete…, which is absent while the person is active**: the server refuses it too (C2:
+`crewWrites.deleteNative` throws `NOT_INACTIVE` unless the status is INACTIVE or ARCHIVED, or the list-visible
+legacy `isActive:false`). Timesheet and call management inside the record is the existing behaviour
+(Phase 15 owns the Timesheets workspace).
+
+**Crew documents** (`crewDocuments`, `convex/crewDocuments.ts` reads, `convex/crewDocumentsWrites.ts` writes):
+licences, tickets, insurance, contracts and ID, with an optional expiry (`expiresAt`; the expiry STATE is derived
+on read by `crewDocumentExpiry` in `convex/lib/crewDocumentCore.ts`, never stored; expired, or within 30 days).
+
+- **ONE visibility rule** (owner ruling B2), `crewDocumentsVisible`: the member themself (the row's linked user)
+  or `crew:update`, on a USER session. Never an API key or agent; never `warehouse` / `viewer`. It covers the
+  list, the names, the files AND the expiry health. A caller who fails it gets `null` from `listForMember` (the
+  Documents tab is ABSENT, not empty). It is implemented once in the pure core and applied by
+  `canSeeCrewDocuments` (Convex reads), `requireCrewDocumentWriter` (writes: `crew:update` on a user session; the
+  member may read their own documents but never writes them) and the download route.
+- **Files** live in the reserved `crew-documents` stored-file folder. `files.getServeInfo` returns `null` for that
+  folder (so `/api/files/<key>` and any API-key caller get nothing), and `/api/uploads` only writes into it with
+  `purpose: "crew-document"` (needs `crew:update`; PDFs and images; a client naming the folder directly is refused).
+  The ONLY way to download is `GET /api/crew/documents/[id]/file`: cookie session, the same rule, the same 404 for a
+  refused caller as for a missing document, `Cache-Control: private, no-store`.
+- **Add** requires the file to be this caller's own upload from the last 10 minutes, in this org, in that folder,
+  and attached nowhere else (so nobody can attach someone else's file or an invoice PDF).
+- **Undo** is exact and server-side (ids only; author + window + once + still-as-left). Undoing an add detaches the
+  row and the file stays (an Undo never deletes a stored file); an edit (name, kind, expiry) is undone by the shared
+  compare-and-set. **Remove** deletes the stored file for good, so it is a confirmed red verb with no Undo.
+- **Audit**: the add / remove rows name the document KIND only, never the file or its label. An EDIT's row
+  (`entityType: "crewDocument"`) keeps the label, kind and expiry in `details.fieldEdit` because the exact Undo
+  reads them, and records the owner in `details.crewMemberId`. Every activity read (`activityLog.list` /
+  `listByEntity` / `recentForProject` / `exportRows`, so the CSV too) drops that row's `details` for a caller who
+  fails `canSeeCrewDocuments` for the owner (`crewDocumentRedactor`, `convex/lib/activityPay.ts`, beside the money
+  redactor); a row with no readable owner and the service identity (the CSV action) fail closed.
+- **Generic file reads**: `fileUploads.list` / `getById` / `getByThumbnailUrl` never return a row whose stored
+  folder is `crew-documents` (its name, size and storage key are identity material too).
+- **Bounds**: a name is at most 200 characters, an expiry a date between 1970 and 2099 (`CREW_DOCUMENT_EXPIRY_*`
+  in the core, read by the Convex writes and the Zod form), a member at most `MAX_CREW_DOCUMENTS` (100).
+- **Cascade and erasure**: deleting a crew member deletes their documents and stored files in the same
+  transaction (one shared read of the unindexed holder scans for the whole set, so 100 documents stay inside the
+  read limits; a set that cannot be proven free throws `FILE_REFS_UNVERIFIABLE` and deletes nothing); the org export and `scripts/erase-org.ts` sweep the table (DIRECT) and `storedFiles`; unlinking a
+  user (`crewMembers.scrubUserRefs`) leaves the member's documents with the member. `docs/pii-inventory.md`
+  records the table, its rule and its retention (with the member; no retention job).
+
 ## Future Phases (not yet implemented)
 - Phase 7: Crew portal
 

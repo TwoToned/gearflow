@@ -27,9 +27,9 @@ async function member(t: ReturnType<typeof convexTest>, role: string) {
     await ctx.db.insert("members", { id: "mem1", organizationId: ORG, userId: USER, role });
   });
 }
-async function seedCrew(t: ReturnType<typeof convexTest>) {
+async function seedCrew(t: ReturnType<typeof convexTest>, status: "ACTIVE" | "INACTIVE" = "ACTIVE") {
   await t.run(async (ctx) => {
-    await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", status: "ACTIVE", isActive: true, notes: "old", createdAt: NOW, updatedAt: NOW });
+    await ctx.db.insert("crewMembers", { id: "c1", organizationId: ORG, firstName: "Bob", lastName: "Ryan", status, isActive: status === "ACTIVE", notes: "old", createdAt: NOW, updatedAt: NOW });
   });
 }
 
@@ -160,7 +160,7 @@ describe("crewWrites.deleteNative", () => {
   const dargs = { id: "c1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
   test("owner deletes a crew member + DELETE audit (name derived from doc)", async () => {
     const t = makeT();
-    await member(t, "owner"); await seedCrew(t);
+    await member(t, "owner"); await seedCrew(t, "INACTIVE");
     await t.withIdentity(asUser(ORG)).mutation(api.crewWrites.deleteNative, dargs);
     await t.run(async (ctx) => {
       expect(await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first()).toBeNull();
@@ -172,7 +172,7 @@ describe("crewWrites.deleteNative", () => {
 
   test("delete cascades assignments (+shifts/linked entries), standalone entries, availabilities", async () => {
     const t = makeT();
-    await member(t, "owner"); await seedCrew(t);
+    await member(t, "owner"); await seedCrew(t, "INACTIVE");
     await t.run(async (ctx) => {
       await ctx.db.insert("crewAssignments", { id: "as1", organizationId: ORG, crewMemberId: "c1", projectId: "p1", status: "CONFIRMED" });
       await ctx.db.insert("crewShifts", { id: "sh1", assignmentId: "as1", date: NOW });

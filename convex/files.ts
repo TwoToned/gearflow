@@ -4,6 +4,7 @@ import type { Id } from "./_generated/dataModel";
 import { requireService, requireOrgReadDocFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { collectCapped } from "./lib/pagination";
+import { CREW_DOCUMENTS_FOLDER } from "./lib/crewDocumentCore";
 
 /**
  * Convex file storage (replaces the self-hosted Garage/S3 box). The bytes live in
@@ -58,6 +59,9 @@ export const getServeInfo = query({
       .unique();
     await requireOrgReadDocFor(ctx, rec, "document"); // Phase 5 domain slice (#1001)
     if (!rec) return null;
+    // Crew documents are identity material with their own gated route (`/api/crew/documents/[id]/file`):
+    // the generic org-wide serve, and an API key calling this query, must never reach them.
+    if (rec.folder === CREW_DOCUMENTS_FOLDER) return null;
     const url = await ctx.storage.getUrl(storageId as Id<"_storage">);
     if (!url) return null; // bytes gone
     const meta = await ctx.db.system.get(storageId as Id<"_storage">);

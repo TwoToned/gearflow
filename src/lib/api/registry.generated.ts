@@ -16204,6 +16204,355 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "crewDocuments.getForDownload",
+    "module": "crewDocuments",
+    "fn": "getForDownload",
+    "kind": "query",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c8570d0f01945e1f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Service-only: the gated download route decides for the real caller."
+  },
+  {
+    "operation": "crewDocuments.listForMember",
+    "module": "crewDocuments",
+    "fn": "listForMember",
+    "kind": "query",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "crewMemberId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e2b869c2b76896ca",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents are identity and licence material: visible only to the member themself or crew:update on a user session (owner ruling B2), never an API key."
+  },
+  {
+    "operation": "crewDocumentsWrites.addNative",
+    "module": "crewDocumentsWrites",
+    "fn": "addNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "crewMemberId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "fileId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "2e5ae7fc59d321fd",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents are identity and licence material: user sessions with crew:update only, never an API key (owner ruling B2)."
+  },
+  {
+    "operation": "crewDocumentsWrites.removeNative",
+    "module": "crewDocumentsWrites",
+    "fn": "removeNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "crewMemberId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "documentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "a5a613848a0ac053",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents: user sessions with crew:update only (owner ruling B2)."
+  },
+  {
+    "operation": "crewDocumentsWrites.undoAddNative",
+    "module": "crewDocumentsWrites",
+    "fn": "undoAddNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "crewMemberId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "e9f5dfe8b718174c",
+    "returnsSha": "39a41587c0fdfde2",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents: user sessions with crew:update only (owner ruling B2)."
+  },
+  {
+    "operation": "crewDocumentsWrites.undoUpdateNative",
+    "module": "crewDocumentsWrites",
+    "fn": "undoUpdateNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "documentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "535640c302b71714",
+    "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents: user sessions with crew:update only (owner ruling B2)."
+  },
+  {
+    "operation": "crewDocumentsWrites.updateNative",
+    "module": "crewDocumentsWrites",
+    "fn": "updateNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "crewMemberId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "documentId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "expiresAt",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "name",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "40658944561168b2",
+    "returnsSha": "1a5419570c9593c7",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Crew documents: user sessions with crew:update only (owner ruling B2)."
+  },
+  {
     "operation": "crewMembers.create",
     "module": "crewMembers",
     "fn": "create",
@@ -21329,6 +21678,38 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
+  },
+  {
+    "operation": "fileUploads.removeIfUnreferenced",
+    "module": "fileUploads",
+    "fn": "removeIfUnreferenced",
+    "kind": "mutation",
+    "guard": "service",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "fileId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "913b8a85a3baa903",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": "denied",
+    "deniedReason": "Service-only: the legacy server removal path decides for the real caller."
   },
   {
     "operation": "fileUploads.update",
@@ -71219,10 +71600,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1375,
+  total: 1383,
   agentReachable: 737,
-  queries: 486,
-  mutations: 889,
+  queries: 488,
+  mutations: 895,
   agentReachableQueries: 350,
   agentReachableMutations: 387,
 } as const;

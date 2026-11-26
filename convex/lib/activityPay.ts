@@ -22,17 +22,26 @@ export type ActivityRedactor = <R extends WithDetails>(row: R) => R;
  * the wrong thing. The record's field-edit snapshot (`fieldEdit`), a part write (`partOp`) and Complete / Reopen
  * (`lifecycle`) all carry before/after by field name, so each is filtered the same way.
  */
-const MAINTENANCE_COST_FIELDS: ReadonlySet<string> = new Set(["cost", "unitPrice"]);
-const MAINTENANCE_SNAPSHOTS = ["fieldEdit", "partOp", "lifecycle"] as const;
+/**
+ * The money keys inside EACH audit-detail snapshot shape a maintenance write leaves, in ONE registry. A new snapshot
+ * shape on a maintenance write must be listed here: `convex/maintenanceAuditShapes.test.ts` scans the writers'
+ * `details: { <shape>` keys and fails on any shape that is neither listed nor a known no-money one.
+ */
+export const MAINTENANCE_MONEY_SHAPES: Readonly<Record<string, readonly string[]>> = {
+  fieldEdit: ["cost"], // the edit sheet and the bulk verbs (`recordFieldEdit`): the record's labour
+  partOp: ["unitPrice"], // a part write: the part's price
+  lifecycle: ["cost"], // Complete / Reopen: the record's labour
+};
 
 function dropMaintenanceCost(d: Record<string, unknown>): Record<string, unknown> {
   let next = d;
-  for (const key of MAINTENANCE_SNAPSHOTS) {
-    const snap = d[key] as { before?: unknown; after?: unknown } | undefined;
+  for (const [shape, keys] of Object.entries(MAINTENANCE_MONEY_SHAPES)) {
+    const snap = d[shape] as { before?: unknown; after?: unknown } | undefined;
     if (!snap || typeof snap !== "object") continue;
-    const before = withoutKeys(snap.before, MAINTENANCE_COST_FIELDS);
-    const after = withoutKeys(snap.after, MAINTENANCE_COST_FIELDS);
-    if (before !== snap.before || after !== snap.after) next = { ...next, [key]: { ...snap, before, after } };
+    const hidden = new Set(keys);
+    const before = withoutKeys(snap.before, hidden);
+    const after = withoutKeys(snap.after, hidden);
+    if (before !== snap.before || after !== snap.after) next = { ...next, [shape]: { ...snap, before, after } };
   }
   return next;
 }

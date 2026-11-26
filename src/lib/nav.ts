@@ -160,7 +160,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/assets/registry/new": "redirect to the Assets list's create sheet (`/assets/registry?new=serialized|bulk`, Phase 12)",
   "/clients/new": "create flow",
   "/crew/new": "create flow",
-  "/kits/new": "create flow",
+  "/kits/new": "redirect to the Kit sheet (`/kits?new=1`, Phase 14)",
   "/locations/new": "redirect to the Location sheet (`/locations?new=1`, Phase 14)",
   "/projects/new": "create flow",
   "/projects/templates/new": "create flow",

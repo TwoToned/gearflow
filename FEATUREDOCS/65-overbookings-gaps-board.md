@@ -2,6 +2,28 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
 
+## The Overbookings list (UX Phase 14, 14a-4, `/overbookings`)
+The page is a `ListPage` (`src/components/overbookings/overbookings-list.tsx`, config
+`src/lib/list-views/overbookings.ts`). The six stacked tiles and the days `Select` are gone. The server still
+answers with ONE reactive bundle (`overbookingBoard.bundle`, one window); the module flattens it into rows
+(`flattenBoard`), filters by Kind, sorts and pages in memory. Nothing re-derives what is short: the board's own
+computations stand.
+- **Strip = the window**: `This week` (7 days, the default) · `Next 30 days` · `All` (90 days), in the URL (`?seg=`).
+  Only the open window is loaded, so only it carries a count. The old `?days=` link is an alias (7 becomes the
+  week, 30 the month, longer or odd the All word) rewritten into `?seg=` and dropped; the `overbookings.rangeDays`
+  localStorage key and its default constant are removed (D11).
+- **Kind** is a filter word: Overbooked, Pencilled, Sale stock, Crew (crew is three sub-kinds, named inline:
+  `Crew missing`, `Crew unconfirmed`, `Crew clash`). Hard rows (overbooked gear, missing crew, a hard clash) read
+  red, soft ones amber; Severity sort puts hard first. Columns Kind, Short, When, Jobs.
+- **Row menu** (verbs only navigate or open the existing prefilled dialog, so none has an Undo; the cover itself
+  is written on the job's Equipment tab): `Open job` (one per job when there are several), `Open model`,
+  `Sub-hire…` (a HARD gear row only: pencilled rows warn and never offer a cover, crew rows never do), `Reorder` (a
+  sale-stock row only: Sales stock filtered to the model). A verb the caller cannot use is ABSENT, never disabled,
+  gated by `useCanDo` on what its target needs: `Sub-hire…` needs `subHire:create`; `Open model` and `Reorder` need
+  `model:read` (the model page and Sales stock both ask for it); `Open job` is always there.
+- Deferred: bulk `Sub-hire n short`. `coverShortfallNative` needs a supplier and the per-line price form, which
+  only the job's shortfall sheet has; building a second one here would duplicate it (R-3.1).
+
 ## What this is
 
 An org-wide, date-ranged risk board (`/overbookings`) that answers "what gear

@@ -358,6 +358,99 @@ export const undoArchiveNative = mutation({
   },
 });
 
+/**
+ * Duplicate a model (`Duplicate…`): a new model row copying the source's own fields
+ * ONLY. No assets, bulk stock, accessories, check items or media rows travel with it (a copy
+ * is a new catalogue entry, not a clone of the stock), the name gets ` (copy)`, the SKU is
+ * cleared (a SKU names one model) and the sale-stock pool is not copied. The forward write records its own exact-Undo
+ * snapshot in its audit row (`details.duplicate`).
+ */
+export const duplicateNative = mutation({
+  returns: v.object({ id: v.string(), name: v.string() }),
+  args: { sourceId: v.string(), id: v.string(), orgId: v.string(), now: v.number(), actor: actorValidator, auditId: v.string() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "model", "create");
+    const actor = await resolveActor(ctx, a.actor);
+    const src = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.sourceId)).first();
+    if (!src || src.organizationId !== a.orgId) throw new ConvexError("Model not found");
+    const dup = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (dup) throw new ConvexError("Model already exists");
+    const name = `${src.name} (copy)`.slice(0, 200);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // Not copied: the SKU (names one model) and the new-stock sale POOL (`saleStockQuantity`, `reorderLevel`):
+    // a copy starts with no pool, never phantom stock. `image` / `images` URLs are shared, which is fine:
+    // no path deletes a file a model points at.
+    const { _id, _creationTime, id: _srcId, organizationId: _org, createdAt: _c, updatedAt: _u, sku: _sku, saleStockQuantity: _pool, reorderLevel: _reorder, ...own } = src;
+    await ctx.db.insert("models", { ...own, id: a.id, organizationId: a.orgId, name, isActive: true, createdAt: a.now, updatedAt: a.now });
+    await writeActivityLog(ctx, {
+      id: a.auditId, organizationId: a.orgId, action: "CREATE", entityType: "model", entityId: a.id, entityName: name,
+      userId: actor.userId, userName: actor.userName, summary: `Duplicated model ${src.name}`,
+      details: { duplicate: { of: a.sourceId, serverSavedAt: Date.now(), authorId: actor.userId, stamp: a.now } }, createdAt: a.now,
+    });
+    return { id: a.id, name };
+  },
+});
+
+const refuse = (code: string, message: string) => new ConvexError({ code, message });
+
+/** The duplicate's own audit snapshot, after the org / entity / once / window / author gates. */
+async function loadDuplicateSnapshot(ctx: MutationCtx, a: { id: string; orgId: string; auditId: string }, userId: string) {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  const snap = (row?.details as { duplicate?: { serverSavedAt: number; authorId: string; stamp: number } } | undefined)?.duplicate;
+  if (!row || row.organizationId !== a.orgId || row.entityType !== "model" || row.entityId !== a.id || !snap) {
+    throw refuse("NOT_FOUND", "That copy was not found, so it can't be undone.");
+  }
+  const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+  if (marker && marker.organizationId === a.orgId) throw refuse("ALREADY_UNDONE", "That copy was already undone.");
+  assertWithinUndoWindow(snap.serverSavedAt, Date.now(), "change");
+  if (snap.authorId !== userId) throw refuse("NOT_YOURS", "Only the person who made the copy can undo it.");
+  return snap;
+}
+
+/** Any unit, bulk stock, job line or sub-hire line on the model (these tables' `by_modelId` indexes are global, so only existence matters here). */
+async function modelHasDependents(ctx: MutationCtx, modelId: string): Promise<boolean> {
+  const found = await Promise.all([
+    ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("projectLineItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+    ctx.db.query("subHireItems").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).first(),
+  ]);
+  return found.some((r) => r != null);
+}
+
+/**
+ * The exact reverse of ONE duplicate, from its own audit row (ids only). Refuses, changing
+ * nothing, unless: it is this org's copy, within the server-clock window, by the person who
+ * made it, the first undo, and the copy is still untouched (not edited since, no assets, bulk
+ * stock, job lines or sub-hire lines on it). It deletes only the copy it made.
+ */
+export const undoDuplicateNative = mutation({
+  returns: v.object({ deleted: v.string() }),
+  args: { id: v.string(), orgId: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "model");
+    await enforceBrowserWriteLimit(ctx);
+    // `model:create`, the SAME permission as the duplicate it reverses (it is author-only and windowed too):
+    // gating it on `model:delete` would hand a manager an Undo that always fails.
+    await requireOrgPermission(ctx, a.orgId, "model", "create");
+    const actor = await resolveActor(ctx, a.actor);
+    const snap = await loadDuplicateSnapshot(ctx, a, actor.userId);
+    const doc = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
+    if (!doc || doc.organizationId !== a.orgId) throw refuse("NOT_FOUND", "That copy no longer exists.");
+    if (doc.updatedAt !== snap.stamp || (await modelHasDependents(ctx, a.id))) {
+      throw refuse("COPY_CHANGED", "The copy has been edited or used since, so it was kept.");
+    }
+    await ctx.db.delete(doc._id);
+    await writeActivityLog(ctx, {
+      id: `undo:${a.auditId}`, organizationId: a.orgId, action: "DELETE", entityType: "model", entityId: a.id, entityName: doc.name,
+      userId: actor.userId, userName: actor.userName, summary: `Undid duplicating ${doc.name}`, details: { undoOf: a.auditId }, createdAt: a.now,
+    });
+    return { deleted: a.id };
+  },
+});
+
 export const bulkUpdateRatesNative = mutation({
   returns: v.object({ count: v.number(), auditIds: v.array(v.string()) }),
   args: {
@@ -693,6 +786,8 @@ export const agentOps: AgentOpsAnnotations = {
   // Puts an archived model (and so its gear) back on new quotes, so `high`.
   restoreNative: { danger: "high", summary: "Restore an archived model so it can be added to jobs again." },
   undoArchiveNative: { danger: "medium" },
+  duplicateNative: { danger: "low", summary: "Duplicate a model: a new catalogue entry copying its fields only (no assets, stock or accessories)." },
+  undoDuplicateNative: { danger: "medium" },
   // A single model's stock count, reversible by an equal-and-opposite
   // adjustment — no asset/availability impact (that's `saleStock.ts`'s
   // FROM_RENTAL_STOCK primitives, which touch real assets and aren't

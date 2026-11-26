@@ -40,7 +40,7 @@ export function useClientWrites() {
   };
 
   return {
-    create: async (data: ClientFieldsInput): Promise<{ id: string }> => {
+    create: async (data: ClientFieldsInput): Promise<{ id: string; auditId: string }> => {
       const org = requireOrg();
       // Match the deleted server action's validation + defaults (email format, name
       // length, discount range, coordinate pairing, tags:[]/isActive:true defaults).
@@ -48,6 +48,7 @@ export function useClientWrites() {
       const parsed = clientSchema.parse(data);
       const id = createId();
       const now = Date.now();
+      const auditId = createId();
       await createM({
         id,
         organizationId: org,
@@ -55,7 +56,7 @@ export function useClientWrites() {
         createdAt: now,
         updatedAt: now,
         actor: actor(),
-        auditId: createId(),
+        auditId,
       });
 
       // Two-phase: the client id is already minted client-side, so the primary
@@ -77,20 +78,21 @@ export function useClientWrites() {
           auditId: createId(),
         });
       }
-      return { id };
+      return { id, auditId };
     },
-    update: async (id: string, data: ClientFieldsInput): Promise<{ id: string }> => {
+    update: async (id: string, data: ClientFieldsInput): Promise<{ id: string; auditId: string }> => {
       const org = requireOrg();
       const parsed = clientSchema.parse(data);
+      const auditId = createId();
       await updateM({
         id,
         orgId: org,
         patch: toClientFields(parsed),
         actor: actor(),
-        auditId: createId(),
+        auditId,
         now: Date.now(),
       });
-      return { id };
+      return { id, auditId };
     },
     updateNotes: async (id: string, notes: string): Promise<void> => {
       const org = requireOrg();

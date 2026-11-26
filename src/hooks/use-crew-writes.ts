@@ -60,27 +60,29 @@ export function useCrewWrites() {
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
 
   return {
-    create: async (data: CrewMemberFormValues): Promise<{ id: string }> => {
+    create: async (data: CrewMemberFormValues): Promise<{ id: string; auditId: string }> => {
       const org = requireOrg();
       const c = cleanCrew(data);
       const id = createId();
       const now = Date.now();
+      const auditId = createId();
       await createM({
         id, organizationId: org, firstName: c.firstName, lastName: c.lastName,
         ...toCreateArgs(c), isActive: true, createdAt: now, updatedAt: now,
-        actor: actor(), auditId: createId(),
+        actor: actor(), auditId,
       } as Parameters<typeof createM>[0]);
-      return { id };
+      return { id, auditId };
     },
-    update: async (id: string, data: CrewMemberFormValues): Promise<{ id: string }> => {
+    update: async (id: string, data: CrewMemberFormValues): Promise<{ id: string; auditId: string }> => {
       const org = requireOrg();
       const c = cleanCrew(data);
       const now = Date.now();
       const set: Record<string, unknown> = { updatedAt: now };
       const clear: string[] = [];
       for (const [k, val] of Object.entries(c)) { if (val == null) clear.push(k); else set[k] = val; }
-      await updateM({ id, orgId: org, set, clear, actor: actor(), auditId: createId(), now });
-      return { id };
+      const auditId = createId();
+      await updateM({ id, orgId: org, set, clear, actor: actor(), auditId, now });
+      return { id, auditId };
     },
     remove: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();

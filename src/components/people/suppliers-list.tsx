@@ -41,7 +41,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
   const { state, setState } = useListUrlState(SUPPLIERS_SPEC);
   const canCreate = useCanDo("supplier", "create");
   const canUpdate = useCanDo("supplier", "update");
-  useKeyboardShortcut("n", () => canCreate && router.push("/suppliers/new"));
+  useKeyboardShortcut("n", () => canCreate && router.push("/suppliers?new=1"));
   const page = useAuthedQuery(api.peopleLists.supplierPage, orgId ? { orgId, ...supplierQueryArgs(state, now) } : "skip");
   const counts = useAuthedQuery(api.peopleLists.supplierSegmentCounts, orgId ? { orgId, now } : "skip") as Record<string, number> | undefined;
   const items = React.useMemo(() => ((page?.items ?? []) as unknown as SupplierSource[]).map((s) => ({ ...s, spendPartial: page?.spendPartial === true })), [page]);
@@ -54,7 +54,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
   const [tagIds, setTagIds] = React.useState<string[] | null>(null);
   const moneyVisible = page?.moneyVisible === true;
 
-  const goNew = () => router.push("/suppliers/new");
+  const goNew = () => router.push("/suppliers?new=1");
   const rows = items.map((s) =>
     supplierRowOf(
       s,
@@ -63,7 +63,7 @@ function SuppliersListInner({ orgId }: { orgId: string | undefined }) {
         {
           onOpen: () => router.push(`/suppliers/${s.id}`),
           onOrders: () => router.push(`/suppliers/${s.id}`),
-          onNewOrder: when(canCreate, () => router.push(`/suppliers/${s.id}/orders/new`)),
+          onNewOrder: when(canCreate, () => router.push(`/suppliers/${s.id}?new-order=1`)),
           onEmail: () => { window.location.href = `mailto:${s.email ?? ""}`; },
           onAddTag: when(canUpdate, () => setTagIds([s.id])),
           onArchive: when(canUpdate, () => void w.bulkArchive([s.id])),

@@ -41,10 +41,11 @@ export function useSupplierOrderWrites() {
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
 
   return {
-    create: async (data: SupplierOrderFormValues): Promise<{ id: string }> => {
+    create: async (data: SupplierOrderFormValues): Promise<{ id: string; auditId: string }> => {
       const org = requireOrg();
       const parsed = supplierOrderSchema.parse(data);
-      return await createM({
+      const auditId = createId();
+      const { id } = await createM({
         id: createId(),
         orgId: org,
         supplierId: parsed.supplierId,
@@ -58,13 +59,15 @@ export function useSupplierOrderWrites() {
         notes: parsed.notes || undefined,
         now: Date.now(),
         actor: actor(),
-        auditId: createId(),
+        auditId,
       });
+      return { id, auditId };
     },
     /** Header edit — status/orderDate/expectedDate/notes only (WS7 #946). */
-    update: async (orderId: string, data: SupplierOrderUpdateFormValues): Promise<{ id: string }> => {
+    update: async (orderId: string, data: SupplierOrderUpdateFormValues): Promise<{ id: string; auditId: string }> => {
       const parsed = supplierOrderUpdateSchema.parse(data);
-      return await updateM({
+      const auditId = createId();
+      const { id } = await updateM({
         id: orderId,
         orgId: requireOrg(),
         status: parsed.status,
@@ -73,8 +76,9 @@ export function useSupplierOrderWrites() {
         notes: parsed.notes || undefined,
         now: Date.now(),
         actor: actor(),
-        auditId: createId(),
+        auditId,
       });
+      return { id, auditId };
     },
     remove: async (orderId: string): Promise<{ id: string }> =>
       await deleteM({ id: orderId, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() }),

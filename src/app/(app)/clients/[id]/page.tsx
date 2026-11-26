@@ -198,7 +198,7 @@ function ClientRecord({ params }: { params: Promise<{ id: string }> }) {
         status={status}
         meta={[client.type ? clientTypeLabels[client.type] : null, primary?.name ?? client.contactName, `${client.projects.length} job${client.projects.length === 1 ? "" : "s"}`].filter(Boolean)}
         banner={banner}
-        onEdit={canUpdate ? () => router.push(`/clients/${id}/edit`) : undefined}
+        onEdit={canUpdate ? () => router.push(`/clients/${id}?edit=1`) : undefined}
         menu={menu}
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Contact", value: primary?.name ?? client.contactName }, { label: "Terms", value: client.paymentTerms }, { label: "Open jobs", value: String(openJobs.length) }]} />}

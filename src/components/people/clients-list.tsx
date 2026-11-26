@@ -72,7 +72,7 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
     return clientRowOf(c, menu);
   });
 
-  const create = canCreate ? { label: "New client", onSelect: () => router.push("/clients/new") } : undefined;
+  const create = canCreate ? { label: "New client", onSelect: () => router.push("/clients?new=1") } : undefined;
   const model: PeopleListModel = {
     key: "clients",
     spec: CLIENTS_SPEC,

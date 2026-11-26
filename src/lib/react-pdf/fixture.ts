@@ -19,7 +19,6 @@ export function makeSpikeData(overrides: Partial<DocumentData> = {}): DocumentDa
     org_business_number_label: "ABN",
     org_logo: null,
     org_icon: null,
-    org_tax_rate: 10,
     org_tax_label: "GST",
     org_invoice_heading: "TAX INVOICE",
     org_paper_size: "A4",

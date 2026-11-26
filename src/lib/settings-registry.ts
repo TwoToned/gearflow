@@ -22,6 +22,22 @@ export interface SettingsCaps {
   xeroManage: boolean;
 }
 
+/** Whether the queries behind the caps have answered yet. */
+export interface SettingsCapsLoad {
+  rolesLoaded: boolean;
+  xeroLoaded: boolean;
+}
+
+/**
+ * A gate can only be decided once the inputs it reads have loaded: a closed
+ * capability that is merely not-yet-known must never read as "denied" (a deep
+ * link to /settings/xero flashed Access denied while the caps query ran).
+ */
+export function settingsGateKnown(gate: SettingsGate, load: SettingsCapsLoad): boolean {
+  if (!load.rolesLoaded) return false;
+  return gate === "xero" ? load.xeroLoaded : true;
+}
+
 export type SettingsStatusKey = "team" | "xero" | "mira";
 
 export type SettingsGroupKey =
@@ -59,13 +75,13 @@ export const SETTINGS_GROUPS: readonly { key: SettingsGroupKey; label: string }[
 export const SETTINGS: readonly SettingsEntry[] = [
   {
     key: "general", title: "General", href: "/settings/general", group: "organisation", gate: "orgSettings",
-    description: "Business identity, timezone, job numbering and the automation of job status.",
-    parts: ["business name", "email", "phone", "address", "abn", "country", "timezone", "job defaults", "job numbering", "status automation", "crew & time"],
+    description: "Business identity, timezone, job numbering, automatic job status and crew-planner timing.",
+    parts: ["business name", "email", "phone", "website", "address", "abn", "country", "timezone", "job defaults", "job numbering", "project number", "status automation", "crew & time", "confirmation reminders"],
   },
   {
     key: "branding", title: "Branding & documents", href: "/settings/branding", group: "organisation", gate: "orgSettings",
-    description: "Logo, colours and the terms printed on quotes, invoices and dockets.",
-    parts: ["logo", "colours", "terms", "footer", "document settings"],
+    description: "Logo, colours and the footer, terms and payment details printed on documents.",
+    parts: ["logo", "icon", "colours", "primary colour", "accent colour", "document colour", "document branding", "footer text", "terms & conditions", "payment details", "quote validity", "payment terms"],
   },
   {
     key: "team", title: "Team", href: "/settings/team", group: "people", gate: "orgMembers", statusKey: "team",
@@ -74,48 +90,48 @@ export const SETTINGS: readonly SettingsEntry[] = [
   },
   {
     key: "sso", title: "Single sign-on", href: "/settings/sso", group: "people", gate: "orgSettings",
-    description: "Sign in with your identity provider and map its groups to roles.",
-    parts: ["saml", "oidc", "provisioning", "group mapping", "login behaviour"],
+    description: "Sign in with your identity provider, provisioning, group-to-role mapping and login behaviour.",
+    parts: ["saml", "oidc", "identity providers", "user provisioning", "group-to-role mapping", "login behaviour", "pending approvals"],
   },
   {
     key: "assets", title: "Assets", href: "/settings/assets", group: "operations", gate: "orgSettings",
-    description: "Asset tag format and the defaults new gear starts with.",
-    parts: ["tags", "prefix", "barcode", "labels"],
+    description: "Asset tag format, which categories are containers, and your categories, suppliers and locations.",
+    parts: ["asset tags", "tag format", "prefix", "containers", "cases", "category", "categories", "subcategories", "suppliers", "vendors", "locations", "warehouses", "venues"],
   },
   {
     key: "custom-fields", title: "Custom fields", href: "/settings/custom-fields", group: "operations", gate: "orgSettings",
-    description: "Extra fields on assets, models, clients and jobs.",
-    parts: ["fields", "attributes"],
+    description: "Extra fields on assets: text, number, date, dropdown or yes/no.",
+    parts: ["fields", "attributes", "dropdown", "asset fields"],
   },
   {
     key: "test-and-tag", title: "Test & tag", href: "/settings/test-and-tag", group: "operations", gate: "orgSettings",
-    description: "Test intervals and the profiles each kind of gear is tested against.",
-    parts: ["profiles", "interval", "compliance", "readings"],
+    description: "Test tag ID format, test profiles, default intervals, email reminders and auditor portal links.",
+    parts: ["test tag id", "test profiles", "visual checks", "electrical tests", "testing defaults", "intervals", "email reminders", "digest", "auditor portal", "compliance links"],
   },
   {
     key: "check-items", title: "Check items", href: "/settings/check-items", group: "operations", gate: "checkItem",
-    description: "The checks run when gear goes out and comes back.",
-    parts: ["checklist", "return checks", "condition"],
+    description: "The quality checks you assign to models for warehouse prep and return.",
+    parts: ["quality checks", "prep", "return checks", "model checks"],
   },
   {
     key: "group-templates", title: "Group templates", href: "/settings/group-templates", group: "operations", gate: "lineItems",
     description: "Saved bundles of gear you can drop onto a job as a priced group.",
-    parts: ["bundles", "project groups"],
+    parts: ["bundles", "project groups", "templates"],
   },
   {
     key: "services", title: "Services", href: "/settings/services", group: "operations", gate: "orgSettings",
-    description: "The labour, transport and other services you quote, with their default rates and tax.",
-    parts: ["labour", "transport", "rates", "tax", "service types"],
+    description: "Service templates: the labour, transport and other services you add to jobs, with default price and crew.",
+    parts: ["service templates", "default price", "pricing type", "crew count", "vehicle", "show on documents", "auto-add"],
   },
   {
     key: "calendars", title: "Calendars", href: "/settings/calendars", group: "operations", gate: "orgSettings",
-    description: "The calendar feed your team subscribes to.",
-    parts: ["ical", "feed", "subscribe", "token"],
+    description: "The iCal feeds your team subscribes to from Google, Apple or Outlook, and the token behind them.",
+    parts: ["ical", "calendar feeds", "subscribe", "google calendar", "outlook", "token", "regenerate"],
   },
   {
     key: "displays", title: "Displays", href: "/settings/displays", group: "operations", gate: "orgSettings",
-    description: "Wall and warehouse screens that show what is on.",
-    parts: ["screens", "tv", "kiosk"],
+    description: "Warehouse display screens: named display URLs with a layout and optional location.",
+    parts: ["screens", "display url", "layout", "tv", "kiosk", "regenerate url", "revoke"],
   },
   {
     key: "billing", title: "Billing", href: "/settings/billing", group: "money", gate: "orgSettings",
@@ -125,22 +141,22 @@ export const SETTINGS: readonly SettingsEntry[] = [
   {
     key: "xero", title: "Xero", href: "/settings/xero", group: "integrations", gate: "xero", statusKey: "xero",
     description: "Push invoices to Xero, map clients and set account coding.",
-    parts: ["accounting", "tax", "account codes", "client mapping", "payments", "connect"],
+    parts: ["accounting", "tax", "tax type", "account coding", "account codes", "reference data", "client mapping", "payments", "invoice push", "connect"],
   },
   {
     key: "woocommerce", title: "WooCommerce", href: "/settings/woocommerce", group: "integrations", gate: "orgSettings",
-    description: "Take orders from a WooCommerce shop into Flow.",
-    parts: ["shop", "orders", "webhook", "products"],
+    description: "Take WooCommerce orders into Flow: webhook, product matching, field mapping and job defaults.",
+    parts: ["webhook", "connection", "product matching", "date field mapping", "location mapping", "job defaults", "recent orders", "wordpress"],
   },
   {
     key: "mira", title: "Mira assistant", href: "/settings/mira", group: "integrations", gate: "orgSettings", statusKey: "mira",
-    description: "The in-app assistant: your model, your key and whether it may write.",
-    parts: ["ai", "openrouter", "model", "api key", "write access"],
+    description: "The in-app assistant: your own API key, model and base URL, and whether it may write.",
+    parts: ["ai", "openrouter", "api key", "base url", "model", "write access"],
   },
   {
     key: "api-keys", title: "API keys", href: "/settings/api-keys", group: "developer", gate: "orgSettings",
     description: "Keys and connections for agents, scripts and MCP clients.",
-    parts: ["mcp", "tokens", "agent", "oauth", "scopes", "request log"],
+    parts: ["mcp", "tokens", "agent", "oauth", "scopes", "request log", "rotate", "revoke", "no financials"],
   },
   {
     key: "danger-zone", title: "Danger zone", href: "/settings/danger-zone", group: "danger", gate: "orgSettings",

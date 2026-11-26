@@ -150,14 +150,19 @@ export const segmentCounts = query({
 
 /** The most items one `Print tags` run covers (a sheet of labels, not a bulk job). */
 const MAX_LABELS = 100;
-/** The most test records read per item to find its latest. */
-const MAX_RECORDS_PER_ITEM = 500;
+/**
+ * The most test records read per item to find its latest: the NEWEST-created few, read through the (org, item) index in
+ * descending order. No index orders an item's records by `testDate`, and adding one is a schema change this read does not
+ * need: a test is almost always recorded when it is done, so the latest test is among the newest-created rows, and taking
+ * the max `testDate` over them also copes with a test entered late for an earlier date. 100 items x 5 = 500 documents.
+ */
+const RECENT_RECORDS_PER_ITEM = 5;
 
 /**
  * The data of the printed tag for each item (UX Phase 14, 14a-3b, `Print tags`): the LATEST test's result, date and tester
  * and the item's next due date, i.e. exactly what the single `Print label` prints. An item that has never been tested has
  * no label (it is named in `skipped`, never printed blank); an id that is not this org's item is ignored. Bounded: at most
- * 100 ids, and each item's own records are read capped.
+ * 100 ids, and each item reads only its newest-created few records.
  */
 export const labelsFor = query({
   args: { orgId: v.string(), ids: v.array(v.string()) },
@@ -169,7 +174,7 @@ export const labelsFor = query({
     for (const id of [...new Set(ids)]) {
       const item = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
       if (!item || item.organizationId !== orgId) continue; // by_cuid is global: another org's item is simply not there
-      const { rows } = await collectCapped(ctx.db.query("testTagRecords").withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", orgId).eq("testTagAssetId", id)), MAX_RECORDS_PER_ITEM);
+      const rows = await ctx.db.query("testTagRecords").withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", orgId).eq("testTagAssetId", id)).order("desc").take(RECENT_RECORDS_PER_ITEM);
       const last = rows.reduce<Doc<"testTagRecords"> | null>((best, r) => (!best || r.testDate > best.testDate ? r : best), null);
       if (!last) { skipped.push({ id, testTagId: item.testTagId }); continue; }
       labels.push({ id, testTagId: item.testTagId, result: last.result === "PASS" ? "PASS" : "FAIL", testDate: last.testDate, nextDueDate: item.nextDueDate ?? last.testDate, testerName: last.testerName || "\u2014" });

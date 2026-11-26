@@ -74,3 +74,33 @@ describe("testTagList.labelsFor", () => {
     await expect(t.withIdentity({ subject: "x", orgId: "org_2" }).query(api.testTagList.labelsFor, { orgId: ORG, ids: ["t1"] })).rejects.toThrow(/Forbidden|organization/i);
   });
 });
+
+describe("testTagList.labelsFor — reads only the newest few records per item", () => {
+  const insertRecord = (t: T, id: string, itemId: string, testDate: number, tester: string) =>
+    t.run(async (ctx) => {
+      await ctx.db.insert("testTagRecords", { id, organizationId: ORG, testTagAssetId: itemId, testDate, testedById: "u", testerName: tester, result: "PASS", nextDueDate: testDate + 90 * D } as never);
+    });
+
+  test("the newest test wins even when the item has more records than the old 500 cap", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "big", organizationId: ORG, testTagId: "TT-big", description: "big", status: "CURRENT", isActive: true, nextDueDate: 9000 * D } as never);
+      for (let i = 0; i < 505; i++) {
+        await ctx.db.insert("testTagRecords", { id: `b${i}`, organizationId: ORG, testTagAssetId: "big", testDate: (100 + i) * D, testedById: "u", testerName: `Tester ${i}`, result: i === 504 ? "FAIL" : "PASS", nextDueDate: 1 } as never);
+      }
+    });
+    const r = await labels(t, ["big"]);
+    expect(r.labels).toEqual([{ id: "big", testTagId: "TT-big", result: "FAIL", testDate: 604 * D, nextDueDate: 9000 * D, testerName: "Tester 504" }]);
+  });
+
+  test("a test entered late for an earlier date does not displace the truly latest one", async () => {
+    const t = makeT();
+    await seed(t);
+    await insertRecord(t, "e1", "t2", 100 * D, "First");
+    await insertRecord(t, "e2", "t2", 300 * D, "Latest");
+    await insertRecord(t, "e3", "t2", 200 * D, "Entered last");
+    const r = await labels(t, ["t2"]);
+    expect(r.labels[0]).toMatchObject({ testDate: 300 * D, testerName: "Latest" });
+  });
+});

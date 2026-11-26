@@ -104,6 +104,8 @@ export const editNative = mutation({
     await assertLinks(ctx, a.orgId, item, a.set);
 
     const next = nextState(item, a.set, a.clear);
+    // One link at a time: a serialised asset OR a bulk asset (only judged when this edit touches a link).
+    if ((a.set.assetId || a.set.bulkAssetId) && next.assetId && next.bulkAssetId) throw refuse("INVALID_FIELD", "An item links one asset or one bulk asset, not both.");
     const diff = diffFields(item, next, TRACKED);
     if (!diff) return { id: a.id, changed: false };
 

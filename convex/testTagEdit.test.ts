@@ -99,6 +99,21 @@ describe("editNative", () => {
   });
 });
 
+describe("links", () => {
+  test("one link at a time: setting a bulk link while an asset link stays is refused; swapping (clear + set) works", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "b1", organizationId: ORG, assetTag: "B1", modelId: "m", isActive: true } as never);
+    });
+    await edit(t, { assetId: "a1" });
+    await expect(edit(t, { bulkAssetId: "b1" }, { auditId: "e2" })).rejects.toMatchObject({ data: { code: "INVALID_FIELD" } });
+    await edit(t, { bulkAssetId: "b1" }, { clear: ["assetId"], auditId: "e3" });
+    expect(await item(t)).toMatchObject({ bulkAssetId: "b1" });
+    expect((await item(t)).assetId).toBeUndefined();
+  });
+});
+
 describe("next due is derived", () => {
   test("a changed interval re-derives next due from the last test, and Undo puts both back", async () => {
     const t = makeT();

@@ -47,12 +47,18 @@ interface CompleteDraft {
   storedNextDue: number | null;
 }
 
+/** A labour box that parsed and sits inside the write's own bounds (blank / unchanged is fine). */
+function labourInRange(l: { bad: boolean; value?: unknown }): boolean {
+  if (l.bad) return false;
+  return typeof l.value !== "number" || (l.value >= 0 && l.value <= MAX_MAINTENANCE_MONEY);
+}
+
 /** The dialog's boxes as the write takes them, or the one message that says what to fix. Only what the person changed is sent. */
 function buildCompleteInput(d: CompleteDraft): { input: CompleteInput } | { error: string } {
   const completedDate = d.date ? fromDateInput(d.date) : NaN;
   if (!Number.isFinite(completedDate)) return { error: "Choose the date it was completed." };
   const labour = changeOf(d.labour, d.storedLabour, Number);
-  if (d.labourVisible && (labour.bad || (typeof labour.value === "number" && (labour.value < 0 || labour.value > MAX_MAINTENANCE_MONEY)))) return { error: `Labour must be between 0 and ${MAX_MAINTENANCE_MONEY.toLocaleString("en-AU")}.` };
+  if (d.labourVisible && !labourInRange(labour)) return { error: `Labour must be between 0 and ${MAX_MAINTENANCE_MONEY.toLocaleString("en-AU")}.` };
   const next = changeOf(d.nextDue, d.storedNextDue, fromDateInput);
   if (next.bad) return { error: "Choose a valid next due date." };
   const dispositions = Object.entries(d.overrides).map(([assetId, disposition]) => ({ assetId, disposition }));

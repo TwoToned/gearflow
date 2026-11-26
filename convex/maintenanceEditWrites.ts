@@ -10,6 +10,7 @@ import { assertStrLen, assertNumRange, assertTags } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { loadMaintenanceRecord, maintenanceWritePrelude } from "./lib/maintenanceRecordAccess";
 import { assertNewMaintenancePhotos, releaseRemovedMaintenancePhotos } from "./lib/maintenancePhotos";
+import { MAX_MAINTENANCE_MONEY } from "./lib/maintenanceCost";
 import { storageIdOf } from "./lib/checkPhotos";
 import { assertMemberInOrg } from "./lib/orgRef";
 import * as enums from "./lib/validators";
@@ -67,13 +68,28 @@ async function assertEditable(ctx: MutationCtx, orgId: string, rec: Doc<"mainten
   if (set.title !== undefined && !set.title.trim()) throw refuse("INVALID_FIELD", "A job needs a title.");
   assertStrLen(set.title, "title", { max: 200 });
   assertStrLen(set.description, "description", { max: 5000 });
-  assertNumRange(set.cost, "cost", { min: 0 });
+  assertNumRange(set.cost, "cost", { min: 0, max: MAX_MAINTENANCE_MONEY });
   assertNumRange(set.scheduledDate, "scheduled date", {});
   assertNumRange(set.nextDueDate, "next due", {});
   if ((set.photos?.length ?? 0) > 20) throw refuse("INVALID_FIELD", "A job can have at most 20 photos.");
-  // Members are validated only when CHANGED, so a job whose assignee has since left can still be edited.
-  if (set.assignedToId && set.assignedToId !== rec.assignedToId) await assertMemberInOrg(ctx, orgId, set.assignedToId);
-  if (set.reportedById && set.reportedById !== rec.reportedById) await assertMemberInOrg(ctx, orgId, set.reportedById);
+  await assertChangedMembers(ctx, orgId, rec, set);
+}
+
+/** Members are validated only when CHANGED, so a job whose assignee has since left can still be edited. */
+async function assertChangedMembers(ctx: MutationCtx, orgId: string, rec: Doc<"maintenanceRecords">, set: EditSet): Promise<void> {
+  for (const f of ["assignedToId", "reportedById"] as const) {
+    if (set[f] && set[f] !== rec[f]) await assertMemberInOrg(ctx, orgId, set[f]);
+  }
+}
+
+/** The record as it would read after the edit (`next`, for the diff) and the patch that writes it. */
+function planEdit(rec: Doc<"maintenanceRecords">, set: EditSet, clear: string[], tags: string[] | undefined, nextIds: string[]) {
+  const extra = { ...(set.title !== undefined ? { title: set.title.trim() } : {}), ...(tags ? { tags } : {}) };
+  const next: Record<string, unknown> = { ...rec, ...set, ...extra, assetIds: nextIds };
+  for (const f of clear) delete next[f];
+  const patch: Record<string, unknown> = { ...set, ...extra };
+  for (const f of clear) patch[f] = undefined;
+  return { next, patch };
 }
 
 /** The distinct assets a job links, sorted (the one stable order the snapshot compares). */
@@ -114,14 +130,11 @@ export const editNative = mutation({
 
     const currentIds = await linkedAssetIdsSorted(ctx, a.id);
     const nextIds = a.assetIds === undefined ? currentIds : nextAssetIds(rec, a.assetIds);
-    const next: Record<string, unknown> = { ...rec, ...set, ...(set.title !== undefined ? { title: set.title.trim() } : {}), ...(tags ? { tags } : {}), assetIds: nextIds };
-    for (const f of clear) delete next[f];
+    const { next, patch } = planEdit(rec, set, clear, tags, nextIds);
     const diff = diffFields({ ...rec, assetIds: currentIds }, next, MAINTENANCE_EDIT_FIELDS);
     if (!diff) return { id: a.id, changed: false, undoable: false };
 
-    const patch: Record<string, unknown> = { ...set, ...(set.title !== undefined ? { title: next.title } : {}), ...(tags ? { tags } : {}), updatedAt: a.now };
-    for (const f of clear) patch[f] = undefined;
-    await ctx.db.patch(rec._id, patch);
+    await ctx.db.patch(rec._id, { ...patch, updatedAt: a.now });
     if (nextIds !== currentIds) await applyAssetLinks(ctx, a.orgId, a.id, currentIds, nextIds);
     const deleted = set.photos ? await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: rec.photos ?? [], after: set.photos }) : 0;
     await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "maintenance", entityId: a.id, entityName: String(next.title), auditId: a.auditId, actor, summary: `Edited maintenance record: ${rec.title}`, diff, now: a.now });

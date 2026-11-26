@@ -13,7 +13,30 @@ interface LabelTemplateProps {
   nextDueDate: Date | string;
   testerName: string;
   companyName?: string;
+  /**
+   * Several labels on one printout (`Print tags`): each label is its own page and flows in the document
+   * instead of being fixed to the page corner. The caller wraps the labels in `.test-tag-sheet`.
+   */
+  sheet?: boolean;
 }
+
+const SINGLE_PRINT_CSS = `
+  @media print {
+    body * { visibility: hidden; }
+    .test-tag-label, .test-tag-label * { visibility: visible; }
+    .test-tag-label { position: fixed; left: 0; top: 0; width: 89mm; height: 36mm; }
+  }
+`;
+
+const SHEET_PRINT_CSS = `
+  @media print {
+    body * { visibility: hidden; }
+    .test-tag-sheet, .test-tag-sheet * { visibility: visible; }
+    .test-tag-sheet { position: absolute; left: 0; top: 0; }
+    .test-tag-sheet .test-tag-label { display: flex; break-after: page; page-break-after: always; width: 89mm; height: 36mm; }
+    .test-tag-sheet .test-tag-label:last-child { break-after: auto; page-break-after: auto; }
+  }
+`;
 
 export function LabelTemplate({
   testTagId,
@@ -22,6 +45,7 @@ export function LabelTemplate({
   nextDueDate,
   testerName,
   companyName,
+  sheet,
 }: LabelTemplateProps) {
   const testDateStr = new Date(testDate).toLocaleDateString("en-AU", {
     day: "2-digit",
@@ -36,19 +60,7 @@ export function LabelTemplate({
 
   return (
     <>
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          .test-tag-label, .test-tag-label * { visibility: visible; }
-          .test-tag-label {
-            position: fixed;
-            left: 0;
-            top: 0;
-            width: 89mm;
-            height: 36mm;
-          }
-        }
-      `}</style>
+      <style>{sheet ? SHEET_PRINT_CSS : SINGLE_PRINT_CSS}</style>
       <div
         className="test-tag-label inline-flex items-stretch border border-gray-300 rounded"
         style={{ width: "89mm", height: "36mm", fontFamily: "system-ui, sans-serif" }}

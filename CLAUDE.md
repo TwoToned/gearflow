@@ -763,6 +763,16 @@ Both warehouse triggers also accept `AWAITING_PAYMENT` as a `from`: physical wor
 is the second way out of the money phase, for orgs that reconcile payments in Xero
 and never write a `payments` row. See FEATUREDOCS/76.
 
+### The Schedule — `clash` / `would clash` are DERIVED from the board math, and the read has ONE budget
+`/availability` (UX Phase 18, FEATUREDOCS/11) shows a job's `clash` (held job over stock), `would clash` (pencilled job
+that would overbook if confirmed) and `not checked` (the check could not run). All three come from
+`convex/lib/scheduleBoard.ts` over the Overbookings board's own claim sweep (`aggregateDemandByModel` /
+`sweepModelConflicts`, `stockBackedQty` demand): **never write a second availability or clash formula for a Schedule
+surface, and never store the words.** `unknown` is never rendered as "no clash". Every document `scheduleBoard.jobs`
+reads comes from ONE `ReadBudget` (`convex/lib/scheduleFetch.ts`; no `.collect()`): jobs that start inside the window are
+read first, older jobs nearest-first under their own allowance, and a cut sets `truncated`. A new Schedule read joins the
+same budget. The page state is the URL (`src/lib/schedule-url.ts`); a phone is one week of day chips (day mode is the agenda).
+
 ### The floor — the column is DERIVED, Undo is EXACT, the pull sheet is ONE list
 `/warehouse` (the floor, FEATUREDOCS/12) has three rules that look relaxable and aren't:
 

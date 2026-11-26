@@ -53823,6 +53823,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "scheduleBoard.jobs",
+    "module": "scheduleBoard",
+    "fn": "jobs",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "endMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1810374176adf92f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The jobs whose rental window overlaps a date range, each with a clash / would-clash flag derived from the overbooking engine.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "search.clients",
     "module": "search",
     "fn": "clients",
@@ -72735,10 +72777,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1403,
-  agentReachable: 756,
-  queries: 490,
+  total: 1404,
+  agentReachable: 757,
+  queries: 491,
   mutations: 913,
-  agentReachableQueries: 352,
+  agentReachableQueries: 353,
   agentReachableMutations: 404,
 } as const;

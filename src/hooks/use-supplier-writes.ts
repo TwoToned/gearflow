@@ -42,13 +42,17 @@ export function useSupplierWrites() {
   });
 
   return {
-    create: async (data: SupplierFormValues): Promise<{ id: string }> => {
+    create: async (data: SupplierFormValues): Promise<{ id: string; auditId: string }> => {
       const p = supplierSchema.parse(data);
-      return await createM({ id: createId(), orgId: requireOrg(), ...fields(p), now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      const { id } = await createM({ id: createId(), orgId: requireOrg(), ...fields(p), now: Date.now(), actor: actor(), auditId });
+      return { id, auditId };
     },
-    update: async (id: string, data: SupplierFormValues): Promise<{ id: string }> => {
+    update: async (id: string, data: SupplierFormValues): Promise<{ id: string; auditId: string }> => {
       const p = supplierSchema.parse(data);
-      return await updateM({ id, orgId: requireOrg(), ...fields(p), now: Date.now(), actor: actor(), auditId: createId() });
+      const auditId = createId();
+      await updateM({ id, orgId: requireOrg(), ...fields(p), now: Date.now(), actor: actor(), auditId });
+      return { id, auditId };
     },
     remove: async (id: string): Promise<{ id: string }> => {
       return await removeM({ id, orgId: requireOrg(), now: Date.now(), actor: actor(), auditId: createId() });

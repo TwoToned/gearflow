@@ -708,6 +708,19 @@ download is `/api/crew/documents/[id]/file`. `crewWrites.deleteNative` refuses a
 (C2) and deletes their documents and files with them. A People list that reads a capped set reads it
 newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
 
+### People create / edit are URL-driven sheets with exact server Undos (UX Phase 13 slice 4)
+Clients, suppliers, crew and supplier orders are created and edited in `src/components/people/sheets/` (`FormSheet`,
+hosted once per route group in `people-sheet-hosts.tsx`): `?new=1` / `?edit=1` / `?new-order=1`, and the old `/new` and
+`/edit` routes only redirect. **Never add a page form back or push to `/…/new`**; link with the params in `sheet-url.ts` (`/clients?new=1`). Every
+save goes through `useSheetAnnounce` (ONE toast): the write hooks return `{ id, auditId }` and the Undo takes only those
+ids (`peopleCreateUndo.undoCreateNative` for a create, `peopleBulkWrites.undoManyNative` / `undoHireChangeNative` for an
+edit): never a client-supplied "restore to" value. A create's audit row must be `recordRowOp` and an edit's
+`recordFieldEdit`; a new table that points at one of these records goes in the ONE map `convex/lib/peopleReferences.ts` (a
+schema-walk test fails until it does), or the Undo would delete a record something now hangs off. An edit's fields come from
+`lib/peopleEditFields.ts` (write, audit and Undo all read it; pay only for `canSeeCrewPay`), never from raw `set` keys.
+An order's status moves only along `lib/orderStatusMachine.ts`, the Undo included. `New job for client…` is `newJobForClientHref` (the wizard's
+`?clientId=`). FEATUREDOCS/22 "People create and edit sheets".
+
 ### Project status advances itself — add a TRIGGER, never a second patch site
 `convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
 effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item

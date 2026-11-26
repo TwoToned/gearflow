@@ -164,7 +164,7 @@ function CrewListInner({ orgId }: { orgId: string | undefined }) {
     reactivate: (id) => void w.reactivateOne(id),
   });
 
-  const goNew = () => router.push("/crew/new");
+  const goNew = () => router.push("/crew?new=1");
   const primary = canCreate ? { label: "New crew member", onSelect: goNew } : undefined;
   const model: PeopleListModel = {
     key: "crew",

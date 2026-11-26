@@ -12,7 +12,7 @@
   `docs/designs/perf-convex-efficiency-2026-06.md` Finding #1. Unlike clients/kits,
   archived suppliers are NOT excluded by default (`isActive` is an explicit filter).
   Asset/order counts stay a separate, non-reactive cross-domain merge.
-- **Routes**: `/suppliers` (list), `/suppliers/[id]` (detail), `/suppliers/[id]/edit`, `/suppliers/new`, `/suppliers/[id]/orders/new`
+- **Routes**: `/suppliers` (list), `/suppliers/[id]` (detail). Create, edit and new-order are sheets (`?new=1`, `?edit=1`, `?new-order=1`; see "People create and edit sheets" below); `/suppliers/new`, `/suppliers/[id]/edit` and `/suppliers/[id]/orders/new` redirect to them.
 - **Fields**: name (required), contactName, email, phone, website, address, notes, accountNumber, paymentTerms, defaultLeadTime, tags, isActive
 - **Convex functions**: `convex/suppliers.ts` (reads: `list`, `getById`, `counts`, `detail`, `assetsPage`, `subhiresPage`; mutations: `create`, `update`, `remove`) + `convex/suppliersWrites.ts` (browser-direct: `createNative`, `updateNative`, `removeNative`)
 - **Permissions**: `"supplier"` resource with full CRUD. Owner/admin: all, manager: create/read/update, member/viewer: read
@@ -21,7 +21,7 @@
 - **Detail page**: Info cards (Contact, Account Details, Summary), tags, notes, 3 tabs (Orders, Assets, Subhires)
 - **Delete guards**: Cannot delete supplier with linked assets, line items, or orders
 - **Settings migration**: `/settings/assets` links to `/suppliers` instead of inline SupplierManager
-- **Form**: `src/components/suppliers/supplier-form.tsx` is built on the shared
+- **Form**: `src/components/people/sheets/supplier-sheet.tsx` (a `FormSheet`; it was `supplier-form.tsx`) was built on the shared
   `SmartFormLayout` shell (`src/components/ui/smart-form.tsx`, documented in
   [08-assets](./08-assets.md#shared-shell--smartformlayout)). Single clean page:
   Identity → Contact (incl. website) → Address (`AddressInput` w/ map + lat/lng),
@@ -40,7 +40,7 @@
   a separate, non-reactive cross-domain merge. `ClientsDashboard`'s own `useProjects`
   call (aggregate revenue/count stats for one client) is a separate, not-yet-converted
   follow-up — different problem shape (aggregate, not a row list).
-- **Client form** (`src/components/clients/client-form.tsx`) and **location form**
+- **Client form** (`src/components/people/sheets/client-sheet.tsx`) and **location form**
   (`src/components/locations/location-form.tsx`) use the same `SmartFormLayout`
   shell. Client sections: Identity (name + type `Select`) → Contact → Address
   (billing + shipping `AddressInput`) → "More details" accordion (ABN, payment
@@ -71,16 +71,7 @@
   new-order page, the supplier detail Orders tab, and the order detail page all import
   it rather than hand-copying a local `ORDER_TYPE_LABELS` map (R-3.1; this consolidated
   three previously-independent copies in the 2026-07-25 pass).
-- **New-order page** (`suppliers/[id]/orders/new/page.tsx`): a PAGE smart form on the
-  shared `SmartFormLayout` shell, modelled on `asset-form.tsx`/`client-form.tsx`. Order
-  (PO/reference + type + status via registry `Select` with explicit `SelectValue`
-  children, replacing the old raw `<select>` elements) → Dates (order + expected) →
-  More details (notes). Helper rail = contextual tip + a live order summary (reference,
-  supplier name, type chip, status pill via `StatusIndicator`, expected date). The
-  supplier-not-found / loading states, breadcrumb, hidden `supplierId` scoping field,
-  `supplierOrderSchema`, the create action and the `supplier:create` gate are
-  unchanged — markup/layout pass only. (This page exposes only the order header; line
-  items are added on the order after creation.)
+- **New-order sheet** (`OrderSheet`, `?new-order=1` on the supplier): see "People create and edit sheets" below. It replaced the old page smart form.
 
 ### Order-number combobox on the asset form (issue #789)
 `AssetForm`'s "Order #" field (`src/components/assets/asset-form.tsx`, Purchase
@@ -268,3 +259,41 @@ instead of the old `projectLineItems`-based read, which could only show a raw li
 item (model/description/qty) with no order-level cost/charge/margin/status. See
 [39-sub-hires](./39-sub-hires.md#purchase-order-link-ws7-946) for the FK this
 connects to.
+
+## People create and edit sheets (UX Phase 13 slice 4)
+A client, supplier, crew member and supplier order are each created and edited in ONE `FormSheet`
+(`src/components/people/sheets/`: `ClientSheet`, `SupplierSheet`, `CrewSheet`, `OrderSheet`). They replace the
+`ClientForm` / `SupplierForm` / `CrewMemberForm` pages and the order page's edit dialog.
+
+- **The URL is the state** (`sheet-url.ts`, hosted by `people-sheet-hosts.tsx` in the clients / suppliers / crew
+  layouts): `?new=1` on a list creates, `?edit=1` on a record edits, `?new-order=1` on a supplier creates an order and
+  `?edit=1` on an order edits it. Closing drops the param and keeps the rest. `/clients/new`, `/clients/[id]/edit`,
+  `/suppliers/new`, `/suppliers/[id]/edit`, `/suppliers/[id]/orders/new`, `/crew/new` and `/crew/[id]/edit` only redirect
+  here. A record the URL names that does not exist says so once and closes; a caller without the permission gets no sheet.
+- **Fields**: each edit opens with every stored field the form holds (`edit-values.ts`), so a save never blanks one it
+  did not show. An order edit changes only status, dates and notes (number, type and supplier are fixed at creation).
+  Create is the plain primary; crew also offers `Save and add another` (the sheet stays open, the name clears, type,
+  status and department carry over).
+- **Undo, ONE toast** (`use-sheet-announce.ts`, `announceListWrite`): the write hooks return `{ id, auditId }` and the
+  toast's Undo takes only those ids, server side. A create is `peopleCreateUndo.undoCreateNative`: the create's audit row
+  (`recordRowOp`, `details.rowOp`) proves the author, the 10-minute server window, once, and the org / entity / table;
+  it removes the record only while it is exactly as created (never edited, and referenced by NOTHING: the blockers come
+  from ONE table to foreign-key map, `convex/lib/peopleReferences.ts`, with a schema-walk test that fails for any field
+  whose NAME contains crew / supplier / client / subhire, or that is typed `v.id("clients" | "suppliers" | "crewMembers" |
+  "supplierOrders" | "subHires")`, that is not in it, as a blocker or `ignored` with a reason; the walk is itself
+  mutation-tested with fake non-conventional fields) and names what blocks it; it removes the client's primary contact the
+  create wrote, never a stored file. An edit is the field-edit Undo (`peopleBulkWrites.undoManyNative`, or
+  `supplierOrdersWrites.undoHireChangeNative` for an order): each `updateNative` writes ONE audit row holding the
+  before/after of only the fields it changed (`recordFieldEdit`), and the Undo restores a field only while it still
+  holds what that save left, keeping and naming the rest. Only the fields in `lib/peopleEditFields.ts` are written,
+  audited or restorable (a crew member's server-owned `icalToken` / `icalEnabled` are refused by `updateNative`, never
+  copied into a snapshot), and a crew member's pay rates are restored only for a caller who can see crew pay. An order's
+  status Undo cannot bypass the status machine (`lib/orderStatusMachine.ts`, also the order sheet's status options): a
+  step back out of a terminal state is allowed only while the forward write is still the LAST thing that happened to the
+  order and no asset is linked, and an order not on hire can never be left with a `returnedDate`.
+- **A blank field clears** (client): the sheet sends the blank optional fields as `clear` (`clearedClientFields`,
+  `CLIENT_CLEARABLE_FIELDS`), because an absent patch key keeps the stored value; optional money is `blankableNumber`.
+- **New job for client…** (client ⋯ menu and the list row) opens `/projects/new?clientId=` (`newJobForClientHref`); the
+  wizard presets the client.
+- Tests: `convex/peopleCreateUndo.test.ts`, `convex/sheetEditUndo.test.ts`, `sheets/__tests__/people-sheets.smoke.test.tsx`
+  (each sheet rendered open) and `people-sheet-hosts.test.tsx`.

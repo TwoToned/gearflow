@@ -9048,6 +9048,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "clear": {
+                        "type": "array"
+                      },
                       "id": {
                         "type": "string"
                       },

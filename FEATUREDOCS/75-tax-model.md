@@ -94,7 +94,7 @@ behaviour.
 
 ## UI
 
-- **Client form** (`client-form.tsx`): a "Tax exempt" checkbox in the existing "More details"
+- **Client form** (`client-sheet.tsx`): a "Tax exempt" checkbox in the existing "More details"
   accordion, with a conditionally-shown reason field.
 - **Line-item forms**: a new ungated "Advanced: tax rate" accordion (same progressive-disclosure
   pattern as the existing "Advanced: Xero coding" accordion), added to the five forms that
@@ -112,7 +112,7 @@ Schema: `convex/schema.ts` (`clients.taxExempt`/`taxExemptReason`, `projects.tax
 `convex/lib/projectLocks.ts`, `convex/clientWrites.ts`. Recalc: `convex/lib/recalc.ts`,
 `convex/recalc.test.ts`. Writes: `convex/lineItemWrites.ts`, `convex/projectWrites.ts`
 (money-anchor stripping). Forms/validation: `src/lib/validations/client.ts`,
-`src/lib/validations/line-item.ts`, `src/components/clients/client-form.tsx`,
+`src/lib/validations/line-item.ts`, `src/components/people/sheets/client-sheet.tsx`,
 `src/components/projects/{equipment-add-form,edit-line-item-dialog,custom-item-add-form,
 kit-add-form,bulk-edit-line-items-dialog,line-item-form-fields}.tsx`,
 `src/hooks/use-line-item-writes.ts`, `src/lib/line-item-edit-payload.ts`,

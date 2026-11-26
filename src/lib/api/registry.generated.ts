@@ -12260,6 +12260,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "clear",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -12281,7 +12286,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6fd0fdc4cd6efbce",
+    "argsSha": "bc20b4b0df68b2f4",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -38944,6 +38949,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "46e1f9abd7d9c77d",
     "returnsSha": "31b655dd41fc9533",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "peopleCreateUndo.undoCreateNative",
+    "module": "peopleCreateUndo",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "none",
+    "resource": null,
+    "action": null,
+    "scopePairs": [],
+    "agentReachable": false,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "forwardAuditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "kind",
+        "optional": false,
+        "type": "union"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4b1bf10b98d911c2",
+    "returnsSha": "cb08e80e61dcbd4a",
     "stability": "tracks-app",
     "summary": null,
     "danger": "high",
@@ -71600,10 +71657,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1383,
+  total: 1384,
   agentReachable: 737,
   queries: 488,
-  mutations: 895,
+  mutations: 896,
   agentReachableQueries: 350,
   agentReachableMutations: 387,
 } as const;

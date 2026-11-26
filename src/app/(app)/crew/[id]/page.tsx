@@ -1399,7 +1399,7 @@ export default function CrewMemberDetailPage({
         status={statusWord}
         meta={[member.crewRole?.name ?? "No role assigned", member.department, crewMemberTypeLabels[member.type] || formatLabel(member.type)].filter(Boolean)}
         banner={isOwnProfile ? <span>You are viewing your own crew profile.</span> : undefined}
-        onEdit={canUpdate ? () => router.push(`/crew/${id}/edit`) : undefined}
+        onEdit={canUpdate ? () => router.push(`/crew/${id}?edit=1`) : undefined}
         menu={menu}
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Role", value: member.crewRole?.name }, { label: "Next call", value: nextAssignment?.startDate ? formatDate(nextAssignment.startDate) : null }, { label: "Hours this month", value: hasApprovedHours ? `${hoursThisMonth.toFixed(1)}h` : null }]} />}

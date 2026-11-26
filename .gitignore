@@ -69,3 +69,4 @@ test-results/
 
 # Local E2E harness temp (self-hosted Convex push tmpdir)
 .convex-tmp/
+.vitest-reports/

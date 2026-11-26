@@ -1,130 +1,92 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useServerMutation } from "@/hooks/use-server-mutation";
-import { toast } from "sonner";
-import { Building2, Mail, User } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { clientSchema, type ClientFormValues } from "@/lib/validations/client";
 import { useClientWrites } from "@/hooks/use-native-client-writes";
 import { clientTypeLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
+import { showError } from "@/lib/show-error";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FormSheet } from "@/components/ui/form-sheet";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
-} from "@/components/ui/smart-form";
+import { SmartFormSection, SmartFormField } from "@/components/ui/smart-form";
+import { useSheetAnnounce } from "./use-sheet-announce";
 
-interface ClientFormProps {
+/**
+ * `ClientSheet` (UX Phase 13 slice 4): the ONE create and edit surface for a client, on `FormSheet` (it replaces the
+ * `/clients/new` and `/clients/[id]/edit` pages, which redirect to `?new=1` / `?edit=1`). Every save toasts with the
+ * server's exact Undo (`useSheetAnnounce`). Create is Save and Create; an edit sends the form's own fields only.
+ */
+interface ClientSheetProps {
+  /** Edit: the stored values. Create: omit (or pass a preset such as `type`). */
   initialData?: ClientFormValues & { id: string };
+  onClose: () => void;
+  onSaved?: (r: { id: string }) => void;
 }
+
+const CREATE_DEFAULTS: ClientFormValues = {
+  name: "", type: "COMPANY", contactName: "", contactEmail: "", contactPhone: "",
+  billingAddress: "", billingLatitude: null, billingLongitude: null,
+  shippingAddress: "", shippingLatitude: null, shippingLongitude: null,
+  taxId: "", taxExempt: false, taxExemptReason: "", paymentTerms: "", defaultDiscount: undefined,
+  paymentProfile: "FULL_UPFRONT", profileDepositPercent: undefined, notes: "", tags: [], isActive: true,
+};
 
 const CLIENT_TYPE_ORDER = ["COMPANY", "INDIVIDUAL", "VENUE", "PRODUCTION_COMPANY"] as const;
 
-export function ClientForm({ initialData }: ClientFormProps) {
-  const router = useRouter();
+export function ClientSheet({ initialData, onClose, onSaved }: ClientSheetProps) {
   const isEditing = !!initialData;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const orgCountry = useOrgCountry();
-
   const orgTags = useOrgTags(orgId);
 
-  const form = useForm<ClientFormValues>({
-    resolver: zodResolver(clientSchema),
-    defaultValues: initialData || {
-      name: "",
-      type: "COMPANY",
-      contactName: "",
-      contactEmail: "",
-      contactPhone: "",
-      billingAddress: "",
-      billingLatitude: null,
-      billingLongitude: null,
-      shippingAddress: "",
-      shippingLatitude: null,
-      shippingLongitude: null,
-      taxId: "",
-      taxExempt: false,
-      taxExemptReason: "",
-      paymentTerms: "",
-      defaultDiscount: undefined,
-      paymentProfile: "FULL_UPFRONT",
-      profileDepositPercent: undefined,
-      notes: "",
-      tags: [],
-      isActive: true,
-    },
-  });
-
+  const form = useForm<ClientFormValues>({ resolver: zodResolver(clientSchema), defaultValues: initialData ?? CREATE_DEFAULTS });
   const v = form.watch();
 
   const clientWrites = useClientWrites();
-  const mutation = useServerMutation({
-    mutationFn: (data: ClientFormValues) =>
-      isEditing ? clientWrites.update(initialData.id, data) : clientWrites.create(data),
-    onSuccess: (result) => {
-      toast.success(isEditing ? "Client updated" : "Client created");
-      router.push(`/clients/${result.id}`);
-    },
-    onError: (e) => toast.error(e.message),
+  const announce = useSheetAnnounce("client");
+  const [saving, setSaving] = useState(false);
+
+  const submit = form.handleSubmit(async (data) => {
+    setSaving(true);
+    try {
+      const saved = initialData ? await clientWrites.update(initialData.id, data) : await clientWrites.create(data);
+      if (initialData) announce.updated("client", data.name, saved);
+      else announce.created("client", data.name, saved);
+      onClose();
+      onSaved?.(saved);
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not save the client" });
+    } finally {
+      setSaving(false);
+    }
   });
 
-  // ─── Live-preview derivations ──────────────────────────────────
-  const previewName = (v.name || "New client").trim();
-  const typeLabel = clientTypeLabels[v.type ?? "COMPANY"] ?? "Company";
-  const primaryContact = (v.contactName || v.contactEmail || "").trim();
-
-  const helperTip = !v.name
-    ? "A name puts them on the books. Wire up contacts and billing when there's actually a quote to send."
-    : !primaryContact
-      ? "Add a contact so quotes and dockets reach the right person."
-      : "Looking good. Address and billing details are optional — fill what you know.";
-
   return (
-    <SmartFormLayout
-      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
-      aside={
-        <>
-          <SmartFormRail eyebrow={isEditing ? "Editing" : "New client"} tip={helperTip} />
-          <SmartFormPreview>
-            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
-              <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
-                  {v.type === "INDIVIDUAL"
-                    ? <User className="h-4 w-4" strokeWidth={1.5} />
-                    : <Building2 className="h-4 w-4" strokeWidth={1.5} />}
-                </div>
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New client" ? "text-muted" : "text-ink")}>
-                    {previewName}
-                  </p>
-                  <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
-                  <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-muted")}>
-                    <Mail className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-                    {primaryContact || "No contact yet"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </SmartFormPreview>
-        </>
-      }
+    <FormSheet
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={isEditing ? `Edit ${initialData.name || "client"}` : "New client"}
+      description={isEditing ? undefined : "A name puts them on the books. Contacts and billing can wait until there is a quote to send."}
+      primaryLabel={isEditing ? "Save" : "Create client"}
+      onSubmit={submit}
+      submitting={saving}
+      dirty={form.formState.isDirty}
     >
       <div className="space-y-8">
         {/* Identity */}
@@ -348,14 +310,6 @@ export function ClientForm({ initialData }: ClientFormProps) {
         </section>
       </div>
 
-      <SmartFormActions>
-        <Button type="button" variant="line" onClick={() => router.back()}>
-          Cancel
-        </Button>
-        <Button type="submit" loading={mutation.isPending}>
-          {isEditing ? "Update client" : "Create client"}
-        </Button>
-      </SmartFormActions>
-    </SmartFormLayout>
+    </FormSheet>
   );
 }

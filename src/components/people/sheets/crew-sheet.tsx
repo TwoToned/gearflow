@@ -1,17 +1,14 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useServerMutation } from "@/hooks/use-server-mutation";
 import { useServerQuery } from "@/hooks/use-server-query";
-import { toast } from "sonner";
 
-import { cn } from "@/lib/utils";
 import { crewMemberSchema, type CrewMemberFormValues } from "@/lib/validations/crew";
 import { useCrewWrites } from "@/hooks/use-crew-writes";
 import { useConvex, useConvexAuth } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { api } from "../../../../convex/_generated/api";
 import { crewMemberTypeLabels, crewMemberStatusLabels } from "@/lib/status-labels";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useCrewRoles } from "@/hooks/use-crew";
@@ -21,7 +18,9 @@ import { useOrgCountry } from "@/lib/use-org-country";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
-import { Button } from "@/components/ui/button";
+import { FormSheet } from "@/components/ui/form-sheet";
+import { showError } from "@/lib/show-error";
+import { useSheetAnnounce } from "./use-sheet-announce";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -30,19 +29,30 @@ import {
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions, SmartFormPreviewPill,
-} from "@/components/ui/smart-form";
+import { SmartFormSection, SmartFormField } from "@/components/ui/smart-form";
 
-interface CrewMemberFormProps {
+/**
+ * `CrewSheet` (UX Phase 13 slice 4): the ONE create and edit surface for a crew member, on `FormSheet` (it replaces the
+ * `/crew/new` and `/crew/[id]/edit` pages, which redirect to `?new=1` / `?edit=1`). Create offers `Save and add another`
+ * (a batch of freelancers); every save toasts with the server's exact Undo (`useSheetAnnounce`).
+ */
+interface CrewSheetProps {
   initialData?: CrewMemberFormValues & { id: string };
+  onClose: () => void;
+  onSaved?: (r: { id: string }) => void;
 }
+
+const CREATE_DEFAULTS: CrewMemberFormValues = {
+  firstName: "", lastName: "", email: "", phone: "", type: "FREELANCER", status: "ACTIVE", department: "", crewRoleId: "",
+  defaultDayRate: "", defaultHourlyRate: "", overtimeMultiplier: "", currency: "", address: "", addressLatitude: null,
+  addressLongitude: null, emergencyContactName: "", emergencyContactPhone: "", dateOfBirth: "", abnOrGst: "", notes: "",
+  tags: [], userId: "", isActive: true,
+};
 
 const TYPE_ORDER = ["FREELANCER", "EMPLOYEE", "CONTRACTOR", "VOLUNTEER"] as const;
 const STATUS_ORDER = ["ACTIVE", "INACTIVE", "ON_LEAVE", "ARCHIVED"] as const;
 
-export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
-  const router = useRouter();
+export function CrewSheet({ initialData, onClose, onSaved }: CrewSheetProps) {
   const isEditing = !!initialData;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
@@ -60,45 +70,29 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     enabled: !!orgId && isAuthenticated,
   });
 
-  const form = useForm<CrewMemberFormValues>({
-    resolver: zodResolver(crewMemberSchema),
-    defaultValues: initialData || {
-      firstName: "",
-      lastName: "",
-      email: "",
-      phone: "",
-      type: "FREELANCER",
-      status: "ACTIVE",
-      department: "",
-      crewRoleId: "",
-      defaultDayRate: "",
-      defaultHourlyRate: "",
-      overtimeMultiplier: "",
-      currency: "",
-      address: "",
-      addressLatitude: null,
-      addressLongitude: null,
-      emergencyContactName: "",
-      emergencyContactPhone: "",
-      dateOfBirth: "",
-      abnOrGst: "",
-      notes: "",
-      tags: [],
-      userId: "",
-      isActive: true,
-    },
-  });
+  const form = useForm<CrewMemberFormValues>({ resolver: zodResolver(crewMemberSchema), defaultValues: initialData ?? CREATE_DEFAULTS });
 
   const v = form.watch();
 
-  const mutation = useServerMutation({
-    mutationFn: (data: CrewMemberFormValues) =>
-      isEditing ? crewWrites.update(initialData.id, data) : crewWrites.create(data),
-    onSuccess: (result) => {
-      toast.success(isEditing ? "Crew member updated" : "Crew member created");
-      router.push(`/crew/${result.id}`);
-    },
-    onError: (e) => toast.error(e.message),
+  const announce = useSheetAnnounce("crew");
+  const [saving, setSaving] = useState(false);
+
+  /** The ONE save. `again` keeps the sheet open for the next person: type, status and department carry over. */
+  const save = (again: boolean) => form.handleSubmit(async (data) => {
+    setSaving(true);
+    try {
+      const saved = initialData ? await crewWrites.update(initialData.id, data) : await crewWrites.create(data);
+      const name = `${data.firstName} ${data.lastName}`.trim();
+      if (initialData) announce.updated("crew member", name, saved);
+      else announce.created("crew member", name, saved);
+      onSaved?.(saved);
+      if (again) form.reset({ ...CREATE_DEFAULTS, type: data.type, status: data.status, department: data.department });
+      else onClose();
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not save the crew member" });
+    } finally {
+      setSaving(false);
+    }
   });
 
   const linkedUser = (linkableUsers || []).find(
@@ -123,52 +117,19 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
     }
   }
 
-  // ─── Live-preview derivations ──────────────────────────────────
   const fullName = `${(v.firstName || "").trim()} ${(v.lastName || "").trim()}`.trim();
-  const previewName = fullName || "New crew member";
-  const typeLabel = crewMemberTypeLabels[v.type ?? "FREELANCER"] ?? "Freelancer";
-  const dayRate = v.defaultDayRate !== "" && v.defaultDayRate != null ? Number(v.defaultDayRate) : null;
-  const hourlyRate = v.defaultHourlyRate !== "" && v.defaultHourlyRate != null ? Number(v.defaultHourlyRate) : null;
-  const rateLine = dayRate
-    ? `$${dayRate.toFixed(2)} / day`
-    : hourlyRate
-      ? `$${hourlyRate.toFixed(2)} / hr`
-      : null;
-
-  const helperTip = !fullName
-    ? "Who are we booking? A name does it — link their platform login and the details auto-fill."
-    : !v.email && !v.phone
-      ? "Add an email or phone so call sheets and offers reach them."
-      : "Looking good. Rates and the rest are optional — fill what you know.";
 
   return (
-    <SmartFormLayout
-      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
-      aside={
-        <>
-          <SmartFormRail eyebrow={isEditing ? "Editing" : "New crew member"} tip={helperTip} />
-          <SmartFormPreview>
-            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
-              <div className="flex items-start gap-3">
-                <PersonAvatar
-                  name={fullName || "?"}
-                  src={linkedUser?.image || undefined}
-                  className="size-9 shrink-0"
-                />
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New crew member" ? "text-muted" : "text-ink")}>
-                    {previewName}
-                  </p>
-                  <SmartFormPreviewPill>{typeLabel}</SmartFormPreviewPill>
-                  <p className={cn("text-caption", rateLine ? "text-muted" : "text-muted")}>
-                    {rateLine || "No rate set"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </SmartFormPreview>
-        </>
-      }
+    <FormSheet
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={isEditing ? `Edit ${fullName || "crew member"}` : "New crew member"}
+      description={isEditing ? undefined : "Who are we booking? A name does it. Link their platform login and the details fill in."}
+      primaryLabel={isEditing ? "Save" : "Create crew member"}
+      onSubmit={save(false)}
+      submitting={saving}
+      dirty={form.formState.isDirty}
+      addAnother={isEditing ? undefined : { label: "Save and add another", onSelect: save(true) }}
     >
       <div className="space-y-8">
         {/* Identity */}
@@ -388,14 +349,6 @@ export function CrewMemberForm({ initialData }: CrewMemberFormProps) {
         </section>
       </div>
 
-      <SmartFormActions>
-        <Button type="button" variant="line" onClick={() => router.back()}>
-          Cancel
-        </Button>
-        <Button type="submit" loading={mutation.isPending}>
-          {isEditing ? "Update crew member" : "Create crew member"}
-        </Button>
-      </SmartFormActions>
-    </SmartFormLayout>
+    </FormSheet>
   );
 }

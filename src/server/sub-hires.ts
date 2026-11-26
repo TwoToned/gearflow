@@ -382,10 +382,9 @@ export async function addSubHireMedia(data: {
 export async function removeSubHireMedia(mediaId: string) {
   const { organizationId } = await requirePermission("subHire", "update");
 
-  // Convex-only (Phase C). refCountFile re-implements the old cross-table UNION
-  // guard (api.fileUploads.isReferencedByMedia) — only delete the file if no
-  // other media row references it.
-  await removeMediaConvex("subHire", { organizationId, mediaId, refCountFile: true });
+  // Convex-only (Phase C). The file is deleted only if nothing else holds it (every media table, an invoice,
+  // photo arrays...): `fileUploads.removeIfUnreferenced`, decided after this media row is gone.
+  await removeMediaConvex("subHire", { organizationId, mediaId });
 
   return serialize({ success: true });
 }

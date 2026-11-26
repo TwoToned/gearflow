@@ -106,7 +106,7 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
   const canRemove = canDelete && !active && orders.length === 0;
   const menu: ActionMenuSpec = {
     items: [
-      ...(canCreate && active ? [{ key: "new-order", label: "New order", group: "organise" as const, icon: FilePlus, onSelect: () => router.push(`/suppliers/${id}/orders/new`) }] : []),
+      ...(canCreate && active ? [{ key: "new-order", label: "New order", group: "organise" as const, icon: FilePlus, onSelect: () => router.push(`/suppliers/${id}?new-order=1`) }] : []),
       ...(supplier.email ? [{ key: "email", label: "Email supplier", group: "reporting" as const, icon: Mail, onSelect: () => { window.location.href = `mailto:${supplier.email}`; } }] : []),
       ...(canUpdate && !active ? [{ key: "reactivate", label: "Reactivate", group: "organise" as const, icon: RotateCcw, onSelect: () => setActive(true) }] : []),
       ...(canUpdate && active
@@ -199,7 +199,7 @@ function SupplierRecord({ params }: { params: Promise<{ id: string }> }) {
       status={active ? { label: "Active", intent: "success" } : { label: "Archived", intent: "neutral", outline: true }}
       meta={[supplier.contactName, `${openOrders.length} open order${openOrders.length === 1 ? "" : "s"}`].filter(Boolean)}
       banner={!active ? <span>Archived. Hidden from pickers; its orders, sub-hires and history stay as they were.</span> : undefined}
-      onEdit={canUpdate ? () => router.push(`/suppliers/${id}/edit`) : undefined}
+      onEdit={canUpdate ? () => router.push(`/suppliers/${id}?edit=1`) : undefined}
       menu={menu}
       tabs={tabs}
       rail={<Facts title="At a glance" facts={[{ label: "Contact", value: supplier.contactName }, { label: "Terms", value: supplier.paymentTerms }, { label: "On hire", value: units > 0 ? String(units) : null }]} />}

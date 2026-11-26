@@ -588,14 +588,16 @@ export const updateNative = mutation({
       // Labour is job cost: a caller who cannot see it neither sets nor clears it (the write follows the read).
       cost: (await canSeeJobCost(ctx, a.orgId)) ? (a.cost ?? undefined) : record.cost,
       partsUsed: a.partsUsed || undefined,
-      photos: a.photos ?? [],
+      // The two ARRAYS are the exception to this write's full-replace: omitted means UNCHANGED, never cleared (clearing
+      // is an explicit `[]`). A dropped photo deletes stored bytes, so a partial caller must not wipe them.
+      photos: a.photos ?? record.photos ?? [],
       result: a.result ?? undefined,
       nextDueDate: a.nextDueDate ?? undefined,
-      tags: a.tags ?? [],
+      tags: a.tags ?? record.tags ?? [],
       updatedAt: a.now,
     });
     // A photo this save dropped: its bytes go only through `deleteStoredFileIfUnreferenced`, after the patch above.
-    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: a.photos ?? [] });
+    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: a.photos ?? record.photos ?? [] });
 
     // Link diff: drop removed links, add the genuinely-new ones.
     for (const l of links) {

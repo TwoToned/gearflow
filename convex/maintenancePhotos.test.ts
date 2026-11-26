@@ -192,6 +192,23 @@ describe("removal deletes bytes only through deleteStoredFileIfUnreferenced", ()
     expect(await fileExists(t, "f1")).toBe(false);
   });
 
+  test("an update that OMITS photos and tags leaves them, and their bytes, untouched (absent is unchanged, not cleared)", async () => {
+    const t = makeT();
+    await seed(t);
+    await upload(t, "f1");
+    await seedRecord(t, [urlOf("f1")]);
+    await t.run(async (ctx) => {
+      const r = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "rec1")).first();
+      await ctx.db.patch(r!._id, { tags: ["a", "b"] });
+    });
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, { ...base, id: "rec1", status: "SCHEDULED", title: "Renamed", auditId: "partial" });
+    const after = await rec(t);
+    expect(after?.title).toBe("Renamed");
+    expect(after?.photos).toEqual([urlOf("f1")]);
+    expect(after?.tags).toEqual(["a", "b"]);
+    expect(await fileExists(t, "f1")).toBe(true);
+  });
+
   test("a dropped photo something else still holds (another job, a media row) keeps its bytes", async () => {
     const t = makeT();
     await seed(t);

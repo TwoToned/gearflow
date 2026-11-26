@@ -58,13 +58,30 @@ const jobs = [
   mk("2350", "2026-11-13", "2026-11-14", { status: "QUOTED", holds: false, clash: "wouldClash", clashes: [{ layer: "pencilled", modelId: "m1", modelName: "EM4 receiver", short: 2, startMs: ms("2026-11-13"), endMs: ms("2026-11-14"), with: [{ id: "2337", projectNumber: "#2337" }] }] }),
   mk("2360", "2026-11-05", "2026-11-25", { status: "QUOTED", holds: false, clash: "unknown", modelCount: null, lineCount: null, unitCount: null }),
 ];
-const q = vi.hoisted(() => ({ args: undefined as unknown, truncated: false, jobs: undefined as unknown[] | undefined }));
+const cell = (over: Record<string, unknown> = {}) => ({ unknown: false, free: 2, held: 0, pencilled: 0, short: 0, atRisk: 0, ...over });
+const days = [9, 10, 11, 12, 13, 14, 15].map((d) => ms(`2026-11-${String(d).padStart(2, "0")}`));
+const claim = (id: string, layer: string, qty: number, from: string, to: string) => ({
+  projectId: id, projectNumber: `#${id}`, name: `Job ${id}`, status: layer === "hard" ? "CONFIRMED" : "QUOTED", projectManagerId: "me", layer, qty, startMs: ms(from), endMs: ms(to),
+});
+const gearRows = [
+  { modelId: "m1", name: "EM4 receiver", categoryId: "cat1", owned: 12, inService: 1, unknown: false,
+    cells: [cell({ free: 12 }), cell({ free: 12 }), cell({ free: -2, held: 14, short: 2 }), cell({ free: 4, held: 8 }), cell({ free: 1, held: 0, pencilled: 3, atRisk: 2 }), cell({ free: 12, held: 0 }), cell({ free: 12 })],
+    claims: [claim("2337", "hard", 10, "2026-11-11", "2026-11-11"), claim("2342", "hard", 4, "2026-11-11", "2026-11-11"), claim("2350", "pencilled", 3, "2026-11-13", "2026-11-13")] },
+  { modelId: "m2", name: "Beltpack", categoryId: null, owned: 8, inService: 0, unknown: true,
+    cells: days.map(() => ({ unknown: true, free: 0, held: 0, pencilled: 0, short: 0, atRisk: 0 })), claims: [claim("2337", "hard", 2, "2026-11-11", "2026-11-12")] },
+];
+const q = vi.hoisted(() => ({ args: undefined as unknown, gearArgs: undefined as unknown, jobsCalled: 0, truncated: false, jobs: undefined as unknown[] | undefined, rows: undefined as unknown[] | undefined, dayStarts: undefined as number[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
     useAuthedQuery: (f: FunctionReference<"query">, args: unknown) => {
       if (args === "skip") return undefined;
+      if (getFunctionName(f) === "scheduleBoard:grid") {
+        q.gearArgs = args;
+        return { truncated: q.truncated, claimsComplete: true, dayStarts: q.dayStarts ?? days, rows: q.rows ?? gearRows };
+      }
       if (getFunctionName(f) === "scheduleBoard:jobs") {
+        q.jobsCalled += 1;
         q.args = args;
         return { truncated: q.truncated, models: [{ id: "m1", name: "EM4 receiver", categoryId: "cat1" }], jobs: q.jobs ?? jobs };
       }
@@ -80,6 +97,10 @@ beforeEach(() => {
   weekStart.value = 1;
   q.truncated = false;
   q.jobs = undefined;
+  q.rows = undefined;
+  q.dayStarts = undefined;
+  q.jobsCalled = 0;
+  q.gearArgs = undefined;
   nav.search = "";
   nav.push.mockClear();
   nav.replace.mockClear();
@@ -262,5 +283,132 @@ describe("Schedule on a phone (D82: day mode is the agenda)", () => {
     expect(nav.push).toHaveBeenCalledWith("/availability?day=2026-11-13", { scroll: false });
     await user.click(within(screen.getByRole("list")).getAllByRole("button", { name: /Job 2337/ })[0]);
     expect(nav.push).toHaveBeenLastCalledWith("/availability?job=2337", { scroll: false });
+  });
+});
+
+describe("Schedule, Gear view (D81)", () => {
+  beforeEach(() => {
+    nav.search = "view=gear";
+  });
+
+  it("head words Jobs / Gear, the Gear strip, models grouped by category, one grid read and NO jobs read", () => {
+    render(<SchedulePage />);
+    expect(screen.getByRole("link", { name: "Gear" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Jobs" }).getAttribute("href")).toBe("/availability");
+    expect(screen.getByRole("tab", { name: /All/ }).textContent).toContain("2");
+    expect(screen.getByRole("tab", { name: /Short/ }).textContent).toContain("1");
+    expect(screen.getByRole("tab", { name: /At risk/ }).textContent).toContain("1");
+    const table = screen.getByRole("table", { name: "Free gear by day" });
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(7);
+    expect(within(table).getByRole("rowgroup", { name: "Audio" })).toBeTruthy();
+    expect(within(table).getByRole("rowgroup", { name: "Uncategorised" })).toBeTruthy();
+    expect(within(table).getByText("12 owned · 1 in service")).toBeTruthy();
+    expect(q.gearArgs).toEqual({ orgId: "org1", startMs: ms("2026-11-09"), endMs: ms("2026-11-16") - 1 });
+    expect(q.jobsCalled).toBe(0);
+  });
+
+  it("a shortfall is a red flag-word with held under it, a pencilled risk is amber, a not-checked cell has no number", () => {
+    render(<SchedulePage />);
+    const short = screen.getByRole("button", { name: "EM4 receiver, 2026-11-11: short 2, held 14" });
+    expect(short.textContent).toContain("short 2");
+    expect(short.textContent).toContain("held 14");
+    expect(screen.getByRole("button", { name: "EM4 receiver, 2026-11-13: 1, pencilled −2" }).textContent).toContain("pencilled −2");
+    const unknown = screen.getByRole("button", { name: "Beltpack, 2026-11-11: —, not checked" });
+    expect(unknown.textContent).not.toMatch(/[0-9]/);
+    expect(within(screen.getByRole("table")).getAllByText("1 short")).toHaveLength(1);
+  });
+
+  it("Month shrinks a cell to the number, -2 for a shortfall", () => {
+    nav.search = "view=gear&zoom=month&date=2026-11-01";
+    q.rows = gearRows.slice(0, 1).map((r) => ({ ...r, cells: Array.from({ length: 30 }, (_, i) => (i === 10 ? cell({ free: -2, short: 2, held: 14 }) : cell({ free: 12 }))) }));
+    q.dayStarts = Array.from({ length: 30 }, (_, i) => ms("2026-11-01") + i * 86_400_000);
+    render(<SchedulePage />);
+    expect(within(screen.getByRole("table")).getAllByText("−2")).toHaveLength(1);
+  });
+
+  it("a cell click opens the model-day sheet through the URL; ?cell= renders the numbers, Held by, and the verbs", async () => {
+    const user = userEvent.setup();
+    const first = render(<SchedulePage />);
+    await user.click(screen.getByRole("button", { name: "EM4 receiver, 2026-11-11: short 2, held 14" }));
+    expect(nav.push).toHaveBeenCalledWith("/availability?view=gear&cell=m1%3A2026-11-11", { scroll: false });
+    first.unmount();
+
+    nav.search = "view=gear&cell=m1:2026-11-11";
+    render(<SchedulePage />);
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText("Serviceable").nextSibling?.textContent).toBe("11");
+    expect(within(sheet).getByText("Held").nextSibling?.textContent).toBe("14");
+    expect(within(sheet).getByText("Free").nextSibling?.textContent).toBe("-2");
+    const heldBy = within(sheet).getByRole("region", { name: "Held by" });
+    expect(within(heldBy).getAllByRole("button").map((b) => b.textContent)).toEqual(["#2337Job 2337× 10", "#2342Job 2342× 4"]);
+    expect(within(sheet).getByRole("link", { name: "Overbookings ›" }).getAttribute("href")).toBe("/overbookings");
+    expect(within(sheet).getByRole("link", { name: "Open model ›" }).getAttribute("href")).toBe("/assets/models/m1");
+    await userEvent.setup().click(within(heldBy).getAllByRole("button")[0]);
+    expect(nav.push).toHaveBeenLastCalledWith("/availability?view=gear&job=2337", { scroll: false });
+  });
+
+  it("a pencilled-risk cell says what it would take if confirmed; Sub-hire opens the existing dialog for a hard shortfall", async () => {
+    nav.search = "view=gear&cell=m1:2026-11-13";
+    const first = render(<SchedulePage />);
+    expect((await screen.findByRole("dialog")).textContent).toContain("would be short 2 if #2350 confirms");
+    expect(within(screen.getByRole("region", { name: "Pencilled, holds nothing" })).getByText("#2350")).toBeTruthy();
+    first.unmount();
+
+    nav.search = "view=gear&cell=m1:2026-11-11";
+    render(<SchedulePage />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Sub-hire 2…" }));
+    const dialogs = await screen.findAllByRole("dialog");
+    expect(dialogs.some((d) => d.textContent?.includes("Sub-hire EM4 receiver?"))).toBe(true);
+  });
+
+  it("a not-checked cell's sheet shows no number, and the verbs a caller cannot use are absent", async () => {
+    perms.all = false;
+    nav.search = "view=gear&cell=m2:2026-11-11";
+    render(<SchedulePage />);
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByText(/Not checked/)).toBeTruthy();
+    expect(within(sheet).queryByText("Serviceable")).toBeNull();
+    expect(within(sheet).queryByRole("link", { name: "Open model ›" })).toBeNull();
+    expect(within(sheet).queryByRole("button", { name: /Sub-hire/ })).toBeNull();
+  });
+
+  it("the strip narrows rows (Short), Status narrows to models those jobs hold, and a filter that leaves nothing says so", () => {
+    nav.search = "view=gear&seg=short";
+    const first = render(<SchedulePage />);
+    expect(within(screen.getByRole("table")).queryByText("Beltpack")).toBeNull();
+    expect(within(screen.getByRole("table")).getByText("EM4 receiver")).toBeTruthy();
+    first.unmount();
+    nav.search = "view=gear&status=ENQUIRY";
+    render(<SchedulePage />);
+    expect(screen.getByText("No models match that")).toBeTruthy();
+  });
+
+  it("a Jobs-only strip word in a Gear link reads as All, and the Jobs word drops the strip and the sheets", () => {
+    nav.search = "view=gear&seg=clashes&cell=m1:2026-11-11&q=em4";
+    render(<SchedulePage />);
+    // the open sheet hides the page from the a11y tree, so these read with `hidden`
+    expect(screen.getByRole("tab", { name: /All/, hidden: true }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("link", { name: "Jobs", hidden: true }).getAttribute("href")).toBe("/availability?q=em4");
+  });
+
+  it("on a phone: day chips and the models of ONE day as cards, short 2 or N free", async () => {
+    mobile.value = true;
+    const user = userEvent.setup();
+    render(<SchedulePage />);
+    expect(screen.queryByRole("table")).toBeNull();
+    const list = screen.getByRole("list", { name: /Gear on 2026-11-11/ });
+    expect(within(list).getByText("short 2")).toBeTruthy();
+    expect(within(list).getByText("not checked")).toBeTruthy();
+    await user.click(within(list).getByRole("button", { name: /EM4 receiver/ }));
+    expect(nav.push).toHaveBeenCalledWith("/availability?view=gear&cell=m1%3A2026-11-11", { scroll: false });
+    await user.click(screen.getByRole("tab", { name: /Fri 13/ }));
+    expect(nav.push).toHaveBeenLastCalledWith("/availability?view=gear&day=2026-11-13", { scroll: false });
+  });
+
+  it("says so when the read was cut", () => {
+    q.truncated = true;
+    render(<SchedulePage />);
+    expect(screen.getByTestId("schedule-truncated").textContent).toContain("not checked");
   });
 });

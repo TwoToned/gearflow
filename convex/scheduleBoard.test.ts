@@ -13,6 +13,7 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import { loadSchedule, SCHEDULE_LIMITS } from "./lib/scheduleFetch";
 import { deriveGearGrid } from "./lib/gearGrid";
+import { deriveJobFacts } from "./lib/scheduleBoard";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -44,7 +45,7 @@ async function seedJob(t: T, j: SeedJob) {
   const org = j.org ?? ORG;
   await t.run(async (ctx) => {
     await ctx.db.insert("projects", {
-      id: j.id, organizationId: org, projectNumber: `#${j.id}`, name: `Job ${j.id}`, status: j.status as "CONFIRMED",
+      id: j.id, organizationId: org, projectNumber: `#${j.id}`, name: `Job ${j.id}`, status: j.status === "NONE" ? undefined : (j.status as "CONFIRMED"),
       isTemplate: false, rentalStartDate: j.from, rentalEndDate: j.to, createdAt: NOW, updatedAt: NOW, liveVersionId: `v-${j.id}`,
     });
     await ctx.db.insert("projectVersions", { id: `v-${j.id}`, organizationId: org, projectId: j.id, number: 1, contentState: "ready", createdAt: NOW, createdById: "u1" });
@@ -205,6 +206,46 @@ describe("scheduleBoard: the read is bounded and says so", () => {
     expect(read.claimsComplete).toBe(true);
     expect(read.facts.later.state).toBe("clash");
     expect(read.facts.ancient.state).toBe("none");
+  });
+
+  test("an ancient QUOTED job's would-clash depends on the alive scan reaching pencilled statuses", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "ancient", status: "QUOTED", from: NOW - 900 * DAY, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    for (let i = 0; i < 6; i++) await seedJob(t, { id: `old${i}`, status: "RETURNED", from: NOW - (100 + i) * DAY, to: NOW - (99 + i) * DAY });
+    await seedJob(t, { id: "held", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 3 * DAY, lines: [{ qty: 1 }] });
+    const read = await load(t, { older: 2 });
+    expect(read.visible).toEqual(["ancient", "held"]);
+    expect(read.facts.ancient.state).toBe("wouldClash");
+  });
+
+  test("a job with NO status is alive to the board (pencilled), so the schedule reads it too: its demand is never missed", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "nostatus", status: "NONE", from: NOW - 900 * DAY, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    for (let i = 0; i < 6; i++) await seedJob(t, { id: `old${i}`, status: "RETURNED", from: NOW - (100 + i) * DAY, to: NOW - (99 + i) * DAY });
+    await seedJob(t, { id: "held", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 3 * DAY, lines: [{ qty: 1 }] });
+    const read = await load(t, { older: 2 });
+    expect(read.visible).toEqual(["held", "nostatus"]);
+    expect(read.facts.nostatus.state).toBe("wouldClash");
+    // and the Gear grid counts its unit as pencilled demand
+    const grid = await t.withIdentity(asUser).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: START + 3 * DAY });
+    expect(grid.rows[0].claims.map((c) => `${c.projectId}:${c.layer}`).sort()).toEqual(["held:hard", "nostatus:pencilled"]);
+  });
+
+  test("claimsComplete: false alone makes every job unknown, even when its lines were read in full", () => {
+    const base = {
+      range: { start: NOW, end: NOW + DAY },
+      projects: [{ id: "a", status: "CONFIRMED", name: "A", projectNumber: "#a", rentalStartDate: NOW, rentalEndDate: NOW + DAY }],
+      lines: [{ id: "l", projectId: "a", modelId: "mdl", quantity: 1, status: "CONFIRMED", type: "EQUIPMENT" }],
+      unreadProjectIds: new Set<string>(),
+      models: [{ id: "mdl", name: "EM4", assetType: "SERIALIZED" }],
+      assets: [{ modelId: "mdl", status: "AVAILABLE" }],
+      bulkAssets: [],
+      unknownModelIds: new Set<string>(),
+    };
+    expect(deriveJobFacts({ ...base, claimsComplete: true }).get("a")?.state).toBe("none");
+    expect(deriveJobFacts({ ...base, claimsComplete: false }).get("a")?.state).toBe("unknown");
   });
 
   test("when the budget cuts the alive scan, no job is none: the check cannot be trusted", async () => {

@@ -167,6 +167,57 @@ describe("the exact Edit Undo", () => {
   });
 });
 
+describe("foreign orgs and tampered audit rows can never drive an Undo", () => {
+  const tamper = (t: T, auditId: string, change: (d: Record<string, any>) => void) => // eslint-disable-line @typescript-eslint/no-explicit-any
+    t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+      const d = JSON.parse(JSON.stringify(row!.details));
+      change(d);
+      await ctx.db.patch(row!._id, { details: d });
+    });
+
+  test("another org cannot undo this org's delete with its audit id (the forward row's org is checked)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mx", organizationId: "org_2", userId: "user_x", role: "owner" }); });
+    await del(t);
+    await expect(
+      t.withIdentity({ subject: "user_x", orgId: "org_2" }).mutation(api.categoriesEditWrites.undoDeleteNative, { orgId: "org_2", id: "mid", auditId: "d1", now: NOW + 1, actor: { userId: "user_x", userName: "X" } }),
+    ).rejects.toMatchObject({ data: { code: "NOT_FOUND" } });
+    expect(await cat(t, "mid")).toBeNull();
+  });
+
+  test("a moved row that now belongs to another org makes the Undo refuse (assertStillAsLeft checks each row's org)", async () => {
+    const t = makeT();
+    await seed(t);
+    await del(t);
+    await t.run(async (ctx) => {
+      const m = await ctx.db.query("models").withIndex("by_cuid", (q) => q.eq("id", "mo1")).first();
+      await ctx.db.patch(m!._id, { organizationId: "org_2" });
+    });
+    await expect(undoDel(t)).rejects.toMatchObject({ data: { code: "CHANGED_SINCE" } });
+    expect(await cat(t, "mid")).toBeNull();
+  });
+
+  test("a snapshot whose category belongs to another org is refused (the snapshot's own org is checked)", async () => {
+    const t = makeT();
+    await seed(t);
+    await del(t);
+    await tamper(t, "d1", (d) => { d.categoryDelete.category.organizationId = "org_2"; });
+    await expect(undoDel(t)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect(await cat(t, "mid")).toBeNull();
+  });
+
+  test("an edit snapshot naming a field off the allow-list refuses the Undo (a tampered audit row), changing nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    await edit(t, { name: "Mine" });
+    await tamper(t, "e1", (d) => { d.fieldEdit.before.sortOrder = 9; d.fieldEdit.after.sortOrder = null; });
+    await expect(undoEdit(t)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect((await cat(t, "mid"))!.name).toBe("Mine");
+  });
+});
+
 describe("deleteNative", () => {
   test("models and kits become Uncategorised, subcategories move up to the deleted category's parent, the category is gone", async () => {
     const t = makeT();

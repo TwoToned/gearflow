@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCategoryEdit, categorySheetError, categorySheetInitialOf } from "@/lib/category-sheet";
-import { categoryStateWord, deleteEffectText, modelsWithoutRates, subtreeIds } from "@/lib/category-record-facts";
+import { categoryStateWord, deleteEffectText, inheritedTestDefaultsText, modelsWithoutRates, subtreeIds } from "@/lib/category-record-facts";
 
 const SRC = { id: "c1", name: "Power", parentId: "p1", description: "d", tags: ["x"], defaultEquipmentClass: "CLASS_II", defaultTestIntervalMonths: 6 };
 
@@ -38,6 +38,18 @@ describe("categorySheetError", () => {
     expect(categorySheetError({ ...v, parentId: "c1" }, "c1")).toMatch(/own parent/);
     for (const bad of ["0", "121", "1.5", "abc"]) expect(categorySheetError({ ...v, defaultTestIntervalMonths: bad }, "c1")).toMatch(/interval/);
     expect(categorySheetError({ ...v, defaultTestIntervalMonths: "" }, "c1")).toBeNull();
+  });
+});
+
+describe("inheritedTestDefaultsText", () => {
+  const cat = { defaultEquipmentClass: "CLASS_II", defaultTestIntervalMonths: 6 };
+  it("lists only what the model would inherit: its own class or interval is not listed, and no category means nothing", () => {
+    expect(inheritedTestDefaultsText(cat, {})).toBe("Class II \u00b7 every 6 months");
+    expect(inheritedTestDefaultsText(cat, { defaultEquipmentClass: "CLASS_I" })).toBe("every 6 months");
+    expect(inheritedTestDefaultsText(cat, { testAndTagIntervalDays: 90 })).toBe("Class II");
+    expect(inheritedTestDefaultsText(cat, { defaultEquipmentClass: "CLASS_I", testAndTagIntervalDays: 90 })).toBeNull();
+    expect(inheritedTestDefaultsText(undefined, {})).toBeNull();
+    expect(inheritedTestDefaultsText({ defaultTestIntervalMonths: 1 }, {})).toBe("every 1 month");
   });
 });
 

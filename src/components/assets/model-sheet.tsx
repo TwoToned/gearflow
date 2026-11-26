@@ -94,7 +94,7 @@ export function ModelSheet({ mode, values, stock, onClose, onSaved }: ModelSheet
           <ModelIdentityFields form={form} categories={categories} onNewCategory={() => setNewCategory(true)} lock={{ bulk: stock?.assets ?? 0, serialised: stock?.bulk ?? 0 }} />
           <ModelPricingFields form={form} />
           {xeroLinked ? <ModelXeroFields form={form} /> : null}
-          <ModelComplianceFields form={form} profiles={profiles} />
+          <ModelComplianceFields form={form} profiles={profiles} categories={categories} />
           <SheetMore defaultOpen={editing} label="More details"><ModelMoreFields form={form} orgTags={orgTags} editing={editing} /></SheetMore>
         </div>
       </FormSheet>

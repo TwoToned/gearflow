@@ -15,6 +15,8 @@ import { TagInput } from "@/components/ui/tag-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { XeroAccountCodeField } from "@/components/settings/xero-coding-fields";
 import { SpecificationsEditor } from "./specifications-editor";
+import type { CategoryTestDefaultsSource } from "../../../convex/lib/categoryTestDefaults";
+import { inheritedTestDefaultsText } from "@/lib/category-record-facts";
 
 type Form = UseFormReturn<ModelFormValues>;
 interface CategoryOption { id: string; name: string; parent?: { name: string } | null }
@@ -125,8 +127,10 @@ export function ModelXeroFields({ form }: { form: Form }) {
   );
 }
 
-export function ModelComplianceFields({ form, profiles }: { form: Form; profiles: ProfileOption[] }) {
+export function ModelComplianceFields({ form, profiles, categories = [] }: { form: Form; profiles: ProfileOption[]; categories?: (CategoryTestDefaultsSource & { id: string })[] }) {
   const v = form.watch();
+  // A blank class / interval means INHERIT from the model's own category (D77): say what it would inherit.
+  const inherited = inheritedTestDefaultsText(categories.find((c) => c.id === v.categoryId), { defaultEquipmentClass: v.defaultEquipmentClass, testAndTagIntervalDays: v.testAndTagIntervalDays as number | undefined });
   const pick = (id: string) => {
     form.setValue("defaultTestProfileId", id, { shouldDirty: true });
     const p = profiles.find((x) => x.id === id);
@@ -147,14 +151,14 @@ export function ModelComplianceFields({ form, profiles }: { form: Form; profiles
       </div>
       {v.requiresTestAndTag ? (
         <div className="grid gap-4 border-l-2 border-line-2 pl-4 sm:grid-cols-2">
-          <SheetField label="Test profile" hint="Sets the equipment class, type and required tests.">
+          <SheetField label="Test profile" hint={`Sets the equipment class, type and required tests.${inherited ? ` With none chosen, it inherits ${inherited} from its category.` : ""}`}>
             {profiles.length > 0 ? (
               <ComboboxPicker value={v.defaultTestProfileId || ""} onChange={pick} options={profiles.map((p) => ({ value: p.id, label: p.name }))} placeholder="Select profile…" searchPlaceholder="Search profiles…" emptyMessage="No profiles found." />
             ) : (
               <p className="py-2 text-ui-text text-muted">No test profiles yet. <a href="/settings/test-and-tag/profiles" className={cn("rounded-[var(--r)] text-link hover:underline", focusRing)}>Set up profiles</a></p>
             )}
           </SheetField>
-          <SheetField label="Test validity (days)" htmlFor="testAndTagIntervalDays" hint="Leave blank to use the organisation's setting.">
+          <SheetField label="Test validity (days)" htmlFor="testAndTagIntervalDays" hint={`Leave blank to ${inherited?.includes("every") ? "inherit its category's interval" : "use the organisation's setting"}.`}>
             <Input id="testAndTagIntervalDays" type="number" min={1} {...form.register("testAndTagIntervalDays")} placeholder="Use org default" />
           </SheetField>
         </div>

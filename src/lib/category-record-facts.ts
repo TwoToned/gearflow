@@ -1,3 +1,5 @@
+import { effectiveTestDefaults, type CategoryTestDefaultsSource } from "../../convex/lib/categoryTestDefaults";
+import { equipmentClassLabels } from "@/lib/status-labels";
 import type { ColorIntent } from "@/lib/status-colors";
 
 /**
@@ -51,4 +53,18 @@ export function deleteEffectText(counts: CategoryCounts, parentName: string | nu
   }
   if (counts.children > 0) parts.push(`${counts.children === 1 ? "1 subcategory moves" : `${counts.children} subcategories move`} up to ${parentName ?? "the top level"}`);
   return parts.length ? `${parts.join("; ")}. You can undo it from the toast.` : "It is empty, so nothing else changes. You can undo it from the toast.";
+}
+
+/**
+ * What a model with Test & tag on would INHERIT from its own category (D77), for the model sheet: `Class II · every 6
+ * months`, or `null` when the category sets nothing the model has not set itself. A blank class or interval on the model
+ * means "inherit"; one the model sets wins, so it is not listed here.
+ */
+export function inheritedTestDefaultsText(category: CategoryTestDefaultsSource | null | undefined, model: { defaultEquipmentClass?: string | null; testAndTagIntervalDays?: number | null }): string | null {
+  const eff = effectiveTestDefaults(model, category);
+  const parts = [
+    eff.classFrom === "category" && eff.equipmentClass ? (equipmentClassLabels[eff.equipmentClass] ?? eff.equipmentClass) : null,
+    eff.intervalFrom === "category" && eff.intervalMonths ? `every ${eff.intervalMonths} month${eff.intervalMonths === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
 }

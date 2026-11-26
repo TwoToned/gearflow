@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { Facts, HealthRows, Headline, RecordRows, RecordShell, type HealthItem, type RecordRow, type RecordTab } from "@/components/people/record-shell";
+import { LabelTemplate } from "@/components/test-tag/label-template";
 import { TestTagSheetHost } from "@/components/test-tag/test-tag-sheet-host";
 import { Button } from "@/components/ui/button";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -48,7 +49,7 @@ interface ItemDetail {
   asset: { id: string; assetTag: string } | null;
   bulkAsset: { id: string; assetTag: string } | null;
   testProfile: { id: string; name: string } | null;
-  testRecords: { result?: string | null }[];
+  testRecords: { result?: string | null; testDate?: string | null; testerName?: string | null; testedBy?: { name: string | null } | null }[];
   _count: { testRecords: number };
 }
 
@@ -224,11 +225,30 @@ function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => v
     menu: buildTestTagRecordActions({
       testTagId: item.testTagId,
       retired,
+      // The old page's path, unchanged: the browser print dialog over the one `LabelTemplate`, offered when a test exists.
+      onPrintLabel: canUpdate && item.testRecords[0] ? () => window.print() : undefined,
       onRetire: canUpdate ? () => void cmd.retire() : undefined,
       onReactivate: canUpdate ? () => void cmd.reactivate() : undefined,
       onDelete: canDelete ? () => void cmd.remove() : undefined,
     }),
   };
+}
+
+/** The hidden label the print dialog prints (`print:block` only): the latest test, through the one label template. */
+function PrintableLabel({ item }: { item: ItemDetail }) {
+  const last = item.testRecords[0];
+  if (!last) return null;
+  return (
+    <div className="hidden print:block">
+      <LabelTemplate
+        testTagId={item.testTagId}
+        result={last.result === "PASS" ? "PASS" : "FAIL"}
+        testDate={last.testDate ?? ""}
+        nextDueDate={item.nextDueDate || last.testDate || ""}
+        testerName={last.testedBy?.name || last.testerName || "\u2014"}
+      />
+    </div>
+  );
 }
 
 function RecordBody({ item, orgId }: { item: ItemDetail; orgId: string | undefined }) {
@@ -260,6 +280,7 @@ function RecordBody({ item, orgId }: { item: ItemDetail; orgId: string | undefin
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Status", value: word.label }, { label: "Last test", value: dateOf(item.lastTestDate) }, { label: "Next due", value: nextDueText(item, word) }, { label: "Tests", value: item._count.testRecords }]} />}
       />
+      <PrintableLabel item={item} />
       <TestTagSheetHost item={testTagSheetInitialOf(item)} retired={retired} />
     </>
   );

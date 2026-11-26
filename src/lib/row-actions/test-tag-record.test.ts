@@ -18,6 +18,12 @@ describe("buildTestTagRecordActions", () => {
     expect(del.confirm?.body).toMatch(/every test recorded/);
   });
 
+  it("Print label is offered first, for an active or a retired item, only when there is a handler", () => {
+    expect(keys(buildTestTagRecordActions({ testTagId: "T", retired: false, onPrintLabel: fn(), onRetire: fn() }))).toEqual(["print-label", "retire"]);
+    expect(keys(buildTestTagRecordActions({ testTagId: "T", retired: true, onPrintLabel: fn(), onReactivate: fn() }))).toEqual(["print-label", "reactivate"]);
+    expect(keys(buildTestTagRecordActions({ testTagId: "T", retired: false, onRetire: fn() }))).toEqual(["retire"]);
+  });
+
   it("a verb with no handler (the caller cannot) is ABSENT, never disabled", () => {
     expect(keys(buildTestTagRecordActions({ testTagId: "T", retired: false }))).toEqual([]);
     expect(keys(buildTestTagRecordActions({ testTagId: "T", retired: true, onDelete: fn() }))).toEqual(["delete"]);

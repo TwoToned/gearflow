@@ -1,4 +1,4 @@
-import { Archive, ExternalLink, FileText, RefreshCw, RotateCcw, Trash2, Zap } from "lucide-react";
+import { Archive, ExternalLink, FileText, Printer, RefreshCw, RotateCcw, Trash2, Zap } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
 
@@ -40,6 +40,8 @@ export function buildTestTagPageMenu(ctx: { onSync?: () => void; onQuickTest?: (
 export interface TestTagRecordCtx {
   testTagId: string;
   retired: boolean;
+  /** Present only when the item has a test to print a label for (the browser print dialog over the one label template). */
+  onPrintLabel?: () => void;
   /** Each absent when the caller cannot (`testTag:update` for Retire / Reactivate, `testTag:delete` for Delete). */
   onRetire?: () => void;
   onReactivate?: () => void;
@@ -47,11 +49,12 @@ export interface TestTagRecordCtx {
 }
 
 /**
- * The record page's ⋯ (UX Phase 14, 14b-4, D80): Retire (active items; its toast carries the exact Undo, so no confirm)
+ * The record page's ⋯ (UX Phase 14, 14b-4, D80): Print label (when there is a test to print), Retire (active items; its toast carries the exact Undo, so no confirm)
  * or Reactivate (retired ones), and Delete… ONLY for a retired item: red, last, with a confirm that names what goes with it.
  */
 export function buildTestTagRecordActions(ctx: TestTagRecordCtx): ActionMenuSpec {
   const entries: Entry[] = [
+    ctx.onPrintLabel && { key: "print-label", label: "Print label", group: "documents", icon: Printer, onSelect: ctx.onPrintLabel },
     !ctx.retired && ctx.onRetire && { key: "retire", label: "Retire", group: "organise", icon: Archive, onSelect: ctx.onRetire },
     ctx.retired && ctx.onReactivate && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
     ctx.retired && ctx.onDelete && {

@@ -74,7 +74,7 @@ const item = (over: Record<string, unknown> = {}) => ({
   id: "t1", testTagId: "TT0001", description: "Hammer drill", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", make: "Acme", modelName: "HD-1", serialNumber: "S1",
   testIntervalMonths: 3, testProfileId: "p1", status: "CURRENT", isActive: true, lastTestDate: iso(NOW - 30 * DAY), nextDueDate: iso(NOW + 60 * DAY),
   asset: { id: "a1", assetTag: "DRL-1" }, bulkAsset: null, testProfile: { id: "p1", name: "Class I" },
-  testRecords: [{ result: "PASS" }], _count: { testRecords: 2 }, ...over,
+  testRecords: [{ result: "PASS", testDate: iso(NOW - 30 * DAY), testerName: "Ada" }], _count: { testRecords: 2 }, ...over,
 });
 
 beforeEach(() => {
@@ -153,6 +153,36 @@ describe("TestTagRecord", () => {
     await waitFor(() => expect(writes.reactivate).toHaveBeenCalledWith("t1"));
     toasts.undo?.();
     await waitFor(() => expect(writes.undoReactivate).toHaveBeenCalledWith("t1"));
+  });
+
+  it("Print label is on the ⋯ and opens the browser print dialog over the one label (the latest test)", async () => {
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const { container } = render(<TestTagRecord id="t1" orgId="org1" />);
+    const label = container.querySelector(".test-tag-label");
+    expect(label?.textContent).toContain("TT0001");
+    expect(label?.textContent).toContain("Ada");
+    await openMenu(user);
+    await user.click(await screen.findByText("Print label"));
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+  });
+
+  it("an item that has never been tested has no label to print: no Print label, no hidden label", async () => {
+    data.item = item({ testRecords: [], lastTestDate: null, nextDueDate: null, status: "NOT_YET_TESTED" });
+    const user = userEvent.setup();
+    const { container } = render(<TestTagRecord id="t1" orgId="org1" />);
+    expect(container.querySelector(".test-tag-label")).toBeNull();
+    await openMenu(user);
+    expect(screen.queryByText("Print label")).toBeNull();
+  });
+
+  it("a retired item can still print its label", async () => {
+    data.item = item({ status: "RETIRED", isActive: false });
+    const user = userEvent.setup();
+    render(<TestTagRecord id="t1" orgId="org1" />);
+    await openMenu(user);
+    expect(await screen.findByText("Print label")).toBeTruthy();
   });
 
   it("without testTag:update there is no Edit, Record test or Retire; without delete, no Delete…", async () => {

@@ -110,6 +110,28 @@ async function recordLifecycle(
 const nullableNumber = v.optional(v.union(v.number(), v.null()));
 
 // ─── complete ────────────────────────────────────────────────────────────────
+/** The distinct assets a job holds (its LINK rows; check-off progress rows are not holds). */
+async function linkedAssetIds(ctx: MutationCtx, recordId: string): Promise<string[]> {
+  const links = await existingLinks(ctx, recordId);
+  return [...new Set(links.map((l) => l.assetId).filter((x): x is string => x != null))];
+}
+
+/** A doc with its `undefined` fields dropped (an absent field and an `undefined` one are the same state). */
+function withoutUndefined<T extends Record<string, unknown>>(doc: T): T {
+  return Object.fromEntries(Object.entries(doc).filter(([, val]) => val !== undefined)) as T;
+}
+
+/**
+ * What a completion writes on the record: the outcome, plus labour only for a caller who sees job cost (absent
+ * leaves it, `null` clears it) and next due (absent leaves it, `null` clears it).
+ */
+function completionPatch(a: { result: string; completedDate: number; now: number; labour?: number | null; nextDueDate?: number | null }, seesCost: boolean): Record<string, unknown> {
+  const patch: Record<string, unknown> = { status: "COMPLETED", result: a.result, completedDate: a.completedDate, updatedAt: a.now };
+  if (a.labour !== undefined && seesCost) patch.cost = a.labour ?? undefined;
+  if (a.nextDueDate !== undefined) patch.nextDueDate = a.nextDueDate ?? undefined;
+  return patch;
+}
+
 export const completeNative = mutation({
   returns: v.object({ id: v.string(), undoable: v.boolean() }),
   args: {
@@ -134,20 +156,15 @@ export const completeNative = mutation({
     assertNumRange(a.labour ?? undefined, "labour", { min: 0 });
     assertNumRange(a.nextDueDate ?? undefined, "next due", {});
 
-    const assetIds = [...new Set((await existingLinks(ctx, a.id)).map((l) => l.assetId).filter((x): x is string => x != null))];
+    const assetIds = await linkedAssetIds(ctx, a.id);
     const dispositions = resolveDispositions(assetIds, a.dispositions ?? [], a.result);
     const before = await readAssets(ctx, a.orgId, assetIds);
     await applyAssetDispositions(ctx, a.orgId, dispositions, a.id, a.now, actor, a.auditId);
     const assets = changedAssets(before, await readAssets(ctx, a.orgId, assetIds));
 
-    const seesCost = await canSeeJobCost(ctx, a.orgId);
-    const patch: Record<string, unknown> = { status: "COMPLETED", result: a.result, completedDate: a.completedDate, updatedAt: a.now };
-    if (a.labour !== undefined && seesCost) patch.cost = a.labour ?? undefined;
-    if (a.nextDueDate !== undefined) patch.nextDueDate = a.nextDueDate ?? undefined;
+    const patch = completionPatch(a, await canSeeJobCost(ctx, a.orgId));
     await ctx.db.patch(rec._id, patch);
-
-    const after = { ...rec, ...patch };
-    for (const f of RECORD_FIELDS) if (after[f as keyof typeof after] === undefined) delete (after as Record<string, unknown>)[f];
+    const after = withoutUndefined({ ...rec, ...patch });
     const undoable = !dispositions.some((d) => d.disposition === "RETIRE");
     await recordLifecycle(ctx, {
       rec, actor, auditId: a.auditId, now: a.now, summary: `Completed maintenance record: ${rec.title}`,
@@ -165,7 +182,7 @@ export const reopenNative = mutation({
     const actor = await maintenanceWritePrelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadMaintenanceRecord(ctx, a.orgId, a.id);
     if (statusOf(rec) !== "COMPLETED") throw refuse("NOT_COMPLETED", "Only a completed job can be reopened.");
-    const assetIds = [...new Set((await existingLinks(ctx, a.id)).map((l) => l.assetId).filter((x): x is string => x != null))];
+    const assetIds = await linkedAssetIds(ctx, a.id);
     const before = await readAssets(ctx, a.orgId, assetIds);
     await holdAssets(ctx, a.orgId, assetIds, a.now);
     const assets = changedAssets(before, await readAssets(ctx, a.orgId, assetIds));
@@ -199,29 +216,42 @@ async function assertUnchangedSince(ctx: MutationCtx, orgId: string, rec: Doc<"m
   }
 }
 
+/**
+ * The forward row this Undo reverses, proven undoable by `actorUserId` (this org's, this record's, not undone, the
+ * author, undoable, inside the window) and the record and every moved asset still exactly as it left them. Reads only.
+ */
+async function loadUndoableLifecycle(ctx: MutationCtx, a: { orgId: string; id: string; auditId: string; actorUserId: string }, rec: Doc<"maintenanceRecords">): Promise<LifecycleDetails> {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  if (!row || row.organizationId !== a.orgId || row.entityType !== "maintenance" || row.entityId !== a.id) throw refuse("NOT_FOUND", "That change was not found, so it can't be undone.");
+  const d = readLifecycle(row.details);
+  if (!d) throw refuse("NOT_UNDOABLE", "That change can't be undone.");
+  if (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(a.auditId))).first()) throw refuse("ALREADY_UNDONE", "That change was already undone.");
+  if (d.authorId !== a.actorUserId) throw refuse("NOT_AUTHOR", "Only the person who made a change can undo it.");
+  if (!d.undoable) throw refuse("NOT_UNDOABLE", "Retiring an asset can't be undone.");
+  assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+  await assertUnchangedSince(ctx, a.orgId, rec, d);
+  return d;
+}
+
+/** Put the record's fields and exactly the moved assets back to what the write found. */
+async function restoreLifecycle(ctx: MutationCtx, rec: Doc<"maintenanceRecords">, d: LifecycleDetails, now: number): Promise<void> {
+  const patch: Record<string, unknown> = { updatedAt: now };
+  for (const f of RECORD_FIELDS) patch[f] = d.before[f] === null ? undefined : d.before[f];
+  await ctx.db.patch(rec._id, patch);
+  for (const c of d.assets) {
+    const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", c.assetId)).first();
+    if (asset) await ctx.db.patch(asset._id, { status: (c.statusBefore ?? undefined) as never, updatedAt: c.updatedAtBefore ?? undefined });
+  }
+}
+
 export const undoNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { orgId: v.string(), id: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
   handler: async (ctx, a) => {
     const actor = await maintenanceWritePrelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadMaintenanceRecord(ctx, a.orgId, a.id);
-    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
-    if (!row || row.organizationId !== a.orgId || row.entityType !== "maintenance" || row.entityId !== a.id) throw refuse("NOT_FOUND", "That change was not found, so it can't be undone.");
-    const d = readLifecycle(row.details);
-    if (!d) throw refuse("NOT_UNDOABLE", "That change can't be undone.");
-    if (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(a.auditId))).first()) throw refuse("ALREADY_UNDONE", "That change was already undone.");
-    if (d.authorId !== actor.userId) throw refuse("NOT_AUTHOR", "Only the person who made a change can undo it.");
-    if (!d.undoable) throw refuse("NOT_UNDOABLE", "Retiring an asset can't be undone.");
-    assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
-    await assertUnchangedSince(ctx, a.orgId, rec, d);
-
-    const patch: Record<string, unknown> = { updatedAt: a.now };
-    for (const f of RECORD_FIELDS) patch[f] = d.before[f] === null ? undefined : d.before[f];
-    await ctx.db.patch(rec._id, patch);
-    for (const c of d.assets) {
-      const asset = await ctx.db.query("assets").withIndex("by_cuid", (q) => q.eq("id", c.assetId)).first();
-      if (asset) await ctx.db.patch(asset._id, { status: (c.statusBefore ?? undefined) as never, updatedAt: c.updatedAtBefore ?? undefined });
-    }
+    const d = await loadUndoableLifecycle(ctx, { orgId: a.orgId, id: a.id, auditId: a.auditId, actorUserId: actor.userId }, rec);
+    await restoreLifecycle(ctx, rec, d, a.now);
     await writeActivityLog(ctx, {
       id: undoMarkerId(a.auditId), organizationId: a.orgId, action: "UPDATE", entityType: "maintenance", entityId: a.id, entityName: rec.title,
       userId: actor.userId, userName: actor.userName, summary: `Undid ${d.op === "complete" ? "completing" : "reopening"} ${rec.title}`, details: { undoOf: a.auditId }, createdAt: a.now,

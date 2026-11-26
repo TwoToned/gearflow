@@ -247,20 +247,26 @@ function withBefore(part: Doc<"maintenanceParts">, before: PartFields): Record<s
   return out;
 }
 
+/** The forward row this Undo reverses, proven undoable by `actorUserId`: this org's and record's, not undone, the author, inside the window. */
+async function loadUndoablePartOp(ctx: MutationCtx, a: { orgId: string; recordId: string; auditId: string; actorUserId: string }): Promise<PartOpDetails> {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  if (!row || row.organizationId !== a.orgId || row.entityType !== "maintenance" || row.entityId !== a.recordId) throw refuse("NOT_FOUND", "That change was not found, so it can't be undone.");
+  const d = readOp(row.details);
+  if (!d) throw refuse("NOT_UNDOABLE", "That change can't be undone.");
+  const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(a.auditId))).first();
+  if (marker) throw refuse("ALREADY_UNDONE", "That change was already undone.");
+  if (d.authorId !== a.actorUserId) throw refuse("NOT_AUTHOR", "Only the person who made a change can undo it.");
+  assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+  return d;
+}
+
 export const undoNative = mutation({
   returns: v.object({ id: v.string() }),
   args: { orgId: v.string(), recordId: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
   handler: async (ctx, a) => {
     const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
-    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
-    if (!row || row.organizationId !== a.orgId || row.entityType !== "maintenance" || row.entityId !== a.recordId) throw refuse("NOT_FOUND", "That change was not found, so it can't be undone.");
-    const d = readOp(row.details);
-    if (!d) throw refuse("NOT_UNDOABLE", "That change can't be undone.");
-    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", undoMarkerId(a.auditId))).first();
-    if (marker) throw refuse("ALREADY_UNDONE", "That change was already undone.");
-    if (d.authorId !== actor.userId) throw refuse("NOT_AUTHOR", "Only the person who made a change can undo it.");
-    assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+    const d = await loadUndoablePartOp(ctx, { orgId: a.orgId, recordId: a.recordId, auditId: a.auditId, actorUserId: actor.userId });
 
     if (d.advancedStamp !== undefined) {
       if ((rec.status ?? "SCHEDULED") !== "IN_PROGRESS" || rec.updatedAt !== d.advancedStamp) throw refuse("CHANGED_SINCE", "Can't undo: the job moved on since.");

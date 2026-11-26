@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ComboboxPicker } from "@/components/ui/combobox-picker";
 import { PhotoGridInput } from "@/components/ui/photo-grid-input";
+import { MAINTENANCE_PHOTO_FOLDER } from "../../../convex/lib/maintenancePhotoFolder";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn, focusRing } from "@/lib/utils";
 import {
@@ -480,6 +481,7 @@ export function MaintenanceForm({ initialData }: MaintenanceFormProps) {
                       value={v.photos ?? []}
                       onChange={(urls) => form.setValue("photos", urls, { shouldDirty: true })}
                       onUploadingChange={setPhotosUploading}
+                      folder={MAINTENANCE_PHOTO_FOLDER}
                     />
                   </SmartFormField>
                   <SmartFormField label="Tags">

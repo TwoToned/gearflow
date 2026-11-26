@@ -70,36 +70,43 @@ export interface MaintenanceChecks {
   items: MaintenanceCheck[];
 }
 
-const CHECK_COUNT = 4;
-
 function dayLabel(ms: number): string {
   return new Date(ms).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** Each check answers with the one item that needs a look, or `null` when it is clear. */
+function assetsCheck(f: MaintenanceFacts): MaintenanceCheck | null {
+  return f.assetCount === 0 ? { key: "assets", text: "No gear is linked to this job", tone: "error", fix: "edit" } : null;
+}
+
+function dateCheck(f: MaintenanceFacts): MaintenanceCheck | null {
+  if (f.scheduledDate == null) return { key: "date", text: "No date is set", tone: "warning", fix: "edit" };
+  if (!isOverdueMaintenance({ status: f.status, scheduledDate: f.scheduledDate }, f.now)) return null;
+  return { key: "date", text: `${plural(daysOverdue(f.scheduledDate, f.now), "day")} overdue (was ${dayLabel(f.scheduledDate)})`, tone: "error", fix: "complete" };
+}
+
+function partsCheck(f: MaintenanceFacts): MaintenanceCheck | null {
+  const p = f.parts;
+  if (p == null) return { key: "parts", text: "Parts not checked", tone: "neutral", fix: "parts" };
+  if (p.late > 0) return { key: "parts", text: `${plural(p.late, "part")} past ETA`, tone: "warning", fix: "parts" };
+  if (p.onOrder === 0) return null;
+  const eta = p.nextEta != null ? ` · next ${dayLabel(p.nextEta)}` : "";
+  return { key: "parts", text: `${plural(p.onOrder, "part")} on order${eta}`, tone: "warning", fix: "parts" };
+}
+
+function assignedCheck(f: MaintenanceFacts): MaintenanceCheck | null {
+  return f.assigned ? null : { key: "assigned", text: "Nobody is assigned", tone: "neutral", fix: "edit" };
+}
+
+const CHECKS = [assetsCheck, dateCheck, partsCheck, assignedCheck] as const;
+const TONE_RANK = { error: 0, warning: 1, neutral: 2 } as const;
+
 /** The four checks: it has gear, it has a date that is not past, its parts are in, someone owns it. */
 export function maintenanceChecks(f: MaintenanceFacts): MaintenanceChecks {
   if (!isOpenMaintenance(f.status)) return { closed: true, total: 0, clear: 0, items: [] };
-  const items: MaintenanceCheck[] = [];
-
-  if (f.assetCount === 0) items.push({ key: "assets", text: "No gear is linked to this job", tone: "error", fix: "edit" });
-
-  const late = daysOverdue(f.scheduledDate, f.now);
-  if (f.scheduledDate == null) items.push({ key: "date", text: "No date is set", tone: "warning", fix: "edit" });
-  else if (isOverdueMaintenance({ status: f.status, scheduledDate: f.scheduledDate }, f.now)) {
-    items.push({ key: "date", text: `${late} day${late === 1 ? "" : "s"} overdue (was ${dayLabel(f.scheduledDate)})`, tone: "error", fix: "complete" });
-  }
-
-  if (f.parts == null) items.push({ key: "parts", text: "Parts not checked", tone: "neutral", fix: "parts" });
-  else if (f.parts.late > 0) {
-    items.push({ key: "parts", text: `${f.parts.late} part${f.parts.late === 1 ? "" : "s"} past ETA`, tone: "warning", fix: "parts" });
-  } else if (f.parts.onOrder > 0) {
-    const eta = f.parts.nextEta != null ? ` · next ${dayLabel(f.parts.nextEta)}` : "";
-    items.push({ key: "parts", text: `${f.parts.onOrder} part${f.parts.onOrder === 1 ? "" : "s"} on order${eta}`, tone: "warning", fix: "parts" });
-  }
-
-  if (!f.assigned) items.push({ key: "assigned", text: "Nobody is assigned", tone: "neutral", fix: "edit" });
-
-  const rank = { error: 0, warning: 1, neutral: 2 } as const;
-  items.sort((a, b) => rank[a.tone] - rank[b.tone]);
-  return { closed: false, total: CHECK_COUNT, clear: CHECK_COUNT - items.length, items };
+  const items = CHECKS.map((check) => check(f)).filter((i): i is MaintenanceCheck => i !== null);
+  items.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
+  return { closed: false, total: CHECKS.length, clear: CHECKS.length - items.length, items };
 }

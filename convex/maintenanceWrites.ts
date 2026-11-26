@@ -15,6 +15,8 @@ import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards"
 import { assertProjectInOrg } from "./projectLineItems";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import { retireAssetCore } from "./lib/assetRetire";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { assertNewMaintenancePhotos, releaseRemovedMaintenancePhotos } from "./lib/maintenancePhotos";
 import * as enums from "./lib/validators";
 import {
   loadUndoableMaintenanceCreate,
@@ -348,6 +350,8 @@ export const createNative = mutation({
     await assertEmitSideEffectsAgentTrue(ctx, a.emitSideEffects);
     const actor = await resolveActor(ctx, a.actor);
     assertMaintenanceFields(a);
+    // A photo on a NEW job must be this actor's own fresh upload into the maintenance folder, held by nothing.
+    await assertNewMaintenancePhotos(ctx, { orgId: a.orgId, actorUserId: actor.userId, photos: a.photos, existing: [] });
 
     if (a.projectId) await assertProjectInOrg(ctx, a.projectId, a.orgId);
 
@@ -386,7 +390,7 @@ export const createNative = mutation({
       ...(a.assignedToId ? { assignedToId: a.assignedToId } : {}),
       ...(a.scheduledDate != null ? { scheduledDate: a.scheduledDate } : {}),
       ...(a.completedDate != null ? { completedDate: a.completedDate } : {}),
-      ...(a.cost != null ? { cost: a.cost } : {}),
+      ...(a.cost != null && (await canSeeJobCost(ctx, a.orgId)) ? { cost: a.cost } : {}), // labour is job cost: a hidden caller sets none
       ...(a.partsUsed ? { partsUsed: a.partsUsed } : {}),
       photos: a.photos ?? [],
       ...(a.result ? { result: a.result } : {}),
@@ -504,6 +508,8 @@ export const updateNative = mutation({
       throw new ConvexError("Maintenance record not found");
     }
     assertMaintenanceFields(a);
+    // Only photos NEW on this save are proven (a photo already on the job stays valid however old or shared it is now).
+    await assertNewMaintenancePhotos(ctx, { orgId: a.orgId, actorUserId: actor.userId, photos: a.photos, existing: record.photos ?? [] });
 
     // Validate reporter/assignee membership only when CHANGED, so a record whose original
     // reporter/assignee has since left the org can still be edited/re-saved.
@@ -579,7 +585,8 @@ export const updateNative = mutation({
       assignedToId: a.assignedToId || undefined,
       scheduledDate: a.scheduledDate ?? undefined,
       completedDate: a.completedDate ?? undefined,
-      cost: a.cost ?? undefined,
+      // Labour is job cost: a caller who cannot see it neither sets nor clears it (the write follows the read).
+      cost: (await canSeeJobCost(ctx, a.orgId)) ? (a.cost ?? undefined) : record.cost,
       partsUsed: a.partsUsed || undefined,
       photos: a.photos ?? [],
       result: a.result ?? undefined,
@@ -587,6 +594,8 @@ export const updateNative = mutation({
       tags: a.tags ?? [],
       updatedAt: a.now,
     });
+    // A photo this save dropped: its bytes go only through `deleteStoredFileIfUnreferenced`, after the patch above.
+    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: a.photos ?? [] });
 
     // Link diff: drop removed links, add the genuinely-new ones.
     for (const l of links) {
@@ -655,6 +664,8 @@ export const deleteNative = mutation({
     // …and its parts (D76), org re-checked per row (`by_maintenanceRecordId` is global).
     const parts = await ctx.db.query("maintenanceParts").withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", a.id)).take(500);
     for (const p of parts) if (p.organizationId === a.orgId) await ctx.db.delete(p._id);
+    // Its photos' bytes, only through `deleteStoredFileIfUnreferenced` and only after the record row is gone.
+    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: [] });
 
     await writeActivityLog(ctx, {
       id: a.auditId,

@@ -64,15 +64,22 @@ export function gearStrip(rows: GearRow[]): GearStrip {
   return { all: rows.length, short: rows.filter(rowIsShort).length, atRisk: rows.filter(rowIsAtRisk).length };
 }
 
+const anyClaim = (r: GearRow, ok: (c: GearClaim) => boolean): boolean => r.claims.some(ok);
+
+/** Search: the model's name, or the number or name of a job that holds or pencils it. */
+function matchesQuery(r: GearRow, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return r.name.toLowerCase().includes(needle) || anyClaim(r, (c) => `${c.projectNumber} ${c.name}`.toLowerCase().includes(needle));
+}
+
 function matchesGear(r: GearRow, f: ScheduleFilters): boolean {
   if (f.model.length && !f.model.includes(r.modelId)) return false;
   if (f.category.length && !f.category.includes(r.categoryId ?? "")) return false;
   // Status and PM narrow the rows to models those jobs hold; the numbers stay the whole org's (§9o.2).
-  if (f.status.length && !r.claims.some((c) => f.status.includes(c.status))) return false;
-  if (f.pm.length && !r.claims.some((c) => c.projectManagerId && f.pm.includes(c.projectManagerId))) return false;
-  const q = f.q.trim().toLowerCase();
-  if (!q) return true;
-  return r.name.toLowerCase().includes(q) || r.claims.some((c) => `${c.projectNumber} ${c.name}`.toLowerCase().includes(q));
+  if (f.status.length && !anyClaim(r, (c) => f.status.includes(c.status))) return false;
+  if (f.pm.length && !anyClaim(r, (c) => !!c.projectManagerId && f.pm.includes(c.projectManagerId))) return false;
+  return matchesQuery(r, f.q);
 }
 
 /** The rows the view draws: filters + search, then the strip segment. */

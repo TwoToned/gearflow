@@ -53823,6 +53823,48 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "scheduleBoard.grid",
+    "module": "scheduleBoard",
+    "fn": "grid",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "project",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "project",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "endMs",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "startMs",
+        "optional": false,
+        "type": "number"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "1810374176adf92f",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The free gear count per model per day over a date range (held and pencilled demand, from the overbooking engine claims).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "scheduleBoard.jobs",
     "module": "scheduleBoard",
     "fn": "jobs",
@@ -72777,10 +72819,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1404,
-  agentReachable: 757,
-  queries: 491,
+  total: 1405,
+  agentReachable: 758,
+  queries: 492,
   mutations: 913,
-  agentReachableQueries: 353,
+  agentReachableQueries: 354,
   agentReachableMutations: 404,
 } as const;

@@ -4,7 +4,7 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-11-26 (review quarterly — POLICY.md R-5.5)_
 
-## The Schedule page (UX Phase 18, `/availability`, slice 1: Jobs)
+## The Schedule page (UX Phase 18, `/availability`: Jobs and Gear)
 `src/app/(app)/availability/page.tsx` is a thin route over `src/components/schedule/`. The six-week grid, the Agenda
 view, the busy-day tint and the 3-lane `+n more` cap are gone (D82, D83); the Gear view (D81) and the bulk Confirm /
 Move dates verbs (D84) follow in later slices.
@@ -20,6 +20,31 @@ Move dates verbs (D84) follow in later slices.
 - **The bar is the RENTAL window** (as before, `projectMatchesCalendarWindow`); the gear words come from the PROJECT
   window the engine reads. Held = a quiet raised bar; pencilled = dashed, hatched, holds nothing. Colour lives only in
   the status dot-word and the `clash` / `would clash` word.
+
+### The Gear view (D81, `?view=gear`)
+Head words `Jobs  Gear` (links that keep the range and filters and drop the strip and the open sheets). `scheduleBoard.grid`
+returns, for every model a job holds or pencils in the range, the free count per day. **It is the same read, budget and
+claim math as the Jobs view** (`convex/lib/gearGrid.ts` on `loadSchedule`'s inputs), never a second formula:
+`free = effective − held`, `short = max(0, held − effective)`, `atRisk = max(0, pencilled − max(0, effective − held))`,
+where `effective` is `computeStockBreakdown` (`availabilityCore`), held/pencilled are the board's per-project claims
+(`stockBackedQty`, held statuses from `HARD_PROJECT_STATUSES`) and `atRisk` equals the board's pencilled FCFS overage
+(`allocateFifo` telescopes to it). A test pins that the grid is short on exactly the days a held job says `clash`.
+- **Cells.** A plain day prints the number (faint when nothing holds it); a shortfall prints a red `short 2` with
+  `held 14` under it; a pencilled risk prints the free number amber with `pencilled −2`; Month shrinks a cell to the
+  number (`−2`). A cell the read could not cover prints `—` / `not checked`, never a number: a model whose stock was beyond
+  the budget (the whole row), every model on the days an unread job covers, everything when the alive scan was cut.
+- **Strip** `All · Short · At risk` (counts of models, following the range and filters). Status and PM narrow the rows to
+  models those jobs hold; the numbers stay the whole org's. Rows are grouped by category and list only models with a
+  claim in the range.
+- **Model-day sheet** (`?cell=modelId:day`): Serviceable, Held, Free; `Held by` and `Pencilled, holds nothing` rows (each
+  opens the job sheet; the Jobs read runs only while a `?job=` is open); `would be short 2 if #2350 confirms`;
+  `Sub-hire n…` (a hard shortfall, `subHire:create`) opens the Overbookings board's own prefilled
+  `SubHireShortfallDialog` (the cover itself is written on the job's Equipment tab, `coverShortfallNative`);
+  `Overbookings ›`; `Open model ›` (`model:read`). A verb the caller cannot use is absent.
+- **Phone**: day chips (`Wed 12 · 1 short` red) and the models of ONE day as cards (`short 2` or `9 free`).
+- Not in this slice: a `Sub-hire requested` row on the sheet (the board still shows the shortfall until the gear arrives).
+- **A status-less job is alive** to the board (`candidateBoardProjects` reads it as pencilled), so the alive scan also reads
+  `status: undefined` (its own index value) from the same budget: its demand is never missed.
 
 ### `scheduleBoard.jobs` — one definition of clash, one budget
 `convex/scheduleBoard.ts` returns the jobs whose rental window overlaps a range (at most 62 days) with each job's derived

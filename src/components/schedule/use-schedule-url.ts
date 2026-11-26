@@ -8,6 +8,19 @@ import { scheduleRange, stepRange, type ScheduleFilters, type ScheduleZoom } fro
 import { parseScheduleView, segmentFor, SCHEDULE_SPEC, viewPatch, type ScheduleView, type ScheduleViewKey } from "@/lib/schedule-url";
 import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 
+/** A global-search deep link (`?search=`) is rewritten once into the page's own `?q=`. */
+function useLegacySearch(legacySearch: string | null, raw: string) {
+  const router = useRouter();
+  const pathname = usePathname();
+  React.useEffect(() => {
+    if (!legacySearch) return;
+    const p = new URLSearchParams(raw);
+    p.delete("search");
+    if (!p.get("q")) p.set("q", legacySearch.slice(0, 200));
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  }, [legacySearch, raw, router, pathname]);
+}
+
 /**
  * The Schedule's state IS the URL (D11): view (Jobs / Gear), strip, search and
  * filters through the shared list codec; zoom, date and the open sheets
@@ -31,15 +44,7 @@ export function useScheduleUrl(todayKey: string, phone: boolean) {
   const range = React.useMemo(() => scheduleRange(view.zoom, view.anchor, startsOn), [view.zoom, view.anchor, startsOn]);
   const mode: ScheduleViewKey = state.view === "gear" ? "gear" : "jobs";
 
-  // A global-search deep link (`?search=`) is rewritten once into the page's own `?q=`.
-  const legacySearch = params.get("search");
-  React.useEffect(() => {
-    if (!legacySearch) return;
-    const p = new URLSearchParams(raw);
-    p.delete("search");
-    if (!p.get("q")) p.set("q", legacySearch.slice(0, 200));
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
-  }, [legacySearch, raw, router, pathname]);
+  useLegacySearch(params.get("search"), raw);
 
   const commit = React.useCallback(
     (nextState: ListUrlState, next: Partial<ScheduleView>, how: "push" | "replace" = "push") => {

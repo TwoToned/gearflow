@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
  * use is absent, never disabled. Driven by the URL (`?cell=model:day`) and read
  * from the LIVE grid every render.
  */
-export interface OpenedCell {
+interface OpenedCell {
   row: GearRow;
   cell: GearCell;
   dayStart: number;
@@ -72,48 +72,69 @@ function Numbers({ row, cell }: { row: GearRow; cell: GearCell }) {
   );
 }
 
+/** `would be short 2 if #2350 confirms`: what the pencilled jobs on this day would take if they were confirmed. */
+function RiskLine({ cell, pencilled }: { cell: GearCell; pencilled: GearClaim[] }) {
+  if (cell.unknown || cell.atRisk === 0) return null;
+  const who = pencilled.map((c) => c.projectNumber).join(", ");
+  return (
+    <p className={cn("text-ui-text", intentStyles.warning.text)}>
+      would be short {cell.atRisk} if {who} confirm{pencilled.length === 1 ? "s" : ""}
+    </p>
+  );
+}
+
+function Verbs({ opened, canSubHire, canModel, onSubHire }: { opened: OpenedCell; canSubHire: boolean; canModel: boolean; onSubHire: () => void }) {
+  const hardShort = !opened.cell.unknown && opened.cell.short > 0;
+  return (
+    <SheetFooter className="flex-col gap-2 sm:flex-col">
+      {canSubHire && hardShort && (
+        <Button type="button" variant="line" onClick={onSubHire}>
+          Sub-hire {opened.cell.short}…
+        </Button>
+      )}
+      <Button asChild variant="line">
+        <Link href="/overbookings">Overbookings ›</Link>
+      </Button>
+      {canModel && (
+        <Button asChild variant="line">
+          <Link href={`/assets/models/${opened.row.modelId}`}>Open model ›</Link>
+        </Button>
+      )}
+    </SheetFooter>
+  );
+}
+
+function SheetBody({ opened, onOpenJob, canSubHire, canModel }: Omit<Props, "opened" | "onClose"> & { opened: OpenedCell }) {
+  const [subHire, setSubHire] = React.useState(false);
+  const on = claimsOnDay(opened.row, opened.dayStart);
+  return (
+    <div className="flex flex-col gap-5 p-1">
+      <SheetHeader>
+        <SheetTitle>{opened.row.name}</SheetTitle>
+        <SheetDescription>{formatWeekdayDayMonth(displayDate(keyOfMs(opened.dayStart)))}</SheetDescription>
+      </SheetHeader>
+      <Numbers row={opened.row} cell={opened.cell} />
+      <RiskLine cell={opened.cell} pencilled={on.pencilled} />
+      <Claims title="Held by" claims={on.held} onOpenJob={onOpenJob} />
+      <Claims title="Pencilled, holds nothing" claims={on.pencilled} onOpenJob={onOpenJob} />
+      <Verbs opened={opened} canSubHire={canSubHire} canModel={canModel} onSubHire={() => setSubHire(true)} />
+      <SubHireShortfallDialog
+        open={subHire}
+        onOpenChange={setSubHire}
+        modelName={opened.row.name}
+        shortfallQty={opened.cell.short}
+        projects={on.held.map((c) => ({ id: c.projectId, name: c.name, projectNumber: c.projectNumber }))}
+      />
+    </div>
+  );
+}
+
 export function ModelDaySheet({ opened, onOpenJob, onClose, canSubHire, canModel }: Props) {
   const side = useIsMobile() ? "bottom" : "right";
-  const [subHire, setSubHire] = React.useState(false);
-  const on = opened ? claimsOnDay(opened.row, opened.dayStart) : null;
-  const risk = opened && !opened.cell.unknown && opened.cell.atRisk > 0 && on ? on.pencilled.map((c) => c.projectNumber).join(", ") : "";
   return (
     <Sheet open={!!opened} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side={side} className="overflow-y-auto sm:max-w-md">
-        {opened && on && (
-          <div className="flex flex-col gap-5 p-1">
-            <SheetHeader>
-              <SheetTitle>{opened.row.name}</SheetTitle>
-              <SheetDescription>{formatWeekdayDayMonth(displayDate(keyOfMs(opened.dayStart)))}</SheetDescription>
-            </SheetHeader>
-            <Numbers row={opened.row} cell={opened.cell} />
-            {risk && <p className={cn("text-ui-text", intentStyles.warning.text)}>would be short {opened.cell.atRisk} if {risk} confirm{on.pencilled.length === 1 ? "s" : ""}</p>}
-            <Claims title="Held by" claims={on.held} onOpenJob={onOpenJob} />
-            <Claims title="Pencilled, holds nothing" claims={on.pencilled} onOpenJob={onOpenJob} />
-            <SheetFooter className="flex-col gap-2 sm:flex-col">
-              {canSubHire && !opened.cell.unknown && opened.cell.short > 0 && (
-                <Button type="button" variant="line" onClick={() => setSubHire(true)}>
-                  Sub-hire {opened.cell.short}…
-                </Button>
-              )}
-              <Button asChild variant="line">
-                <Link href="/overbookings">Overbookings ›</Link>
-              </Button>
-              {canModel && (
-                <Button asChild variant="line">
-                  <Link href={`/assets/models/${opened.row.modelId}`}>Open model ›</Link>
-                </Button>
-              )}
-            </SheetFooter>
-            <SubHireShortfallDialog
-              open={subHire}
-              onOpenChange={setSubHire}
-              modelName={opened.row.name}
-              shortfallQty={opened.cell.short}
-              projects={on.held.map((c) => ({ id: c.projectId, name: c.name, projectNumber: c.projectNumber }))}
-            />
-          </div>
-        )}
+        {opened && <SheetBody opened={opened} onOpenJob={onOpenJob} canSubHire={canSubHire} canModel={canModel} />}
       </SheetContent>
     </Sheet>
   );

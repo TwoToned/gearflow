@@ -104,45 +104,65 @@ function unreadDays(projects: BoardProject[], unread: ReadonlySet<string>, daySt
   return out;
 }
 
-function claimsOf(agg: { hardClaims: Map<string, { qty: number; start: number; end: number }>; pencilledClaims: Map<string, { qty: number; start: number; end: number }> }, byId: Map<string, BoardProject & { projectManagerId?: string | null }>): GearClaim[] {
-  const out: GearClaim[] = [];
-  for (const [layer, claims] of [["hard", agg.hardClaims], ["pencilled", agg.pencilledClaims]] as const) {
-    for (const [pid, c] of claims) {
-      const p = byId.get(pid);
-      out.push({
-        projectId: pid, projectNumber: p?.projectNumber ?? "", name: p?.name ?? "", status: p?.status ?? "",
-        projectManagerId: p?.projectManagerId ?? null, layer, qty: c.qty, startMs: c.start, endMs: c.end,
-      });
-    }
-  }
-  return out.sort((a, b) => a.startMs - b.startMs || a.projectNumber.localeCompare(b.projectNumber, undefined, { numeric: true }));
+type ClaimBook = Map<string, { qty: number; start: number; end: number }>;
+type GearProject = BoardProject & { projectManagerId?: string | null };
+type GearModel = { id: string; name: string; categoryId?: string | null; assetType?: string | null };
+
+function claimRow(layer: GearClaim["layer"], pid: string, c: { qty: number; start: number; end: number }, p: GearProject | undefined): GearClaim {
+  return {
+    projectId: pid, projectNumber: p?.projectNumber ?? "", name: p?.name ?? "", status: p?.status ?? "",
+    projectManagerId: p?.projectManagerId ?? null, layer, qty: c.qty, startMs: c.start, endMs: c.end,
+  };
+}
+
+function claimsOf(agg: { hardClaims: ClaimBook; pencilledClaims: ClaimBook }, byId: Map<string, GearProject>): GearClaim[] {
+  const hard = [...agg.hardClaims].map(([pid, c]) => claimRow("hard", pid, c, byId.get(pid)));
+  const pencilled = [...agg.pencilledClaims].map(([pid, c]) => claimRow("pencilled", pid, c, byId.get(pid)));
+  return [...hard, ...pencilled].sort((a, b) => a.startMs - b.startMs || a.projectNumber.localeCompare(b.projectNumber, undefined, { numeric: true }));
+}
+
+interface RowContext {
+  models: Map<string, GearModel>;
+  assets: ReturnType<typeof groupByModelId<ScheduleFlagInput["assets"][number]>>;
+  bulks: ReturnType<typeof groupByModelId<ScheduleFlagInput["bulkAssets"][number]>>;
+  unknownModelIds: ReadonlySet<string>;
+  claimsComplete: boolean;
+  blind: Set<number>;
+  byId: Map<string, GearProject>;
+  dayStarts: number[];
+}
+
+/** One model's row: its stock (null when it could not be read in full), a cell per day, and its claims. */
+function rowFor(modelId: string, agg: { hardClaims: ClaimBook; pencilledClaims: ClaimBook }, c: RowContext): GearRow {
+  const m = c.models.get(modelId);
+  const readable = !!m && !c.unknownModelIds.has(modelId) && c.claimsComplete;
+  const stock = m && readable ? stockBreakdownForModel(m, c.assets.get(modelId) ?? [], c.bulks.get(modelId) ?? []) : null;
+  const claims = claimsOf(agg, c.byId);
+  const cells = c.dayStarts.map((d) => {
+    if (!stock || c.blind.has(d)) return UNKNOWN_CELL;
+    const { held, pencilled } = demandOn(claims, d);
+    return cellFor(stock.effectiveStock, held, pencilled);
+  });
+  return {
+    modelId, name: m?.name ?? "Unknown model", categoryId: m?.categoryId ?? null,
+    owned: stock?.totalStock ?? 0, inService: stock?.unavailable ?? 0, unknown: !stock, cells, claims,
+  };
 }
 
 /** One row per model that has a held or pencilled claim in the range, cells per day. */
-export function deriveGearGrid(input: ScheduleFlagInput & { projects: (BoardProject & { projectManagerId?: string | null })[]; models: { id: string; name: string; categoryId?: string | null; assetType?: string | null }[] }, dayStarts: number[]): GearRow[] {
-  const alive = candidateBoardProjects(input.projects, input.range) as (BoardProject & { projectManagerId?: string | null })[];
+export function deriveGearGrid(input: ScheduleFlagInput & { projects: GearProject[]; models: GearModel[] }, dayStarts: number[]): GearRow[] {
+  const alive = candidateBoardProjects(input.projects, input.range) as GearProject[];
   const byId = new Map(alive.map((p) => [p.id, p]));
   const byModel = aggregateDemandByModel(input.range, input.lines, byId);
-  const modelById = new Map(input.models.map((m) => [m.id, m]));
-  const assetMap = groupByModelId(input.assets);
-  const bulkMap = groupByModelId(input.bulkAssets);
-  const blind = unreadDays(alive, input.unreadProjectIds, dayStarts);
-
-  const rows: GearRow[] = [];
-  for (const [modelId, agg] of byModel) {
-    const m = modelById.get(modelId);
-    const unknown = !m || input.unknownModelIds.has(modelId) || !input.claimsComplete;
-    const stock = m && !unknown ? stockBreakdownForModel(m, assetMap.get(modelId) ?? [], bulkMap.get(modelId) ?? []) : null;
-    const claims = claimsOf(agg, byId);
-    const cells = dayStarts.map((d) => {
-      if (!stock || blind.has(d)) return UNKNOWN_CELL;
-      const { held, pencilled } = demandOn(claims, d);
-      return cellFor(stock.effectiveStock, held, pencilled);
-    });
-    rows.push({
-      modelId, name: m?.name ?? "Unknown model", categoryId: (m as { categoryId?: string | null } | undefined)?.categoryId ?? null,
-      owned: stock?.totalStock ?? 0, inService: stock?.unavailable ?? 0, unknown: !stock, cells, claims,
-    });
-  }
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  const ctx: RowContext = {
+    models: new Map(input.models.map((m) => [m.id, m])),
+    assets: groupByModelId(input.assets),
+    bulks: groupByModelId(input.bulkAssets),
+    unknownModelIds: input.unknownModelIds,
+    claimsComplete: input.claimsComplete,
+    blind: unreadDays(alive, input.unreadProjectIds, dayStarts),
+    byId,
+    dayStarts,
+  };
+  return [...byModel].map(([modelId, agg]) => rowFor(modelId, agg, ctx)).sort((a, b) => a.name.localeCompare(b.name));
 }

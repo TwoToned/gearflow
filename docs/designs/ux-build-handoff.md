@@ -18,7 +18,7 @@ bottom, then `docs/designs/ux-build-status.md` (the tracker) and spec
 | 5 Logistics (5a, 5b) | merged |
 | 6 Shell (6a), List pages (6b) | merged |
 | 7, 8, 11, 15, 16 Wave D1 | **merged 2026-11-22 → 2026-11-24** (#1400, #1399, #1401, #1402, #1403), all deployed |
-| 9, 10, 12, 13, 14 Wave D2 | **mostly merged 2026-11-25**: 9 and 10 done; 12 done (shots left); 13 slices 1–2 + B3 merged, slice 3 #1424 open, slice 4 to come; 14 part 1 merged, part 2 #1425 open, 14b-3..5 on `claude/ux-14-gear-3`. See the tracker. Builders paused by the weekly usage limit until 2026-11-28 08:00 UTC |
+| 9, 10, 12, 13, 14 Wave D2 | **merged 2026-11-25 → 2026-11-26**, all deployed. Final PRs: #1424, #1430 (13); #1425, #1431–#1434 (14); CI sharding #1428. See the tracker |
 | 17, 18 Wave D3 | not started |
 
 Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
@@ -104,6 +104,11 @@ branch. Never act on build-tool suggestions such as "run next upgrade".
   - **An Undo restores only what the forward write may write.** Raw-patching a stored snapshot let status, server-owned fields and cost fields through. Allow-list the fields, re-check references, and make a `noFinancials` caller unable to undo cost.
   - **A one-way state needs ONE writer guard.** RETIRED leaked back through kit release, return correction, check-in and sale stock. `nextStatusUnlessRetired` now guards every low-level status writer.
   - **Final-verify before every merge, even after "all fixed".** Each phase's last check still found a real gap (a per-line deploy path, a non-author discard, a ref-less file delete).
+  - **CI time is a budget, not a timeout to raise.** When Tests hit its 10-minute cap, it was sharded (R-10.2 / T-11). A job gated by `needs:` must run `if: always()` and fail on a failed dependency, because a skipped required check counts as passing.
+  - **A referencing-tables list needs a schema test.** Every hand list of "who points at this row" (create-Undo blockers, file holders) missed a table until a test walked `convex/schema.ts` by name AND by `v.id(...)` type and failed on anything unclassified. It then caught a new field in the very next phase.
+  - **Run the full gate list locally, including `collect-ratchet`.** A new bare `r9.8-ok` marker fails Hygiene; a marker needs a §15 exception, so bound the read instead.
+  - **Compliance output never guesses.** A T&T label prints the record matching the item's stored `lastTestDate` or nothing; "newest-looking row" heuristics were wrong under historic imports.
+  - **A sheet sends only changed fields.** Sending every field silently reverts a colleague's newer edit (`src/lib/changed-edit.ts`).
 
 ## 4. Wave D plan (agreed with the owner 2026-11-19)
 

@@ -12,7 +12,7 @@ RVLT Flow uses **Vitest** for unit/integration tests and **Playwright** for E2E 
 pnpm test              # Run all unit tests once
 pnpm test:watch        # Run tests in watch mode
 pnpm test:coverage     # Run tests with coverage report (+ the T-5 ratchet)
-pnpm test:shard --shard=1/3   # CI: one third, blob report, thresholds deferred
+pnpm test:shard --shard=1/3   # CI: one third, blob report + console output (failures readable in the job log), thresholds deferred
 pnpm test:merge        # CI: merge .vitest-reports/ blobs, enforce the ratchet once
 pnpm test:e2e          # Run Playwright E2E tests (requires running app)
 pnpm test:e2e:ui       # Run E2E tests with Playwright UI

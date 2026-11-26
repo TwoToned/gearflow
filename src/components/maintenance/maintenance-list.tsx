@@ -1,5 +1,6 @@
 "use client";
 
+import { MaintenanceSheetHost } from "@/components/maintenance/maintenance-sheet-host";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -67,7 +68,8 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
   const [rescheduling, setRescheduling] = React.useState<string[] | null>(null);
   const [assigning, setAssigning] = React.useState<string[] | null>(null);
 
-  useKeyboardShortcut("n", () => canCreate && router.push("/maintenance/new"));
+  const openNew = () => router.push("/maintenance?new=1");
+  useKeyboardShortcut("n", () => canCreate && openNew());
 
   /** ONE guarded Undo closure per bulk write (`announceListWrite`); the server refuses if any record changed since. */
   const announceBulk = (title: string, r: { count: number; auditIds: string[] }) => {
@@ -110,14 +112,14 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
       buildMaintenanceActions({
         title: m.title,
         onOpen: () => router.push(`/maintenance/${m.id}`),
-        onEdit: canUpdate ? () => router.push(`/maintenance/${m.id}/edit`) : undefined,
+        onEdit: canUpdate ? () => router.push(`/maintenance/${m.id}?edit=1`) : undefined,
         onReschedule: canUpdate ? () => setRescheduling([m.id]) : undefined,
         onAssign: canUpdate ? () => setAssigning([m.id]) : undefined,
         onDelete: canDelete ? () => void remove(m.id, m.title) : undefined,
       }),
     ),
   );
-  const primary: ListPrimary | undefined = canCreate ? { label: "Log maintenance", onSelect: () => router.push("/maintenance/new") } : undefined;
+  const primary: ListPrimary | undefined = canCreate ? { label: "Log maintenance", onSelect: openNew } : undefined;
 
   return (
     <>
@@ -148,6 +150,7 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
         empty={{ title: "No maintenance records", description: "Repairs, inspections and scheduled servicing appear here once you log them.", action: primary }}
         toolbarExtra={<UrlSavedViewsMenu tableId="maintenance" spec={MAINTENANCE_SPEC} state={state} setState={setState} />}
       />
+      {canCreate && <MaintenanceSheetHost mode="new" />}
       <RescheduleDialog count={rescheduling?.length ?? null} onClose={() => setRescheduling(null)} onSubmit={reschedule} />
       <AssignDialog count={assigning?.length ?? null} members={members} onClose={() => setAssigning(null)} onSubmit={assign} />
     </>

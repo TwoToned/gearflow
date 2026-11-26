@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
+import { MaintenanceSheetHost } from "@/components/maintenance/maintenance-sheet-host";
 import { CompleteDialog, type CompleteAsset } from "@/components/maintenance/record/complete-dialog";
 import { PartsTab } from "@/components/maintenance/record/parts-tab";
 import { useMaintenanceRecordWrites, type CompleteInput } from "@/components/maintenance/record/use-maintenance-record-writes";
@@ -17,6 +18,7 @@ import { useStableNow } from "@/hooks/use-stable-now";
 import { PHONE_MAX } from "@/lib/breakpoints";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { announceListWrite } from "@/lib/list-write-toast";
+import { maintenanceSheetInitialOf } from "@/lib/maintenance-sheet";
 import { maintenanceChecks, maintenanceStateWord, type CheckFix, type MaintenanceChecks, type StateWord } from "@/lib/maintenance-record-facts";
 import { buildMaintenanceRecordActions } from "@/lib/row-actions/maintenance";
 import { showError } from "@/lib/show-error";
@@ -31,6 +33,8 @@ interface RecordDetail {
   type: string;
   status: string;
   description: string | null;
+  assignedToId?: string | null;
+  reportedById?: string | null;
   scheduledDate: string | null;
   completedDate: string | null;
   nextDueDate: string | null;
@@ -144,6 +148,7 @@ function recordCommands(a: { id: string; title: string; writes: Writes; remove: 
 export function MaintenanceRecord({ id, orgId }: { id: string; orgId: string | undefined }) {
   const router = useRouter();
   const pathname = usePathname();
+  const params = useSearchParams();
   const now = useStableNow();
   const canUpdate = useCanDo("maintenance", "update");
   const canDelete = useCanDo("maintenance", "delete");
@@ -160,7 +165,11 @@ export function MaintenanceRecord({ id, orgId }: { id: string; orgId: string | u
   const word = maintenanceStateWord(facts);
   const checks = maintenanceChecks(facts);
   const goTab = (tab: string) => router.replace(`${pathname}?tab=${tab}`, { scroll: false });
-  const edit = () => router.push(`/maintenance/${id}/edit`);
+  const edit = () => {
+    const q = new URLSearchParams(params.toString());
+    q.set("edit", "1");
+    router.push(`${pathname}?${q.toString()}`);
+  };
 
   const fixAction = (fix: CheckFix | undefined): HealthItem["action"] => {
     if (fix === "parts") return { label: "Parts", onSelect: () => goTab("parts") };
@@ -198,6 +207,7 @@ export function MaintenanceRecord({ id, orgId }: { id: string; orgId: string | u
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Status", value: word.label }, { label: "Scheduled", value: dateOf(record.scheduledDate) }, { label: "Assigned to", value: record.assignedTo?.name }, { label: "Total", value: total != null ? formatCurrency(total) : null }]} />}
       />
+      <MaintenanceSheetHost mode="edit" record={maintenanceSheetInitialOf(record)} />
       <CompleteDialog
         open={completing}
         onOpenChange={setCompleting}

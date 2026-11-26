@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateInputValue, kitSheetInitialOf, type KitSheetSource } from "@/lib/kit-sheet-initial";
+import { kitSheetInitialOf, type KitSheetSource } from "@/lib/kit-sheet-initial";
 
 const KIT: KitSheetSource = { id: "k1", name: "Rack", assetTag: "K-1", condition: "GOOD" };
 
@@ -20,7 +20,7 @@ describe("kitSheetInitialOf", () => {
   it("the purchase date reads as yyyy-mm-dd, and is absent when none was stored", () => {
     expect(kitSheetInitialOf({ ...KIT, purchaseDate: Date.UTC(2026, 2, 5, 13) }).purchaseDate).toBe("2026-03-05");
     expect(kitSheetInitialOf(KIT).purchaseDate).toBeUndefined();
-    expect(dateInputValue(0)).toBe("1970-01-01");
+    expect(kitSheetInitialOf({ ...KIT, purchaseDate: 0 }).purchaseDate).toBe("1970-01-01"); // epoch 0 is a real day, not blank
   });
 
   it("text fields blank to undefined; tags and check mode default", () => {

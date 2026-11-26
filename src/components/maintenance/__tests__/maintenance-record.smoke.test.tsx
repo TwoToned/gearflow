@@ -23,6 +23,7 @@ beforeAll(() => {
 });
 
 const nav = vi.hoisted(() => ({ search: "", push: vi.fn(), replace: vi.fn() }));
+vi.mock("@/components/maintenance/maintenance-sheet-host", () => ({ MaintenanceSheetHost: () => null }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace }),
   usePathname: () => "/maintenance/r1",
@@ -100,6 +101,14 @@ describe("MaintenanceRecord", () => {
     expect(screen.getByText("4 of 4 checks clear")).toBeTruthy();
     expect(screen.getByText("Nothing needs a look.")).toBeTruthy();
     expect(screen.getByText("$50.00 so far")).toBeTruthy();
+  });
+
+  it("Edit opens the sheet through ?edit=1 on the same page and keeps the tab", async () => {
+    nav.search = "tab=parts";
+    const user = userEvent.setup();
+    render(<MaintenanceRecord id="r1" orgId="org1" />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance/r1?tab=parts&edit=1");
   });
 
   it("an overdue job with parts on order and nobody assigned names each check with its action", () => {

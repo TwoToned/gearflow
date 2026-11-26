@@ -51,12 +51,26 @@ describe("settings registry", () => {
     expect(visibleSettings({ ...ADMIN, xeroManage: false }).some((e) => e.key === "xero")).toBe(false);
   });
 
-  it("search matches the parts inside pages: `tax` finds General's neighbours, Billing, Services and Xero", () => {
+  it("search matches the parts inside pages: `tax` finds Billing and Xero", () => {
     const keys = searchSettings(SETTINGS, "tax").map((e) => e.key);
-    expect(keys).toEqual(expect.arrayContaining(["billing", "services", "xero"]));
+    expect(keys).toEqual(expect.arrayContaining(["billing", "xero"]));
+    expect(keys).not.toContain("services");
     expect(searchSettings(SETTINGS, "  ")).toHaveLength(SETTINGS.length);
     expect(searchSettings(SETTINGS, "kill switch").map((e) => e.key)).toEqual(["danger-zone"]);
     expect(searchSettings(SETTINGS, "zzzz")).toEqual([]);
+  });
+
+  it("the Assets page's own parts are findable: category, location, supplier, container, tag", () => {
+    for (const q of ["category", "location", "supplier", "container", "asset tag"]) {
+      expect(searchSettings(SETTINGS, q).map((e) => e.key)).toContain("assets");
+    }
+  });
+
+  it("every part names something its page really holds (spot-check the pages that were wrong)", () => {
+    const parts = (key: string) => SETTINGS.find((e) => e.key === key)!.parts;
+    expect(parts("services")).not.toContain("tax");
+    expect(parts("test-and-tag")).toEqual(expect.arrayContaining(["email reminders", "auditor portal"]));
+    expect(parts("woocommerce")).toEqual(expect.arrayContaining(["product matching", "location mapping"]));
   });
 
   it("invoice numbering and the default tax rate are findable on Billing, not General (D60)", () => {

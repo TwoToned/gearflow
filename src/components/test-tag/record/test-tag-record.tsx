@@ -92,13 +92,43 @@ function testRowOf(r: TestRow): RecordRow {
   };
 }
 
-function Overview({ item, word, checks, health }: { item: ItemDetail; word: TestTagWord; checks: TestTagChecks; health: HealthItem[] }) {
+const labelOf = (table: Record<string, string>, key: string | null | undefined): string | null | undefined => (key ? table[key] ?? key : key);
+
+function lastTestLine(item: ItemDetail): string {
   const last = item.testRecords[0];
-  const sub = last ? `Last test: ${testTagResultLabels[last.result ?? ""] ?? last.result ?? "recorded"} · ${dateOf(item.lastTestDate) ?? ""}` : "Never tested";
-  const link = item.asset ? <Link className="hover:underline" href={`/assets/registry/${item.asset.id}`}>{item.asset.assetTag}</Link> : item.bulkAsset ? <Link className="hover:underline" href={`/assets/registry/${item.bulkAsset.id}?type=bulk`}>{item.bulkAsset.assetTag}</Link> : null;
+  if (!last) return "Never tested";
+  return `Last test: ${labelOf(testTagResultLabels, last.result) ?? "recorded"} · ${dateOf(item.lastTestDate) ?? ""}`;
+}
+
+/** The asset (or bulk asset) the item is tied to, as a link. */
+function LinkedTo({ item }: { item: ItemDetail }) {
+  if (item.asset) return <Link className="hover:underline" href={`/assets/registry/${item.asset.id}`}>{item.asset.assetTag}</Link>;
+  if (item.bulkAsset) return <Link className="hover:underline" href={`/assets/registry/${item.bulkAsset.id}?type=bulk`}>{item.bulkAsset.assetTag}</Link>;
+  return null;
+}
+
+const dateFacts = (item: ItemDetail, word: TestTagWord) => [
+  { label: "Last test", value: dateOf(item.lastTestDate) },
+  { label: "Next due", value: nextDueText(item, word) },
+  { label: "Interval", value: item.testIntervalMonths ? `${item.testIntervalMonths} months` : null },
+];
+const itemFacts = (item: ItemDetail) => [
+  { label: "Class", value: labelOf(equipmentClassLabels, item.equipmentClass) },
+  { label: "Type", value: labelOf(applianceTypeLabels, item.applianceType) },
+  { label: "Make", value: [item.make, item.modelName].filter(Boolean).join(" ") },
+  { label: "Serial", value: item.serialNumber },
+  { label: "Outlets", value: item.outletCount },
+];
+const placeFacts = (item: ItemDetail) => [
+  { label: "Location", value: item.location },
+  { label: "Linked to", value: <LinkedTo item={item} /> },
+  { label: "Profile", value: item.testProfile?.name },
+];
+
+function Overview({ item, word, checks, health }: { item: ItemDetail; word: TestTagWord; checks: TestTagChecks; health: HealthItem[] }) {
   return (
     <div className="flex flex-col gap-8">
-      <Headline sub={sub}>{word.label}</Headline>
+      <Headline sub={lastTestLine(item)}>{word.label}</Headline>
       {checks.closed ? (
         <p className="text-table-cell text-muted">Retired. Reactivate it to test it again.</p>
       ) : (
@@ -108,9 +138,9 @@ function Overview({ item, word, checks, health }: { item: ItemDetail; word: Test
         </div>
       )}
       <div className="grid gap-8 md:grid-cols-3">
-        <Facts title="Dates" facts={[{ label: "Last test", value: dateOf(item.lastTestDate) }, { label: "Next due", value: nextDueText(item, word) }, { label: "Interval", value: item.testIntervalMonths ? `${item.testIntervalMonths} months` : null }]} />
-        <Facts title="Item" facts={[{ label: "Class", value: equipmentClassLabels[item.equipmentClass ?? ""] ?? item.equipmentClass }, { label: "Type", value: applianceTypeLabels[item.applianceType ?? ""] ?? item.applianceType }, { label: "Make", value: [item.make, item.modelName].filter(Boolean).join(" ") }, { label: "Serial", value: item.serialNumber }, { label: "Outlets", value: item.outletCount }]} />
-        <Facts title="Place" facts={[{ label: "Location", value: item.location }, { label: "Linked to", value: link }, { label: "Profile", value: item.testProfile?.name }]} />
+        <Facts title="Dates" facts={dateFacts(item, word)} />
+        <Facts title="Item" facts={itemFacts(item)} />
+        <Facts title="Place" facts={placeFacts(item)} />
       </div>
       {item.notes ? <p className="max-w-prose whitespace-pre-wrap text-table-cell text-ink-2">{item.notes}</p> : null}
     </div>
@@ -129,6 +159,18 @@ function TestsTab({ orgId, id, total }: { orgId: string | undefined; id: string;
       {left > 0 ? <Button variant="ghost" size="sm" className="mt-1 text-muted" onClick={() => setLimit((l) => l + 25)}>Show {Math.min(25, left)} more · {left} left</Button> : null}
     </div>
   );
+}
+
+const TONE = { bad: "error", warn: "warning", unknown: "neutral", ok: "neutral" } as const;
+
+/** The failing checks as rows, each with its one action when the caller may take it. */
+function healthOf(checks: TestTagChecks, on: { recordTest?: () => void; edit?: () => void }): HealthItem[] {
+  const action = (fix: "test" | "edit" | undefined): HealthItem["action"] => {
+    if (fix === "test" && on.recordTest) return { label: "Record test", onSelect: on.recordTest };
+    if (fix === "edit" && on.edit) return { label: "Edit", onSelect: on.edit };
+    return undefined;
+  };
+  return checks.items.filter((c) => c.tone !== "ok").map((c) => ({ key: c.key, tone: TONE[c.tone], text: c.text, action: action(c.fix) }));
 }
 
 /** Retire (with its exact Undo), Reactivate (with its) and Delete, each toasted. */
@@ -154,46 +196,57 @@ function useRecordCommands(item: ItemDetail | null | undefined, onDeleted: () =>
   };
 }
 
-/**
- * The Test & tag record (UX Phase 14, 14b-4, §9n): header word (`18d overdue`, `Due in 5d`, `Passed`, `Failed`), Overview
- * (`n of m checks clear`, three fact columns), Tests (readings, newest first) and History, with `Record test` the one
- * primary and Edit the real sheet (D80). Retire and Reactivate each carry an exact Undo; Delete is offered only after
- * Retire. Next due is derived (last test + interval), never typed.
- */
-export function TestTagRecord({ id, orgId }: { id: string; orgId: string | undefined }) {
+/** The org's own due-soon horizon (Settings > Test & tag); absent = the rule's default. */
+function useDueSoonDays(orgId: string | undefined): number | undefined {
+  const { data: org } = useOrganization(orgId);
+  return (org as { settings?: OrgSettings } | null | undefined)?.settings?.testTag?.dueSoonThresholdDays || undefined;
+}
+
+/** The record's actions, each present only when the caller may: the one primary, Edit, and the menu. */
+function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => void) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const now = useStableNow();
   const canUpdate = useCanDo("testTag", "update");
   const canDelete = useCanDo("testTag", "delete");
-  const item = useAuthedQuery(api.testTagAssets.detail, orgId ? { orgId, id } : "skip") as ItemDetail | null | undefined;
-  const { data: org } = useOrganization(orgId);
-  const dueSoonDays = (org as { settings?: OrgSettings } | null | undefined)?.settings?.testTag?.dueSoonThresholdDays || undefined;
-  const cmd = useRecordCommands(item, () => router.push("/test-and-tag"));
-
-  if (!item) return null; // the page owns loading and not-found
-  const facts = factsOf(item);
-  const word = testTagStateWord(facts, now, dueSoonDays);
-  const checks = testTagChecks(facts, now, dueSoonDays);
-  const retired = word.state === "RETIRED";
+  const cmd = useRecordCommands(item, onDeleted);
   const edit = () => {
     const q = new URLSearchParams(params.toString());
     q.set("edit", "1");
     router.push(`${pathname}?${q.toString()}`);
   };
   const recordTest = () => router.push(`/test-and-tag/quick-test?id=${encodeURIComponent(item.testTagId)}`);
-  const goEdit = canUpdate && !retired ? edit : undefined;
-  const fix = (f: "test" | "edit" | undefined): HealthItem["action"] => (f === "test" && canUpdate ? { label: "Record test", onSelect: recordTest } : f === "edit" && goEdit ? { label: "Edit", onSelect: goEdit } : undefined);
-  const health: HealthItem[] = checks.items.filter((c) => c.tone !== "ok").map((c) => ({ key: c.key, tone: c.tone === "bad" ? "error" : c.tone === "warn" ? "warning" : "neutral", text: c.text, action: fix(c.fix) }));
+  const live = canUpdate && !retired;
+  return {
+    edit: live ? edit : undefined,
+    recordTest: canUpdate ? recordTest : undefined,
+    primary: live ? { label: "Record test", onSelect: recordTest } : undefined,
+    menu: buildTestTagRecordActions({
+      testTagId: item.testTagId,
+      retired,
+      onRetire: canUpdate ? () => void cmd.retire() : undefined,
+      onReactivate: canUpdate ? () => void cmd.reactivate() : undefined,
+      onDelete: canDelete ? () => void cmd.remove() : undefined,
+    }),
+  };
+}
 
+function RecordBody({ item, orgId }: { item: ItemDetail; orgId: string | undefined }) {
+  const router = useRouter();
+  const now = useStableNow();
+  const dueSoonDays = useDueSoonDays(orgId);
+  const facts = factsOf(item);
+  const word = testTagStateWord(facts, now, dueSoonDays);
+  const checks = testTagChecks(facts, now, dueSoonDays);
+  const retired = word.state === "RETIRED";
+  const act = useHeaderActions(item, retired, () => router.push("/test-and-tag"));
+  const health = healthOf(checks, { recordTest: act.recordTest, edit: act.edit });
   const tabs: RecordTab[] = [
     { value: "overview", label: "Overview", panel: <Overview item={item} word={word} checks={checks} health={health} /> },
-    { value: "tests", label: "Tests", count: item._count.testRecords, panel: <TestsTab orgId={orgId} id={id} total={item._count.testRecords} /> },
-    { value: "history", label: "History", panel: <ActivityTimeline entityType="testTagAsset" entityId={id} limit={25} /> },
+    { value: "tests", label: "Tests", count: item._count.testRecords, panel: <TestsTab orgId={orgId} id={item.id} total={item._count.testRecords} /> },
+    { value: "history", label: "History", panel: <ActivityTimeline entityType="testTagAsset" entityId={item.id} limit={25} /> },
   ];
-  const meta = [item.testTagId, equipmentClassLabels[item.equipmentClass ?? ""], applianceTypeLabels[item.applianceType ?? ""], item.asset?.assetTag].filter(Boolean);
-
+  const meta = [item.testTagId, labelOf(equipmentClassLabels, item.equipmentClass), labelOf(applianceTypeLabels, item.applianceType), item.asset?.assetTag].filter(Boolean);
   return (
     <>
       <RecordShell
@@ -201,19 +254,25 @@ export function TestTagRecord({ id, orgId }: { id: string; orgId: string | undef
         title={item.description}
         status={{ label: word.label, intent: word.intent, outline: word.outline }}
         meta={meta}
-        onEdit={goEdit}
-        primary={canUpdate && !retired ? { label: "Record test", onSelect: recordTest } : undefined}
-        menu={buildTestTagRecordActions({
-          testTagId: item.testTagId,
-          retired,
-          onRetire: canUpdate ? () => void cmd.retire() : undefined,
-          onReactivate: canUpdate ? () => void cmd.reactivate() : undefined,
-          onDelete: canDelete ? () => void cmd.remove() : undefined,
-        })}
+        onEdit={act.edit}
+        primary={act.primary}
+        menu={act.menu}
         tabs={tabs}
         rail={<Facts title="At a glance" facts={[{ label: "Status", value: word.label }, { label: "Last test", value: dateOf(item.lastTestDate) }, { label: "Next due", value: nextDueText(item, word) }, { label: "Tests", value: item._count.testRecords }]} />}
       />
       <TestTagSheetHost item={testTagSheetInitialOf(item)} retired={retired} />
     </>
   );
+}
+
+/**
+ * The Test & tag record (UX Phase 14, 14b-4, section 9n): header word (`18d overdue`, `Due in 5d`, `Passed`, `Failed`),
+ * Overview (`n of m checks clear`, three fact columns), Tests (readings, newest first) and History, with `Record test`
+ * the one primary and Edit the real sheet (D80). Retire and Reactivate each carry an exact Undo; Delete is offered only
+ * after Retire. Next due is derived (last test + interval), never typed.
+ */
+export function TestTagRecord({ id, orgId }: { id: string; orgId: string | undefined }) {
+  const item = useAuthedQuery(api.testTagAssets.detail, orgId ? { orgId, id } : "skip") as ItemDetail | null | undefined;
+  if (!item) return null; // the page owns loading and not-found
+  return <RecordBody item={item} orgId={orgId} />;
 }

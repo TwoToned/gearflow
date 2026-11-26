@@ -47,36 +47,40 @@ export interface TestTagSheetInitial extends TestTagSheetValues {
   testTagId: string;
 }
 
+const text = (v: string | null | undefined): string => v ?? "";
+const numText = (v: number | null | undefined, fallback = ""): string => (v == null ? fallback : String(v));
+
 export function testTagSheetInitialOf(s: TestTagSheetSource): TestTagSheetInitial {
   return {
     id: s.id,
     testTagId: s.testTagId,
     description: s.description,
-    equipmentClass: s.equipmentClass ?? "CLASS_I",
-    applianceType: s.applianceType ?? "APPLIANCE",
-    make: s.make ?? "",
-    modelName: s.modelName ?? "",
-    serialNumber: s.serialNumber ?? "",
-    location: s.location ?? "",
-    testIntervalMonths: String(s.testIntervalMonths ?? 3),
-    testProfileId: s.testProfileId ?? "",
-    outletCount: s.outletCount == null ? "" : String(s.outletCount),
-    notes: s.notes ?? "",
-    assetId: s.assetId ?? "",
-    bulkAssetId: s.bulkAssetId ?? "",
+    equipmentClass: s.equipmentClass || "CLASS_I",
+    applianceType: s.applianceType || "APPLIANCE",
+    make: text(s.make),
+    modelName: text(s.modelName),
+    serialNumber: text(s.serialNumber),
+    location: text(s.location),
+    testIntervalMonths: numText(s.testIntervalMonths, "3"),
+    testProfileId: text(s.testProfileId),
+    outletCount: numText(s.outletCount),
+    notes: text(s.notes),
+    assetId: text(s.assetId),
+    bulkAssetId: text(s.bulkAssetId),
   };
 }
+
+const wholeIn = (text: string, min: number, max: number): boolean => {
+  const n = Number(text);
+  return Number.isInteger(n) && n >= min && n <= max;
+};
 
 /** The one message that says what to fix, or `null` when the values are saveable (the server mirrors these bounds). */
 export function testTagSheetError(v: TestTagSheetValues): string | null {
   if (!v.description.trim()) return "An item needs a description.";
   if (v.description.length > 500) return "The description can be at most 500 characters.";
-  const interval = Number(v.testIntervalMonths);
-  if (!Number.isInteger(interval) || interval < 1 || interval > 120) return "The test interval must be a whole number of months, 1 to 120.";
-  if (v.outletCount.trim() !== "") {
-    const n = Number(v.outletCount);
-    if (!Number.isInteger(n) || n < 1 || n > 50) return "Outlets must be a whole number, 1 to 50.";
-  }
+  if (!wholeIn(v.testIntervalMonths, 1, 120)) return "The test interval must be a whole number of months, 1 to 120.";
+  if (v.outletCount.trim() !== "" && !wholeIn(v.outletCount, 1, 50)) return "Outlets must be a whole number, 1 to 50.";
   if (v.notes.length > 2000) return "Notes can be at most 2000 characters.";
   if (v.assetId && v.bulkAssetId) return "Link one asset or one bulk asset, not both.";
   return null;

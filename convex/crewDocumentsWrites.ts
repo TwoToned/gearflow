@@ -106,7 +106,7 @@ export const updateNative = mutation({
     const diff = diffFields(doc, { ...doc, ...next }, DOC_FIELDS);
     if (!diff) return { changed: false };
     await ctx.db.patch(doc._id, { ...next, updatedAt: a.now });
-    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "crewDocument", entityId: a.documentId, entityName: "crew document", auditId: a.auditId, actor, now: a.now, diff, summary: "Edited a crew document" });
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "crewDocument", entityId: a.documentId, entityName: "crew document", auditId: a.auditId, actor, now: a.now, diff, summary: "Edited a crew document", extraDetails: { crewMemberId: a.crewMemberId } });
     return { changed: true };
   },
 });

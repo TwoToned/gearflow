@@ -227,6 +227,46 @@ describe("photos", () => {
     expect((await rec(t)).photos).toEqual([]);
   });
 
+  test("an Undo that would restore a photo whose bytes have since been deleted refuses (assertPhotosRestorable), changing nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    const url = "/api/files/k_p1";
+    await t.run(async (ctx) => {
+      await ctx.db.insert("fileUploads", { id: "p1", organizationId: ORG, fileName: "p1.jpg", fileSize: 1, mimeType: "image/jpeg", storageKey: "k_p1", url, uploadedById: USER });
+      await ctx.db.insert("storedFiles", { storageId: "k_p1", organizationId: ORG, folder: "maintenance-photos" });
+      for (const id of ["r1", "r2"]) {
+        const r = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+        await ctx.db.patch(r!._id, { photos: [url] });
+      }
+    });
+    const bytes = () => t.run(async (ctx) => (await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", "k_p1")).unique()) != null);
+    // r1 drops P while r2 still holds it: nothing is deleted, so the edit is undoable.
+    expect(await edit(t, { photos: [] })).toMatchObject({ changed: true, undoable: true });
+    expect(await bytes()).toBe(true);
+    // The other holder goes away: P is now unreferenced and its bytes are deleted.
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.deleteNative, { orgId: ORG, id: "r2", now: NOW, actor: ACTOR, auditId: "del2" });
+    expect(await bytes()).toBe(false);
+    // Restoring P would point r1 at deleted bytes: the Undo refuses, and r1 is unchanged.
+    await expect(undo(t)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect((await rec(t)).photos).toEqual([]);
+  });
+
+  test("an Undo whose snapshot names a field off the allow-list refuses (a tampered audit row), changing nothing", async () => {
+    const t = makeT();
+    await seed(t);
+    await edit(t, { title: "Mine" });
+    // Tamper with the stored snapshot: it now claims the edit changed `status`.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "e1")).first();
+      const d = row!.details as { fieldEdit: { before: Record<string, unknown>; after: Record<string, unknown> } };
+      d.fieldEdit.before.status = "COMPLETED";
+      d.fieldEdit.after.status = "SCHEDULED";
+      await ctx.db.patch(row!._id, { details: d });
+    });
+    await expect(undo(t)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect(await rec(t)).toMatchObject({ title: "Mine", status: "SCHEDULED" });
+  });
+
   test("a photo that is not the actor's own fresh upload is refused", async () => {
     const t = makeT();
     await seed(t);

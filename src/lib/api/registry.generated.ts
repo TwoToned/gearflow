@@ -63214,6 +63214,16 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "actor",
+        "optional": true,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -63230,7 +63240,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "7f94cc7688b6fe86",
+    "argsSha": "47c4aa7aac6cf04a",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,
@@ -63295,6 +63305,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "operation": "testTagAssetsWrites.undoReactivateNative",
     "module": "testTagAssetsWrites",
     "fn": "undoReactivateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "efde83ecf2efd768",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagAssetsWrites.undoRetireNative",
+    "module": "testTagAssetsWrites",
+    "fn": "undoRetireNative",
     "kind": "mutation",
     "guard": "orgPermission",
     "resource": "testTag",
@@ -63680,6 +63742,120 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagEditWrites.editNative",
+    "module": "testTagEditWrites",
+    "fn": "editNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "clear",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "set",
+        "optional": false,
+        "type": "object"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "4405c32ce9471a95",
+    "returnsSha": "1cb2a7e9146018e1",
+    "stability": "tracks-app",
+    "summary": "Edit a test & tag item's own fields (set and clear): description, class, type, make, model, serial, location, interval, profile, outlets, notes, links. Never its status; next due is re-derived when the interval changes.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "testTagEditWrites.undoEditNative",
+    "module": "testTagEditWrites",
+    "fn": "undoEditNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "testTag",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent test & tag item edit by its audit id (refuses if a changed field changed since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -71861,10 +72037,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1386,
-  agentReachable: 748,
+  total: 1389,
+  agentReachable: 751,
   queries: 487,
-  mutations: 899,
+  mutations: 902,
   agentReachableQueries: 351,
-  agentReachableMutations: 397,
+  agentReachableMutations: 400,
 } as const;

@@ -18,7 +18,9 @@ computations stand.
 - **Row menu** (verbs only navigate or open the existing prefilled dialog, so none has an Undo; the cover itself
   is written on the job's Equipment tab): `Open job` (one per job when there are several), `Open model`,
   `Sub-hire…` (a HARD gear row only: pencilled rows warn and never offer a cover, crew rows never do), `Reorder` (a
-  sale-stock row only: Sales stock filtered to the model).
+  sale-stock row only: Sales stock filtered to the model). A verb the caller cannot use is ABSENT, never disabled,
+  gated by `useCanDo` on what its target needs: `Sub-hire…` needs `subHire:create`; `Open model` and `Reorder` need
+  `model:read` (the model page and Sales stock both ask for it); `Open job` is always there.
 - Deferred: bulk `Sub-hire n short`. `coverShortfallNative` needs a supplier and the per-line price form, which
   only the job's shortfall sheet has; building a second one here would duplicate it (R-3.1).
 

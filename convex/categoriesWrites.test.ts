@@ -121,6 +121,20 @@ describe("categoriesWrites", () => {
   });
 });
 
+describe("removeNative and the org's container-category settings", () => {
+  test("an empty category the settings still name as a packing-container category is refused; others delete", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", { id: "cont", organizationId: ORG, name: "Cases", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "free", organizationId: ORG, name: "Free", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ containerCategoryIds: ["cont"] }) });
+    });
+    await expect(t.withIdentity(asUser).mutation(api.categoriesWrites.removeNative, { id: "cont", orgId: ORG, now: NOW, actor, auditId: "a1" })).rejects.toMatchObject({ data: { code: "USED_BY_SETTINGS" } });
+    await t.withIdentity(asUser).mutation(api.categoriesWrites.removeNative, { id: "free", orgId: ORG, now: NOW, actor, auditId: "a2" });
+    expect((await cats(t)).map((c) => c.id)).toEqual(["cont"]);
+  });
+});
+
 describe("categories.detail composite", () => {
   test("assembles parent, children (+counts), kits (+member counts), models (+asset count & photo)", async () => {
     const t = makeT(); await seedMember(t);
@@ -142,6 +156,22 @@ describe("categories.detail composite", () => {
     expect(d.kits[0]._count).toEqual({ serializedItems: 1, bulkItems: 0 });
     expect(d.models[0]._count.assets).toBe(1);
     expect(d.models[0].media).toEqual([{ url: "u://p", thumbnailUrl: "u://t" }]);
+  });
+
+  test("`includeSubcategories` widens Models to the whole subtree; the default is the category's own models only", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", { id: "c1", organizationId: ORG, name: "Cameras", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "c1a", organizationId: ORG, name: "DSLR", parentId: "c1", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "c1aa", organizationId: ORG, name: "Full frame", parentId: "c1a", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "cx", organizationId: ORG, name: "Elsewhere", createdAt: NOW, updatedAt: NOW });
+      for (const [id, categoryId] of [["m_own", "c1"], ["m_sub", "c1a"], ["m_deep", "c1aa"], ["m_else", "cx"]]) await ctx.db.insert("models", { id, organizationId: ORG, name: id, categoryId, isActive: true });
+    });
+    const own = await t.withIdentity(asUser).query(api.categories.detail, { id: "c1", orgId: ORG });
+    expect(own.models.map((m) => m.id)).toEqual(["m_own"]);
+    const all = await t.withIdentity(asUser).query(api.categories.detail, { id: "c1", orgId: ORG, includeSubcategories: true });
+    expect(all.models.map((m) => m.id)).toEqual(["m_deep", "m_own", "m_sub"]);
+    expect(all._count.models).toBe(1); // the category's OWN count is unchanged
   });
 
   test("cross-tenant: cannot read another org's category detail", async () => {

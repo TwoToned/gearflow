@@ -8,10 +8,11 @@ import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import type { Doc } from "./_generated/dataModel";
 import { writeActivityLog } from "./lib/audit";
-import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testtagBackfill";
+import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { collectCapped } from "./lib/pagination";
+import { propagateModelTestDefaults } from "./lib/testTagPropagation";
 import { adjustModelSaleStock } from "./lib/saleStock";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -160,7 +161,8 @@ function toDoc(a: ModelArgs) {
     requiresTestAndTag: tt,
     testAndTagIntervalDays: tt ? a.testAndTagIntervalDays ?? undefined : undefined,
     defaultTestProfileId: tt ? a.defaultTestProfileId || undefined : undefined,
-    defaultEquipmentClass: tt ? ((a.defaultEquipmentClass as "CLASS_I") || "CLASS_I") : undefined,
+    // Blank means INHERIT (D77): the model's own class is stored only when the caller chose one, so its category's default can apply.
+    defaultEquipmentClass: tt ? ((a.defaultEquipmentClass as "CLASS_I") || undefined) : undefined,
     defaultApplianceType: tt ? ((a.defaultApplianceType as "APPLIANCE") || "APPLIANCE") : undefined,
     maintenanceIntervalDays: a.maintenanceIntervalDays ?? undefined,
     assetType: (a.assetType as "SERIALIZED") ?? "SERIALIZED",
@@ -259,22 +261,9 @@ export const updateNative = mutation({
     if (a.requiresTestAndTag) {
       await backfillTestTagAssetsCore(ctx, a.orgId, a.now);
 
-      // Propagate the model's T&T defaults to active testTagAssets on its assets.
-      const equipmentClass = ((a.defaultEquipmentClass as "CLASS_I") || "CLASS_I");
-      const applianceType = ((a.defaultApplianceType as "APPLIANCE") || "APPLIANCE");
-      const intervalMonths = a.testAndTagIntervalDays
-        ? Math.max(1, Math.round(a.testAndTagIntervalDays / 30))
-        : await orgDefaultIntervalMonths(ctx, a.orgId);
-
-      const modelAssets = (await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
-        .filter((x) => x.organizationId === a.orgId && x.isActive !== false);
-      for (const asset of modelAssets) {
-        const ttRows = (await ctx.db.query("testTagAssets").withIndex("by_assetId", (q) => q.eq("assetId", asset.id)).collect())
-          .filter((tt) => tt.organizationId === a.orgId && tt.isActive !== false);
-        for (const tt of ttRows) {
-          await ctx.db.patch(tt._id, { equipmentClass, applianceType, testIntervalMonths: intervalMonths, updatedAt: a.now });
-        }
-      }
+      // Carry the model's (and its category's, D77) T&T defaults to the items that still FOLLOW the model; an item set on
+      // its own is left alone (`lib/testTagPropagation.ts`).
+      await propagateModelTestDefaults(ctx, { orgId: a.orgId, modelId: a.id, prev: doc, next: a, now: a.now });
     }
 
     await logModel(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated model ${a.name}` });

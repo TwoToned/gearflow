@@ -41,6 +41,7 @@ import type * as backfillStripProjectDepositPercent from "../backfillStripProjec
 import type * as bulkAssets from "../bulkAssets.js";
 import type * as bulkAssetsWrites from "../bulkAssetsWrites.js";
 import type * as categories from "../categories.js";
+import type * as categoriesEditWrites from "../categoriesEditWrites.js";
 import type * as categoriesWrites from "../categoriesWrites.js";
 import type * as categorySlots from "../categorySlots.js";
 import type * as categorySlotsWrites from "../categorySlotsWrites.js";
@@ -405,6 +406,7 @@ declare const fullApi: ApiFromModules<{
   bulkAssets: typeof bulkAssets;
   bulkAssetsWrites: typeof bulkAssetsWrites;
   categories: typeof categories;
+  categoriesEditWrites: typeof categoriesEditWrites;
   categoriesWrites: typeof categoriesWrites;
   categorySlots: typeof categorySlots;
   categorySlotsWrites: typeof categorySlotsWrites;

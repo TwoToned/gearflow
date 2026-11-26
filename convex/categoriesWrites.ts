@@ -8,6 +8,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { assertNotUsedBySettings } from "./lib/categorySettingsRefs";
 
 /**
  * Native CATEGORY write mutations (Phase 3 browser-direct — replaces createCategory/
@@ -168,6 +169,7 @@ export const removeNative = mutation({
     ).filter((m) => m.organizationId === a.orgId);
     if (models.length > 0) throw new ConvexError("Cannot delete category with models");
 
+    await assertNotUsedBySettings(ctx, a.orgId, a.id);
     await ctx.db.delete(doc._id);
     await logCategory(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "DELETE", id: a.id, name: doc.name, summary: `Deleted category ${doc.name}`, details: { deleted: { name: doc.name } } });
     return { id: a.id };

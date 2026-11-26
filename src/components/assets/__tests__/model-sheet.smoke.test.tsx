@@ -15,7 +15,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org1" } }) }));
 vi.mock("@/hooks/use-model-writes", () => ({ useModelWrites: () => h.writes }));
 vi.mock("@/hooks/use-test-profiles", () => ({ useTestProfiles: () => [] }));
-vi.mock("@/hooks/use-categories", () => ({ useCategoriesWithParent: () => [{ id: "c1", name: "Lighting", parent: null }] }));
+vi.mock("@/hooks/use-categories", () => ({ useCategoriesWithParent: () => [{ id: "c1", name: "Lighting", parent: null, defaultEquipmentClass: "CLASS_II", defaultTestIntervalMonths: 6 }] }));
 vi.mock("@/hooks/use-org-tags", () => ({ useOrgTags: () => [] }));
 vi.mock("@/hooks/use-xero-linked", () => ({ useXeroLinked: () => false }));
 vi.mock("@/hooks/use-activation-milestones", () => ({ useActiveMilestoneKey: () => undefined }));
@@ -50,6 +50,17 @@ describe("ModelSheet", () => {
     expect(h.writes.create.mock.calls[0][0]).toMatchObject({ name: "SM58", assetType: "SERIALIZED" });
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ id: "new1" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("edit: a model with test & tag on and no class or interval of its own says it inherits its category's; one that sets its own does not", () => {
+    const inherit = modelToFormValues({ id: "m1", name: "Board", categoryId: "c1", requiresTestAndTag: true, assetType: "SERIALIZED", isActive: true });
+    const { unmount } = render(<ModelSheet mode="edit" values={inherit} stock={{ assets: 0, bulk: 0 }} onClose={vi.fn()} />);
+    expect(screen.getByText(/inherits Class II · every 6 months from its category/)).toBeTruthy();
+    expect(screen.getByText(/inherit its category's interval/)).toBeTruthy();
+    unmount();
+    const own = modelToFormValues({ id: "m1", name: "Board", categoryId: "c1", requiresTestAndTag: true, defaultEquipmentClass: "CLASS_I", testAndTagIntervalDays: 90, assetType: "SERIALIZED", isActive: true });
+    render(<ModelSheet mode="edit" values={own} stock={{ assets: 0, bulk: 0 }} onClose={vi.fn()} />);
+    expect(screen.queryByText(/inherits/)).toBeNull();
   });
 
   it("edit: opens with every stored field, so Save never clears the rates the form did not touch", async () => {

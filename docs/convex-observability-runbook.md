@@ -11,7 +11,7 @@ both.
 | Surface | Control | How |
 |---|---|---|
 | **Browser-direct mutations** (Phase 3) | `systemFlags` singleton + `assertWritesEnabled` | `scripts/toggle-write-killswitch.ts on "<reason>" [domains...]` — every public mutation that calls the guard rejects instantly. No redeploy. |
-| **Org-wide API keys** | `orgSettings.apiKillSwitchAt` | Settings → API keys → kill-switch; checked on every API request (`src/lib/api-key.ts`). |
+| **Org-wide API keys** | `orgSettings.apiKillSwitchAt` | Settings → Danger zone → kill switch; checked on every API request (`src/lib/api-key.ts`). |
 | **Server-routed native writes** | `NATIVE_*` env flags (Coolify) | Per-domain; flipping falls back to the (now frozen) Postgres path — a coarse, deploy-scoped control, not an instant brake. |
 
 **The mutation kill-switch is the emergency brake for the (now fully shipped)

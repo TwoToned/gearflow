@@ -43,6 +43,19 @@ and unbookable too.
   report carries `code` beside `message`). The booking gate only runs at
   add-line, so a kit already booked on job B and then reported missing on job A's return would otherwise go out on
   B and have its marker overwritten; Mark complete is the way through.
+- **The Kit sheet** (UX Phase 14, 14b-2; `src/components/kits/kit-sheet.tsx`, opened by `KitSheetHost` from `?new=1` /
+  `?edit=1` / `?copy=1`): create, edit and duplicate in ONE `FormSheet`; there is no Status field. The host opens only for
+  a caller who may (`kit:create` for New and Duplicate, `kit:update` for Edit) once their permissions have arrived,
+  otherwise it drops the param with a toast. `kitSheetInitialOf` (`src/lib/kit-sheet-initial.ts`) is the ONE mapping from
+  a kit read to the sheet's values: a stored `0` weight or price stays `0` (an unchanged save must not clear it), and the
+  purchase date shows as `yyyy-mm-dd`. Duplicate keeps the case and the setup but not `purchasePrice` or `purchaseDate`
+  (a different physical kit). `kitWrites.editNative` sets and CLEARS fields in one field-edit audit row; a save that
+  changes nothing (an absent `tags` and `[]` count as the same) writes nothing and offers no Undo.
+- **Kit cost follows the read line.** `purchasePrice` is `KIT_COST_FIELDS` (`lib/gearCostFields.ts`). A `noFinancials`
+  key can neither set nor clear it through `editNative` or `createNative`, and its `undoEditNative` refuses as a whole
+  (`NOT_UNDOABLE`) when the edit it would reverse touched it. `undoCreateNative` refuses once ANY of `kitSerializedItems`,
+  `kitBulkItems`, `projectLineItems`, `kitMedia`, `kitCheckItems`, `groupTemplateItems`, `maintenanceRecords`,
+  `checkRecords`, `assetScanLogs` or `kitRevenueAllocations` names the kit.
 - **Reads are budgeted.** `kitsList.listPage` / `segmentCounts` draw every member, booking-line and
   member-count read from ONE per-call budget (`convex/lib/readBudget.ts`). A kit the budget cannot cover has
   `state: null` (the row prints a dash, never a guess), and the response says `truncated`. The strip is

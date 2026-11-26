@@ -144,13 +144,78 @@ describe("kitWrites.undoCreateNative", () => {
       await ctx.db.insert("assets", { id: "a1", organizationId: ORG, modelId: "m", assetTag: "A-1", isActive: true });
       await ctx.db.insert("kitSerializedItems", { id: "ks", organizationId: ORG, kitId: "new1", assetId: "a1", addedById: "u" });
     });
-    await expect(undo(t)).rejects.toThrow(/members, jobs, photos or checks/);
+    await expect(undo(t)).rejects.toThrow(/members, jobs, photos, checks or history/);
     const t2 = makeT();
     await seed(t2);
     await create(t2);
     await t2.withIdentity(asUser).mutation(api.kitWrites.editNative, { orgId: ORG, id: "new1", set: { name: "Renamed" }, clear: [], actor: ACTOR, auditId: "e9", now: NOW + 5 });
     await expect(undo(t2)).rejects.toThrow(/changed since/);
     await expect(t2.withIdentity(asUser).mutation(api.kitWrites.undoCreateNative, { orgId: ORG, id: "k1", auditId: "c1", now: NOW, actor: ACTOR })).rejects.toThrow(/can't be un-created/);
+  });
+
+  // One row naming the kit, per referencing table: each alone is enough to refuse (the kit is no longer "just created").
+  const REFERENCES: Record<string, Record<string, unknown>> = {
+    kitSerializedItems: { id: "r", organizationId: ORG, kitId: "new1", assetId: "a1", addedById: "u" },
+    kitBulkItems: { id: "r", organizationId: ORG, kitId: "new1", bulkAssetId: "b1", quantity: 1, addedById: "u" },
+    projectLineItems: { id: "r", organizationId: ORG, projectId: "p1", kitId: "new1", type: "EQUIPMENT", status: "CONFIRMED", createdAt: 1, updatedAt: 1 },
+    kitMedia: { id: "r", organizationId: ORG, kitId: "new1", fileId: "f1" },
+    kitCheckItems: { id: "r", organizationId: ORG, kitId: "new1", checkItemId: "ci1" },
+    groupTemplateItems: { id: "r", organizationId: ORG, templateId: "tpl", kitId: "new1" },
+    maintenanceRecords: { id: "r", organizationId: ORG, type: "REPAIR", title: "Fix", kitId: "new1" },
+    checkRecords: { id: "r", organizationId: ORG, context: "AD_HOC", checkItemId: "ci1", checkItemLabelSnapshot: "x", checkItemTypeSnapshot: "PASS_FAIL", result: "PASS", performedById: "u", kitId: "new1" },
+    assetScanLogs: { id: "r", organizationId: ORG, action: "SCAN_VERIFY", scannedById: "u", kitId: "new1" },
+    kitRevenueAllocations: { id: "r", organizationId: ORG, kitId: "new1", modelId: "m", allocationPercent: 50 },
+  };
+  test.each(Object.keys(REFERENCES))("refuses once a %s row names the kit, and keeps the kit", async (table) => {
+    const t = makeT();
+    await seed(t);
+    await create(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert(table as never, REFERENCES[table] as never);
+    });
+    await expect(undo(t)).rejects.toThrow(/members, jobs, photos, checks or history/);
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("a clean kit is removed (the control for the table list above)", async () => {
+    const t = makeT();
+    await seed(t);
+    await create(t);
+    await undo(t);
+    expect(await exists(t)).toBe(false);
+  });
+
+  test("refuses after the 10-minute window, and keeps the kit", async () => {
+    const t = makeT();
+    await seed(t);
+    await create(t);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+    await expect(undo(t)).rejects.toThrow(/10 minutes|too long|expired/i);
+    vi.useRealTimers();
+    expect(await exists(t)).toBe(true);
+  });
+
+  test("another org's audit row, or a kit that belongs to another org, is not undoable", async () => {
+    const t = makeT();
+    await seed(t);
+    await create(t);
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "c1")).first();
+      await ctx.db.patch(row!._id, { organizationId: "org_2" });
+    });
+    await expect(undo(t)).rejects.toThrow(/can't be un-created/);
+    expect(await exists(t)).toBe(true);
+
+    const u = makeT();
+    await seed(u);
+    await create(u);
+    await u.run(async (ctx) => {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "new1")).first();
+      await ctx.db.patch(k!._id, { organizationId: "org_2" });
+    });
+    await expect(undo(u)).rejects.toThrow(/Kit not found/);
+    expect(await exists(u)).toBe(true);
   });
 });
 
@@ -170,5 +235,57 @@ describe("kitWrites.editNative and the kit cost line", () => {
     expect((await kit(t)).purchasePrice).toBe(400); // and it cannot clear it
     await edit(t, { purchasePrice: 450 }, [], "u1");
     expect((await kit(t)).purchasePrice).toBe(450); // a user session sets it
+  });
+
+  async function seedWithKey(t: T) {
+    await seed(t);
+    await t.run(async (ctx) => {
+      const k = await ctx.db.query("kits").withIndex("by_cuid", (q) => q.eq("id", "k1")).first();
+      await ctx.db.patch(k!._id, { purchasePrice: 400 });
+      await ctx.db.insert("apiKeys", { id: "key1", organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h", scopes: JSON.stringify(["*"]), isActive: true, actingUserId: "user_1", createdById: "user_1", noFinancials: true });
+    });
+  }
+  const asAgentKey = { subject: "user_1", orgId: ORG, akid: "key1" };
+
+  test("a noFinancials key cannot undo a user's cost edit (it would rewrite a number it cannot read); the user can", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    await edit(t, { name: "Rack B", purchasePrice: 450 }, [], "u1"); // a user edits the name AND the price
+    await expect(undoEdit(t, "u1", asAgentKey)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect(await kit(t)).toMatchObject({ name: "Rack B", purchasePrice: 450 }); // refused as a whole: nothing restored
+    await undoEdit(t, "u1"); // the same person with a user session
+    expect(await kit(t)).toMatchObject({ name: "Rack", purchasePrice: 400 });
+  });
+
+  test("a noFinancials key CAN undo an edit that did not touch the cost, and the CLEARED price is not restored through it", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    await edit(t, { name: "Rack B" }, [], "n1");
+    await undoEdit(t, "n1", asAgentKey);
+    expect(await kit(t)).toMatchObject({ name: "Rack", purchasePrice: 400 });
+    await edit(t, {}, ["purchasePrice"], "c1"); // a user clears the price
+    await expect(undoEdit(t, "c1", asAgentKey)).rejects.toMatchObject({ data: { code: "NOT_UNDOABLE" } });
+    expect((await kit(t)).purchasePrice).toBeUndefined();
+  });
+
+  test("createNative from a noFinancials key stores no purchasePrice; from a user session it does", async () => {
+    const t = makeT();
+    await seedWithKey(t);
+    const create = (id: string, who: typeof asUser, auditId: string) =>
+      t.withIdentity(who).mutation(api.kitWrites.createNative, { id, organizationId: ORG, assetTag: `T-${id}`, name: id, purchasePrice: 99, createdAt: NOW, updatedAt: NOW, actor: ACTOR, auditId } as never);
+    await create("viaKey", asAgentKey, "ck");
+    await create("viaUser", asUser, "cu");
+    expect((await kit(t, "viaKey")).purchasePrice).toBeUndefined();
+    expect((await kit(t, "viaUser")).purchasePrice).toBe(99);
+  });
+
+  test("absent tags and [] are the same state: a save that only sends [] writes nothing and offers no Undo", async () => {
+    const t = makeT();
+    await seed(t);
+    expect(await edit(t, { name: "Rack", tags: [] }, [], "t1")).toEqual({ id: "k1", changed: false });
+    await expect(undoEdit(t, "t1")).rejects.toThrow();
+    await edit(t, { tags: ["a"] }, [], "t2");
+    expect(await edit(t, { tags: [] }, [], "t3")).toEqual({ id: "k1", changed: true }); // clearing real tags still counts
+    expect((await kit(t)).tags).toEqual([]);
   });
 });

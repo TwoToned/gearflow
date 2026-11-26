@@ -95,6 +95,30 @@ describe("KitSheet", () => {
     expect(toasts.undo).toBeUndefined();
   });
 
+  it("edit: a stored 0 weight and 0 price survive an unchanged save (0 is a value, not blank), and the date shows as yyyy-mm-dd", async () => {
+    const user = userEvent.setup();
+    render(<KitSheet open onOpenChange={() => {}} kit={{ ...KIT, weight: 0, purchasePrice: 0, purchaseDate: "2026-03-05" }} />);
+    expect((document.querySelector('input[type="date"]') as HTMLInputElement).value).toBe("2026-03-05");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writes.edit).toHaveBeenCalled());
+    const values = (writes.edit.mock.calls[0] as unknown as [string, { weight?: number; purchasePrice?: number }])[1];
+    expect(values.weight).toBe(0);
+    expect(values.purchasePrice).toBe(0);
+  });
+
+  it("duplicate: keeps the case (a 0 weight too) but not what the original cost or when it was bought", async () => {
+    const user = userEvent.setup();
+    render(<KitSheet open onOpenChange={() => {}} copyOf={{ ...KIT, weight: 0, purchasePrice: 250, purchaseDate: "2026-03-05" }} />);
+    await waitFor(() => expect((screen.getByPlaceholderText("e.g. KIT-AUD-001") as HTMLInputElement).value).toBe("KIT-0042"));
+    expect((document.querySelector('input[type="date"]') as HTMLInputElement).value).toBe("");
+    await user.click(screen.getByRole("button", { name: "Create kit" }));
+    await waitFor(() => expect(writes.create).toHaveBeenCalled());
+    const values = (writes.create.mock.calls[0] as unknown as [{ weight?: number; purchasePrice?: number; purchaseDate?: unknown }])[0];
+    expect(values.weight).toBe(0);
+    expect(values.purchasePrice).toBeUndefined();
+    expect(values.purchaseDate).toBeUndefined();
+  });
+
   it("edit: clearing the purchase price is sent as blank, and Undo reverses exactly that edit", async () => {
     const user = userEvent.setup();
     render(<KitSheet open onOpenChange={() => {}} kit={KIT} />);

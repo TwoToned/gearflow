@@ -22,6 +22,7 @@ const roi = {
   truncated: false,
   scope: "earned" as const,
   fleetCost: 8000,
+  costRedacted: false,
   payback: 1.5,
   revenuePerUnit: 3000,
   costRecovered: 1,
@@ -48,7 +49,28 @@ describe("ModelRoiTab smoke", () => {
 
     await waitFor(() => expect(screen.getByLabelText("How revenue is attributed")).toBeTruthy());
     expect(screen.getByText("Revenue attributed")).toBeTruthy();
+  });
+
+  it("hides cost and payback until `Show cost & payback`, and hides the toggle for a redacted caller", async () => {
+    const { useModelRoi } = await import("@/hooks/use-roi");
+    const { cleanup } = await import("@testing-library/react");
+    const { default: userEvent } = await import("@testing-library/user-event");
+    render(<ModelRoiTab modelId="rx" />);
+    await waitFor(() => expect(screen.getByText("Revenue attributed")).toBeTruthy());
+    expect(screen.queryByText("Paid for itself")).toBeNull();
+    expect(screen.queryByText("Cost recovered")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Show cost & payback" }));
     expect(screen.getByText("Paid for itself")).toBeTruthy();
+    expect(screen.getByText("Cost recovered")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Hide cost & payback" }));
+    expect(screen.queryByText("Paid for itself")).toBeNull();
+
+    cleanup();
+    vi.mocked(useModelRoi).mockReturnValue({ data: { ...roi, fleetCost: null, costRedacted: true } as never, isLoading: false });
+    render(<ModelRoiTab modelId="rx" />);
+    await waitFor(() => expect(screen.getByText("Revenue attributed")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /cost & payback/ })).toBeNull();
+    expect(screen.queryByText("Paid for itself")).toBeNull();
   });
 
   it("the tooltip trigger is a single button, not a button inside a button", async () => {

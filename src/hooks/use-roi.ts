@@ -175,6 +175,8 @@ type ModelRoiQuery = (typeof api.roi.getModelRoi)["_returnType"];
 
 export type ModelRoiData = ModelRoiQuery & {
   scope: RoiScope;
+  /** True when the server left `fleetCost` ABSENT (a `noFinancials` key): no cost, payback or capital is shown, not even as "—". */
+  costRedacted: boolean;
 } & ReturnType<typeof computeRoi>;
 
 export function useModelRoi(
@@ -214,6 +216,7 @@ export function useModelRoi(
     return {
       ...raw.value,
       scope,
+      costRedacted: (raw.value as { fleetCost?: number | null }).fleetCost === undefined,
       ...computeRoi(raw.value.revenue, raw.value.unitsOwned, raw.value.fleetCost),
     };
   }, [raw, key, scope]);

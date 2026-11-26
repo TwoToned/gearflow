@@ -9,6 +9,7 @@ import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
 import { useListUrlState } from "@/hooks/use-list-url-state";
 import { useNativeOverbookingBoard } from "@/hooks/use-native-overbooking-board";
 import { useActiveOrganization } from "@/lib/auth-client";
+import { useCanDo } from "@/lib/use-permissions";
 import {
   OVERBOOKINGS_SPEC,
   OVERBOOKING_COLUMNS,
@@ -55,6 +56,10 @@ function OverbookingsListInner({ orgId }: { orgId: string | undefined }) {
   useDaysAlias(params.get("seg") != null, (seg) => setState({ ...state, seg, page: 1 }, "replace"));
   const { data, isLoading } = useNativeOverbookingBoard(orgId, daysForSegment(state.seg));
   const [subHire, setSubHire] = React.useState<OverbookingRowSource["subHire"] | null>(null);
+  // A verb the caller cannot use is ABSENT, never disabled: each follows what its target page asks for
+  // (Sub-hire writes a sub-hire order; Open model and Reorder land on pages gated by `model:read`).
+  const canSubHire = useCanDo("subHire", "create");
+  const canReadModels = useCanDo("model", "read");
 
   const all = React.useMemo(() => (data ? flattenBoard(data) : []), [data]);
   const shown = React.useMemo(() => rowsForState(all, state), [all, state]);
@@ -64,9 +69,9 @@ function OverbookingsListInner({ orgId }: { orgId: string | undefined }) {
       buildOverbookingActions({
         jobs: r.jobs,
         onOpenJob: (id) => router.push(`/projects/${id}`),
-        onOpenModel: r.modelId ? () => router.push(`/assets/models/${r.modelId}`) : undefined,
-        onSubHire: r.subHire ? () => setSubHire(r.subHire) : undefined,
-        onReorder: r.group === "sale" ? () => router.push(`/assets/sales-stock?q=${encodeURIComponent(r.title)}`) : undefined,
+        onOpenModel: r.modelId && canReadModels ? () => router.push(`/assets/models/${r.modelId}`) : undefined,
+        onSubHire: r.subHire && canSubHire ? () => setSubHire(r.subHire) : undefined,
+        onReorder: r.group === "sale" && canReadModels ? () => router.push(`/assets/sales-stock?q=${encodeURIComponent(r.title)}`) : undefined,
       }),
     ),
   );

@@ -22,6 +22,7 @@ import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useXeroLinked } from "@/hooks/use-xero-linked";
 import { useActiveOrganization } from "@/lib/auth-client";
+import type { KitSheetInitial } from "@/lib/kit-sheet-initial";
 import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
 import { conditionLabels } from "@/lib/status-labels";
@@ -30,12 +31,6 @@ import { peekNextAssetTags } from "@/server/settings";
 
 const CONDITIONS = ["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"] as const;
 const CHECK_MODES: Record<string, string> = { KIT_LEVEL: "Kit level: check the kit once, contents inherit", PER_ITEM: "Per item: each asset gets its own model checks" };
-
-/** A kit's own fields as the sheet edits them (status, photos and flags are not the sheet's). */
-export type KitSheetInitial = Pick<
-  KitFormValues,
-  "name" | "assetTag" | "description" | "categoryId" | "condition" | "locationId" | "weight" | "caseType" | "caseDimensions" | "notes" | "purchaseDate" | "purchasePrice" | "tags" | "checkMode" | "xeroAccountCode"
-> & { id: string };
 
 const EMPTY: KitFormValues = { name: "", assetTag: "", description: "", categoryId: "", condition: "NEW", checkMode: "KIT_LEVEL", locationId: "", weight: undefined, caseType: "", caseDimensions: "", notes: "", purchaseDate: undefined, purchasePrice: undefined, tags: [], xeroAccountCode: "" };
 
@@ -78,7 +73,8 @@ export function KitSheet({ open, onOpenChange, kit, copyOf }: Props) {
   React.useEffect(() => {
     if (!open) return;
     const start = valuesOf(kit ?? copyOf);
-    form.reset(kit ? start : { ...start, ...(copyOf ? { name: `${copyOf.name} (copy)` } : {}), assetTag: "" });
+    // A duplicate is a different physical kit: it keeps the case and the setup, not what this one cost or when it was bought.
+    form.reset(kit ? start : { ...start, ...(copyOf ? { name: `${copyOf.name} (copy)`, purchasePrice: undefined, purchaseDate: undefined } : {}), assetTag: "" });
     if (!kit) {
       // The next tag in the org's sequence, pre-filled (the user can type or scan another).
       peekNextAssetTags(1).then(([tag]) => form.setValue("assetTag", tag)).catch(() => {});

@@ -24,7 +24,11 @@
   to `/test-and-tag?dialog=reports` (the nav sub-row and the ⌘K page command point at the dialog URL).
   **Export report** (row ⋯ and record ⋯, `reports:view`) opens that item's history PDF. **Print tags** (bulk bar) prints one label
   per selected item through the ONE `LabelTemplate` in `sheet` mode (a label per page, everything else hidden on print); its data is
-  `testTagList.labelsFor` (the latest test of each item, at most 100 ids, org-checked; each item reads only its newest-created 5 records via the (org, item) index, newest first, and takes the max `testDate`, so it is a bounded read that cannot pick an old record as the latest), and a never-tested item has no
+  `testTagList.labelsFor` (at most 100 ids, org-checked). A label is a compliance document, so it never guesses which test to print: the ONE rule,
+  `pickLabelRecord` (`convex/lib/testTagLabelRecord.ts`, also used by the record page's single `Print label`), is the record
+  whose `testDate` equals the item's own stored `lastTestDate`, found by scanning the item's newest-created 50 records. A
+  never-tested item has no label and is NAMED (`skipped`); an item whose latest test is not found in that bounded scan is NOT
+  printed and is named "Latest test not found, print from its record" (`unresolved`), never a fallback to the newest-looking row.
   label and is NAMED, never printed blank. **Schedule…** (row, record ⋯, bulk; `maintenance:create`, absent on a retired item) books
   ONE scheduled `TEST_AND_TAG` maintenance job covering the items' linked serialised assets (`planTestSchedule`,
   `src/lib/test-tag-schedule.ts`; a retired item or one with no linked asset is named as skipped with its reason, and the server refuses a new open job on a retired asset: see FEATUREDOCS/15); the toast's Undo is `undoCreateNative`, ids only.

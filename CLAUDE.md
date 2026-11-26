@@ -711,7 +711,7 @@ newest-first and shows a figure that the cap could have cut as `at least $X`, ne
 ### People create / edit are URL-driven sheets with exact server Undos (UX Phase 13 slice 4)
 Clients, suppliers, crew and supplier orders are created and edited in `src/components/people/sheets/` (`FormSheet`,
 hosted once per route group in `people-sheet-hosts.tsx`): `?new=1` / `?edit=1` / `?new-order=1`, and the old `/new` and
-`/edit` routes only redirect. **Never add a page form back or push to `/…/new`**; build the link with `sheetHref`. Every
+`/edit` routes only redirect. **Never add a page form back or push to `/…/new`**; link with the params in `sheet-url.ts` (`/clients?new=1`). Every
 save goes through `useSheetAnnounce` (ONE toast): the write hooks return `{ id, auditId }` and the Undo takes only those
 ids (`peopleCreateUndo.undoCreateNative` for a create, `peopleBulkWrites.undoManyNative` / `undoHireChangeNative` for an
 edit): never a client-supplied "restore to" value. A create's audit row must be `recordRowOp` and an edit's

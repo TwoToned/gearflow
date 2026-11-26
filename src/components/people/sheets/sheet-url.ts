@@ -16,9 +16,6 @@ export const NEW_ORDER_PARAM = "new-order";
 const SHEET_PARAMS = [NEW_PARAM, EDIT_PARAM, NEW_ORDER_PARAM] as const;
 type SheetParam = (typeof SHEET_PARAMS)[number];
 
-/** A path with the sheet's param set (`/clients?new=1`, `/crew/c1?edit=1`). */
-export const sheetHref = (path: string, param: SheetParam): string => `${path}?${param}=1`;
-
 /** Does this URL ask for the sheet, and how to close it (drops every sheet param, keeps the rest). */
 export function useSheetParam(param: SheetParam): { open: boolean; close: () => void } {
   const router = useRouter();

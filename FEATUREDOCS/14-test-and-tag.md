@@ -18,8 +18,31 @@
   explicit allow-list; reads are bounded and say `truncated`.
 - Primary `Register item` (`/test-and-tag/new`). Page menu: `Sync from assets` (the backfill), `Quick test` (the Scan
   page's Test & tag mode), `Reports…` (still the reports page).
-- Deferred to the record slice (14b-4): `Edit` / `Retire…` / `Schedule…` / `Print tags` / `Export report` verbs and
-  the `Reports…` dialog; retire has no exact reverse yet.
+- Deferred to the dialogs slice (14a-3b): `Schedule…`, `Print tags`, `Export report` and the `Reports…` dialog.
+
+## The Test & tag record (UX Phase 14, 14b-4, `/test-and-tag/[id]`)
+`TestTagRecord` (`src/components/test-tag/record/test-tag-record.tsx`) on `RecordShell`, reading `testTagAssets.detail`
+live (a subscription, not a one-shot).
+- **Header word is derived** by the list's own rule (`deriveTestTagState`, `src/lib/test-tag-record-facts.ts`):
+  `18d overdue`, `Due in 5d`, `Not yet tested`, `Passed`, `Failed`, `Retired`, with the org's due-soon horizon.
+- **Overview**: `n of m checks clear` (tested inside its interval, the last test passed, a test profile is set; a check
+  with no input is `not checked`, never a pass), each failing row with its one action (`Record test ›` / `Edit ›`), then
+  three fact columns (Dates, Item, Place). Next due is last test + interval, never typed (a failed item says `After repair`).
+- **Tabs**: Overview · Tests (newest first, readings and the tester, `Show 25 more · n left`) · History (the audit log).
+  There is no Files tab: a test row carries no files.
+- **`Record test`** is the one primary (the Scan page's Test & tag mode); `Edit` is the real sheet; ⋯ holds `Retire`
+  (active item) or `Reactivate` (retired), and `Delete…` ONLY for a retired item (red, last, naming that every test and
+  its readings go too).
+- **Edit sheet** (D80, `TestTagSheet`, `?edit=1`, `TestTagSheetHost`): the fields `testTagEditWrites.editNative` sets
+  (description, class, type, make, model, serial, location, interval, profile, outlets, notes, and one link: an asset OR
+  a bulk asset), nothing else. There is NO status field and the tag id is not editable. A blank optional box CLEARS its
+  field. It is a plain `recordFieldEdit`; the toast Undo is `undoEditNative` (ids only: author, 10-minute server window,
+  once, compare-and-set on the fields it changed). **Next due is derived**: a changed interval on a tested item re-derives
+  `nextDueDate` (last test + new interval) in the same write, and the Undo restores it; `nextDueDate` is not a settable
+  field. A retired item is not edited (Reactivate first).
+- **Retire has an exact Undo** (`retireNative` with an actor and audit id writes the row `undoRetireNative` reads: the
+  status, active flag and `updatedAt` it overwrote; refuses unless the author, in the window, once, and the item is
+  still exactly as the retire left it). The Scan page's older retire (no audit id) still retires and offers no Undo.
 
 ## Equipment Classes
 - `CLASS_I` — Earth continuity + insulation/leakage

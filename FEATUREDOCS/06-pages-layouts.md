@@ -113,7 +113,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/test-and-tag` | T&T overview |
 | `/test-and-tag/registry` | T&T item list |
 | `/test-and-tag/new` | Create T&T item |
-| `/test-and-tag/[id]` | T&T item detail + test records |
+| `/test-and-tag/[id]` | T&T record (header word, Overview checks, Tests, History; Edit is the `?edit=1` sheet) |
 | `/test-and-tag/quick-test` | Redirect → `/scan?mode=tt` (`?id=` carried as `tag`) |
 | `/test-and-tag/reports` | 10 report types |
 | `/reports` | Business analytics |

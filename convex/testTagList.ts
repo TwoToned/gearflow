@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -148,7 +148,38 @@ export const segmentCounts = query({
   },
 });
 
+/** The most items one `Print tags` run covers (a sheet of labels, not a bulk job). */
+const MAX_LABELS = 100;
+/** The most test records read per item to find its latest. */
+const MAX_RECORDS_PER_ITEM = 500;
+
+/**
+ * The data of the printed tag for each item (UX Phase 14, 14a-3b, `Print tags`): the LATEST test's result, date and tester
+ * and the item's next due date, i.e. exactly what the single `Print label` prints. An item that has never been tested has
+ * no label (it is named in `skipped`, never printed blank); an id that is not this org's item is ignored. Bounded: at most
+ * 100 ids, and each item's own records are read capped.
+ */
+export const labelsFor = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgReadFor(ctx, orgId, "testTag");
+    if (ids.length > MAX_LABELS) throw new ConvexError({ code: "TOO_MANY", message: `Print at most ${MAX_LABELS} tags at a time.` });
+    const labels: { id: string; testTagId: string; result: "PASS" | "FAIL"; testDate: number; nextDueDate: number; testerName: string }[] = [];
+    const skipped: { id: string; testTagId: string }[] = [];
+    for (const id of [...new Set(ids)]) {
+      const item = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!item || item.organizationId !== orgId) continue; // by_cuid is global: another org's item is simply not there
+      const { rows } = await collectCapped(ctx.db.query("testTagRecords").withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", orgId).eq("testTagAssetId", id)), MAX_RECORDS_PER_ITEM);
+      const last = rows.reduce<Doc<"testTagRecords"> | null>((best, r) => (!best || r.testDate > best.testDate ? r : best), null);
+      if (!last) { skipped.push({ id, testTagId: item.testTagId }); continue; }
+      labels.push({ id, testTagId: item.testTagId, result: last.result === "PASS" ? "PASS" : "FAIL", testDate: last.testDate, nextDueDate: item.nextDueDate ?? last.testDate, testerName: last.testerName || "\u2014" });
+    }
+    return { labels, skipped };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   listPage: { summary: "One page of the Test and tag list with derived Due / Overdue / Passed / Failed state, last test and tester." },
   segmentCounts: { summary: "Strip counts for the Test and tag list (due, overdue, passed, failed, all, retired)." },
+  labelsFor: { summary: "The printed tag data (latest test result, date, tester, next due) for up to 100 test and tag items; never-tested items are listed as skipped." },
 };

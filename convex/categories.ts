@@ -76,8 +76,9 @@ export const counts = query({
  * Prisma include from the org's Convex domain lists (all org-scoped by requireOrgRead).
  */
 export const detail = query({
-  args: { id: v.string(), orgId: v.string() },
-  handler: async (ctx, { id, orgId }) => {
+  // `includeSubcategories` (D77 record, `Including subcategories`) widens `models` to the category's whole subtree.
+  args: { id: v.string(), orgId: v.string(), includeSubcategories: v.optional(v.boolean()) },
+  handler: async (ctx, { id, orgId, includeSubcategories }) => {
     await requireOrgReadFor(ctx, orgId, "model"); // Phase 2 read bootstrap (#998)
     const cats = await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org set (tree) — see docs/exceptions.md R-8.3.3
     const category = cats.find((c) => c.id === id);
@@ -129,8 +130,9 @@ export const detail = query({
       kitsOut.push({ ...cost.kit(k), _count: { serializedItems: serN, bulkItems: bulkN } });
     }
 
+    const modelCategoryIds = includeSubcategories ? collectDescendants(cats, id) : new Set([id]);
     const modelsOut = models
-      .filter((m) => m.categoryId === id && m.isActive !== false)
+      .filter((m) => m.categoryId !== undefined && modelCategoryIds.has(m.categoryId) && m.isActive !== false)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((m) => {
         const p = photo.get(m.id);

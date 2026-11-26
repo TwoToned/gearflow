@@ -144,6 +144,22 @@ describe("categories.detail composite", () => {
     expect(d.models[0].media).toEqual([{ url: "u://p", thumbnailUrl: "u://t" }]);
   });
 
+  test("`includeSubcategories` widens Models to the whole subtree; the default is the category's own models only", async () => {
+    const t = makeT(); await seedMember(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("categories", { id: "c1", organizationId: ORG, name: "Cameras", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "c1a", organizationId: ORG, name: "DSLR", parentId: "c1", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "c1aa", organizationId: ORG, name: "Full frame", parentId: "c1a", createdAt: NOW, updatedAt: NOW });
+      await ctx.db.insert("categories", { id: "cx", organizationId: ORG, name: "Elsewhere", createdAt: NOW, updatedAt: NOW });
+      for (const [id, categoryId] of [["m_own", "c1"], ["m_sub", "c1a"], ["m_deep", "c1aa"], ["m_else", "cx"]]) await ctx.db.insert("models", { id, organizationId: ORG, name: id, categoryId, isActive: true });
+    });
+    const own = await t.withIdentity(asUser).query(api.categories.detail, { id: "c1", orgId: ORG });
+    expect(own.models.map((m) => m.id)).toEqual(["m_own"]);
+    const all = await t.withIdentity(asUser).query(api.categories.detail, { id: "c1", orgId: ORG, includeSubcategories: true });
+    expect(all.models.map((m) => m.id)).toEqual(["m_deep", "m_own", "m_sub"]);
+    expect(all._count.models).toBe(1); // the category's OWN count is unchanged
+  });
+
   test("cross-tenant: cannot read another org's category detail", async () => {
     const t = makeT(); await seedMember(t);
     await expect(t.withIdentity({ subject: "x", orgId: OTHER }).query(api.categories.detail, { id: "c1", orgId: ORG })).rejects.toThrow(/Forbidden|organization/i);

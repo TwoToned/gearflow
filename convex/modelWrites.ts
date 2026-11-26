@@ -12,6 +12,8 @@ import { backfillTestTagAssetsCore, orgDefaultIntervalMonths } from "./lib/testt
 import { assertRefInOrg } from "./lib/orgRef";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { collectCapped } from "./lib/pagination";
+import { effectiveTestDefaults } from "./lib/categoryTestDefaults";
+import { categoryOfModel } from "./lib/categoryTestDefaultsLoad";
 import { adjustModelSaleStock } from "./lib/saleStock";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
@@ -260,11 +262,11 @@ export const updateNative = mutation({
       await backfillTestTagAssetsCore(ctx, a.orgId, a.now);
 
       // Propagate the model's T&T defaults to active testTagAssets on its assets.
-      const equipmentClass = ((a.defaultEquipmentClass as "CLASS_I") || "CLASS_I");
+      // The model's own default wins, then its OWN category's (D77): ONE resolver, shared with registration.
+      const eff = effectiveTestDefaults(a, await categoryOfModel(ctx, a.orgId, { categoryId: a.categoryId }));
+      const equipmentClass = ((eff.equipmentClass as "CLASS_I") || "CLASS_I");
       const applianceType = ((a.defaultApplianceType as "APPLIANCE") || "APPLIANCE");
-      const intervalMonths = a.testAndTagIntervalDays
-        ? Math.max(1, Math.round(a.testAndTagIntervalDays / 30))
-        : await orgDefaultIntervalMonths(ctx, a.orgId);
+      const intervalMonths = eff.intervalMonths ?? (await orgDefaultIntervalMonths(ctx, a.orgId));
 
       const modelAssets = (await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", a.id)).collect())
         .filter((x) => x.organizationId === a.orgId && x.isActive !== false);

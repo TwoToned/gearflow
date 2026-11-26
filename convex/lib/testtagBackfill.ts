@@ -1,5 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
+import { effectiveTestDefaults } from "./categoryTestDefaults";
+import { categoryOfModel, orgCategoriesById } from "./categoryTestDefaultsLoad";
 
 /**
  * Convex-native port of `src/server/test-tag-assets.ts#backfillTestTagAssets`.
@@ -58,10 +60,10 @@ export async function registerAssetTestTag(
     .filter((t) => t.organizationId === a.organizationId && t.isActive !== false);
   if (existing.length > 0) return;
 
-  const intervalMonths = model.testAndTagIntervalDays
-    ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
-    : await orgDefaultIntervalMonths(ctx, a.organizationId);
-  const equipmentClass = (EQUIPMENT_CLASSES.includes(model.defaultEquipmentClass as EquipmentClass) ? model.defaultEquipmentClass : "CLASS_I") as EquipmentClass;
+  // The model's own default wins, then its OWN category's (D77), then the fallbacks: ONE resolver.
+  const eff = effectiveTestDefaults(model, await categoryOfModel(ctx, a.organizationId, model));
+  const intervalMonths = eff.intervalMonths ?? (await orgDefaultIntervalMonths(ctx, a.organizationId));
+  const equipmentClass = (EQUIPMENT_CLASSES.includes(eff.equipmentClass as EquipmentClass) ? eff.equipmentClass : "CLASS_I") as EquipmentClass;
   const applianceType = (APPLIANCE_TYPES.includes(model.defaultApplianceType as ApplianceType) ? model.defaultApplianceType : "APPLIANCE") as ApplianceType;
   await ctx.db.insert("testTagAssets", {
     id: createId(),
@@ -137,13 +139,14 @@ export async function backfillTestTagAssetsCore(
   if (unlinkedAssets.length === 0) return { created: 0, retired };
 
   const defaultIntervalMonths = await orgDefaultIntervalMonths(ctx, organizationId);
+  const categories = await orgCategoriesById(ctx, organizationId);
   let created = 0;
   for (const { asset, model } of unlinkedAssets) {
-    const intervalMonths = model.testAndTagIntervalDays
-      ? Math.max(1, Math.round(model.testAndTagIntervalDays / 30))
-      : defaultIntervalMonths;
-    const equipmentClass = (EQUIPMENT_CLASSES.includes(model.defaultEquipmentClass as EquipmentClass)
-      ? model.defaultEquipmentClass
+    // The model's own default wins, then its OWN category's (D77), then the fallbacks: ONE resolver.
+    const eff = effectiveTestDefaults(model, model.categoryId ? categories.get(model.categoryId) : null);
+    const intervalMonths = eff.intervalMonths ?? defaultIntervalMonths;
+    const equipmentClass = (EQUIPMENT_CLASSES.includes(eff.equipmentClass as EquipmentClass)
+      ? eff.equipmentClass
       : "CLASS_I") as EquipmentClass;
     const applianceType = (APPLIANCE_TYPES.includes(model.defaultApplianceType as ApplianceType)
       ? model.defaultApplianceType

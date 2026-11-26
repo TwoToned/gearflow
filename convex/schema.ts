@@ -543,6 +543,11 @@ export default defineSchema({
     // rendered/editable when the org has Xero linked (isXeroLinked); stored value
     // is retained but inert while unlinked. See convex/lib/xeroAccountCascade.ts.
     xeroAccountCode: v.optional(v.string()),
+    // UX Phase 14 (D77, owner-approved 2026-11-24): the category's default Test & tag class and interval, inherited by
+    // its OWN models (not by subcategories') unless a model sets its own. Absent = no default. Resolved in ONE place,
+    // `convex/lib/categoryTestDefaults.ts`.
+    defaultEquipmentClass: v.optional(enums.EquipmentClass),
+    defaultTestIntervalMonths: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })

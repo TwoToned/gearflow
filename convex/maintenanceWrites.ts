@@ -269,7 +269,7 @@ async function allRecordAssetRows(ctx: MutationCtx, recordId: string) {
  * (recordId, assetId); rejects a link-id that collides with a DIFFERENT parent
  * (foreign id → cross-tenant injection). Org-checks the asset first.
  */
-async function insertLink(
+export async function insertLink(
   ctx: MutationCtx,
   orgId: string,
   recordId: string,

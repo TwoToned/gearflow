@@ -207,6 +207,7 @@ import type * as locationsList from "../locationsList.js";
 import type * as locationsWrites from "../locationsWrites.js";
 import type * as maintenanceBulkWrites from "../maintenanceBulkWrites.js";
 import type * as maintenanceCheckoffWrites from "../maintenanceCheckoffWrites.js";
+import type * as maintenanceEditWrites from "../maintenanceEditWrites.js";
 import type * as maintenanceLifecycleWrites from "../maintenanceLifecycleWrites.js";
 import type * as maintenanceList from "../maintenanceList.js";
 import type * as maintenanceParts from "../maintenanceParts.js";
@@ -564,6 +565,7 @@ declare const fullApi: ApiFromModules<{
   locationsWrites: typeof locationsWrites;
   maintenanceBulkWrites: typeof maintenanceBulkWrites;
   maintenanceCheckoffWrites: typeof maintenanceCheckoffWrites;
+  maintenanceEditWrites: typeof maintenanceEditWrites;
   maintenanceLifecycleWrites: typeof maintenanceLifecycleWrites;
   maintenanceList: typeof maintenanceList;
   maintenanceParts: typeof maintenanceParts;

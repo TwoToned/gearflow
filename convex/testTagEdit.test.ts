@@ -114,6 +114,90 @@ describe("links", () => {
   });
 });
 
+describe("links: cross-org and empty-string refusals", () => {
+  test("a bulk asset or a test profile from another org is refused (each link is org-checked when changed)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("bulkAssets", { id: "bx", organizationId: "org_2", assetTag: "BX", modelId: "m", isActive: true } as never);
+      await ctx.db.insert("testProfiles", { id: "px", organizationId: "org_2", name: "Theirs", equipmentClass: "CLASS_I", applianceType: "APPLIANCE", visualChecks: [], electricalTests: [], thresholds: {}, isActive: true } as never);
+    });
+    await expect(edit(t, { bulkAssetId: "bx" })).rejects.toThrow();
+    await expect(edit(t, { testProfileId: "px" }, { auditId: "e2" })).rejects.toThrow();
+    expect(await item(t)).toMatchObject({ description: "Drill" });
+    expect((await item(t)).bulkAssetId).toBeUndefined();
+    expect((await item(t)).testProfileId).toBeUndefined();
+  });
+
+  test("an empty string is not a link: clearing goes through `clear` only", async () => {
+    const t = makeT();
+    await seed(t);
+    for (const f of ["assetId", "bulkAssetId", "testProfileId"]) await expect(edit(t, { [f]: "" })).rejects.toThrow(/at least 1/);
+  });
+});
+
+describe("the interval Undo guards the inputs next due was derived from", () => {
+  test("an untested item's interval change, then a test, then Undo: refused (next due would no longer follow the interval)", async () => {
+    const t = makeT();
+    await seed(t);
+    await edit(t, { testIntervalMonths: 12 }, { id: "t2" }); // never tested: next due is not in the diff
+    // A test lands: the record write sets last test and a next due derived from the NEW interval.
+    await t.run(async (ctx) => {
+      const r = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "t2")).first();
+      await ctx.db.patch(r!._id, { lastTestDate: LAST, nextDueDate: deriveNextDueDate(LAST, 12), status: "CURRENT" });
+    });
+    await expect(undo(t, "e1", asUser, ACTOR, "t2")).rejects.toMatchObject({ data: { code: "CHANGED_SINCE" } });
+    expect(await item(t, "t2")).toMatchObject({ testIntervalMonths: 12, nextDueDate: deriveNextDueDate(LAST, 12) });
+  });
+
+  test("an edit that does not touch the interval is not guarded (a test since does not block undoing a note)", async () => {
+    const t = makeT();
+    await seed(t);
+    await edit(t, { notes: "n" }, { id: "t2" });
+    await t.run(async (ctx) => {
+      const r = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "t2")).first();
+      await ctx.db.patch(r!._id, { lastTestDate: LAST, nextDueDate: deriveNextDueDate(LAST, 3) });
+    });
+    await undo(t, "e1", asUser, ACTOR, "t2");
+    expect((await item(t, "t2")).notes).toBeUndefined();
+  });
+});
+
+describe("the actor comes from auth, never from the arguments", () => {
+  const audit = (t: T, id: string) => t.run(async (ctx) => (await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", id)).first())!);
+  const FAKE = { userId: "attacker", userName: "Mallory" };
+
+  test("editNative and retireNative name the verified caller on the audit row, not the supplied actor", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.withIdentity(asUser).mutation(api.testTagEditWrites.editNative, { orgId: ORG, id: "t1", set: { notes: "x" }, clear: [], actor: FAKE, auditId: "ae", now: NOW });
+    expect(await audit(t, "ae")).toMatchObject({ userId: USER });
+    expect((await audit(t, "ae")).userName).not.toBe("Mallory");
+    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.retireNative, { orgId: ORG, id: "t1", now: NOW, actor: FAKE, auditId: "ar" });
+    expect(await audit(t, "ar")).toMatchObject({ userId: USER });
+    expect((await audit(t, "ar")).userName).not.toBe("Mallory");
+    // So the retire's author is the real caller: the Undo by the same user works.
+    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.undoRetireNative, { orgId: ORG, id: "t1", now: NOW + 1, actor: FAKE, auditId: "au" });
+    expect((await item(t)).status).toBe("CURRENT");
+  });
+});
+
+describe("retireNative hardening", () => {
+  const retire = (t: T, over: Record<string, unknown>) => t.withIdentity(asUser).mutation(api.testTagAssetsWrites.retireNative, { id: "t1", orgId: ORG, now: NOW, ...over } as never);
+
+  test("an already-retired item is refused; an actor without an audit id (or the reverse) is refused; a taken audit id is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(retire(t, { actor: ACTOR })).rejects.toMatchObject({ data: { code: "INVALID_FIELD" } });
+    await expect(retire(t, { auditId: "a1" })).rejects.toMatchObject({ data: { code: "INVALID_FIELD" } });
+    await edit(t, { notes: "x" }, { auditId: "taken" });
+    await expect(retire(t, { actor: ACTOR, auditId: "taken" })).rejects.toMatchObject({ data: { code: "AUDIT_ID_TAKEN" } });
+    expect((await item(t)).status).toBe("CURRENT");
+    await retire(t, { actor: ACTOR, auditId: "r1" });
+    await expect(retire(t, { actor: ACTOR, auditId: "r2" })).rejects.toMatchObject({ data: { code: "ALREADY_RETIRED" } });
+  });
+});
+
 describe("next due is derived", () => {
   test("a changed interval re-derives next due from the last test, and Undo puts both back", async () => {
     const t = makeT();

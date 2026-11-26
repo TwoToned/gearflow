@@ -7,18 +7,8 @@ import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { withoutCost } from "./lib/maintenanceLabour";
 
-/**
- * A record's `cost` is its LABOUR, which is job cost (UX Phase 14, D76; the record's total is derived from it plus
- * its parts): for a caller who cannot see job cost (`invoice:read` and not a `noFinancials` key) the key is ABSENT
- * from every read below, never zeroed, so nothing can be back-solved. `canSeeJobCost` is the one rule.
- */
-function withoutCost<T extends { cost?: unknown }>(row: T, hidden: boolean): T {
-  if (!hidden) return row;
-  const { cost: _labour, ...rest } = row;
-  void _labour;
-  return rest as T;
-}
 
 export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List maintenance records for the org.", danger: "low", mcpTier: 2 },

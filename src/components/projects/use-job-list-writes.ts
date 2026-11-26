@@ -1,12 +1,11 @@
 "use client";
 
 import type { MutableRefObject } from "react";
-import { useConvex } from "convex/react";
 import { toast } from "sonner";
 
-import { api } from "../../../convex/_generated/api";
 import { MAX_TAGS } from "../../../convex/lib/tagLimits";
 
+import { useRestoreJobStatuses } from "@/components/projects/use-restore-job-statuses";
 import { useConfirmStatusGate } from "@/hooks/use-confirm-status-gate";
 import { useNativeProjectStatus, useProjectWrites } from "@/hooks/use-native-project-writes";
 import { runBulk, type BulkOutcome } from "@/lib/bulk-run";
@@ -47,27 +46,8 @@ export function useJobListWrites(orgId: string | undefined, seen: Seen) {
   const projectWrites = useProjectWrites(orgId);
   const pick = (ids: string[]) => ids.map((id) => seen.current.get(id)).filter((r): r is JobSource => !!r);
 
-  const convex = useConvex();
-
-  /**
-   * Restores each row to the status it had before the write, but ONLY rows whose live
-   * status (read from the server at undo time, never the snapshot) is still the one the
-   * write set. Rows that moved on since are left alone and named in the toast.
-   */
-  const restoreStatuses = (rows: JobSource[], wrote: string) => async (): Promise<string | void> => {
-    if (!orgId) return;
-    const live = await convex.query(api.projects.listByIds, { orgId, ids: rows.map((r) => r.id) });
-    const current = new Map(live.map((p) => [p.id, p.status ?? "ENQUIRY"]));
-    let movedOn = 0;
-    for (const r of rows) {
-      if (current.get(r.id) !== wrote) {
-        movedOn++;
-        continue;
-      }
-      await statusWrites.updateStatus(r.id, statusOf(r));
-    }
-    return movedOn > 0 ? `${plural(movedOn, "job")} had moved on, left as ${movedOn === 1 ? "it is" : "they are"}` : undefined;
-  };
+  // The ONE status Undo (shared with the Schedule's Confirm n): exact rows, live-status guarded.
+  const restoreStatuses = useRestoreJobStatuses(orgId);
 
   function summarise(done: string, out: BulkOutcome<JobSource>, undo?: () => Promise<string | void>) {
     announceListWrite({

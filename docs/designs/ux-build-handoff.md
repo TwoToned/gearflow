@@ -18,7 +18,7 @@ bottom, then `docs/designs/ux-build-status.md` (the tracker) and spec
 | 5 Logistics (5a, 5b) | merged |
 | 6 Shell (6a), List pages (6b) | merged |
 | 7, 8, 11, 15, 16 Wave D1 | **merged 2026-11-22 → 2026-11-24** (#1400, #1399, #1401, #1402, #1403), all deployed |
-| 9, 10, 12, 13, 14 Wave D2 | **not started.** Needs its Gate 0 |
+| 9, 10, 12, 13, 14 Wave D2 | **mostly merged 2026-11-25**: 9 and 10 done; 12 done (shots left); 13 slices 1–2 + B3 merged, slice 3 #1424 open, slice 4 to come; 14 part 1 merged, part 2 #1425 open, 14b-3..5 on `claude/ux-14-gear-3`. See the tracker. Builders paused by the weekly usage limit until 2026-11-28 08:00 UTC |
 | 17, 18 Wave D3 | not started |
 
 Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
@@ -97,6 +97,13 @@ branch. Never act on build-tool suggestions such as "run next upgrade".
   - **Hunt money leaks with a sentinel sweep.** Seed unique values in every pay and cost field, call every public query as each role and key type, and grep the results. Raw-doc bundles and server actions that read through the service identity were the leaks a code read missed.
   - **One rule per rule.** A second "is it short", "is it open" or "who sees pay" check anywhere (server or client) diverged every time. Put the rule in a pure `convex/lib` helper and have `src/` import it.
   - **Restarts and usage limits are routine.** Workers push after every commit. After a stop, read the worktree (`git status`, `git log origin..HEAD`) and resume the same agent with what it left uncommitted.
+- **Lessons from Wave D2:**
+  - **Merge a phase in parts.** Each PR passed 10k LOC. Merge the reviewed slices, then build the rest on a new branch (`claude/ux-N-<topic>`) and open its PR only after the first merges. Slices that are still building belong on their own branch, so the PR under review stays fixed.
+  - **Any write that takes a `fileId` is a delete risk.** Attach only the actor's own fresh upload, in that surface's folder, that nothing else holds (`convex/lib/attachableUpload.ts`). Delete bytes only through `deleteStoredFileIfUnreferenced`. This was found in three phases and on prod.
+  - **Edit forms must carry every field the write sets.** `updateNative` treats a missing field as a clear, and that wiped rates on prod (hotfix #1422). Every sheet builds its values through ONE mapper (`modelToFormValues`, `kitSheetInitialOf`), with a round-trip test that submits `""` for each number.
+  - **An Undo restores only what the forward write may write.** Raw-patching a stored snapshot let status, server-owned fields and cost fields through. Allow-list the fields, re-check references, and make a `noFinancials` caller unable to undo cost.
+  - **A one-way state needs ONE writer guard.** RETIRED leaked back through kit release, return correction, check-in and sale stock. `nextStatusUnlessRetired` now guards every low-level status writer.
+  - **Final-verify before every merge, even after "all fixed".** Each phase's last check still found a real gap (a per-line deploy path, a non-author discard, a ref-less file delete).
 
 ## 4. Wave D plan (agreed with the owner 2026-11-19)
 

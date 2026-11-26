@@ -120,6 +120,8 @@ describe("add, edit, remove and their exact Undo", () => {
     await expect(add(t, "p1", { quantity: 0 })).rejects.toThrow(/at least 1/);
     await expect(add(t, "p1", { quantity: 1.5 })).rejects.toThrow(/whole number/);
     await expect(add(t, "p1", { unitPrice: -1 })).rejects.toThrow(/at least 0/);
+    await expect(add(t, "x".repeat(65))).rejects.toThrow(/part id/i);
+    await expect(add(t, "p1", { unitPrice: 10_000_001 })).rejects.toThrow(/at most/i);
     await add(t, "p1");
     await expect(add(t, "p1", {}, "a_dup")).rejects.toThrow(/already exists/);
     await expect(edit(t, "p1", {}, ["name"])).rejects.toThrow(/can't be cleared/);

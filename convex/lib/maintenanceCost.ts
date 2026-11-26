@@ -11,6 +11,9 @@
  */
 import { overdueCutoff } from "./maintenanceOpen";
 
+/** The ceiling on any ONE maintenance money entry (a part's unit price, a record's labour): the server and the forms share it. */
+export const MAX_MAINTENANCE_MONEY = 10_000_000;
+
 export interface PartLike {
   quantity: number;
   unitPrice?: number | null;

@@ -8,6 +8,7 @@ import { loadMaintenanceRecord, maintenanceWritePrelude } from "./lib/maintenanc
 import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { MAX_MAINTENANCE_MONEY } from "./lib/maintenanceCost";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { sameValue, undoMarkerId, type FieldValue } from "./lib/fieldEditUndo";
 
@@ -25,6 +26,8 @@ const actorValidator = v.object({ userId: v.string(), userName: v.string() });
  */
 
 const MAX_PARTS = 200;
+/** The client mints a part's id (a cuid is ~25 characters); bounded so a caller cannot store an arbitrary blob as a key. */
+const MAX_PART_ID_LENGTH = 64;
 export const PART_FIELDS = ["name", "supplierName", "quantity", "unitPrice", "etaDate", "arrivedAt", "sortOrder"] as const;
 /** Fields a form edit may CLEAR (the rest are required). */
 const CLEARABLE = ["supplierName", "unitPrice", "etaDate", "arrivedAt"] as const;
@@ -57,7 +60,7 @@ function assertPartFields(f: PartSet): void {
   assertStrLen(f.name, "name", { min: 1, max: 200 });
   assertStrLen(f.supplierName, "supplier", { max: 200 });
   assertNumRange(f.quantity, "quantity", { min: 1, max: 100_000, integer: true });
-  assertNumRange(f.unitPrice, "unit price", { min: 0, max: 10_000_000 });
+  assertNumRange(f.unitPrice, "unit price", { min: 0, max: MAX_MAINTENANCE_MONEY });
   assertNumRange(f.etaDate, "ETA", {});
   assertNumRange(f.arrivedAt, "arrived", {});
 }
@@ -116,6 +119,7 @@ export const addNative = mutation({
   handler: async (ctx, a) => {
     const actor = await prelude(ctx, a.actor, () => requireOrgPermission(ctx, a.orgId, "maintenance", "update"));
     const rec = await loadRecord(ctx, a.orgId, a.recordId);
+    assertStrLen(a.id, "part id", { min: 1, max: MAX_PART_ID_LENGTH });
     const name = a.part.name?.trim();
     if (!name) throw new ConvexError({ code: "INVALID_FIELD", message: "A part needs a name." });
     const fields: PartSet = (await canSeeJobCost(ctx, a.orgId)) ? { ...a.part, name } : { ...withoutPrice(a.part), name };
@@ -225,6 +229,10 @@ async function reversePart(ctx: MutationCtx, a: { orgId: string; recordId: strin
   const part = await loadPart(ctx, a.orgId, a.recordId, d.partId);
   if (d.op === "remove") {
     if (part) throw refuse("CHANGED_SINCE", "Can't undo: that part was added again since.");
+    // Exact restore: `before` is the stored snapshot of the removed part, so it carries its price EVEN when this caller
+    // cannot see job cost. That is deliberate and not a leak: the caller only puts back what the author's own remove took
+    // (author-only, in the window, read server-side from the audit row), never reads it, and dropping the price here
+    // would make the Undo silently destroy money data. The price stays absent from every read this caller makes.
     const present = Object.fromEntries(Object.entries(d.before ?? {}).filter(([, val]) => val !== null));
     await ctx.db.insert("maintenanceParts", { ...present, id: d.partId, organizationId: a.orgId, maintenanceRecordId: a.recordId, createdAt: a.now, updatedAt: a.now } as never);
     return;

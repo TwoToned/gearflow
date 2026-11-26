@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showError } from "@/lib/show-error";
 import { fromDateInput, toDateInput } from "@/lib/date-input";
+import { MAX_MAINTENANCE_MONEY } from "../../../../convex/lib/maintenanceCost";
 import type { CompleteInput } from "@/components/maintenance/record/use-maintenance-record-writes";
 
 type Result = CompleteInput["result"];
@@ -51,7 +52,7 @@ function buildCompleteInput(d: CompleteDraft): { input: CompleteInput } | { erro
   const completedDate = d.date ? fromDateInput(d.date) : NaN;
   if (!Number.isFinite(completedDate)) return { error: "Choose the date it was completed." };
   const labour = changeOf(d.labour, d.storedLabour, Number);
-  if (d.labourVisible && (labour.bad || (typeof labour.value === "number" && labour.value < 0))) return { error: "Labour can't be negative." };
+  if (d.labourVisible && (labour.bad || (typeof labour.value === "number" && (labour.value < 0 || labour.value > MAX_MAINTENANCE_MONEY)))) return { error: `Labour must be between 0 and ${MAX_MAINTENANCE_MONEY.toLocaleString("en-AU")}.` };
   const next = changeOf(d.nextDue, d.storedNextDue, fromDateInput);
   if (next.bad) return { error: "Choose a valid next due date." };
   const dispositions = Object.entries(d.overrides).map(([assetId, disposition]) => ({ assetId, disposition }));

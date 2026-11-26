@@ -6,6 +6,7 @@ import { requireOrgPermission } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { assertNumRange } from "./lib/fieldGuards";
+import { MAX_MAINTENANCE_MONEY } from "./lib/maintenanceCost";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { sameValue, undoMarkerId, type FieldValue } from "./lib/fieldEditUndo";
@@ -153,7 +154,7 @@ export const completeNative = mutation({
     const rec = await loadMaintenanceRecord(ctx, a.orgId, a.id);
     if (!isOpenMaintenance(statusOf(rec))) throw refuse("NOT_OPEN", "Only an open job can be completed.");
     assertNumRange(a.completedDate, "completed date", {});
-    assertNumRange(a.labour ?? undefined, "labour", { min: 0 });
+    assertNumRange(a.labour ?? undefined, "labour", { min: 0, max: MAX_MAINTENANCE_MONEY });
     assertNumRange(a.nextDueDate ?? undefined, "next due", {});
 
     const assetIds = await linkedAssetIds(ctx, a.id);

@@ -138,6 +138,7 @@ describe("completeNative", () => {
     await seed(t);
     await expect(complete(t, { dispositions: [{ assetId: "elsewhere", disposition: "RETIRE" }] })).rejects.toThrow(/not on this job/);
     await expect(complete(t, { labour: -1 })).rejects.toThrow(/at least 0/);
+    await expect(complete(t, { labour: 10_000_001 })).rejects.toThrow(/at most/i);
     await expect(complete(t, {}, "cx", asUser, "rx")).rejects.toThrow(/not found/i);
     await complete(t, {}, "c1");
     await expect(complete(t, {}, "c2")).rejects.toMatchObject({ data: { code: "NOT_OPEN" } });
@@ -202,6 +203,23 @@ describe("the exact Undo", () => {
       await ctx.db.patch(r!._id, { updatedAt: NOW + 5, title: "Edited" });
     });
     await expect(undo(u, "c1")).rejects.toMatchObject({ data: { code: "CHANGED_SINCE" } });
+  });
+
+  test("another record's audit row cannot undo this record (the entity id is checked), and its own record is untouched", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("maintenanceRecords", { id: "r2", organizationId: ORG, type: "REPAIR", title: "Other job", status: "IN_PROGRESS", cost: 70, createdAt: 1, updatedAt: 1 } as never);
+    });
+    await complete(t, { labour: 99 }, "c_b", asUser, "r2");
+    await complete(t, { labour: 10 }, "c_a");
+    // r1's Undo with r2's audit id: refused, and neither record moved.
+    await expect(undo(t, "c_b")).rejects.toMatchObject({ data: { code: "NOT_FOUND" } });
+    expect((await rec(t)).cost).toBe(10);
+    expect((await rec(t)).status).toBe("COMPLETED");
+    const r2 = await t.run(async (ctx) => (await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", "r2")).first())!);
+    expect(r2.status).toBe("COMPLETED");
+    expect(r2.cost).toBe(99);
   });
 
   test("refuses another person, an unknown id, and an expired window", async () => {

@@ -37,8 +37,6 @@ async function anyFor(rows: Promise<object[]>, orgId: string): Promise<boolean> 
 }
 
 async function clientBlocker(ctx: MutationCtx, orgId: string, c: Doc<"clients">): Promise<string | null> {
-  const by = (q: { eq: (f: "clientId", v: string) => unknown }) => q.eq("clientId", c.id);
-  void by;
   if (await anyFor(ctx.db.query("projects").withIndex("by_clientId", (q) => q.eq("clientId", c.id)).take(5), orgId)) return "a job was added to this client";
   if (await anyFor(ctx.db.query("invoices").withIndex("by_clientId", (q) => q.eq("clientId", c.id)).take(5), orgId)) return "an invoice was added to this client";
   if (await anyFor(ctx.db.query("clientMedia").withIndex("by_clientId", (q) => q.eq("clientId", c.id)).take(5), orgId)) return "a file was added to this client";

@@ -458,8 +458,12 @@ line-item design.
   (`undoDeleteNative`): the forward audit row records the whole stored category and the ids it moved; the Undo
   recreates the category under the same id and puts exactly those rows back, refusing as a whole unless each is still
   as the delete left it, its parent still exists, and no category with that id exists again. Author, 10-minute server
-  window, once. A category holding more than 500 models, kits or subcategories is refused (move some out first). The
-  older `removeNative` (refuses a category that is not empty) is unchanged.
+  window, once. A category holding more than 500 models, kits or subcategories is refused (move some out first). A
+  category the org's settings name (`containerCategoryIds`, the deprecated `prepKitCategoryId`) is refused with
+  `USED_BY_SETTINGS` (remove it in Settings first), so no id is left dangling; the one check
+  (`convex/lib/categorySettingsRefs.ts`) also guards the older `removeNative` (which otherwise refuses only a category
+  that is not empty). Those two keys are the only settings that store a gear category id; sub-hire
+  `targetCategoryId` / `defaultTargetCategoryId` point at JOB categories, not these.
 - **Default Test & tag class + interval (D77)**: `categories.defaultEquipmentClass` and `categories.defaultTestIntervalMonths`,
   both optional. A model's own value wins; otherwise its OWN category's (never a parent category's); otherwise the
   caller's fallback (class `CLASS_I`, the org's default interval). ONE resolver (`convex/lib/categoryTestDefaults.ts`)

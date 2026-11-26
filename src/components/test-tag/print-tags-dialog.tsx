@@ -14,6 +14,7 @@ import { api } from "../../../convex/_generated/api";
 interface Labels {
   labels: { id: string; testTagId: string; result: "PASS" | "FAIL"; testDate: number; nextDueDate: number; testerName: string }[];
   skipped: { id: string; testTagId: string }[];
+  unresolved: { id: string; testTagId: string }[];
 }
 
 /** The printout itself: portaled to the body (a dialog's transform would offset it), on screen never, in print only. */
@@ -30,16 +31,17 @@ function TagSheet({ labels }: { labels: Labels["labels"] }) {
 
 function useLabels(ids: string[] | null, orgId: string | undefined) {
   const data = useAuthedQuery(api.testTagList.labelsFor, ids && orgId ? { orgId, ids } : "skip") as Labels | undefined;
-  return { data, labels: data?.labels ?? [], skipped: data?.skipped ?? [] };
+  return { data, labels: data?.labels ?? [], skipped: data?.skipped ?? [], unresolved: data?.unresolved ?? [] };
 }
 
-/** Names what is not printed (never tested), so a missing label is never a surprise. */
-function SkippedNote({ skipped }: { skipped: Labels["skipped"] }) {
-  if (skipped.length === 0) return null;
+/** Names what is not printed and why, so a missing label is never a surprise. */
+function SkippedNote({ skipped, unresolved }: { skipped: Labels["skipped"]; unresolved: Labels["unresolved"] }) {
+  if (skipped.length === 0 && unresolved.length === 0) return null;
   return (
-    <p className="py-2 text-ui-text text-muted" role="status">
-      Not printed (never tested): {skipped.map((s) => s.testTagId).join(", ")}.
-    </p>
+    <div className="space-y-1 py-2 text-ui-text text-muted" role="status">
+      {skipped.length > 0 && <p>Not printed (never tested): {skipped.map((s) => s.testTagId).join(", ")}.</p>}
+      {unresolved.length > 0 && <p>Latest test not found, print from its record: {unresolved.map((s) => s.testTagId).join(", ")}.</p>}
+    </div>
   );
 }
 
@@ -49,7 +51,7 @@ function SkippedNote({ skipped }: { skipped: Labels["skipped"] }) {
  * never been tested has no label and is named, never printed blank. `ids` null = closed.
  */
 export function PrintTagsDialog({ ids, orgId, onClose }: { ids: string[] | null; orgId: string | undefined; onClose: () => void }) {
-  const { data, labels, skipped } = useLabels(ids, orgId);
+  const { data, labels, skipped, unresolved } = useLabels(ids, orgId);
   return (
     <>
       <Dialog open={ids !== null} onOpenChange={(open) => !open && onClose()}>
@@ -58,7 +60,7 @@ export function PrintTagsDialog({ ids, orgId, onClose }: { ids: string[] | null;
             <DialogTitle>Print tags</DialogTitle>
             <DialogDescription>{data ? `${plural(labels.length, "label")} ready to print, one per page.` : "Loading the latest test of each item…"}</DialogDescription>
           </DialogHeader>
-          <SkippedNote skipped={skipped} />
+          <SkippedNote skipped={skipped} unresolved={unresolved} />
           <DialogFooter>
             <Button variant="line" onClick={onClose}>Cancel</Button>
             <Button onClick={() => window.print()} disabled={labels.length === 0}><Printer className="mr-2 h-4 w-4" />Print</Button>

@@ -26,7 +26,7 @@ async function seed(t: T) {
     await ctx.db.insert("members", { id: "m1", organizationId: ORG, userId: USER, role: "owner" });
     const item = (id: string, org: string, extra: Record<string, unknown> = {}) =>
       ctx.db.insert("testTagAssets", { id, organizationId: org, testTagId: `TT-${id}`, description: id, status: "CURRENT", isActive: true, ...extra } as never);
-    await item("t1", ORG, { nextDueDate: 5000 * D });
+    await item("t1", ORG, { nextDueDate: 5000 * D, lastTestDate: 2000 * D });
     await item("t2", ORG); // never tested
     await item("tx", "org_2", { nextDueDate: 1 });
     const rec = (id: string, itemId: string, org: string, testDate: number, result: string, tester: string) =>
@@ -51,7 +51,7 @@ describe("testTagList.labelsFor", () => {
     const t = makeT();
     await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("testTagAssets", { id: "t3", organizationId: ORG, testTagId: "TT-t3", description: "t3", status: "FAILED", isActive: true } as never);
+      await ctx.db.insert("testTagAssets", { id: "t3", organizationId: ORG, testTagId: "TT-t3", description: "t3", status: "FAILED", isActive: true, lastTestDate: 100 * D } as never);
       await ctx.db.insert("testTagRecords", { id: "r3", organizationId: ORG, testTagAssetId: "t3", testDate: 100 * D, testedById: "u", testerName: "", result: "FAIL", nextDueDate: 999 * D } as never);
     });
     const r = await labels(t, ["t2", "t3"]);
@@ -85,7 +85,7 @@ describe("testTagList.labelsFor — reads only the newest few records per item",
     const t = makeT();
     await seed(t);
     await t.run(async (ctx) => {
-      await ctx.db.insert("testTagAssets", { id: "big", organizationId: ORG, testTagId: "TT-big", description: "big", status: "CURRENT", isActive: true, nextDueDate: 9000 * D } as never);
+      await ctx.db.insert("testTagAssets", { id: "big", organizationId: ORG, testTagId: "TT-big", description: "big", status: "CURRENT", isActive: true, nextDueDate: 9000 * D, lastTestDate: 604 * D } as never);
       for (let i = 0; i < 505; i++) {
         await ctx.db.insert("testTagRecords", { id: `b${i}`, organizationId: ORG, testTagAssetId: "big", testDate: (100 + i) * D, testedById: "u", testerName: `Tester ${i}`, result: i === 504 ? "FAIL" : "PASS", nextDueDate: 1 } as never);
       }
@@ -97,10 +97,40 @@ describe("testTagList.labelsFor — reads only the newest few records per item",
   test("a test entered late for an earlier date does not displace the truly latest one", async () => {
     const t = makeT();
     await seed(t);
+    await t.run(async (ctx) => { const i = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", "t2")).first(); await ctx.db.patch(i!._id, { lastTestDate: 300 * D }); });
     await insertRecord(t, "e1", "t2", 100 * D, "First");
     await insertRecord(t, "e2", "t2", 300 * D, "Latest");
     await insertRecord(t, "e3", "t2", 200 * D, "Entered last");
     const r = await labels(t, ["t2"]);
     expect(r.labels[0]).toMatchObject({ testDate: 300 * D, testerName: "Latest" });
+  });
+
+  test("6+ older historic tests imported AFTER the current one do not change the label: it still shows the test at lastTestDate", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "imp", organizationId: ORG, testTagId: "TT-imp", description: "imp", status: "CURRENT", isActive: true, nextDueDate: 8000 * D, lastTestDate: 700 * D } as never);
+    });
+    await insertRecord(t, "cur", "imp", 700 * D, "Current tester");
+    for (let i = 0; i < 8; i++) await insertRecord(t, `old${i}`, "imp", (100 + i) * D, `Historic ${i}`);
+    const r = await labels(t, ["imp"]);
+    expect(r.unresolved).toEqual([]);
+    expect(r.labels).toEqual([{ id: "imp", testTagId: "TT-imp", result: "PASS", testDate: 700 * D, nextDueDate: 8000 * D, testerName: "Current tester" }]);
+  });
+
+  test("when no scanned record matches the item's lastTestDate the item is NOT printed and is named as unresolved (never a guess)", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("testTagAssets", { id: "lost", organizationId: ORG, testTagId: "TT-lost", description: "lost", status: "CURRENT", isActive: true, nextDueDate: 8000 * D, lastTestDate: 700 * D } as never);
+    });
+    for (let i = 0; i < 3; i++) await insertRecord(t, `l${i}`, "lost", (100 + i) * D, `Other ${i}`);
+    const r = await labels(t, ["lost"]);
+    expect(r.labels).toEqual([]);
+    expect(r.unresolved).toEqual([{ id: "lost", testTagId: "TT-lost" }]);
+    // The latest test is outside the 50-record scan: unresolved too, not the newest-looking row.
+    await t.run(async (ctx) => { await ctx.db.insert("testTagRecords", { id: "deep", organizationId: ORG, testTagAssetId: "lost", testDate: 700 * D, testedById: "u", testerName: "Deep", result: "PASS", nextDueDate: 1 } as never); });
+    for (let i = 0; i < 55; i++) await insertRecord(t, `p${i}`, "lost", (200 + i) * D, `Post ${i}`);
+    expect((await labels(t, ["lost"])).unresolved).toEqual([{ id: "lost", testTagId: "TT-lost" }]);
   });
 });

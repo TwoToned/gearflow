@@ -26,6 +26,7 @@ import { itemHistoryReportUrl } from "@/lib/test-tag-reports";
 import type { ScheduleItem } from "@/lib/test-tag-schedule";
 import { testTagSheetInitialOf } from "@/lib/test-tag-sheet";
 import { useCanDo } from "@/lib/use-permissions";
+import { pickLabelRecord } from "../../../../convex/lib/testTagLabelRecord";
 import { api } from "../../../../convex/_generated/api";
 
 /** The item as `testTagAssets.detail` returns it (dates are ISO strings there). */
@@ -231,7 +232,7 @@ function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => v
       testTagId: item.testTagId,
       retired,
       // The old page's path, unchanged: the browser print dialog over the one `LabelTemplate`, offered when a test exists.
-      onPrintLabel: canUpdate && item.testRecords[0] ? () => window.print() : undefined,
+      onPrintLabel: canUpdate && labelRecordOf(item) ? () => window.print() : undefined,
       onRetire: canUpdate ? () => void cmd.retire() : undefined,
       onReactivate: canUpdate ? () => void cmd.reactivate() : undefined,
       onDelete: canDelete ? () => void cmd.remove() : undefined,
@@ -241,9 +242,17 @@ function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => v
   };
 }
 
+/**
+ * The test the label shows: the ONE rule `Print tags` uses too (`pickLabelRecord`): the record dated at the item's own
+ * `lastTestDate`. No match (or no test) means no label: it fails closed rather than print another test.
+ */
+function labelRecordOf(item: ItemDetail): ItemDetail["testRecords"][number] | null {
+  return pickLabelRecord(item.testRecords, ms(item.lastTestDate), (r) => ms(r.testDate) ?? NaN);
+}
+
 /** The hidden label the print dialog prints (`print:block` only): the latest test, through the one label template. */
 function PrintableLabel({ item }: { item: ItemDetail }) {
-  const last = item.testRecords[0];
+  const last = labelRecordOf(item);
   if (!last) return null;
   return (
     <div className="hidden print:block">

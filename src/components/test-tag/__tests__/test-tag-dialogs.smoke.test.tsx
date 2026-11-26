@@ -43,6 +43,7 @@ vi.mock("@/lib/list-write-toast", async () => {
 const LABELS = {
   labels: [{ id: "t1", testTagId: "TT-0001", result: "PASS", testDate: Date.UTC(2026, 0, 5), nextDueDate: Date.UTC(2026, 6, 5), testerName: "Ada" }],
   skipped: [{ id: "t2", testTagId: "TT-0002" }],
+  unresolved: [{ id: "t4", testTagId: "TT-0004" }],
 };
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
@@ -95,7 +96,8 @@ describe("PrintTagsDialog", () => {
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
     render(<PrintTagsDialog ids={["t1", "t2"]} orgId="org1" onClose={() => {}} />);
     expect(screen.getByText(/1 label ready to print/)).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("TT-0002");
+    expect(screen.getByRole("status").textContent).toContain("Not printed (never tested): TT-0002");
+    expect(screen.getByRole("status").textContent).toContain("Latest test not found, print from its record: TT-0004");
     const sheet = screen.getByTestId("tag-sheet");
     expect(sheet.querySelectorAll(".test-tag-label").length).toBe(1);
     expect(sheet.textContent).toContain("TT-0001");

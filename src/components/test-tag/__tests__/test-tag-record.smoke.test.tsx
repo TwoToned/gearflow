@@ -227,4 +227,28 @@ describe("TestTagRecord", () => {
     expect(screen.queryByText("Schedule…")).toBeNull();
     open.mockRestore();
   });
+
+  it("the label shows the test dated at the item's lastTestDate (the rule Print tags uses), not the first row; no match means no label", async () => {
+    // Newest row by date is NOT the item's last test (a historic test was imported later): the label must show the lastTestDate one.
+    data.item = item({
+      testRecords: [
+        { result: "FAIL", testDate: iso(NOW - 5 * DAY), testerName: "Imported" },
+        { result: "PASS", testDate: iso(NOW - 30 * DAY), testerName: "Ada" },
+      ],
+    });
+    const user = userEvent.setup();
+    const first = render(<TestTagRecord id="t1" orgId="org1" />);
+    const label = first.container.querySelector(".test-tag-label");
+    expect(label?.textContent).toContain("Ada");
+    expect(label?.textContent).not.toContain("Imported");
+    first.unmount();
+
+    // No record at lastTestDate: fail closed, nothing to print.
+    data.item = item({ lastTestDate: iso(NOW - 99 * DAY) });
+    const second = render(<TestTagRecord id="t1" orgId="org1" />);
+    expect(second.container.querySelector(".test-tag-label")).toBeNull();
+    await openMenu(user);
+    expect(await screen.findByText("Retire")).toBeTruthy();
+    expect(screen.queryByText("Print label")).toBeNull();
+  });
 });

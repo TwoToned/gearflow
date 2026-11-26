@@ -9,7 +9,8 @@ import { ChevronLeft } from "lucide-react";
 import { PageMeta } from "@/components/layout/page-meta";
 import { useSettingsCaps } from "@/hooks/use-settings-caps";
 import { useActiveOrganization } from "@/lib/auth-client";
-import { settingsEntryForPath, settingsGateOpen } from "@/lib/settings-registry";
+import { settingsEntryForPath, settingsGateKnown, settingsGateOpen } from "@/lib/settings-registry";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn, focusRing } from "@/lib/utils";
 
 function AccessDenied({ what }: { what: string }) {
@@ -48,20 +49,27 @@ function SectionHeader({ entry, orgName }: { entry: ReturnType<typeof settingsEn
   );
 }
 
+/** Loading skeleton, a denial, or null when the page may render. Decided only once the gate's inputs have answered. */
+function gateScreen(entry: ReturnType<typeof settingsEntryForPath>, caps: ReturnType<typeof useSettingsCaps>) {
+  if (!settingsGateKnown(entry?.gate ?? "orgSettings", caps)) {
+    return <Skeleton className="h-40 w-full md:max-w-3xl" aria-label="Loading settings" />;
+  }
+  if (!caps.orgSettingsRead && !caps.orgMembersRead) return <AccessDenied what="access settings" />;
+  if (entry && !settingsGateOpen(entry.gate, caps)) {
+    return <AccessDenied what={`open ${entry.title.toLowerCase()} settings`} />;
+  }
+  return null;
+}
+
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const caps = useSettingsCaps();
   const { data: activeOrg } = useActiveOrganization();
   const orgName = activeOrg?.name ?? "Organisation";
 
-  if (!caps.orgSettingsRead && !caps.orgMembersRead) {
-    return <AccessDenied what="access settings" />;
-  }
-
   const entry = settingsEntryForPath(pathname);
-  if (entry && !settingsGateOpen(entry.gate, caps)) {
-    return <AccessDenied what={`open ${entry.title.toLowerCase()} settings`} />;
-  }
+  const blocked = gateScreen(entry, caps);
+  if (blocked) return blocked;
 
   return (
     <div className="space-y-6">

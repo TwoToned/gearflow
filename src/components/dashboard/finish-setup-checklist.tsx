@@ -49,7 +49,7 @@ const countOf = (rows: unknown[] | undefined): number => rows?.length ?? 0;
  *  an already staffed org, never a false "unfinished". */
 function buildItems(org: OrgRecord | undefined, locationCount: number, teamCount: number): SetupPanelItem[] {
   return [
-    { key: "operating", label: "Set your currency and tax details", href: "/settings", where: "Settings", done: !!org?.settings?.currency },
+    { key: "operating", label: "Set your currency and tax details", href: "/settings/billing", where: "Billing", done: !!org?.settings?.currency },
     { key: "branding", label: "Add your logo", href: "/settings/branding", where: "Branding", done: !!org?.settings?.branding?.logoUrl },
     { key: "location", label: "Add a location", href: "/locations", where: "Locations", done: locationCount > 0 },
     { key: "team", label: "Invite your team", href: "/settings/team", where: "Team", done: teamCount >= 2 },

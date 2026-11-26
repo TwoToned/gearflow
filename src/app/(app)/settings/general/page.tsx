@@ -4,7 +4,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -15,11 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FadeIn } from "@/components/ui/motion";
-import { cn } from "@/lib/utils";
+import { SettingsSection, SettingsSections, SettingsSaveBar } from "@/components/settings/settings-section";
 import { updateOrganization } from "@/server/settings";
 import type { OrgSettings } from "@/lib/org-settings-types";
 import { ProjectNumberingSettings } from "@/components/settings/project-numbering-settings";
-import { InvoiceNumberingSettings } from "@/components/settings/invoice-numbering-settings";
 import { StatusAutomationSettings } from "@/components/settings/status-automation-settings";
 import { CrewTimeSettingsPanel } from "@/components/settings/crew-time-settings";
 import { useCanDo } from "@/lib/use-permissions";
@@ -76,27 +74,6 @@ const TIMEZONES: { value: string; label: string }[] = [
 const countryLabel = (v: string) => COUNTRIES.find((c) => c.value === v)?.label ?? "Not set";
 const timezoneLabel = (v: string) => TIMEZONES.find((t) => t.value === v)?.label ?? "Auto (browser)";
 
-/** A flat form section: title + helper on the left rail, fields on the right (Dub/Stripe grammar). */
-function SettingsSection({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="grid gap-x-8 gap-y-4 p-5 sm:p-6 md:grid-cols-[minmax(0,200px)_1fr]">
-      <div className="md:pt-0.5">
-        <h2 className="t-heading text-ink">{title}</h2>
-        <p className="mt-1 t-micro text-muted">{description}</p>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </section>
-  );
-}
-
 export default function GeneralSettingsPage() {
   const canEdit = useCanDo("orgSettings", "update");
   const { data: activeOrg } = useActiveOrganization();
@@ -106,14 +83,13 @@ export default function GeneralSettingsPage() {
 
   const [name, setName] = useState("");
   const [settings, setSettings] = useState<OrgSettings>({});
-  const [defaultTaxRate, setDefaultTaxRate] = useState<string>("");
 
   // Snapshot of the last loaded/saved values — drives the dirty-state affordance.
   const [baseline, setBaseline] = useState<string>("");
 
   const currentSnapshot = useMemo(
-    () => JSON.stringify({ name, settings, defaultTaxRate }),
-    [name, settings, defaultTaxRate],
+    () => JSON.stringify({ name, settings }),
+    [name, settings],
   );
   const isDirty = baseline !== "" && currentSnapshot !== baseline;
 
@@ -121,25 +97,17 @@ export default function GeneralSettingsPage() {
     if (org) {
       const nextName = ((org as Record<string, unknown>).name as string) || "";
       const nextSettings = ((org as Record<string, unknown>).settings as OrgSettings) || {};
-      const taxRate = (org as Record<string, unknown>).defaultTaxRate;
-      const nextTaxRate = taxRate != null ? String(taxRate) : "";
 
       setName(nextName);
       setSettings(nextSettings);
-      setDefaultTaxRate(nextTaxRate);
-      setBaseline(
-        JSON.stringify({ name: nextName, settings: nextSettings, defaultTaxRate: nextTaxRate }),
-      );
+      setBaseline(JSON.stringify({ name: nextName, settings: nextSettings }));
     }
   }, [org]);
 
   const updateMutation = useServerMutation({
-    mutationFn: () =>
-      updateOrganization({
-        name,
-        settings,
-        defaultTaxRate: defaultTaxRate ? parseFloat(defaultTaxRate) : null,
-      }),
+    // No `defaultTaxRate` here: it moved to Billing (D60), and an omitted rate
+    // leaves the stored one untouched.
+    mutationFn: () => updateOrganization({ name, settings }),
     onSuccess: () => {
       refreshOrganization(orgId);
       setBaseline(currentSnapshot);
@@ -152,14 +120,9 @@ export default function GeneralSettingsPage() {
     if (!org) return;
     const nextName = ((org as Record<string, unknown>).name as string) || "";
     const nextSettings = ((org as Record<string, unknown>).settings as OrgSettings) || {};
-    const taxRate = (org as Record<string, unknown>).defaultTaxRate;
-    const nextTaxRate = taxRate != null ? String(taxRate) : "";
     setName(nextName);
     setSettings(nextSettings);
-    setDefaultTaxRate(nextTaxRate);
-    setBaseline(
-      JSON.stringify({ name: nextName, settings: nextSettings, defaultTaxRate: nextTaxRate }),
-    );
+    setBaseline(JSON.stringify({ name: nextName, settings: nextSettings }));
   };
 
   const updateSetting = (key: keyof OrgSettings, value: string) => {
@@ -169,7 +132,7 @@ export default function GeneralSettingsPage() {
   return (
     <FadeIn className="space-y-6 pb-24">
       {/* General */}
-      <div className="overflow-hidden rounded-[var(--r-lg)] border border-line bg-card shadow-[var(--sh-card)]">
+      <SettingsSections>
         <SettingsSection
           title="General"
           description="Business identity shown on documents, dockets and quotes."
@@ -264,7 +227,7 @@ export default function GeneralSettingsPage() {
         </SettingsSection>
 
         {/* Timezone & locale */}
-        <div className="border-t border-line">
+        <div>
           <SettingsSection
             title="Timezone"
             description="Controls how dates and times display across the platform."
@@ -295,28 +258,11 @@ export default function GeneralSettingsPage() {
         </div>
 
         {/* Project defaults */}
-        <div className="border-t border-line">
+        <div>
           <SettingsSection
             title="Job defaults"
-            description="Applied to new jobs. Each job can override these."
+            description="How new jobs are numbered. The default tax rate and invoice numbering are under Billing."
           >
-            <div className="space-y-2 sm:max-w-[240px]">
-              <Label htmlFor="defaultTaxRate">Default tax rate (%)</Label>
-              <Input
-                id="defaultTaxRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                value={defaultTaxRate}
-                onChange={(e) => setDefaultTaxRate(e.target.value)}
-                placeholder="e.g. 10"
-                disabled={!canEdit}
-              />
-              <p className="t-micro text-muted">
-                Applied to new jobs unless overridden. Used for GST/VAT calculation.
-              </p>
-            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <ProjectNumberingSettings
                 format={settings.projectNumberFormat ?? ""}
@@ -332,21 +278,6 @@ export default function GeneralSettingsPage() {
                   }))
                 }
               />
-              {/* WS1 (#940) — same engine, disjoint "INV:" counter namespace. */}
-              <InvoiceNumberingSettings
-                format={settings.invoiceNumberFormat ?? ""}
-                reset={settings.invoiceNumberIncrementReset ?? "YEARLY"}
-                padding={settings.invoiceNumberIncrementPadding ?? 4}
-                disabled={!canEdit}
-                onChange={(patch) =>
-                  setSettings((prev) => ({
-                    ...prev,
-                    ...(patch.format !== undefined ? { invoiceNumberFormat: patch.format } : {}),
-                    ...(patch.reset !== undefined ? { invoiceNumberIncrementReset: patch.reset } : {}),
-                    ...(patch.padding !== undefined ? { invoiceNumberIncrementPadding: patch.padding } : {}),
-                  }))
-                }
-              />
             </div>
           </SettingsSection>
         </div>
@@ -354,7 +285,7 @@ export default function GeneralSettingsPage() {
         {/* Status automation (#1160) — its own section, not a "Job defaults"
             field: these change what the app DOES on its own, which is a different
             kind of setting from a value new projects inherit. */}
-        <div className="border-t border-line">
+        <div>
           <SettingsSection
             title="Status automation"
             description="Let jobs move themselves as the work actually happens, instead of someone remembering to."
@@ -375,7 +306,7 @@ export default function GeneralSettingsPage() {
         {/* Crew & time (work-layer Phase 4, #1246) — the crew planner's
             confirmation layer. Its own section: unlike status automation this
             governs Triage visibility and an email opt-in, not the job lifecycle. */}
-        <div className="border-t border-line">
+        <div>
           <SettingsSection
             title="Crew & time"
             description="Tune the crew planner's confirmation layer — when an unanswered offer surfaces to you, and whether crew get a reminder before call time."
@@ -387,41 +318,15 @@ export default function GeneralSettingsPage() {
             />
           </SettingsSection>
         </div>
-      </div>
+      </SettingsSections>
 
-      {/* Save — sticky footer bar with a dirty-state affordance (Vapi grammar) */}
       {canEdit && (
-        <div className="sticky bottom-4 z-10">
-          <div
-            className={cn(
-              "flex items-center justify-between gap-4 rounded-[var(--r)] border border-line bg-paper-2/95 px-4 py-3 shadow-[var(--sh-card)] backdrop-blur transition-opacity",
-              isDirty ? "opacity-100" : "opacity-0 pointer-events-none",
-            )}
-            aria-hidden={!isDirty}
-          >
-            <p className="t-small text-ink-2">You have unsaved changes.</p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="line"
-                size="sm"
-                onClick={resetForm}
-                disabled={updateMutation.isPending}
-              >
-                Reset
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => updateMutation.mutate()}
-                loading={updateMutation.isPending}
-                disabled={updateMutation.isPending}
-              >
-                Save changes
-              </Button>
-            </div>
-          </div>
-        </div>
+        <SettingsSaveBar
+          isDirty={isDirty}
+          pending={updateMutation.isPending}
+          onReset={resetForm}
+          onSave={() => updateMutation.mutate()}
+        />
       )}
     </FadeIn>
   );

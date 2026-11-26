@@ -2,7 +2,51 @@
 
 > UI naming (UX Phase 0, D7): the `/availability` page and its nav/palette entries are labelled **Schedule**; the route, code and this doc keep "availability". The crew availability-blocks tab keeps its name.
 
-> _Owner: Jayden Nawotka · Last reviewed: 2026-07-27 (review quarterly — POLICY.md R-5.5)_
+> _Owner: Jayden Nawotka · Last reviewed: 2026-11-26 (review quarterly — POLICY.md R-5.5)_
+
+## The Schedule page (UX Phase 18, `/availability`, slice 1: Jobs)
+`src/app/(app)/availability/page.tsx` is a thin route over `src/components/schedule/`. The six-week grid, the Agenda
+view, the busy-day tint and the 3-lane `+n more` cap are gone (D82, D83); the Gear view (D81) and the bulk Confirm /
+Move dates verbs (D84) follow in later slices.
+- **State is the URL**, parsed by one Zod schema (`src/lib/schedule-url.ts`) plus the shared list codec: `zoom`
+  (`week` default, `month`), `date` (normalised to the week start by the ORG's week start, `useOrgWeekStartsOn`, or the
+  1st of the month), `day` (opens the day sheet; on a phone it picks the day chip), `job` (opens the job sheet), the strip
+  `seg` (`all · confirmed · pencilled · clashes`), `q`, and the `status`, `pm`, `category`, `model` filters. Junk is
+  dropped; the old `?search=` global-search link is rewritten once into `?q=`; `?date=` (⌘K "Schedule at <date>") still lands.
+- **Month is the real calendar month** (28–31 slim columns, one row per job), never six weeks. Week and Month are the
+  same timeline with a different column count. Days are UTC `YYYY-MM-DD` keys, like the crew planner.
+- **A phone is always one week of day chips** and the jobs of ONE day as cards (day mode is the agenda, D82); zoom and
+  the grid are hidden. Every job of a week is on at least one day (pinned in `schedule.test.ts`).
+- **The bar is the RENTAL window** (as before, `projectMatchesCalendarWindow`); the gear words come from the PROJECT
+  window the engine reads. Held = a quiet raised bar; pencilled = dashed, hatched, holds nothing. Colour lives only in
+  the status dot-word and the `clash` / `would clash` word.
+
+### `scheduleBoard.jobs` — one definition of clash, one budget
+`convex/scheduleBoard.ts` returns the jobs whose rental window overlaps a range (at most 62 days) with each job's derived
+state. It is NOT a second availability formula: `convex/lib/scheduleBoard.ts` runs the Overbookings board's own
+`aggregateDemandByModel` → `sweepModelConflicts` (FCFS, hard before pencilled, `stockBackedQty` demand,
+`effectiveStockForModel` stock). The ONE rule for the words:
+- `clash` — a job that HOLDS its gear (`HARD_PROJECT_STATUSES`) has a claim that does not fit on some day;
+- `would clash` — a job that does NOT hold its gear (pencilled) has a claim that would not fit if it were confirmed;
+  a held job's own optional line never prints either word;
+- `unknown` ("not checked") — the check could not run for this job. It is never shown as "no clash".
+Each clash row carries the model, the job's own shortfall, the run and the other jobs on it (the job sheet prints them).
+
+**Bounded by ONE `ReadBudget`** (`convex/lib/scheduleFetch.ts`, 14,000 documents, no whole-set read, no new
+`r9.8-ok`): projects, live lines, models, their units and client names all draw from it.
+- **Gear claims never depend on history.** Every ALIVE job (enquiry through on site) is read through the existing
+  `by_organizationId_status` index, so a hire that started years ago still counts. Only the display of FINISHED jobs
+  reads by start date: jobs that start inside the window first (complete), then older ones nearest-first under their own
+  allowance.
+- **A job's word does not depend on the view.** The claim range is the view widened to the whole project window of every
+  alive job drawn in it, so the same job reads the same in Week, Month and a deep link.
+- **Never a confident `none` from an incomplete read.** `unknown` ("not checked") is returned for a job whose lines
+  exceeded the per-job cap or the budget (the exact-spend case included), on a model whose stock the budget could not
+  cover, and for EVERY alive job when the alive scan itself was cut (`claimsComplete: false`).
+- **`truncated`** is true whenever any part of the read was incomplete (a finished older job missing, any job's lines or
+  model's stock unread, the alive scan cut); the page prints a note.
+Pinned in `convex/scheduleBoard.test.ts` (each guard mutation-proven). The query is read-only, `danger: "low"`,
+`requireOrgReadFor` + `callerMayRead("project")`.
 
 ## The Two-Window Date Model (WS2 #941)
 

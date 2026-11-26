@@ -52,3 +52,4 @@ distinct from "debt paid down" instead of both looking like the same baseline co
 | 2026-09-27 | 719 | 720 | +1 | #1296 phase 4: readPackingReadiness adds one bounded, indexed .collect() per project line item (projectLineItemUnits by_lineItemId) for the Packing readiness row, same convention warehouseDetail.ts already uses |
 | 2026-10-17 | 720 | 702 | -18 | (decrease — existing collects bounded/paginated) |
 | 2026-11-24 | 702 | 696 | -6 | (decrease — existing collects bounded/paginated) |
+| 2026-11-26 | 696 | 689 | -7 | (decrease — existing collects bounded/paginated) |

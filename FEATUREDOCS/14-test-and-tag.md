@@ -18,7 +18,16 @@
   explicit allow-list; reads are bounded and say `truncated`.
 - Primary `Register item` (`/test-and-tag/new`). Page menu: `Sync from assets` (the backfill), `Quick test` (the Scan
   page's Test & tag mode), `Reports…` (still the reports page).
-- Deferred to the dialogs slice (14a-3b): `Schedule…`, `Print tags`, `Export report` and the `Reports…` dialog.
+- **Dialogs (14a-3b, D44).** `Reports…` (page ⋯, absent without `reports:view`) opens `ReportsDialog` from `?dialog=reports`:
+  the ten reports come from ONE table, `src/lib/test-tag-reports.ts` (kinds, formats, the filters each asks for, the URL), and
+  Generate PDF / Download CSV call the unchanged `/api/test-tag-reports/<key>` routes. `/test-and-tag/reports` is now only a redirect
+  to `/test-and-tag?dialog=reports` (the nav sub-row and the ⌘K page command point at the dialog URL).
+  **Export report** (row ⋯ and record ⋯, `reports:view`) opens that item's history PDF. **Print tags** (bulk bar) prints one label
+  per selected item through the ONE `LabelTemplate` in `sheet` mode (a label per page, everything else hidden on print); its data is
+  `testTagList.labelsFor` (the latest test of each item, at most 100 ids, org-checked, bounded), and a never-tested item has no
+  label and is NAMED, never printed blank. **Schedule…** (row, record ⋯, bulk; `maintenance:create`, absent on a retired item) books
+  ONE scheduled `TEST_AND_TAG` maintenance job covering the items' linked serialised assets (`planTestSchedule`,
+  `src/lib/test-tag-schedule.ts`; an item with no linked asset is named as skipped); the toast's Undo is `undoCreateNative`, ids only.
 
 ## The Test & tag record (UX Phase 14, 14b-4, `/test-and-tag/[id]`)
 `TestTagRecord` (`src/components/test-tag/record/test-tag-record.tsx`) on `RecordShell`, reading `testTagAssets.detail`
@@ -279,7 +288,7 @@ Same pattern as asset tags. Stored in `Organization.metadata.testTag`:
 - `/test-and-tag/new` — Create item
 - `/test-and-tag/[id]` — Item detail + test records
 - `/test-and-tag/quick-test` — redirect to `/scan?mode=tt[&tag=]` (the Scan page's Test & tag mode)
-- `/test-and-tag/reports` — 10 report types
+- `/test-and-tag/reports` — redirect to the Reports dialog (`/test-and-tag?dialog=reports`, 14a-3b)
 - `/settings/test-and-tag/profiles` — Test profile management
 
 ## Page header actions (UX prominence)

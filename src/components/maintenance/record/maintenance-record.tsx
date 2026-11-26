@@ -7,9 +7,9 @@ import { toast } from "sonner";
 
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { MaintenanceSheetHost } from "@/components/maintenance/maintenance-sheet-host";
-import { CompleteDialog, type CompleteAsset } from "@/components/maintenance/record/complete-dialog";
+import { CompleteRecordDialog } from "@/components/maintenance/record/complete-record-dialog";
 import { PartsTab } from "@/components/maintenance/record/parts-tab";
-import { useMaintenanceRecordWrites, type CompleteInput } from "@/components/maintenance/record/use-maintenance-record-writes";
+import { useMaintenanceRecordWrites } from "@/components/maintenance/record/use-maintenance-record-writes";
 import { Facts, HealthRows, Headline, RecordRows, RecordShell, type HealthItem, type RecordTab } from "@/components/people/record-shell";
 import { AppImage } from "@/components/ui/app-image";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -115,10 +115,6 @@ function recordCommands(a: { id: string; title: string; writes: Writes; remove: 
   const announce = (title: string, undoneTitle: string, auditId: string, undoable = true) =>
     announceListWrite({ title, undoneTitle, performUndo: undoable ? async () => void (await a.writes.undoLifecycle(auditId)) : undefined });
   return {
-    complete: async (input: CompleteInput) => {
-      const r = await a.writes.complete(input);
-      announce(`Completed ${a.title}`, "Completion undone", r.auditId, r.undoable);
-    },
     reopen: async () => {
       try {
         const r = await a.writes.reopen();
@@ -178,7 +174,6 @@ export function MaintenanceRecord({ id, orgId }: { id: string; orgId: string | u
   };
   const health: HealthItem[] = checks.items.map((c) => ({ key: c.key, tone: c.tone, text: c.text, action: fixAction(c.fix) }));
 
-  const assets: CompleteAsset[] = record.assets.map((l) => ({ assetId: l.assetId, assetTag: l.asset.assetTag, modelName: l.asset.model.name }));
   const assetRows = record.assets.map((l) => ({ id: l.assetId, title: <><span className="t-mono">{l.asset.assetTag}</span>{l.asset.customName ? ` · ${l.asset.customName}` : ""}</>, href: `/assets/registry/${l.assetId}`, meta: [l.asset.model.name] }));
   const tabs: RecordTab[] = [
     { value: "overview", label: "Overview", panel: <Overview record={record} word={word} checks={checks} health={health} parts={parts} /> },
@@ -208,17 +203,7 @@ export function MaintenanceRecord({ id, orgId }: { id: string; orgId: string | u
         rail={<Facts title="At a glance" facts={[{ label: "Status", value: word.label }, { label: "Scheduled", value: dateOf(record.scheduledDate) }, { label: "Assigned to", value: record.assignedTo?.name }, { label: "Total", value: total != null ? formatCurrency(total) : null }]} />}
       />
       <MaintenanceSheetHost mode="edit" record={maintenanceSheetInitialOf(record)} />
-      <CompleteDialog
-        open={completing}
-        onOpenChange={setCompleting}
-        title={record.title}
-        now={now}
-        assets={assets}
-        labourVisible={Object.hasOwn(record, "cost")}
-        storedLabour={record.cost ?? null}
-        storedNextDue={ms(record.nextDueDate)}
-        onComplete={cmd.complete}
-      />
+      <CompleteRecordDialog orgId={orgId} id={id} open={completing} onOpenChange={setCompleting} />
     </>
   );
 }

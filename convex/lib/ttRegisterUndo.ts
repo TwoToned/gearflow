@@ -15,12 +15,12 @@ import { assertWithinUndoWindow } from "./undoWindow";
 /** Audit rows scanned for one item's forward write and any earlier UNDO. */
 const MAX_ENTITY_ROWS = 50;
 
-export type RegisterUndoKind = "ttCreate" | "ttReactivate";
+export type RegisterUndoKind = "ttCreate" | "ttReactivate" | "ttRetire";
 
 export interface RegisterUndoDetails {
   kind: RegisterUndoKind;
   serverSavedAt: number;
-  /** A reactivate only: the fields it overwrote (`null` = absent). */
+  /** A reactivate or retire only: the fields it overwrote (`null` = absent). */
   before?: { status: string | null; isActive: boolean | null; updatedAt: number | null };
 }
 
@@ -63,5 +63,15 @@ export async function requireUntouchedNewItem(ctx: MutationCtx, orgId: string, i
     .first();
   // A new item can only have records made after it; a reactivated one, only those since.
   if (tested && tested._creationTime > forward._creationTime) throw new ConvexError("The item was tested since: this can't be undone");
+  return item;
+}
+
+/** The item (org-checked), still exactly as a RETIRE left it: retired, inactive, `updatedAt` untouched, and not edited since. */
+export async function requireStillJustRetired(ctx: MutationCtx, orgId: string, id: string, forward: Doc<"activityLogs">): Promise<Doc<"testTagAssets">> {
+  const item = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+  if (!item || item.organizationId !== orgId) throw new ConvexError("Test tag asset not found");
+  if (item.status !== "RETIRED" || item.isActive !== false || item.updatedAt !== forward.createdAt) {
+    throw new ConvexError("The item changed since: this can't be undone");
+  }
   return item;
 }

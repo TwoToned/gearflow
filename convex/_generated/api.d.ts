@@ -332,6 +332,7 @@ import type * as testProfilesWrites from "../testProfilesWrites.js";
 import type * as testTagAssets from "../testTagAssets.js";
 import type * as testTagAssetsWrites from "../testTagAssetsWrites.js";
 import type * as testTagAuditorTokens from "../testTagAuditorTokens.js";
+import type * as testTagEditWrites from "../testTagEditWrites.js";
 import type * as testTagList from "../testTagList.js";
 import type * as testTagRecords from "../testTagRecords.js";
 import type * as testTagRecordsWrites from "../testTagRecordsWrites.js";
@@ -690,6 +691,7 @@ declare const fullApi: ApiFromModules<{
   testTagAssets: typeof testTagAssets;
   testTagAssetsWrites: typeof testTagAssetsWrites;
   testTagAuditorTokens: typeof testTagAuditorTokens;
+  testTagEditWrites: typeof testTagEditWrites;
   testTagList: typeof testTagList;
   testTagRecords: typeof testTagRecords;
   testTagRecordsWrites: typeof testTagRecordsWrites;

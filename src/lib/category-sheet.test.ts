@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCategoryEdit, categorySheetError, categorySheetInitialOf } from "@/lib/category-sheet";
-import { categoryStateWord, deleteEffectText, modelsWithoutRates } from "@/lib/category-record-facts";
+import { categoryStateWord, deleteEffectText, modelsWithoutRates, subtreeIds } from "@/lib/category-record-facts";
 
 const SRC = { id: "c1", name: "Power", parentId: "p1", description: "d", tags: ["x"], defaultEquipmentClass: "CLASS_II", defaultTestIntervalMonths: 6 };
 
@@ -41,6 +41,14 @@ describe("categorySheetError", () => {
   });
 });
 
+describe("subtreeIds", () => {
+  it("is the category and everything below it, and nothing beside it", () => {
+    const cats = [{ id: "root" }, { id: "mid", parentId: "root" }, { id: "leaf", parentId: "mid" }, { id: "other" }, { id: "kid", parentId: "other" }];
+    expect(subtreeIds(cats, "mid").sort()).toEqual(["leaf", "mid"]);
+    expect(subtreeIds(cats, "leaf")).toEqual(["leaf"]);
+  });
+});
+
 describe("category record words", () => {
   it("a model with a rate of 0 has a rate; only a model with neither rate is without", () => {
     expect(modelsWithoutRates([{ dailyRate: 0 }, { weeklyRate: 5 }, {}, { dailyRate: null, weeklyRate: null }])).toBe(2);
@@ -54,7 +62,7 @@ describe("category record words", () => {
 
   it("Delete says what happens to what is inside, and where the subcategories go", () => {
     expect(deleteEffectText({ models: 12, kits: 1, children: 2 }, "Audio")).toBe("12 models and 1 kit become Uncategorised; 2 subcategories move up to Audio. You can undo it from the toast.");
-    expect(deleteEffectText({ models: 0, kits: 0, children: 1 }, null)).toBe("1 subcategory move up to the top level. You can undo it from the toast.");
+    expect(deleteEffectText({ models: 0, kits: 0, children: 1 }, null)).toBe("1 subcategory moves up to the top level. You can undo it from the toast.");
     expect(deleteEffectText({ models: 0, kits: 0, children: 0 }, null)).toMatch(/empty/);
   });
 });

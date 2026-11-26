@@ -27,6 +27,21 @@ export function categoryStateWord(counts: CategoryCounts, unrated: number): { la
   return { label: plural(counts.models, "model"), intent: "neutral" };
 }
 
+/** `rootId` and every category below it (a parentId walk over a flat list): none of them may become its parent. */
+export function subtreeIds(cats: { id: string; parentId?: string | null }[], rootId: string): string[] {
+  const ids = new Set([rootId]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const c of cats) {
+      if (c.parentId && ids.has(c.parentId) && !ids.has(c.id)) {
+        ids.add(c.id);
+        grew = true;
+      }
+    }
+  }
+  return [...ids];
+}
+
 /** What Delete does to what is inside the category, in words (the confirm names it). */
 export function deleteEffectText(counts: CategoryCounts, parentName: string | null): string {
   const parts: string[] = [];
@@ -34,6 +49,6 @@ export function deleteEffectText(counts: CategoryCounts, parentName: string | nu
     const things = [counts.models > 0 ? plural(counts.models, "model") : "", counts.kits > 0 ? plural(counts.kits, "kit") : ""].filter(Boolean).join(" and ");
     parts.push(`${things} become Uncategorised`);
   }
-  if (counts.children > 0) parts.push(`${counts.children} subcategor${counts.children === 1 ? "y" : "ies"} move up to ${parentName ?? "the top level"}`);
+  if (counts.children > 0) parts.push(`${counts.children === 1 ? "1 subcategory moves" : `${counts.children} subcategories move`} up to ${parentName ?? "the top level"}`);
   return parts.length ? `${parts.join("; ")}. You can undo it from the toast.` : "It is empty, so nothing else changes. You can undo it from the toast.";
 }

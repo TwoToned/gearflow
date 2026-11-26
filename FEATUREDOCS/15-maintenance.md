@@ -50,14 +50,14 @@ only) sit in the ⋯ with `Delete…` red and last (`buildMaintenanceRecordActio
   from each handler because the API registry reads an operation's scope from that literal call in the handler's source.
 
 ## Multi-Asset Records
-One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` join table. The form adds assets via a `ComboboxPicker` builder that appends each pick as a removable chip (see Maintenance Form below).
+One `MaintenanceRecord` links to multiple assets via `MaintenanceRecordAsset` join table. The sheet adds assets via a `ComboboxPicker` builder that appends each pick as a removable row (see The Maintenance sheet below).
 
 ## Types & Statuses
 - Types: `REPAIR, PREVENTATIVE, TEST_AND_TAG, INSPECTION, CLEANING, FIRMWARE_UPDATE`
 - Statuses: `SCHEDULED, AWAITING_PARTS, IN_PROGRESS, QA, COMPLETED, CANCELLED`
 - Results: `PASS, FAIL, CONDITIONAL`
 
-`AWAITING_PARTS` and `QA` were added for the workshop kanban board, which has since been removed (`chore: remove Workshop kanban tab`) — the two statuses were kept dormant on the enum (no migration to drop them) and are still offered in the maintenance form. All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
+`AWAITING_PARTS` and `QA` were added for the workshop kanban board, which has since been removed (`chore: remove Workshop kanban tab`) — the two statuses were kept dormant on the enum (no migration to drop them) and are no longer offered on the sheet (status is not a field); they move only through Reopen / the existing writes. All three "in-the-shop" statuses (`AWAITING_PARTS`, `IN_PROGRESS`, `QA`) hold the asset in `IN_MAINTENANCE`.
 
 **Adding an asset to an already-holding record holds it too.** `maintenanceWrites.ts`'s
 `updateNative` re-runs `holdAssets` whenever the record's (possibly unchanged) status is
@@ -70,7 +70,7 @@ record are an idempotent no-op.
 ## Closing out a record — per-asset disposition
 
 Completing a multi-asset record doesn't have to mean the same thing for every asset
-on it. When the **Outcome** section's status is set to `COMPLETED`, the form shows
+on it. The **Complete…** dialog (the record page's verb; the old form's status field is gone) shows
 an **Asset disposition** picker — one `RETURN_TO_SERVICE` / `KEEP_OUT_OF_SERVICE` /
 `RETIRE` choice per linked asset, plus an "Apply to all" bulk control for records
 with more than one asset. Each row defaults to whatever the overall `result` implies
@@ -84,9 +84,9 @@ independently per asset.
 status is `COMPLETED` and the array is non-empty (filtered to assets actually linked
 to this record — a disposition for a foreign assetId is silently ignored, not an
 error). When supplied it fully replaces the legacy record-wide "release everyone
-unless `result === FAIL`" path for this save; omit it (any non-form caller — API/MCP,
-the "Raise repair" shortcut) and that legacy path runs unchanged, so nothing needed
-updating outside the form.
+unless `result === FAIL`" path for this save; omit it (any other caller — API/MCP,
+the "Raise repair" shortcut) and that legacy path runs unchanged. The Complete dialog
+uses `maintenanceLifecycleWrites.completeNative`, which defaults each disposition from the result.
 
 - `RETURN_TO_SERVICE` — the same guarded, still-held-elsewhere-aware release as the
   old blanket path (`releaseAssets` + `computeStillHeldIds`, excluding this record).
@@ -106,36 +106,41 @@ Dispositions are never persisted on the record or the link row — they're an
 instruction applied once at the moment of completion, not retained state. Reopening
 a completed record for edit re-derives each row's default from `result` again.
 
-## Maintenance Form (`MaintenanceForm`)
-`src/components/maintenance/maintenance-form.tsx` — the create/edit form
-(`/maintenance/new` + `/maintenance/[id]/edit`, edit pre-fills, both reuse the
-component), on the shared `SmartFormLayout` shell (see
-[08-assets § Shared shell](./08-assets.md)). Helper rail + live preview, single
-clean page, "More details" accordion.
+## The Maintenance sheet (UX Phase 14, 14b-3, `MaintenanceSheet`)
+Logging a job and editing one are ONE sheet on `FormSheet`
+(`src/components/maintenance/maintenance-sheet.tsx`), hosted from the URL by
+`MaintenanceSheetHost`: `?new=1` on `/maintenance`, `?edit=1` on `/maintenance/[id]`. The
+old `MaintenanceForm` is gone; `/maintenance/new` and `/maintenance/[id]/edit` only
+redirect to those URLs, and `N`, the row menu and the record's Edit all build them. A
+caller without `maintenance:create` / `update` never sees it open (the param is dropped
+with a toast once permissions have arrived).
 
-- **Sections:** Identity (multi-asset `ComboboxPicker` builder — picks append as
-  removable chips, the `selectedAssetIds` state + add/remove kept intact; title;
-  type / status registry `Select`s with explicit `SelectValue` children covering
-  ALL types incl. `TEST_AND_TAG` and ALL statuses incl. `AWAITING_PARTS` / `QA`;
-  reported-by `Select` over org members; description) → Schedule (scheduled /
-  completed dates) → Outcome (cost, parts used; the **result `Select` + next-due
-  date stay gated to `status === COMPLETED`**, original logic preserved; the
-  **per-asset disposition picker** — see "Closing out a record" above — is gated
-  the same way) → "More details" accordion (relocated `PhotoGridInput`, tags).
-- **Live preview** — work-order card (`Wrench` icon + title + a target line
-  ("first asset + N more") + status pill via `StatusIndicator
-  category="maintenance"` + a type chip).
-- **Photo-upload guard preserved** — `photosUploading` disables submit and shows
-  the "wait for the photos to finish uploading" hint; the submit label flips to
-  "Uploading photos…".
-- **Preserved:** same `maintenanceSchema`, `assetIds` merge-on-submit, all fields, and
-  permission gates. The native multi-select chips and the COMPLETED-only outcome
-  fields were relocated into shell sections, not rewritten. Submit is browser-direct
-  via `useMaintenanceWrites()` (`src/hooks/use-maintenance-writes.ts`), calling
-  `convex/maintenanceWrites.ts`'s `createNative` / `updateNative` / `deleteNative`
-  mutations (the old `createMaintenanceRecord` / `updateMaintenanceRecord` /
-  `deleteMaintenanceRecord` actions in `src/server/maintenance.ts` are gone — that
-  file no longer exists).
+- **No status field.** A job's status moves only through Complete… / Reopen (the Complete
+  dialog owns result, completed date, labour, next due and the per-asset dispositions), so
+  the sheet cannot move a hold. Log always creates a Scheduled job.
+- **Fields** are exactly what `maintenanceEditWrites.editNative` sets
+  (`MAINTENANCE_EDIT_FIELDS`): assets, title, type, assigned to, reported by, description,
+  scheduled date, next due, labour, photos, tags. `partsUsed` text, result and completed
+  date are NOT its fields, so a save can never clear one. A blank box CLEARS its field
+  (`buildMaintenanceEdit`, `src/lib/maintenance-sheet.ts`); a stored `0` labour is `0`.
+- **Asset holds.** The asset list is editable only while the job is **Scheduled** (it
+  holds nothing then). Once it is under way the list is read-only on the sheet and
+  `editNative` refuses a membership change with `JOB_LIVE`; Complete / Reopen own the
+  holds. An Undo of a membership change likewise refuses once the job went live.
+- **Labour** (`cost`) is job cost: offered only when the record read carried it
+  (`canSeeJobCost`), never sent otherwise, and the server drops it for a caller who fails
+  the rule (a hidden caller can neither set nor clear it, and cannot Undo an edit that
+  touched it). Log offers no labour box (it is entered on Complete or from Edit).
+- **Exact Undo.** Edit is a plain `recordFieldEdit`; its toast Undo is `undoEditNative`,
+  ids only (author, 10-minute server window, once, compare-and-set on the fields it
+  changed, the same record). An edit that removed a photo whose bytes it deleted is
+  `undoable: false` (an Undo never deletes or resurrects a stored file). A save that
+  changed nothing says so and offers none. Log's Undo is `undoCreateNative`.
+- **Photos** use the attach rule (`assertNewMaintenancePhotos`): only the actor's own
+  fresh upload in `MAINTENANCE_PHOTO_FOLDER` is attachable; ids already on the record stay
+  valid on a save.
+- **The legacy `updateNative`** (full replace, API/MCP and the scan page's callers) treats
+  an omitted `photos` / `tags` as unchanged; clear with an explicit `[]`.
 
 ## Photos
 `MaintenanceRecord.photos` (`String[]`, default `[]`) holds before/after repair photos — URLs from `/api/uploads` (the `DamageEvent` model this used to share a shape with was removed along with the Damage Capture feature — `chore: remove Damage Capture feature`). The maintenance form uses the reusable `PhotoGridInput` component (`src/components/ui/photo-grid-input.tsx`), now inside the form's "More details" accordion.

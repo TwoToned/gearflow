@@ -164,6 +164,13 @@ describe("deleteStoredFileIfUnreferenced (the one remove rule)", () => {
     expect(await t.run(async (ctx) => ctx.db.query("storedFiles").collect())).toEqual([]); // the original and the thumbnail record
   });
 
+  test("when the state cannot be proven it THROWS FILE_REFS_UNVERIFIABLE and deletes nothing (never a silent keep)", async () => {
+    const t = makeT(); await addFile(t, "f");
+    await t.run(async (ctx) => { for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `m${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
+    await expect(t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "f"))).rejects.toThrow(/Too many records to check this file safely/);
+    expect(await t.run(async (ctx) => ctx.db.query("fileUploads").first())).not.toBeNull();
+  });
+
   test("never deletes another org's file", async () => {
     const t = makeT(); await addFile(t, "fx", { org: OTHER });
     expect(await t.run(async (ctx) => deleteStoredFileIfUnreferenced(ctx as unknown as MutationCtx, ORG, "fx"))).toBe(false);

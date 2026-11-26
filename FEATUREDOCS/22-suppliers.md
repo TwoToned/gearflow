@@ -233,7 +233,8 @@ field, and on an `image` / `images` / `logo` / `avatar` field not listed with a 
 **Known limit.** Some holders have no `by_fileId` index (`supplierOrders.invoiceFileId`, the `photos` /
 `attachments` arrays), so they are scanned with a cap. When a scan hits its cap the file cannot be PROVEN free, so
 it fails CLOSED: an attach is refused with the distinct code `FILE_REFS_UNVERIFIABLE` ("Too many records to check
-this file safely", not "already attached"), and a removal keeps the bytes. In an org big enough to hit a cap every
+this file safely", not "already attached"), and a removal throws the same code and changes nothing (its row
+removal rolls back with it; the bytes are never silently kept while the UI says they are deleted). In an org big enough to hit a cap every
 attach of the affected kind is refused until a holder index exists; adding one is a schema change that needs the
 owner's decision (it is not part of Phase 13).
 

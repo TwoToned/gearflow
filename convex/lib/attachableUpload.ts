@@ -114,35 +114,62 @@ async function heldAsInvoice(db: DatabaseReader, orgId: string, fileId: string):
 const MAINTENANCE_SCAN_CAP = 5000;
 const CHECK_SCAN_CAP = 2000;
 
-async function heldInPhotoArrays(db: DatabaseReader, orgId: string, file: { id: string; url: string; thumbnailUrl?: string; storageKey: string; _creationTime: number }): Promise<FileRefs> {
-  const needles = new Set([file.id, file.url, file.storageKey, ...(file.thumbnailUrl ? [file.thumbnailUrl] : [])]);
-  const holds = (values: string[] | undefined) => (values ?? []).some((v) => needles.has(v) || needles.has(storageIdOf(v) ?? ""));
+type FileDoc = Pick<Doc<"fileUploads">, "id" | "url" | "thumbnailUrl" | "storageKey" | "_creationTime">;
+
+/**
+ * The photo / attachment scans for a SET of files, read ONCE (a cascade that removes many files must not re-read the
+ * same 7,000 records per file). The check-record window starts at the OLDEST file's creation: a superset of any one
+ * file's window, so never less exact than the single-file read.
+ */
+async function heldInPhotoArrays(db: DatabaseReader, orgId: string, files: FileDoc[]): Promise<Map<string, FileRefs>> {
+  const needlesOf = new Map(files.map((f) => [f.id, new Set([f.id, f.url, f.storageKey, ...(f.thumbnailUrl ? [f.thumbnailUrl] : [])])]));
+  const holders = (values: string[] | undefined) => (values ?? []).flatMap((v) => [v, storageIdOf(v) ?? ""]);
+  const heldBy = (rows: { photos?: string[]; attachments?: string[] }[]) => {
+    const found = new Set<string>();
+    for (const r of rows) {
+      const values = [...holders(r.photos), ...holders(r.attachments)];
+      for (const [id, needles] of needlesOf) if (values.some((v) => needles.has(v))) found.add(id);
+    }
+    return found;
+  };
   const maintenance = await collectCapped(db.query("maintenanceRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), MAINTENANCE_SCAN_CAP);
-  if (maintenance.rows.some((r) => holds(r.photos) || holds(r.attachments))) return "held";
-  if (maintenance.truncated) return "unverifiable"; // cannot prove it unreferenced
-  const checks = await collectCapped(db.query("checkRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", file._creationTime)), CHECK_SCAN_CAP);
-  if (checks.rows.some((r) => holds(r.photos))) return "held";
-  return checks.truncated ? "unverifiable" : "free";
+  const heldInMaintenance = heldBy(maintenance.rows);
+  const since = Math.min(...files.map((f) => f._creationTime));
+  const checks = await collectCapped(db.query("checkRecords").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId).gte("_creationTime", since)), CHECK_SCAN_CAP);
+  const heldInChecks = heldBy(checks.rows.map((r) => ({ photos: r.photos })));
+  return new Map(files.map((f): [string, FileRefs] => {
+    if (heldInMaintenance.has(f.id) || heldInChecks.has(f.id)) return [f.id, "held"];
+    return [f.id, maintenance.truncated || checks.truncated ? "unverifiable" : "free"]; // cannot prove it unreferenced
+  }));
 }
 
-/** The holders that have no `by_fileId` index (the invoice FK, photo / attachment arrays), scanned with caps. */
-async function unindexedHolders(db: DatabaseReader, orgId: string, file: Doc<"fileUploads">, folder: string | undefined): Promise<FileRefs> {
-  const invoice: FileRefs = folder === INVOICE_UPLOAD_FOLDER ? await heldAsInvoice(db, orgId, file.id) : "free";
-  if (invoice === "held") return "held";
-  const photos = await heldInPhotoArrays(db, orgId, file);
-  if (photos === "held") return "held";
-  return invoice === "unverifiable" || photos === "unverifiable" ? "unverifiable" : "free";
+/** The state of each of `fileIds` (a missing or foreign file is `free`); the photo scans are shared across the set. */
+export async function fileReferenceStates(db: DatabaseReader, orgId: string, fileIds: string[]): Promise<Map<string, FileRefs>> {
+  const out = new Map<string, FileRefs>();
+  const pending: { file: Doc<"fileUploads">; folder: string | undefined }[] = [];
+  for (const fileId of new Set(fileIds)) {
+    const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
+    if (!file || file.organizationId !== orgId) { out.set(fileId, "free"); continue; }
+    if (await heldByIndexedTable(db, fileId)) { out.set(fileId, "held"); continue; }
+    const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
+    // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
+    if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) { out.set(fileId, "held"); continue; }
+    pending.push({ file, folder: stored?.folder });
+  }
+  if (pending.length === 0) return out;
+  const photos = await heldInPhotoArrays(db, orgId, pending.map((p) => p.file));
+  for (const { file, folder } of pending) {
+    // The invoice FK has no index, so it is scanned (only for the invoice folder).
+    const invoice: FileRefs = folder === INVOICE_UPLOAD_FOLDER ? await heldAsInvoice(db, orgId, file.id) : "free";
+    const photo = photos.get(file.id) ?? "free";
+    out.set(file.id, invoice === "held" || photo === "held" ? "held" : invoice === "unverifiable" || photo === "unverifiable" ? "unverifiable" : "free");
+  }
+  return out;
 }
 
 /** The state behind {@link isFileReferenced}: a missing or foreign file is `free`. */
 export async function fileReferenceState(db: DatabaseReader, orgId: string, fileId: string): Promise<FileRefs> {
-  const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-  if (!file || file.organizationId !== orgId) return "free";
-  if (await heldByIndexedTable(db, fileId)) return "held";
-  const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
-  // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
-  if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) return "held";
-  return await unindexedHolders(db, orgId, file, stored?.folder);
+  return (await fileReferenceStates(db, orgId, [fileId])).get(fileId) ?? "free";
 }
 
 /** Is this org's `fileUploads` file held by anything, or impossible to prove free (fail closed)? */

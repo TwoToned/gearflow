@@ -1147,9 +1147,19 @@ on read by `crewDocumentExpiry` in `convex/lib/crewDocumentCore.ts`, never store
 - **Undo** is exact and server-side (ids only; author + window + once + still-as-left). Undoing an add detaches the
   row and the file stays (an Undo never deletes a stored file); an edit (name, kind, expiry) is undone by the shared
   compare-and-set. **Remove** deletes the stored file for good, so it is a confirmed red verb with no Undo.
-- **Audit** names the document KIND only, never the file or its label.
+- **Audit**: the add / remove rows name the document KIND only, never the file or its label. An EDIT's row
+  (`entityType: "crewDocument"`) keeps the label, kind and expiry in `details.fieldEdit` because the exact Undo
+  reads them, and records the owner in `details.crewMemberId`. Every activity read (`activityLog.list` /
+  `listByEntity` / `recentForProject` / `exportRows`, so the CSV too) drops that row's `details` for a caller who
+  fails `canSeeCrewDocuments` for the owner (`crewDocumentRedactor`, `convex/lib/activityPay.ts`, beside the money
+  redactor); a row with no readable owner and the service identity (the CSV action) fail closed.
+- **Generic file reads**: `fileUploads.list` / `getById` / `getByThumbnailUrl` never return a row whose stored
+  folder is `crew-documents` (its name, size and storage key are identity material too).
+- **Bounds**: a name is at most 200 characters, an expiry a date between 1970 and 2099 (`CREW_DOCUMENT_EXPIRY_*`
+  in the core, read by the Convex writes and the Zod form), a member at most `MAX_CREW_DOCUMENTS` (100).
 - **Cascade and erasure**: deleting a crew member deletes their documents and stored files in the same
-  transaction; the org export and `scripts/erase-org.ts` sweep the table (DIRECT) and `storedFiles`; unlinking a
+  transaction (one shared read of the unindexed holder scans for the whole set, so 100 documents stay inside the
+  read limits; a set that cannot be proven free throws `FILE_REFS_UNVERIFIABLE` and deletes nothing); the org export and `scripts/erase-org.ts` sweep the table (DIRECT) and `storedFiles`; unlinking a
   user (`crewMembers.scrubUserRefs`) leaves the member's documents with the member. `docs/pii-inventory.md`
   records the table, its rule and its retention (with the member; no retention job).
 

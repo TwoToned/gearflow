@@ -14,7 +14,7 @@ import { buildChanges } from "./lib/auditChanges";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { recordRowOp } from "./lib/rowOpUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
-import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { deleteStoredFilesIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
 import * as enums from "./lib/validators";
 
@@ -243,10 +243,10 @@ function isDeletableCrewStatus(m: { status?: string; isActive?: boolean }): bool
 /** A member's documents go with them, stored files included (identity material is never orphaned). */
 async function deleteCrewDocuments(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<void> {
   const docs = await ctx.db.query("crewDocuments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).take(MAX_CREW_DOCUMENTS + 1);
-  for (const d of docs.filter((x) => x.organizationId === orgId)) {
-    await ctx.db.delete(d._id);
-    await deleteStoredFileIfUnreferenced(ctx, orgId, d.fileId);
-  }
+  const mine = docs.filter((x) => x.organizationId === orgId);
+  for (const d of mine) await ctx.db.delete(d._id);
+  // After every row is gone (so a file two of them shared is free), with ONE set of holder scans for all of them.
+  await deleteStoredFilesIfUnreferenced(ctx, orgId, mine.map((d) => d.fileId));
 }
 
 /**

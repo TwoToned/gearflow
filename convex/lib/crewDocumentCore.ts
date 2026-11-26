@@ -21,6 +21,10 @@ export const CREW_DOCUMENTS_FOLDER = "crew-documents";
 /** Caps that bound the member's document list. */
 export const MAX_CREW_DOCUMENTS = 100;
 
+/** An expiry is a calendar date between 1970 and the end of 2099 (epoch ms): the ONE bound, read by the Convex writes and the Zod form. */
+export const CREW_DOCUMENT_EXPIRY_MIN_MS = 0;
+export const CREW_DOCUMENT_EXPIRY_MAX_MS = Date.UTC(2100, 0, 1);
+
 /**
  * THE visibility rule (owner ruling B2, 2026-11-24): the member themself (the row's linked
  * user) or a caller with `crew:update`, on a USER session. Never an API key or agent, never a

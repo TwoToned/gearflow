@@ -53,3 +53,29 @@ export function activityMoneyRedactor(seen: { pay: boolean; jobCost: boolean }):
   if (hidden.size === 0) return (row) => row;
   return (row) => dropChanges(row, hidden);
 }
+
+/**
+ * Crew DOCUMENT audit rows (`entityType: "crewDocument"`, written by `crewDocumentsWrites.updateNative`) carry the
+ * document's label, kind and expiry in `details.fieldEdit` (the exact Undo needs them) and the owning member in
+ * `details.crewMemberId`. That is identity material (owner ruling B2, `docs/pii-inventory.md`), but the activity reads
+ * need only project read. A caller who fails `canSeeCrewDocuments` for the row's member gets the row with `details`
+ * dropped entirely (entity type, action, summary and time stay; the summary names no label or expiry). A row with no
+ * readable owner fails closed. The Undo is unaffected: it reads the stored row server-side.
+ */
+export const CREW_DOCUMENT_ENTITY = "crewDocument";
+
+/** The owner of a crew-document audit row; `undefined` when the row isn't one, `null` when it names no owner. */
+export function crewDocumentRowMember(row: { entityType?: string; details?: unknown }): string | null | undefined {
+  if (row.entityType !== CREW_DOCUMENT_ENTITY) return undefined;
+  const id = (row.details as { crewMemberId?: unknown } | null | undefined)?.crewMemberId;
+  return typeof id === "string" ? id : null;
+}
+
+/** `visibleMembers`: the crew members whose documents this caller may see. */
+export function crewDocumentRedactor(visibleMembers: ReadonlySet<string>): ActivityRedactor {
+  return (row) => {
+    const owner = crewDocumentRowMember(row as { entityType?: string; details?: unknown });
+    if (owner === undefined || (owner !== null && visibleMembers.has(owner))) return row;
+    return Object.fromEntries(Object.entries(row).filter(([k]) => k !== "details")) as typeof row;
+  };
+}

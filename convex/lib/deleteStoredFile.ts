@@ -1,6 +1,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
-import { isFileReferenced } from "./attachableUpload";
+import { ConvexError } from "convex/values";
+import { fileReferenceState, fileReferenceStates } from "./attachableUpload";
 import { storageIdOf } from "./checkPhotos";
 
 /** Delete one `_storage` object and its `storedFiles` record (idempotent). */
@@ -32,11 +33,32 @@ export async function deleteStoredFile(ctx: MutationCtx, fileId: string, orgId: 
 
 /**
  * Delete a file's bytes ONLY when nothing holds it any more. Call it AFTER the caller's own row is deleted
- * (or swapped away) in the same transaction, so `isFileReferenced` sees the world without that row. A
+ * (or swapped away) in the same transaction, so `fileReferenceState` sees the world without that row. A
  * legacy file that two rows share (or that a media row, an invoice or a photo array still holds) survives
  * the removal of one of them. Returns whether a file was deleted (false: it was held, or is not this org's).
+ *
+ * When this org has too many records to PROVE the file unreferenced (`unverifiable`) it THROWS
+ * `FILE_REFS_UNVERIFIABLE` rather than quietly keeping the bytes: the caller's mutation is one transaction, so
+ * its own row removal rolls back too and nothing changes. Silently keeping the bytes would orphan them (for
+ * identity files, retained past their row) while the UI says the file is deleted.
  */
 export async function deleteStoredFileIfUnreferenced(ctx: MutationCtx, orgId: string, fileId: string): Promise<boolean> {
-  if (await isFileReferenced(ctx.db, orgId, fileId)) return false;
+  const refs = await fileReferenceState(ctx.db, orgId, fileId);
+  if (refs === "unverifiable") throw new ConvexError({ code: "FILE_REFS_UNVERIFIABLE", message: "Too many records to check this file safely" });
+  if (refs === "held") return false;
   return await deleteStoredFile(ctx, fileId, orgId);
+}
+
+/**
+ * {@link deleteStoredFileIfUnreferenced} for a SET of files (a cascade): the holder scans that have no index are
+ * read ONCE for the whole set, not once per file, so a member with 100 documents stays inside a transaction's read
+ * limits. Same rule: ANY file that cannot be proven free throws `FILE_REFS_UNVERIFIABLE` before anything is deleted.
+ * Returns how many files were deleted.
+ */
+export async function deleteStoredFilesIfUnreferenced(ctx: MutationCtx, orgId: string, fileIds: string[]): Promise<number> {
+  const states = await fileReferenceStates(ctx.db, orgId, fileIds);
+  if ([...states.values()].includes("unverifiable")) throw new ConvexError({ code: "FILE_REFS_UNVERIFIABLE", message: "Too many records to check this file safely" });
+  let deleted = 0;
+  for (const [fileId, refs] of states) if (refs === "free" && (await deleteStoredFile(ctx, fileId, orgId))) deleted += 1;
+  return deleted;
 }

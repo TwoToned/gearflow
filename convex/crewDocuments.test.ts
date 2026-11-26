@@ -10,7 +10,7 @@ import { register as registerShardedCounter } from "@convex-dev/sharded-counter/
 import { describe, test, expect, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { CREW_DOCUMENTS_FOLDER, crewDocumentExpiry, crewDocumentsVisible, worstCrewDocument } from "./lib/crewDocumentCore";
+import { CREW_DOCUMENTS_FOLDER, MAX_CREW_DOCUMENTS, crewDocumentExpiry, crewDocumentsVisible, worstCrewDocument } from "./lib/crewDocumentCore";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -175,6 +175,160 @@ describe("Undo and remove", () => {
   });
 });
 
+describe("write refusals, each guard alone", () => {
+  const edit = (t: T, over: Record<string, unknown> = {}) => t.withIdentity(as("manager")).mutation(api.crewDocumentsWrites.updateNative, { orgId: ORG, crewMemberId: "c1", documentId: "d1", kind: "LICENCE", name: "White card", expiresAt: NOW + 10 * DAY, now: NOW, actor, auditId: "e1", ...over });
+  const undoAdd = (t: T) => t.withIdentity(as("manager")).mutation(api.crewDocumentsWrites.undoAddNative, { orgId: ORG, crewMemberId: "c1", forwardAuditId: "a1", now: NOW, actor });
+  const moveDocTo = (t: T, org: string) => t.run(async (ctx) => { const d = (await ctx.db.query("crewDocuments").withIndex("by_cuid", (q) => q.eq("id", "d1")).first())!; await ctx.db.patch(d._id, { organizationId: org }); });
+
+  test("addNative refuses a duplicate document id and a name over 200 characters", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await expect(add(t, { fileId: "f2", auditId: "a2" })).rejects.toThrow(/already exists/);
+    await expect(add(t, { id: "d2", fileId: "f2", auditId: "a2", name: "x".repeat(201) })).rejects.toThrow(/at most 200/);
+    expect(await rows(t)).toHaveLength(1);
+  });
+
+  test("an expiry must be a finite date between 1970 and 2099, on add and on edit", async () => {
+    const t = makeT(); await seed(t);
+    for (const bad of [-1, 4.2e12, Number.POSITIVE_INFINITY]) await expect(add(t, { expiresAt: bad }), String(bad)).rejects.toThrow(/expiresAt/);
+    expect(await rows(t)).toHaveLength(0);
+    await add(t);
+    for (const bad of [-1, 4.2e12]) await expect(edit(t, { expiresAt: bad }), String(bad)).rejects.toThrow(/expiresAt/);
+    expect((await edit(t, { expiresAt: 0 })).changed).toBe(true); // the bound itself is allowed
+  });
+
+  test("a member can have at most MAX_CREW_DOCUMENTS documents: the 100th is added, the 101st refused", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { for (let i = 0; i < MAX_CREW_DOCUMENTS - 1; i++) await ctx.db.insert("crewDocuments", { id: `x${i}`, organizationId: ORG, crewMemberId: "c1", fileId: `none${i}`, kind: "OTHER", createdAt: NOW, createdById: USER }); });
+    await add(t); // number 100
+    await expect(add(t, { id: "d2", fileId: "f2", auditId: "a2" })).rejects.toThrow(/at most 100 documents/);
+    expect(await rows(t)).toHaveLength(MAX_CREW_DOCUMENTS);
+    await add(t, { id: "d3", crewMemberId: "c2", fileId: "f2", auditId: "a3" }); // the cap is per member
+  });
+
+  test("Undo of an add is refused once the document was edited, and the row stays", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await edit(t, { name: "Renamed", now: NOW + 5 });
+    await expect(undoAdd(t)).rejects.toThrow(/edited since/);
+    expect(await rows(t)).toHaveLength(1);
+  });
+
+  test("Undo of an add never deletes a row of another org (the row's org is re-checked)", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await moveDocTo(t, OTHER);
+    expect((await undoAdd(t)).restored).toBe(false);
+    expect(await rows(t)).toHaveLength(1);
+  });
+
+  test("Undo of an edit never touches a row of another org (the load re-checks the org)", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await edit(t, { name: "Renamed", now: NOW + 5 });
+    await moveDocTo(t, OTHER);
+    await expect(t.withIdentity(as("manager")).mutation(api.crewDocumentsWrites.undoUpdateNative, { orgId: ORG, documentId: "d1", forwardAuditId: "e1", now: NOW, actor })).rejects.toThrow();
+    expect((await rows(t))[0]).toMatchObject({ name: "Renamed", organizationId: OTHER });
+  });
+
+  test("the writer guard is for the caller's OWN org: a manager of this org cannot write into another", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { await ctx.db.insert("members", { id: "mo", organizationId: OTHER, userId: "u_viewer", role: "viewer" }); });
+    // The manager's token is for ORG; the call names OTHER. (A user who is a manager of ORG and only a viewer of OTHER must not pass either.)
+    await expect(add(t, { orgId: OTHER, crewMemberId: "cx", fileId: "fx" })).rejects.toThrow(/permission/);
+    await expect(add(t, { orgId: OTHER, crewMemberId: "cx", fileId: "fx" }, t.withIdentity({ subject: "u_viewer", orgId: OTHER, role: "viewer" }))).rejects.toThrow(/permission/);
+  });
+
+  test("canSeeCrewDocuments is for the caller's OWN org: a manager of this org reads null for another org's member", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("members", { id: "mo", organizationId: OTHER, userId: USER, role: "manager" });
+      // USER is also a crew member of OTHER (the `isSelf` branch, which `callerMay` does not gate by org).
+      await ctx.db.insert("crewMembers", { id: "cy", organizationId: OTHER, firstName: "Al", lastName: "Ice", status: "ACTIVE", isActive: true, userId: USER });
+      await ctx.db.insert("crewDocuments", { id: "dy", organizationId: OTHER, crewMemberId: "cy", fileId: "fx", kind: "ID", createdAt: NOW, createdById: "x" });
+    });
+    // USER is a manager of BOTH orgs and the person behind OTHER's `cy`, but this token is for ORG: a read naming OTHER must not pass.
+    for (const crewMemberId of ["cx", "cy"]) expect(await t.withIdentity(as("manager")).query(api.crewDocuments.listForMember, { orgId: OTHER, crewMemberId }), crewMemberId).toBeNull();
+  });
+});
+
+describe("the generic file-record reads never expose a crew document's file", () => {
+  test("fileUploads.list / getById / getByThumbnailUrl drop a crew-documents row (name, size, storage key) for every caller; other files still read", async () => {
+    const t = makeT(); await seed(t);
+    await t.run(async (ctx) => { const f = (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", "f1")).first())!; await ctx.db.patch(f._id, { thumbnailUrl: "/api/files/k_f1_thumb" }); });
+    for (const who of [as("manager"), { ...as("manager"), akid: KEY }, SERVICE]) {
+      const c = t.withIdentity(who);
+      const ids = (await c.query(api.fileUploads.list, { orgId: ORG })).map((f) => f.id);
+      expect(ids).not.toContain("f1");
+      expect(ids).not.toContain("f2");
+      expect(ids).toContain("f4"); // the misc-folder file still reads
+      expect(await c.query(api.fileUploads.getById, { id: "f1" })).toBeNull();
+      expect((await c.query(api.fileUploads.getById, { id: "f4" }))?.id).toBe("f4");
+    }
+    expect(await t.withIdentity(SERVICE).query(api.fileUploads.getByThumbnailUrl, { thumbnailUrl: "/api/files/k_f1_thumb" })).toBeNull();
+  });
+});
+
+describe("the delete cascade at the document cap", () => {
+  const seedCap = async (t: T, n: number) => {
+    await t.run(async (ctx) => {
+      for (let i = 0; i < n; i++) {
+        await ctx.db.insert("fileUploads", { id: `cf${i}`, organizationId: ORG, fileName: `cf${i}.pdf`, fileSize: 10, mimeType: "application/pdf", storageKey: `k_cf${i}`, url: `/api/files/k_cf${i}`, uploadedById: USER });
+        await ctx.db.insert("storedFiles", { storageId: `k_cf${i}`, organizationId: ORG, folder: CREW_DOCUMENTS_FOLDER });
+        await ctx.db.insert("crewDocuments", { id: `cd${i}`, organizationId: ORG, crewMemberId: "c1", fileId: `cf${i}`, kind: "OTHER", createdAt: NOW, createdById: USER });
+      }
+      for (let i = 0; i < 50; i++) await ctx.db.insert("maintenanceRecords", { id: `mr${i}`, organizationId: ORG, type: "REPAIR", title: "x", photos: [`/api/files/other${i}`] } as never);
+    });
+  };
+
+  test("the holder scans are read ONCE for all 100 files, not once per file (the read-limit bound)", async () => {
+    const t = makeT(); await seed(t); await seedCap(t, 100);
+    const reads: Record<string, number> = {};
+    await t.run(async (ctx) => {
+      for (const d of await ctx.db.query("crewDocuments").collect()) await ctx.db.delete(d._id); // as the cascade does, before asking
+      const db = new Proxy(ctx.db, { get: (target, prop, recv) => (prop === "query" ? (table: string) => { reads[table] = (reads[table] ?? 0) + 1; return (target.query as (t: string) => unknown)(table); } : Reflect.get(target, prop, recv)) }) as typeof ctx.db;
+      const { fileReferenceStates } = await import("./lib/attachableUpload");
+      const states = await fileReferenceStates(db, ORG, Array.from({ length: 100 }, (_, i) => `cf${i}`));
+      expect([...states.values()].filter((s) => s === "free")).toHaveLength(100);
+    });
+    expect(reads.maintenanceRecords).toBe(1);
+    expect(reads.checkRecords).toBe(1);
+  });
+
+  test("deleting a member with 100 documents deletes every row and every stored file", async () => {
+    const t = makeT(); await seed(t); await seedCap(t, 100);
+    await t.run(async (ctx) => { const m = (await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first())!; await ctx.db.patch(m._id, { status: "INACTIVE" }); await ctx.db.insert("members", { id: "own", organizationId: ORG, userId: "u_owner", role: "owner" }); });
+    await t.withIdentity(as("owner", "u_owner")).mutation(api.crewWrites.deleteNative, { id: "c1", orgId: ORG, actor, auditId: "del", now: NOW });
+    expect(await rows(t)).toHaveLength(0);
+    expect(await t.run(async (ctx) => (await ctx.db.query("fileUploads").collect()).filter((f) => f.id.startsWith("cf")))).toHaveLength(0);
+  });
+
+  test("a file another record still holds survives the cascade, and an unprovable set deletes nothing", async () => {
+    const t = makeT(); await seed(t); await seedCap(t, 3);
+    await t.run(async (ctx) => { const m = (await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first())!; await ctx.db.patch(m._id, { status: "INACTIVE" }); await ctx.db.insert("members", { id: "own", organizationId: ORG, userId: "u_owner", role: "owner" }); await ctx.db.insert("maintenanceRecords", { id: "held", organizationId: ORG, type: "REPAIR", title: "x", photos: ["/api/files/k_cf1"] } as never); });
+    await t.withIdentity(as("owner", "u_owner")).mutation(api.crewWrites.deleteNative, { id: "c1", orgId: ORG, actor, auditId: "del", now: NOW });
+    expect((await t.run(async (ctx) => (await ctx.db.query("fileUploads").collect()).filter((f) => f.id.startsWith("cf")))).map((f) => f.id)).toEqual(["cf1"]);
+
+    const t2 = makeT(); await seed(t2); await seedCap(t2, 2);
+    await t2.run(async (ctx) => { const m = (await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first())!; await ctx.db.patch(m._id, { status: "INACTIVE" }); await ctx.db.insert("members", { id: "own", organizationId: ORG, userId: "u_owner", role: "owner" }); for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `big${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
+    await expect(t2.withIdentity(as("owner", "u_owner")).mutation(api.crewWrites.deleteNative, { id: "c1", orgId: ORG, actor, auditId: "del", now: NOW })).rejects.toThrow(/Too many records to check this file safely/);
+    expect(await rows(t2)).toHaveLength(2);
+    expect(await t2.run(async (ctx) => ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", "c1")).first())).not.toBeNull();
+  });
+});
+
+describe("remove when the file's holders cannot be proven", () => {
+  test("refuses with FILE_REFS_UNVERIFIABLE and changes nothing: the row, the file and the audit all stay", async () => {
+    const t = makeT(); await seed(t);
+    await add(t);
+    await t.run(async (ctx) => { for (let i = 0; i < 5001; i++) await ctx.db.insert("maintenanceRecords", { id: `m${i}`, organizationId: ORG, type: "REPAIR", title: "x" } as never); });
+    await expect(t.withIdentity(as("manager")).mutation(api.crewDocumentsWrites.removeNative, { orgId: ORG, crewMemberId: "c1", documentId: "d1", now: NOW, actor, auditId: "r1" })).rejects.toThrow(/Too many records to check this file safely/);
+    expect(await rows(t)).toHaveLength(1);
+    expect(await fileRow(t, "f1")).not.toBeNull();
+    expect(await t.run(async (ctx) => ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", "r1")).first())).toBeNull();
+  });
+});
+
 describe("the file is only reachable through the gated route", () => {
   test("the generic serve (and any caller of it, an API key included) gets nothing for a crew document; other files still serve", async () => {
     const t = makeT(); await seed(t);
@@ -184,11 +338,39 @@ describe("the file is only reachable through the gated route", () => {
     expect(await t.withIdentity({ subject: USER, orgId: ORG, role: "manager", akid: KEY }).query(api.files.getServeInfo, { storageId: "k_f1" })).toBeNull();
   });
 
-  test("getForDownload is service-only and org-checked", async () => {
-    const t = makeT(); await seed(t);
+  // Each case below stores a REAL blob, so `ctx.storage.getUrl` succeeds: a missing guard shows as a returned url,
+  // not as convex-test throwing on a fake key (which would pass these without the guard).
+  const realBlob = (t: T, storageKey: string, fileId: string) =>
+    t.run(async (ctx) => {
+      const id = await ctx.storage.store(new Blob(["%PDF-1.4"]));
+      const f = (await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first())!;
+      await ctx.db.patch(f._id, { storageKey: id });
+      const s = (await ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", storageKey)).first())!;
+      await ctx.db.patch(s._id, { storageId: id });
+    });
+  const download = (t: T, who: Record<string, string | boolean>, orgId: string, id: string) => t.withIdentity(who).query(api.crewDocuments.getForDownload, { orgId, id });
+
+  test("getForDownload: the service identity gets the url and the member's user id (the positive control)", async () => {
+    const t = makeT(); await seed(t); await realBlob(t, "k_f1", "f1");
     await add(t);
-    await expect(t.withIdentity(as("manager")).query(api.crewDocuments.getForDownload, { orgId: ORG, id: "d1" })).rejects.toThrow();
-    expect(await t.withIdentity(SERVICE).query(api.crewDocuments.getForDownload, { orgId: OTHER, id: "d1" })).toBeNull();
+    expect(await download(t, SERVICE, ORG, "d1")).toMatchObject({ url: expect.any(String), memberUserId: SELF, fileName: "f1.pdf" });
+  });
+
+  test("getForDownload is service-only: a manager, the member themself and an API key are refused even with a real file", async () => {
+    const t = makeT(); await seed(t); await realBlob(t, "k_f1", "f1");
+    await add(t);
+    for (const who of [as("manager"), as("member", SELF), { ...as("manager"), akid: KEY }]) await expect(download(t, who, ORG, "d1")).rejects.toThrow();
+  });
+
+  test("getForDownload re-checks the document's org, the member's org and the file's org (each alone, with everything else real)", async () => {
+    const t = makeT(); await seed(t); await realBlob(t, "k_f1", "f1"); await realBlob(t, "k_fx", "fx");
+    await t.run(async (ctx) => {
+      // dz: a document of ANOTHER org pointing at this org's member and file; dm: this org's document on a FOREIGN member; df: this org's document on a FOREIGN file.
+      await ctx.db.insert("crewDocuments", { id: "dz", organizationId: OTHER, crewMemberId: "c1", fileId: "f1", kind: "ID", createdAt: NOW, createdById: "x" });
+      await ctx.db.insert("crewDocuments", { id: "dm", organizationId: ORG, crewMemberId: "cx", fileId: "f1", kind: "ID", createdAt: NOW, createdById: "x" });
+      await ctx.db.insert("crewDocuments", { id: "df", organizationId: ORG, crewMemberId: "c1", fileId: "fx", kind: "ID", createdAt: NOW, createdById: "x" });
+    });
+    for (const id of ["dz", "dm", "df"]) expect(await download(t, SERVICE, ORG, id), id).toBeNull();
   });
 });
 

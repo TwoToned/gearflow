@@ -9,6 +9,8 @@ import { assertTags } from "./lib/fieldGuards";
 import { bumpCrewMemberCounters } from "./lib/counters";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { collectCapped } from "./lib/pagination";
+import { undoRefusal } from "./lib/peopleEditFields";
+import { canSeeCrewPay } from "./lib/crewPayVisibility";
 
 /**
  * The People lists' bulk writes with SERVER-side exact Undo (UX Phase 13, review of slice 1):
@@ -19,7 +21,8 @@ import { collectCapped } from "./lib/pagination";
  * SERVER clock). The Undo takes only `{ id, auditId }` pairs: per record it runs the shared
  * `undoFieldEdit` (author-scoped, inside the server window, once via an `undo:` marker, and a
  * per-field compare-and-set so a later edit by anyone is never clobbered). A record that
- * changed since stays, and is NAMED in the result. There is no client snapshot to write back.
+ * changed since stays, and is NAMED in the result. There is no client snapshot to write back. The Undo restores only the
+ * fields in `lib/peopleEditFields.ts`, and a crew member's pay only for a caller who can see crew pay.
  * A tag Undo therefore only ever removes the tag THIS write added: it restores the tag list
  * exactly as it was, and only while the list is still exactly as this write left it.
  *
@@ -204,6 +207,9 @@ export const undoManyNative = mutation({
           orgId: a.orgId, entityType: cfg.entityType, entityId: it.id, entityName: nameOf(row), auditId: it.auditId, actor, now: a.now,
           load: async () => loadRow(ctx, cfg, it.id, a.orgId),
           apply: async (doc, plan) => {
+            // Only the fields an edit may write are restorable, and pay only for a caller who can see it (lib/peopleEditFields.ts).
+            const refusal = undoRefusal(a.kind, [...Object.keys(plan.set), ...plan.clear], a.kind === "crew" ? await canSeeCrewPay(ctx, a.orgId) : true);
+            if (refusal) throw new ConvexError({ code: "NOT_UNDOABLE", message: refusal });
             const patch: Record<string, unknown> = { ...plan.set };
             for (const f of plan.clear) patch[f] = undefined;
             await patchRow(ctx, cfg, doc as Row, patch, a.now);

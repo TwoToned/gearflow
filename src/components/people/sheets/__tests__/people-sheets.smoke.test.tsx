@@ -41,6 +41,12 @@ import { clientToFormValues } from "../edit-values";
 // The Radix checkbox measures itself with ResizeObserver, which jsdom lacks.
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 
+// Radix Select needs pointer-capture / scrollIntoView, which jsdom lacks.
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.setPointerCapture ??= () => {};
+Element.prototype.releasePointerCapture ??= () => {};
+Element.prototype.scrollIntoView ??= () => {};
+
 const saved = { id: "r1", auditId: "a1" };
 const click = (name: string) => userEvent.click(screen.getByRole("button", { name }));
 
@@ -153,5 +159,27 @@ describe("edit: opens with the stored values, saves with the exact field-edit Un
     await waitFor(() => expect(h.error).toHaveBeenCalled());
     expect(onClose).not.toHaveBeenCalled();
     expect(h.announce).not.toHaveBeenCalled();
+  });
+});
+
+describe("the order sheet's status select offers only legal moves", () => {
+  const open = async (status: string) => {
+    render(<OrderSheet supplierId="s1" supplierName="Scene" initialData={{ id: "o1", supplierId: "s1", orderNumber: "PO-1", type: "PURCHASE", status: status as never, orderDate: "", expectedDate: "", notes: "" }} onClose={vi.fn()} />);
+    await userEvent.click(screen.getAllByRole("combobox")[0]);
+    return screen.getAllByRole("option").map((o) => o.textContent);
+  };
+
+  it("DRAFT can stay, go to Ordered or be Cancelled (not jump to Received)", async () => {
+    expect(await open("DRAFT")).toEqual(["Draft", "Ordered", "Cancelled"]);
+  });
+
+  it("a terminal status offers only itself", async () => {
+    expect(await open("RECEIVED")).toEqual(["Received"]);
+  });
+
+  it("a new order may start in any status", async () => {
+    render(<OrderSheet supplierId="s1" supplierName="Scene" onClose={vi.fn()} />);
+    await userEvent.click(screen.getAllByRole("combobox")[1]);
+    expect(screen.getAllByRole("option")).toHaveLength(5);
   });
 });

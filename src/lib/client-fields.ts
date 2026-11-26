@@ -1,4 +1,5 @@
 import type { ClientFormValues } from "@/lib/validations/client";
+import { CLIENT_CLEARABLE_FIELDS } from "../../convex/lib/peopleEditFields";
 
 /**
  * Map validated client form values → the Convex client field payload (null → absent).
@@ -47,4 +48,10 @@ export function toClientFields(parsed: ClientFieldsInput) {
     tags: parsed.tags,
     isActive: parsed.isActive,
   };
+}
+
+/** The optional client fields the form left blank (mapped value `undefined`): an edit CLEARS them, it does not keep the old value. */
+export function clearedClientFields(fields: ReturnType<typeof toClientFields>): string[] {
+  const values = fields as Record<string, unknown>;
+  return CLIENT_CLEARABLE_FIELDS.filter((k) => values[k] === undefined);
 }

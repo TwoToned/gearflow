@@ -715,8 +715,10 @@ hosted once per route group in `people-sheet-hosts.tsx`): `?new=1` / `?edit=1` /
 save goes through `useSheetAnnounce` (ONE toast): the write hooks return `{ id, auditId }` and the Undo takes only those
 ids (`peopleCreateUndo.undoCreateNative` for a create, `peopleBulkWrites.undoManyNative` / `undoHireChangeNative` for an
 edit): never a client-supplied "restore to" value. A create's audit row must be `recordRowOp` and an edit's
-`recordFieldEdit`; a new attachment to one of these records must be added to its blocker in `peopleCreateUndo.ts`, or
-the Undo would delete a record something now hangs off. `New job for client…` is `newJobForClientHref` (the wizard's
+`recordFieldEdit`; a new table that points at one of these records goes in the ONE map `convex/lib/peopleReferences.ts` (a
+schema-walk test fails until it does), or the Undo would delete a record something now hangs off. An edit's fields come from
+`lib/peopleEditFields.ts` (write, audit and Undo all read it; pay only for `canSeeCrewPay`), never from raw `set` keys.
+An order's status moves only along `lib/orderStatusMachine.ts`, the Undo included. `New job for client…` is `newJobForClientHref` (the wizard's
 `?clientId=`). FEATUREDOCS/22 "People create and edit sheets".
 
 ### Project status advances itself — add a TRIGGER, never a second patch site

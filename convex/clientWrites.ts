@@ -8,6 +8,7 @@ import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { recordRowOp } from "./lib/rowOpUndo";
+import { CLIENT_CLEARABLE_FIELDS } from "./lib/peopleEditFields";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
@@ -141,11 +142,13 @@ export const updateNative = mutation({
     id: v.string(),
     orgId: v.string(),
     patch: clientPatch,
+    /** Optional fields to EMPTY (a blank form field): an absent patch key keeps the stored value, so clearing is its own list. */
+    clear: v.optional(v.array(v.string())),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, patch, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, patch, clear: clearIn, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "client");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "client", "update");
@@ -157,11 +160,15 @@ export const updateNative = mutation({
     assertClientFields(patch);
 
     const set = sanitizeClientSet(patch);
-    await ctx.db.patch(doc._id, { ...set, updatedAt: now });
+    const clear = [...new Set(clearIn ?? [])];
+    const refused = clear.filter((k) => !CLIENT_CLEARABLE_FIELDS.includes(k) || k in set);
+    if (refused.length > 0) throw new ConvexError({ code: "INVALID_FIELD", message: `These fields can't be cleared here: ${refused.join(", ")}.` });
+    const cleared = Object.fromEntries(clear.map((k) => [k, undefined]));
+    await ctx.db.patch(doc._id, { ...set, ...cleared, updatedAt: now });
 
     // ONE audit row holding the before/after of ONLY the fields that changed: the sheet's Undo
     // (`peopleBulkWrites.undoManyNative`) reads it back and restores exactly those fields.
-    const diff = diffFields(doc, { ...doc, ...set }, Object.keys(set));
+    const diff = diffFields(doc, { ...doc, ...set, ...cleared }, [...Object.keys(set), ...clear]);
     const entityName = patch.name ?? doc.name;
     if (diff) {
       await recordFieldEdit(ctx, { orgId, entityType: "client", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated client ${entityName}` });

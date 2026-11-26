@@ -277,12 +277,20 @@ A client, supplier, crew member and supplier order are each created and edited i
 - **Undo, ONE toast** (`use-sheet-announce.ts`, `announceListWrite`): the write hooks return `{ id, auditId }` and the
   toast's Undo takes only those ids, server side. A create is `peopleCreateUndo.undoCreateNative`: the create's audit row
   (`recordRowOp`, `details.rowOp`) proves the author, the 10-minute server window, once, and the org / entity / table;
-  it removes the record only while it is exactly as created (never edited, nothing attached since: jobs, invoices,
-  orders, calls, time, documents, lines, files) and names what blocks it; it removes the client's primary contact the
+  it removes the record only while it is exactly as created (never edited, and referenced by NOTHING: the blockers come
+  from ONE table to foreign-key map, `convex/lib/peopleReferences.ts`, with a schema-walk test that fails for any field
+  pointing at a client, supplier, crew member or order that is not in it, as a blocker or `ignored` with a reason) and names what blocks it; it removes the client's primary contact the
   create wrote, never a stored file. An edit is the field-edit Undo (`peopleBulkWrites.undoManyNative`, or
   `supplierOrdersWrites.undoHireChangeNative` for an order): each `updateNative` writes ONE audit row holding the
   before/after of only the fields it changed (`recordFieldEdit`), and the Undo restores a field only while it still
-  holds what that save left, keeping and naming the rest.
+  holds what that save left, keeping and naming the rest. Only the fields in `lib/peopleEditFields.ts` are written,
+  audited or restorable (a crew member's server-owned `icalToken` / `icalEnabled` are refused by `updateNative`, never
+  copied into a snapshot), and a crew member's pay rates are restored only for a caller who can see crew pay. An order's
+  status Undo cannot bypass the status machine (`lib/orderStatusMachine.ts`, also the order sheet's status options): a
+  step back out of a terminal state is allowed only while the forward write is still the LAST thing that happened to the
+  order and no asset is linked, and an order not on hire can never be left with a `returnedDate`.
+- **A blank field clears** (client): the sheet sends the blank optional fields as `clear` (`clearedClientFields`,
+  `CLIENT_CLEARABLE_FIELDS`), because an absent patch key keeps the stored value; optional money is `blankableNumber`.
 - **New job for client…** (client ⋯ menu and the list row) opens `/projects/new?clientId=` (`newJobForClientHref`); the
   wizard presets the client.
 - Tests: `convex/peopleCreateUndo.test.ts`, `convex/sheetEditUndo.test.ts`, `sheets/__tests__/people-sheets.smoke.test.tsx`

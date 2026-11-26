@@ -9,6 +9,7 @@ import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { recordRowOp } from "./lib/rowOpUndo";
+import { isLegalOrderMove, RECEIVED_STATUSES } from "./lib/orderStatusMachine";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_FILES_PER_ORDER, SUPPLIER_INVOICE_FOLDER } from "./lib/supplierRecordCore";
 import { assertAttachableUpload } from "./lib/attachableUpload";
@@ -119,16 +120,7 @@ export const createNative = mutation({
   },
 });
 
-// ─── Status machine (WS7 #946) ── DRAFT -> ORDERED -> PARTIAL -> RECEIVED, with
-// CANCELLED reachable from any active (non-terminal) state. RECEIVED/CANCELLED
-// are terminal — mirrors the VALID_TRANSITIONS pattern in subHiresWrites.ts.
-const VALID_TRANSITIONS: Record<string, string[]> = {
-  DRAFT: ["ORDERED", "CANCELLED"],
-  ORDERED: ["PARTIAL", "RECEIVED", "CANCELLED"],
-  PARTIAL: ["RECEIVED", "CANCELLED"],
-  RECEIVED: [],
-  CANCELLED: [],
-};
+// The status machine is `lib/orderStatusMachine.ts` (shared with the Undo and the order sheet's status select).
 
 // Header-edit args (status/orderDate/expectedDate/notes only — NOT
 // supplierId/orderNumber/type/projectId, which the order keeps for its lifetime).
@@ -165,12 +157,7 @@ export const updateNative = mutation({
     assertStrLen(a.notes, "notes", { max: 2000 }); // R-8.6.2: mirror supplierOrderUpdateSchema
 
     const previousStatus = order.status ?? "DRAFT";
-    if (a.status !== previousStatus) {
-      const validTargets = VALID_TRANSITIONS[previousStatus] ?? [];
-      if (!validTargets.includes(a.status)) {
-        throw new ConvexError(`Cannot transition from ${previousStatus} to ${a.status}`);
-      }
-    }
+    if (!isLegalOrderMove(previousStatus, a.status)) throw new ConvexError(`Cannot transition from ${previousStatus} to ${a.status}`);
 
     const patch: Record<string, unknown> = {
       status: a.status,
@@ -408,6 +395,32 @@ export const extendHireNative = mutation({
   },
 });
 
+/**
+ * What an Undo of an order edit may NOT do (UX Phase 13 slice 4 review): the status machine is not bypassed, and an
+ * order is never left in a state a forward write could not reach.
+ *  - Stepping a status back is a move the machine forbids (RECEIVED and CANCELLED are terminal), so it is allowed only
+ *    when the forward write is the LAST thing that happened to the order (`updatedAt` is still what that write stamped:
+ *    every later write, a return, an extension, an invoice, bumps it) and nothing hangs off the receipt (no asset linked).
+ *  - Whatever the path, the result may not be an order that is not on hire yet still carries a `returnedDate`.
+ */
+async function assertOrderUndoLegal(
+  ctx: MutationCtx,
+  order: { _id: unknown; id: string; status?: string; returnedDate?: number; updatedAt?: number },
+  plan: { set: Record<string, unknown>; clear: string[] },
+  forward: { createdAt?: number } | null,
+): Promise<void> {
+  const target = typeof plan.set.status === "string" ? plan.set.status : null;
+  const from = order.status ?? "DRAFT";
+  if (target && !isLegalOrderMove(from, target)) {
+    if (order.updatedAt == null || order.updatedAt !== forward?.createdAt) throw new ConvexError({ code: "CHANGED_SINCE", message: "Can't undo: the order was changed since, so its status can't be stepped back." });
+    const linked = await ctx.db.query("assets").withIndex("by_supplierOrderId", (q) => q.eq("supplierOrderId", order.id)).first();
+    if (linked) throw new ConvexError({ code: "CHANGED_SINCE", message: "Can't undo: an asset was linked to this order since it was received." });
+  }
+  const status = target ?? from;
+  const returned = "returnedDate" in plan.set ? plan.set.returnedDate : plan.clear.includes("returnedDate") ? undefined : order.returnedDate;
+  if (!RECEIVED_STATUSES.includes(status) && returned != null) throw new ConvexError({ code: "CHANGED_SINCE", message: "Can't undo: the order was marked returned since, so it can't go back to a status before it was received." });
+}
+
 /** The exact Undo of either: ids only (the FORWARD `auditId`); the shared helper refuses as a whole unless it is still exact. */
 export const undoHireChangeNative = mutation({
   returns: v.object({ restored: v.array(v.string()) }),
@@ -422,6 +435,8 @@ export const undoHireChangeNative = mutation({
       orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, auditId: a.forwardAuditId, actor, now: a.now,
       load: async () => loadHireOrder(ctx, a.orgId, a.id),
       apply: async (doc, plan) => {
+        const forward = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.forwardAuditId)).first();
+        await assertOrderUndoLegal(ctx, doc, plan, forward);
         const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
         for (const f of plan.clear) patch[f] = undefined;
         await ctx.db.patch(doc._id, patch);

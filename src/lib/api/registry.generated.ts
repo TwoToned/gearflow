@@ -12260,6 +12260,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "clear",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "id",
         "optional": false,
         "type": "string"
@@ -12281,7 +12286,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "6fd0fdc4cd6efbce",
+    "argsSha": "bc20b4b0df68b2f4",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

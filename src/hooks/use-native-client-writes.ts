@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import { createId } from "@paralleldrive/cuid2";
 import { useSession, useActiveOrganization } from "@/lib/auth-client";
 import { api } from "../../convex/_generated/api";
-import { toClientFields, type ClientFieldsInput } from "@/lib/client-fields";
+import { toClientFields, clearedClientFields, type ClientFieldsInput } from "@/lib/client-fields";
 import { clientSchema } from "@/lib/validations/client";
 
 /**
@@ -88,6 +88,8 @@ export function useClientWrites() {
         id,
         orgId: org,
         patch: toClientFields(parsed),
+        // A blank field is CLEARED (an absent patch key would keep the old value).
+        clear: clearedClientFields(toClientFields(parsed)),
         actor: actor(),
         auditId,
         now: Date.now(),

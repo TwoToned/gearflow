@@ -11,6 +11,7 @@ import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
+import { PEOPLE_EDIT_FIELDS } from "./lib/peopleEditFields";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { recordRowOp } from "./lib/rowOpUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
@@ -194,6 +195,9 @@ export const updateNative = mutation({
     const payVisible = await canSeeCrewPay(ctx, orgId);
     const NEVER_CLEAR = new Set(["id", "organizationId", ...(payVisible ? [] : MEMBER_RATE_FIELDS)]);
     const setObj = sanitizeClientSet(set, payVisible ? [] : MEMBER_RATE_FIELDS); // strip organizationId/id — no cross-tenant reassign
+    // Only the member form's fields may be written or cleared here: server-owned fields (the iCal feed's `icalToken`
+    // / `icalEnabled`, which have their own path) are refused, never silently written and never copied into an audit row.
+    assertEditable([...Object.keys(setObj), ...clear]);
     // R-8.6.2 — the create path already re-enforces crewMemberSchema's bounds; a
     // direct-mutation caller could otherwise skip them on update by only ever calling
     // updateNative with an out-of-bound value.
@@ -219,7 +223,7 @@ export const updateNative = mutation({
     const changes = buildChanges(beforeRest, afterRest, CREW_AUDIT_FIELDS);
     // The before/after of ONLY the fields this edit touched, beside the readable `changes`, so the
     // sheet's Undo (`peopleBulkWrites.undoManyNative`) restores exactly them.
-    const touched = [...new Set([...Object.keys(setObj), ...clear.filter((k) => !NEVER_CLEAR.has(k))])];
+    const touched = [...new Set([...Object.keys(setObj), ...clear.filter((k) => !NEVER_CLEAR.has(k))])].filter((k) => EDITABLE.has(k));
     const diff = diffFields(beforeRest, afterRest, touched);
     if (diff) {
       await recordFieldEdit(ctx, { orgId, entityType: "crew_member", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated crew member ${entityName}`, extraDetails: changes.length > 0 ? { changes } : undefined });
@@ -234,6 +238,13 @@ export const updateNative = mutation({
     return { id };
   },
 });
+
+/** The fields `updateNative` may write or clear (`lib/peopleEditFields.ts`) plus `updatedAt`, which the hook stamps. */
+const EDITABLE: ReadonlySet<string> = new Set(PEOPLE_EDIT_FIELDS.crew);
+function assertEditable(keys: string[]): void {
+  const refused = keys.filter((k) => !EDITABLE.has(k) && k !== "updatedAt" && k !== "id" && k !== "organizationId");
+  if (refused.length > 0) throw new ConvexError({ code: "INVALID_FIELD", message: `These fields can't be edited here: ${refused.join(", ")}.` });
+}
 
 /** Only an INACTIVE or ARCHIVED member (or one the list shows inactive through a legacy `isActive:false`) may be deleted. */
 function isDeletableCrewStatus(m: { status?: string; isActive?: boolean }): boolean {

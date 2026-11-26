@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormSheet } from "@/components/ui/form-sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SmartFormSection, SmartFormField } from "@/components/ui/smart-form";
+import { orderStatusTargets } from "../../../../convex/lib/orderStatusMachine";
 import { useSheetAnnounce } from "./use-sheet-announce";
 
 /**
@@ -23,6 +24,8 @@ import { useSheetAnnounce } from "./use-sheet-announce";
  */
 const TYPE_ORDER = ["PURCHASE", "SUBHIRE", "REPAIR", "LABOUR", "OTHER"] as const;
 const STATUS_ORDER = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
+/** A new order may start anywhere; an existing one offers only its current status and the moves the status machine allows (`lib/orderStatusMachine.ts`, the same table the server enforces). */
+const statusOptions = (current: string | undefined): readonly string[] => (current ? orderStatusTargets(current) : STATUS_ORDER);
 
 export interface OrderSheetProps {
   supplierId: string;
@@ -97,7 +100,7 @@ export function OrderSheet({ supplierId, supplierName, initialData, onClose, onS
               <Controller control={form.control} name="status" render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger><SelectValue>{supplierOrderStatusLabels[field.value ?? "DRAFT"] ?? "Draft"}</SelectValue></SelectTrigger>
-                  <SelectContent>{STATUS_ORDER.map((s) => <SelectItem key={s} value={s}>{supplierOrderStatusLabels[s]}</SelectItem>)}</SelectContent>
+                  <SelectContent>{statusOptions(initialData?.status).map((s) => <SelectItem key={s} value={s}>{supplierOrderStatusLabels[s]}</SelectItem>)}</SelectContent>
                 </Select>
               )} />
             </SmartFormField>

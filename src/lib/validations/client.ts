@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { blankableNumber } from "./blankable";
+
 export const clientSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   type: z.enum(["COMPANY", "INDIVIDUAL", "VENUE", "PRODUCTION_COMPANY"]).default("COMPANY"),
@@ -20,7 +22,8 @@ export const clientSchema = z.object({
   taxExempt: z.boolean().optional(),
   taxExemptReason: z.string().max(500).optional(),
   paymentTerms: z.string().max(100).optional(),
-  defaultDiscount: z.coerce.number().min(0).max(100).optional(),
+  // Optional money: blank stays blank (cleared), never an explicit 0 (`blankableNumber`, #1249).
+  defaultDiscount: blankableNumber(z.number().min(0).max(100)),
   notes: z.string().max(2000).optional(),
   // WS1 (#940) — the invoice-generation payment profile. Absent = FULL_UPFRONT
   // (one FULL invoice); profileDepositPercent is % of the tax-INCLUSIVE
@@ -28,7 +31,7 @@ export const clientSchema = z.object({
   // field is left blank (src/components/clients/... reads this default, the
   // Convex write layer does too — see convex/clientWrites.ts).
   paymentProfile: z.enum(["FULL_UPFRONT", "DEPOSIT_BALANCE"]).optional(),
-  profileDepositPercent: z.coerce.number().min(0).max(100).optional(),
+  profileDepositPercent: blankableNumber(z.number().min(0).max(100)),
   tags: z.array(z.string()).default([]),
   isActive: z.boolean().default(true),
 }).refine(

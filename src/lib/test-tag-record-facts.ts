@@ -44,8 +44,8 @@ export function testTagStateWord(item: TestTagItemFacts, now: number, dueSoonDay
   }
 }
 
-export type TestTagCheckFix = "test" | "edit";
-export interface TestTagCheck {
+type TestTagCheckFix = "test" | "edit";
+interface TestTagCheck {
   key: "current" | "result" | "profile";
   tone: "ok" | "warn" | "bad" | "unknown";
   text: string;

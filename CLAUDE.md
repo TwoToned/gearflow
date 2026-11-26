@@ -81,7 +81,7 @@ pnpm start           # Start production server
 pnpm lint            # ESLint
 pnpm test            # Run all unit tests
 pnpm test:watch      # Run tests in watch mode
-pnpm test:coverage   # Run tests with coverage report
+pnpm test:coverage   # Run tests with coverage report (CI shards it: test:shard x3 + test:merge, FEATUREDOCS/36)
 pnpm exec prisma generate  # Regenerate Prisma client (after schema changes)
 pnpm exec prisma migrate dev --name <name>  # Create + apply migration
 pnpm run api:registry       # Regenerate the API/MCP contract registry + coverage table

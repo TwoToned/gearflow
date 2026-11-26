@@ -44,12 +44,20 @@ export default defineConfig({
       // be ENFORCED in CI now and only climb (POLICY.md R-8.8.2 / T-5). Raise these
       // as coverage improves; target is 80%. Was an aspirational 70% that never ran
       // in CI (actual was ~49%).
-      thresholds: {
-        statements: 48,
-        branches: 48,
-        functions: 48,
-        lines: 48,
-      },
+      //
+      // CI shards the suite (`pnpm test:shard`, ci.yml `test-shard`). A shard sees only a
+      // slice of the tests, so its coverage is meaningless against the floor: the
+      // thresholds are deferred there (COVERAGE_DEFER_THRESHOLDS) and enforced exactly
+      // once, over the merged whole-suite coverage, by `pnpm test:merge` (ci.yml `test`).
+      // The numbers below stay the one source of truth (R-3.1).
+      thresholds: process.env.COVERAGE_DEFER_THRESHOLDS
+        ? undefined
+        : {
+            statements: 48,
+            branches: 48,
+            functions: 48,
+            lines: 48,
+          },
     },
   },
 });

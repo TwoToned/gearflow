@@ -26,14 +26,14 @@ const DayKey = z
   .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)));
 
 /** The params the page owns beyond the list codec. `.catch` is what drops junk. */
-export const ScheduleParamsSchema = z.object({
+const ScheduleParamsSchema = z.object({
   zoom: z.enum(["week", "month"]).catch("week"),
   date: DayKey.optional().catch(undefined),
   day: DayKey.optional().catch(undefined),
   job: z.string().min(1).max(64).optional().catch(undefined),
 });
 
-export const SCHEDULE_PARAM_KEYS = ["zoom", "date", "day", "job"] as const;
+const SCHEDULE_PARAM_KEYS = ["zoom", "date", "day", "job"] as const;
 
 export interface ScheduleView {
   zoom: ScheduleZoom;

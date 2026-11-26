@@ -17,14 +17,3 @@ export interface BookingEntry {
   rentalEndDate: string;
   quantity: number;
 }
-
-export interface CalendarProject {
-  id: string;
-  projectNumber: string;
-  name: string;
-  clientName: string | null;
-  status: string;
-  rentalStartDate: string;
-  rentalEndDate: string;
-  lineItemCount: number;
-}

@@ -13,7 +13,7 @@
  * jobs nearest-first under their own allowance. So a cut can only hide a job
  * that started before the window AND before every older job already read; it
  * can never hide one that starts inside what the person is looking at.
- * No `.collect()` anywhere: a `take`/iterator under the budget.
+ * No whole-set read anywhere: a `take` or an iterator, always under the budget.
  */
 import type { QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
@@ -80,37 +80,36 @@ function spend(s: Scan, older: boolean): boolean {
   return true;
 }
 
+/** Spend the budget on each row of one index scan; false when it ran out (the rest of the scan is cut). */
+async function drain(s: Scan, rows: AsyncIterable<Doc<"projects">>, older: boolean, keep: (p: Doc<"projects">) => boolean): Promise<boolean> {
+  for await (const p of rows) {
+    if (!spend(s, older)) return false;
+    if (keep(p)) s.found.set(p.id, p);
+  }
+  return true;
+}
+
 async function scanProjects(ctx: QueryCtx, s: Scan): Promise<void> {
   const { orgId, range } = s;
-  const add = (p: Doc<"projects">) => s.found.set(p.id, p);
-  // 1. Everything that STARTS inside the window, by either date (complete first).
-  for await (const p of ctx.db
-    .query("projects")
-    .withIndex("by_organizationId_rentalStartDate", (q) => q.eq("organizationId", orgId).gte("rentalStartDate", range.start).lte("rentalStartDate", range.end))) {
-    if (!spend(s, false)) return;
-    add(p);
-  }
-  for await (const p of ctx.db
-    .query("projects")
-    .withIndex("by_organizationId_projectStartDate", (q) => q.eq("organizationId", orgId).gte("projectStartDate", range.start).lte("projectStartDate", range.end))) {
-    if (!spend(s, false)) return;
-    add(p);
-  }
-  // 2. Older jobs, nearest the window first, under their own allowance.
-  for await (const p of ctx.db
+  const rental = ctx.db.query("projects").withIndex("by_organizationId_rentalStartDate", (q) => q.eq("organizationId", orgId).gte("rentalStartDate", range.start).lte("rentalStartDate", range.end));
+  const project = ctx.db.query("projects").withIndex("by_organizationId_projectStartDate", (q) => q.eq("organizationId", orgId).gte("projectStartDate", range.start).lte("projectStartDate", range.end));
+  const olderRental = ctx.db
     .query("projects")
     .withIndex("by_organizationId_rentalStartDate", (q) => q.eq("organizationId", orgId).gt("rentalStartDate", MIN_TS).lt("rentalStartDate", range.start))
-    .order("desc")) {
-    if (!spend(s, true)) return;
-    if (isVisible(p, range) || overlapsWindow(p, range)) add(p);
-  }
-  for await (const p of ctx.db
+    .order("desc");
+  const olderProject = ctx.db
     .query("projects")
     .withIndex("by_organizationId_projectStartDate", (q) => q.eq("organizationId", orgId).gt("projectStartDate", MIN_TS).lt("projectStartDate", range.start))
-    .order("desc")) {
-    if (!spend(s, true)) return;
-    if (overlapsWindow(p, range)) add(p);
-  }
+    .order("desc");
+  // 1. Everything that STARTS inside the window, by either date (complete first); 2. older jobs, nearest first, under their own allowance.
+  const all = () => true;
+  const steps: (() => Promise<boolean>)[] = [
+    () => drain(s, rental, false, all),
+    () => drain(s, project, false, all),
+    () => drain(s, olderRental, true, (p) => isVisible(p, range) || overlapsWindow(p, range)),
+    () => drain(s, olderProject, true, (p) => overlapsWindow(p, range)),
+  ];
+  for (const step of steps) if (!(await step())) return;
 }
 
 /** One project's live lines, or null when they cannot be read in full (no live version, over the cap, budget spent). */

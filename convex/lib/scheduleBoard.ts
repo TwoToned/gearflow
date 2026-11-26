@@ -121,33 +121,47 @@ function clashRows(input: ScheduleFlagInput, projectById: Map<string, BoardProje
   return rows;
 }
 
+/** The word for one job: a held clash beats a would-clash beats unknown; a job that is not alive is none. */
+function stateOf(mine: ClashRow[], alive: boolean, unchecked: boolean): ClashState {
+  if (!alive) return "none";
+  if (mine.some((r) => r.layer === "hard")) return "clash";
+  if (mine.length > 0) return "wouldClash";
+  return unchecked ? "unknown" : "none";
+}
+
+/** Models, lines and stock-backed units of a job's demand lines; null counts when its lines were not read. */
+function gearOf(own: BoardLineItem[] | null): Pick<JobFacts, "modelCount" | "modelIds" | "lineCount" | "unitCount"> {
+  if (!own) return { modelCount: null, modelIds: [], lineCount: null, unitCount: null };
+  const modelIds = [...new Set(own.map((l) => l.modelId!))];
+  return { modelCount: modelIds.length, modelIds, lineCount: own.length, unitCount: own.reduce((n, l) => n + stockBackedQty(l), 0) };
+}
+
+/** The stock-demand lines of each alive project (the shared demand predicate). */
+function demandByProject(lines: BoardLineItem[], projectById: Map<string, BoardProject>): Map<string, BoardLineItem[]> {
+  const demand = new Map<string, BoardLineItem[]>();
+  for (const l of lines) {
+    if (isRelevantDemandLine(l, projectById)) demand.set(l.projectId, [...(demand.get(l.projectId) ?? []), l]);
+  }
+  return demand;
+}
+
 /** Facts per project id, for every project in `input.projects`. */
 export function deriveJobFacts(input: ScheduleFlagInput): Map<string, JobFacts> {
   const alive = candidateBoardProjects(input.projects, input.range);
   const projectById = new Map(alive.map((p) => [p.id, p]));
-  const modelById = new Map(input.models.map((m) => [m.id, m]));
+  const known = new Set(input.models.map((m) => m.id));
+  const modelKnown = (id: string) => known.has(id) && !input.unknownModelIds.has(id);
   const rows = clashRows(input, projectById);
+  const demand = demandByProject(input.lines, projectById);
 
   const out = new Map<string, JobFacts>();
   for (const p of input.projects) {
-    const mine = rows.get(p.id) ?? [];
+    const isAlive = projectById.has(p.id);
     const unread = input.unreadProjectIds.has(p.id);
-    const own = unread ? [] : input.lines.filter((l) => l.projectId === p.id && isRelevantDemandLine(l, projectById));
-    const touchesUnknown = own.some((l) => !modelById.has(l.modelId!) || input.unknownModelIds.has(l.modelId!));
-    let state: ClashState = "none";
-    if (!projectById.has(p.id)) state = "none";
-    else if (mine.some((r) => r.layer === "hard")) state = "clash";
-    else if (mine.length > 0) state = "wouldClash";
-    else if (unread || touchesUnknown) state = "unknown";
-    const read = !unread && projectById.has(p.id);
-    out.set(p.id, {
-      state,
-      rows: mine,
-      modelCount: read ? new Set(own.map((l) => l.modelId)).size : null,
-      modelIds: read ? [...new Set(own.map((l) => l.modelId!))] : [],
-      lineCount: read ? own.length : null,
-      unitCount: read ? own.reduce((n, l) => n + stockBackedQty(l), 0) : null,
-    });
+    const own = isAlive && !unread ? (demand.get(p.id) ?? []) : null;
+    const unchecked = unread || (own ?? []).some((l) => !modelKnown(l.modelId!));
+    const mine = rows.get(p.id) ?? [];
+    out.set(p.id, { state: stateOf(mine, isAlive, unchecked), rows: mine, ...gearOf(own) });
   }
   return out;
 }

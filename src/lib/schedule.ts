@@ -76,12 +76,12 @@ export function rangeQueryMs(range: ScheduleRange): { startMs: number; endMs: nu
 export const jobFrom = (j: ScheduleJob): string => keyOfMs(j.rentalStart);
 export const jobTo = (j: ScheduleJob): string => keyOfMs(j.rentalEnd);
 
-export const jobOnDay = (j: ScheduleJob, day: string): boolean => jobFrom(j) <= day && day <= jobTo(j);
+const jobOnDay = (j: ScheduleJob, day: string): boolean => jobFrom(j) <= day && day <= jobTo(j);
 
 /** Jobs on `day`, in the timeline's order. */
 export const jobsOnDay = (jobs: ScheduleJob[], day: string): ScheduleJob[] => jobs.filter((j) => jobOnDay(j, day)).sort(byStart);
 
-export function byStart(a: ScheduleJob, b: ScheduleJob): number {
+function byStart(a: ScheduleJob, b: ScheduleJob): number {
   return a.rentalStart - b.rentalStart || a.projectNumber.localeCompare(b.projectNumber, undefined, { numeric: true });
 }
 
@@ -167,7 +167,7 @@ function matchesSearch(j: ScheduleJob, q: string, ctx: FilterContext): boolean {
 }
 
 /** Everything but the strip: filters and search, the counts the strip shows follow these. */
-export function matchesFilters(j: ScheduleJob, f: ScheduleFilters, ctx: FilterContext): boolean {
+function matchesFilters(j: ScheduleJob, f: ScheduleFilters, ctx: FilterContext): boolean {
   if (f.status.length && !f.status.includes(j.status)) return false;
   if (f.pm.length && !(j.projectManagerId && f.pm.includes(j.projectManagerId))) return false;
   if (f.model.length && !j.modelIds.some((m) => f.model.includes(m))) return false;

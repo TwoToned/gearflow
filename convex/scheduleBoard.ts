@@ -2,7 +2,9 @@ import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import { callerMayRead, requireOrgReadFor } from "./lib/auth";
 import { isConfirmedOrLater } from "./lib/availabilityCore";
+import type { Doc } from "./_generated/dataModel";
 import { loadSchedule } from "./lib/scheduleFetch";
+import type { JobFacts } from "./lib/scheduleBoard";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -16,6 +18,31 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
  * comes from the URL's week or month, so the args are a stable subscription key.
  */
 const MAX_RANGE_DAYS = 62;
+
+/** What a job reads as when no facts exist for it: not checked (never "no clash"). */
+const UNCHECKED: JobFacts = { state: "unknown", rows: [], modelCount: null, modelIds: [], lineCount: null, unitCount: null };
+
+function jobRow(p: Doc<"projects">, f: JobFacts, clientNames: Map<string, string>) {
+  return {
+    id: p.id,
+    projectNumber: p.projectNumber,
+    name: p.name,
+    status: p.status ?? "ENQUIRY",
+    // Held = holds its gear (confirmed or later); pencilled holds nothing (availabilityCore).
+    holds: isConfirmedOrLater(p.status),
+    clientId: p.clientId ?? null,
+    clientName: clientNames.get(p.clientId ?? "") ?? null,
+    projectManagerId: p.projectManagerId ?? null,
+    rentalStart: p.rentalStartDate!,
+    rentalEnd: p.rentalEndDate!,
+    clash: f.state,
+    clashes: f.rows,
+    modelCount: f.modelCount,
+    modelIds: f.modelIds,
+    lineCount: f.lineCount,
+    unitCount: f.unitCount,
+  };
+}
 
 export const jobs = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
@@ -31,28 +58,7 @@ export const jobs = query({
     return {
       truncated,
       models: models.map((m) => ({ id: m.id, name: m.name, categoryId: m.categoryId ?? null })),
-      jobs: visible.map((p) => {
-        const f = facts.get(p.id);
-        return {
-          id: p.id,
-          projectNumber: p.projectNumber,
-          name: p.name,
-          status: p.status ?? "ENQUIRY",
-          // Held = holds its gear (confirmed or later); pencilled holds nothing (availabilityCore).
-          holds: isConfirmedOrLater(p.status),
-          clientId: p.clientId ?? null,
-          clientName: p.clientId ? (clientNames.get(p.clientId) ?? null) : null,
-          projectManagerId: p.projectManagerId ?? null,
-          rentalStart: p.rentalStartDate!,
-          rentalEnd: p.rentalEndDate!,
-          clash: f?.state ?? "unknown",
-          clashes: f?.rows ?? [],
-          modelCount: f?.modelCount ?? null,
-          modelIds: f?.modelIds ?? [],
-          lineCount: f?.lineCount ?? null,
-          unitCount: f?.unitCount ?? null,
-        };
-      }),
+      jobs: visible.map((p) => jobRow(p, facts.get(p.id) ?? UNCHECKED, clientNames)),
     };
   },
 });

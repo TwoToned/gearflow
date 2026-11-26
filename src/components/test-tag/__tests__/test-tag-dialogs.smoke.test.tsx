@@ -99,7 +99,7 @@ describe("PrintTagsDialog", () => {
     const sheet = screen.getByTestId("tag-sheet");
     expect(sheet.querySelectorAll(".test-tag-label").length).toBe(1);
     expect(sheet.textContent).toContain("TT-0001");
-    expect(document.querySelector("style")?.textContent).toContain(".test-tag-sheet");
+    expect(sheet.querySelector("style")?.textContent).toContain(".test-tag-sheet .test-tag-label");
     await user.click(screen.getByRole("button", { name: /^Print$/ }));
     expect(print).toHaveBeenCalled();
     print.mockRestore();

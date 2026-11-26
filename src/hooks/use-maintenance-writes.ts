@@ -33,6 +33,8 @@ export function useMaintenanceWrites() {
   const updateM = useMutation(api.maintenanceWrites.updateNative);
   const deleteM = useMutation(api.maintenanceWrites.deleteNative);
   const undoCreateM = useMutation(api.maintenanceWrites.undoCreateNative);
+  const editM = useMutation(api.maintenanceEditWrites.editNative);
+  const undoEditM = useMutation(api.maintenanceEditWrites.undoEditNative);
   const rescheduleM = useMutation(api.maintenanceBulkWrites.bulkRescheduleNative);
   const assignM = useMutation(api.maintenanceBulkWrites.bulkAssignNative);
   const undoBulkM = useMutation(api.maintenanceBulkWrites.undoBulkEditNative);
@@ -108,6 +110,19 @@ export function useMaintenanceWrites() {
         actor: actor(),
         auditId: createId(),
       } as Parameters<typeof updateM>[0]);
+    },
+    /**
+     * The Edit sheet's save (`maintenanceEditWrites.editNative`): sets the filled fields and CLEARS the blank optional
+     * ones; never status. Returns the audit id the toast's Undo takes, and whether anything changed / can be undone.
+     */
+    edit: async (id: string, input: { set: Record<string, unknown>; clear: string[]; assetIds?: string[] }): Promise<{ id: string; changed: boolean; undoable: boolean; auditId: string }> => {
+      const auditId = createId();
+      const r = await editM({ orgId: requireOrg(), id, set: input.set as never, clear: input.clear, ...(input.assetIds ? { assetIds: input.assetIds } : {}), actor: actor(), auditId, now: Date.now() });
+      return { ...r, auditId };
+    },
+    /** Exactly reverses {@link edit} (ids only; refuses if a changed field or the asset list changed since). */
+    undoEdit: async (id: string, auditId: string): Promise<{ id: string }> => {
+      return await undoEditM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() });
     },
     /**
      * The exact reverse of one {@link create} — ids only; the server reads the create's

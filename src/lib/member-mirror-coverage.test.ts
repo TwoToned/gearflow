@@ -73,7 +73,7 @@ describe("member mirror coverage", () => {
     // §3.3.4: revoke/demote/permission-removal must mirror with { strict: true }.
     const mustBeStrict = [
       "server/org-members.ts",
-      "server/settings.ts",
+      "lib/team-writes.ts",
       "server/user-profile.ts",
     ];
     for (const rel of mustBeStrict) {

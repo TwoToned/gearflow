@@ -279,7 +279,9 @@ A client, supplier, crew member and supplier order are each created and edited i
   (`recordRowOp`, `details.rowOp`) proves the author, the 10-minute server window, once, and the org / entity / table;
   it removes the record only while it is exactly as created (never edited, and referenced by NOTHING: the blockers come
   from ONE table to foreign-key map, `convex/lib/peopleReferences.ts`, with a schema-walk test that fails for any field
-  pointing at a client, supplier, crew member or order that is not in it, as a blocker or `ignored` with a reason) and names what blocks it; it removes the client's primary contact the
+  whose NAME contains crew / supplier / client / subhire, or that is typed `v.id("clients" | "suppliers" | "crewMembers" |
+  "supplierOrders" | "subHires")`, that is not in it, as a blocker or `ignored` with a reason; the walk is itself
+  mutation-tested with fake non-conventional fields) and names what blocks it; it removes the client's primary contact the
   create wrote, never a stored file. An edit is the field-edit Undo (`peopleBulkWrites.undoManyNative`, or
   `supplierOrdersWrites.undoHireChangeNative` for an order): each `updateNative` writes ONE audit row holding the
   before/after of only the fields it changed (`recordFieldEdit`), and the Undo restores a field only while it still

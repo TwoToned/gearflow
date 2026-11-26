@@ -29,45 +29,63 @@ function makeT(): T {
 
 // ─── The schema walk ───────────────────────────────────────────────────────────
 
-/** Every `(table, field)` in the schema whose NAME says it points at one of the four kinds. */
-function schemaForeignKeys(): { table: string; field: string; kind: PeopleKind }[] {
-  const src = readFileSync(new URL("./schema.ts", import.meta.url), "utf8");
-  const out: { table: string; field: string; kind: PeopleKind }[] = [];
+interface Field { table: string; field: string; type: string }
+
+/** Every field of every table in a schema source. */
+function schemaFields(src: string): Field[] {
+  const out: Field[] = [];
   const tables = [...src.matchAll(/\n {2}(\w+): defineTable\(\{/g)];
   tables.forEach((m, i) => {
     const body = src.slice(m.index! + m[0].length, tables[i + 1]?.index ?? src.length).split("\n  })")[0];
-    for (const f of body.matchAll(/\n {4}(\w+): v\./g)) {
-      const field = f[1];
-      const lower = field.toLowerCase();
-      let kind: PeopleKind | null = null;
-      if (lower.endsWith("supplierorderid")) kind = "supplierOrder";
-      else if (lower.endsWith("crewmemberid")) kind = "crew";
-      else if (lower.endsWith("supplierid")) kind = "supplier";
-      else if (lower.endsWith("clientid")) kind = "client";
-      else if (lower === "orderid" && m[1].startsWith("supplierOrder")) kind = "supplierOrder";
-      if (kind && m[1] !== kindTable(kind)) out.push({ table: m[1], field, kind });
-    }
+    for (const f of body.matchAll(/\n {4}(\w+): ([^\n]*)/g)) out.push({ table: m[1], field: f[1], type: f[2] });
   });
   return out;
 }
-const kindTable = (k: PeopleKind) => ({ client: "clients", supplier: "suppliers", crew: "crewMembers", supplierOrder: "supplierOrders" })[k];
+
+/**
+ * The fields that MAY point at a client, supplier, crew member, supplier order or sub-hire: any whose NAME contains
+ * crew / supplier / client / subhire (case-insensitive, so `hiredFromSupplierRef` and `assigneeCrewId` are caught, not just
+ * `...Id`), any typed `v.id("clients" | "suppliers" | "crewMembers" | "supplierOrders" | "subHires")`, and `orderId` on the
+ * order's own child tables (whose name says nothing).
+ */
+function candidates(src: string): Field[] {
+  return schemaFields(src).filter(
+    (f) =>
+      /crew|supplier|client|subhire/i.test(f.field) ||
+      /v\.id\("(clients|suppliers|crewMembers|supplierOrders|subHires)"\)/.test(f.type) ||
+      (f.field === "orderId" && f.table.startsWith("supplierOrder")),
+  );
+}
+
+const mapped = new Set(Object.values(PEOPLE_REFERENCES).flat().map((r) => `${r.table}.${r.field}`));
+/** Candidates that are in NEITHER the blockers nor the explicit `ignored` list. */
+const unmapped = (src: string) => candidates(src).filter((f) => !mapped.has(`${f.table}.${f.field}`)).map((f) => `${f.table}.${f.field}`);
+const SCHEMA = readFileSync(new URL("./schema.ts", import.meta.url), "utf8");
 
 describe("the schema walk", () => {
-  const found = schemaForeignKeys();
-
-  test("the walk really sees the foreign keys (a sanity floor, so it cannot pass by finding nothing)", () => {
-    expect(found.length).toBeGreaterThan(25);
-    expect(found).toContainEqual({ table: "subHires", field: "supplierId", kind: "supplier" });
-    expect(found).toContainEqual({ table: "xeroSyncLogs", field: "clientId", kind: "client" });
+  test("the walk really sees the candidates (a sanity floor, so it cannot pass by finding nothing)", () => {
+    const names = candidates(SCHEMA).map((f) => `${f.table}.${f.field}`);
+    expect(names.length).toBeGreaterThan(50);
+    expect(names).toEqual(expect.arrayContaining(["subHires.supplierId", "xeroSyncLogs.clientId", "projectTasks.assigneeCrewId", "supplierOrderItems.orderId", "categories.suggestedCrewRoles"]));
   });
 
-  test("every field pointing at a client, supplier, crew member or order is in the map (a blocker, or ignored with a reason)", () => {
-    const missing = found.filter((f) => !PEOPLE_REFERENCES[f.kind].some((r) => r.table === f.table && r.field === f.field));
-    expect(missing).toEqual([]);
+  test("every candidate field is in the map: a blocker, or ignored with a reason", () => {
+    expect(unmapped(SCHEMA)).toEqual([]);
+  });
+
+  test("MUTATION: a new crew / supplier / client / sub-hire field with an unconventional name FAILS the walk", () => {
+    const withFakes = SCHEMA.replace("\n  projectTasks: defineTable({", "\n  fakeTable: defineTable({\n    id: v.string(),\n    hiredFromSupplierRef: v.optional(v.string()),\n    crewLead: v.optional(v.string()),\n    owner: v.optional(v.id(\"crewMembers\")),\n    buyer: v.optional(v.id(\"clients\")),\n    viaSubHire: v.optional(v.string()),\n  })\n\n  projectTasks: defineTable({");
+    expect(withFakes).not.toBe(SCHEMA);
+    expect(unmapped(withFakes)).toEqual(["fakeTable.hiredFromSupplierRef", "fakeTable.crewLead", "fakeTable.owner", "fakeTable.buyer", "fakeTable.viaSubHire"]);
+  });
+
+  test("a field only needs to be in the map once, and a `v.id` reference to one of the kinds counts even with a neutral name", () => {
+    const only = SCHEMA.replace("\n  projectTasks: defineTable({", "\n  fakeTable: defineTable({\n    id: v.string(),\n    thing: v.optional(v.id(\"suppliers\")),\n  })\n\n  projectTasks: defineTable({");
+    expect(unmapped(only)).toEqual(["fakeTable.thing"]);
   });
 
   test("the map names no table or field that is not in the schema, and every `ignored` has a reason", () => {
-    const real = new Set(found.map((f) => `${f.table}.${f.field}`));
+    const real = new Set(schemaFields(SCHEMA).map((f) => `${f.table}.${f.field}`));
     for (const refs of Object.values(PEOPLE_REFERENCES)) {
       for (const r of refs) {
         expect(real.has(`${r.table}.${r.field}`), `${r.table}.${r.field}`).toBe(true);
@@ -77,15 +95,21 @@ describe("the schema walk", () => {
   });
 
   test("an indexed blocker names an index that exists on its table", () => {
-    const src = readFileSync(new URL("./schema.ts", import.meta.url), "utf8");
     for (const refs of Object.values(PEOPLE_REFERENCES)) {
       for (const r of refs) {
         if ("ignored" in r || !r.index) continue;
-        const at = src.indexOf(`\n  ${r.table}: defineTable(`);
-        const next = src.indexOf("defineTable(", at + 30);
-        expect(src.slice(at, next < 0 ? undefined : next), `${r.table}.${r.index}`).toContain(`.index("${r.index}"`);
+        const at = SCHEMA.indexOf(`\n  ${r.table}: defineTable(`);
+        const next = SCHEMA.indexOf("defineTable(", at + 30);
+        expect(SCHEMA.slice(at, next < 0 ? undefined : next), `${r.table}.${r.index}`).toContain(`.index("${r.index}"`);
       }
     }
+  });
+
+  test("maintenanceRecords.assignedToId is a USER id (validated against members), not a crew member, so it is no blocker", () => {
+    const src = readFileSync(new URL("./maintenanceWrites.ts", import.meta.url), "utf8");
+    expect(src).toContain("assertMemberInOrg(ctx, a.orgId, a.assignedToId)");
+    expect(src).not.toMatch(/assignedToId[^\n]*crewMember/i);
+    expect(mapped.has("maintenanceRecords.assignedToId")).toBe(true); // recorded as ignored, with the reason
   });
 });
 
@@ -127,6 +151,7 @@ const ROW: Record<string, (fk: string, field: string) => Record<string, unknown>
   crewTimeEntries: (fk) => ({ id: "x", organizationId: ORG, crewMemberId: fk, date: NOW, startTime: "09:00", endTime: "10:00" }),
   crewAvailabilities: (fk) => ({ id: "x", crewMemberId: fk, startDate: NOW, endDate: NOW }),
   crewDocuments: (fk) => ({ id: "x", organizationId: ORG, crewMemberId: fk, fileId: "f", kind: "ID", createdAt: NOW, createdById: USER }),
+  projectTasks: (fk) => ({ id: "x", organizationId: ORG, title: "t", assigneeCrewId: fk }),
   supplierOrderItems: (fk) => ({ id: "x", orderId: fk, description: "d" }),
   supplierOrderFiles: (fk) => ({ id: "x", organizationId: ORG, orderId: fk, fileId: "f", kind: "PO" }),
 };

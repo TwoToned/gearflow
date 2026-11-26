@@ -64,6 +64,10 @@ const clientContacts: Probe = async (ctx, orgId, s) => {
 };
 
 const OAUTH = "An OAuth client id (the API's own client registry), not a record of this kind.";
+const TEXT = "Free text or a number about the thing, not a reference to a record of this kind.";
+const CHILD = "Points at a sub-hire, a child that is only ever reached through its sub-hire's own supplier / order link (blocked above).";
+const ROLE = "A crew ROLE (a catalogue row of the org), not a crew member.";
+const CONTACT = "Points at a client CONTACT (a clientContacts row), not at the client; the client's contact probe covers contacts.";
 
 export const PEOPLE_REFERENCES: Record<PeopleKind, Reference[]> = {
   client: [
@@ -77,6 +81,16 @@ export const PEOPLE_REFERENCES: Record<PeopleKind, Reference[]> = {
     { table: "activityEvents", field: "clientId", index: "by_orgId_clientId_createdAt", why: "activity was recorded on this client", probe: indexed("activityEvents", "by_orgId_clientId_createdAt", "clientId", "orgId") },
     { table: "apiKeys", field: "oauthClientId", ignored: OAUTH },
     { table: "oauthAuthorizationCodes", field: "clientId", ignored: OAUTH },
+    { table: "oauthClients", field: "clientName", ignored: OAUTH },
+    { table: "oauthClients", field: "clientSecretHash", ignored: OAUTH },
+    { table: "projects", field: "clientContactId", ignored: CONTACT },
+    { table: "projectVersions", field: "clientContactId", ignored: CONTACT },
+    { table: "projects", field: "clientNotes", ignored: TEXT },
+    { table: "projectVersions", field: "clientNotes", ignored: TEXT },
+    { table: "projectServices", field: "billableToClient", ignored: TEXT },
+    { table: "projectServices", field: "clientContactName", ignored: TEXT },
+    { table: "projectServices", field: "clientContactPhone", ignored: TEXT },
+    { table: "projectServices", field: "clientVehicle", ignored: TEXT },
   ],
   supplier: [
     { table: "supplierOrders", field: "supplierId", index: "by_organizationId_supplierId", why: "an order was added to this supplier", probe: indexed("supplierOrders", "by_organizationId_supplierId", "supplierId", "organizationId") },
@@ -86,12 +100,37 @@ export const PEOPLE_REFERENCES: Record<PeopleKind, Reference[]> = {
     { table: "supplierModelRates", field: "supplierId", index: "by_supplierId", why: "a rate was added to this supplier", probe: indexed("supplierModelRates", "by_supplierId", "supplierId") },
     { table: "subHires", field: "supplierId", index: "by_supplierId", why: "a sub-hire was added for this supplier", probe: indexed("subHires", "by_supplierId", "supplierId") },
     { table: "projectLineItems", field: "supplierId", index: "by_supplierId", why: "a job line was linked to this supplier", probe: indexed("projectLineItems", "by_supplierId", "supplierId") },
+    { table: "subHires", field: "supplierReference", ignored: TEXT },
+    { table: "assets", field: "purchaseSupplier", ignored: "The supplier's NAME as typed on the asset (free text, max 200); the link to a supplier record is `assets.supplierId`, which blocks." },
+    { table: "subHireItems", field: "subHireId", ignored: CHILD },
+    { table: "subHireGroups", field: "subHireId", ignored: CHILD },
+    { table: "subHireMedia", field: "subHireId", ignored: CHILD },
+    { table: "projectLineItems", field: "subHireId", ignored: CHILD },
+    { table: "projectLineItems", field: "subHireItemId", ignored: CHILD },
+    { table: "projectLineItems", field: "subHireGroupId", ignored: CHILD },
+    { table: "categorySlots", field: "subHireGroupId", ignored: CHILD },
+    { table: "projectLineItems", field: "showSubhireOnDocs", ignored: TEXT },
+    { table: "projectLineItems", field: "subhireOrderNumber", ignored: TEXT },
+    { table: "projects", field: "subHireCostTotal", ignored: TEXT },
   ],
   crew: [
     { table: "crewAssignments", field: "crewMemberId", index: "by_crewMemberId", why: "a call was added for this person", probe: indexed("crewAssignments", "by_crewMemberId", "crewMemberId") },
     { table: "crewTimeEntries", field: "crewMemberId", index: "by_crewMemberId", why: "time was logged for this person", probe: indexed("crewTimeEntries", "by_crewMemberId", "crewMemberId") },
     { table: "crewAvailabilities", field: "crewMemberId", index: "by_crewMemberId", why: "availability was added for this person", probe: indexed("crewAvailabilities", "by_crewMemberId", "crewMemberId") },
     { table: "crewDocuments", field: "crewMemberId", index: "by_crewMemberId", why: "a document was added for this person", probe: indexed("crewDocuments", "by_crewMemberId", "crewMemberId") },
+    { table: "projectTasks", field: "assigneeCrewId", index: "by_assigneeCrewId", why: "a task was assigned to this person", probe: indexed("projectTasks", "by_assigneeCrewId", "assigneeCrewId") },
+    { table: "maintenanceRecords", field: "assignedToId", ignored: "A USER id (`maintenanceWrites` validates it with assertMemberInOrg), not a crew member." },
+    { table: "crewMembers", field: "crewRoleId", ignored: ROLE },
+    { table: "crewAssignments", field: "crewRoleId", ignored: ROLE },
+    { table: "projectServices", field: "crewRoleId", ignored: ROLE },
+    { table: "categories", field: "suggestedCrewRoles", ignored: ROLE },
+    { table: "projects", field: "crewNotes", ignored: TEXT },
+    { table: "projectVersions", field: "crewNotes", ignored: TEXT },
+    { table: "projectServices", field: "crewChargeTotal", ignored: TEXT },
+    { table: "projectServices", field: "crewCountRequired", ignored: TEXT },
+    { table: "serviceTemplates", field: "defaultCrewCount", ignored: TEXT },
+    { table: "dashboardCounters", field: "activeCrew", ignored: TEXT },
+    { table: "dashboardCounters", field: "pendingCrewOffers", ignored: TEXT },
   ],
   supplierOrder: [
     { table: "supplierOrderItems", field: "orderId", index: "by_orderId", why: "a line was added to this order", probe: indexed("supplierOrderItems", "by_orderId", "orderId") },

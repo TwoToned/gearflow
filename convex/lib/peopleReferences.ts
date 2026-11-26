@@ -102,6 +102,7 @@ export const PEOPLE_REFERENCES: Record<PeopleKind, Reference[]> = {
     { table: "projectLineItems", field: "supplierId", index: "by_supplierId", why: "a job line was linked to this supplier", probe: indexed("projectLineItems", "by_supplierId", "supplierId") },
     { table: "subHires", field: "supplierReference", ignored: TEXT },
     { table: "assets", field: "purchaseSupplier", ignored: "The supplier's NAME as typed on the asset (free text, max 200); the link to a supplier record is `assets.supplierId`, which blocks." },
+    { table: "maintenanceParts", field: "supplierName", ignored: "The supplier's NAME as typed on a maintenance part (free text, max 200), not a link to a supplier record." },
     { table: "subHireItems", field: "subHireId", ignored: CHILD },
     { table: "subHireGroups", field: "subHireId", ignored: CHILD },
     { table: "subHireMedia", field: "subHireId", ignored: CHILD },

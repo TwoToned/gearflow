@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { showError } from "@/lib/show-error";
+import { assetDispositionLabels } from "@/lib/status-labels";
 import { fromDateInput, toDateInput } from "@/lib/date-input";
 import { MAX_MAINTENANCE_MONEY } from "../../../../convex/lib/maintenanceCost";
 import type { CompleteInput } from "@/components/maintenance/record/use-maintenance-record-writes";
@@ -20,11 +21,8 @@ const RESULTS: { value: Result; label: string }[] = [
   { value: "CONDITIONAL", label: "Conditional" },
   { value: "FAIL", label: "Fail" },
 ];
-const DISPOSITIONS: { value: Disposition; label: string }[] = [
-  { value: "RETURN_TO_SERVICE", label: "Return to service" },
-  { value: "KEEP_OUT_OF_SERVICE", label: "Keep out of service" },
-  { value: "RETIRE", label: "Retire" },
-];
+/** The words come from the ONE table (`assetDispositionLabels`), in the order the dialog offers them. */
+const DISPOSITIONS: { value: Disposition; label: string }[] = (["RETURN_TO_SERVICE", "KEEP_OUT_OF_SERVICE", "RETIRE"] as const).map((value) => ({ value, label: assetDispositionLabels[value] }));
 
 /** What each asset does when the caller chose nothing: a Fail keeps it out, anything else returns it. The SERVER owns this default; this only shows it. */
 export const defaultDisposition = (result: Result): Disposition => (result === "FAIL" ? "KEEP_OUT_OF_SERVICE" : "RETURN_TO_SERVICE");

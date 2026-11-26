@@ -74,7 +74,7 @@ describe("CompleteDialog", () => {
     const user = userEvent.setup();
     show();
     await user.click(screen.getByRole("combobox", { name: "DSK-2 disposition" }));
-    await user.click(await screen.findByRole("option", { name: "Retire" }));
+    await user.click(await screen.findByRole("option", { name: "Retire asset" }));
     expect(screen.getByRole("note").textContent).toMatch(/no Undo/);
     await user.click(screen.getByRole("button", { name: "Complete" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalled());

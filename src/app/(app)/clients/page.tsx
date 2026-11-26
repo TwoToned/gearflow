@@ -9,7 +9,7 @@ import { FadeIn } from "@/components/ui/motion";
 
 export default function ClientsPage() {
   const router = useRouter();
-  useKeyboardShortcut("n", () => router.push("/clients/new"));
+  useKeyboardShortcut("n", () => router.push("/clients?new=1"));
 
   return (
     <FadeIn>

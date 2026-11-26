@@ -44,7 +44,7 @@ function useActor() {
 interface Outcome { changed: { id: string; auditId: string }[]; skipped: { id: string; name: string; reason: string }[] }
 
 /** The one bulk-write driver for all three lists: forward write, then ONE toast whose Undo is the server's. */
-function usePeopleBulk(kind: Kind, orgId: string | undefined, noun: string) {
+export function usePeopleBulk(kind: Kind, orgId: string | undefined, noun: string) {
   const actor = useActor();
   const addTagM = useMutation(api.peopleBulkWrites.addTagManyNative);
   const setActiveM = useMutation(api.peopleBulkWrites.setActiveManyNative);

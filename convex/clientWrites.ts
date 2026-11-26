@@ -6,6 +6,9 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
+import { CLIENT_CLEARABLE_FIELDS } from "./lib/peopleEditFields";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
@@ -121,17 +124,10 @@ export const createNative = mutation({
 
     await ctx.db.insert("clients", fields);
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: fields.organizationId,
-      action: "CREATE",
-      entityType: "client",
-      entityId: fields.id,
-      entityName: fields.name,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Created client ${fields.name}`,
-      createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, {
+      orgId: fields.organizationId, entityType: "client", entityId: fields.id, entityName: fields.name, auditId, actor, now: fields.createdAt ?? fields.updatedAt ?? 0,
+      action: "CREATE", summary: `Created client ${fields.name}`, op: { op: "add", table: "clients", rowId: fields.id, snapshot: null },
     });
 
     return { id: fields.id };
@@ -146,11 +142,13 @@ export const updateNative = mutation({
     id: v.string(),
     orgId: v.string(),
     patch: clientPatch,
+    /** Optional fields to EMPTY (a blank form field): an absent patch key keeps the stored value, so clearing is its own list. */
+    clear: v.optional(v.array(v.string())),
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
   },
-  handler: async (ctx, { id, orgId, patch, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, patch, clear: clearIn, actor: suppliedActor, auditId, now }) => {
     await assertWritesEnabled(ctx, "client");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "client", "update");
@@ -161,20 +159,22 @@ export const updateNative = mutation({
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertClientFields(patch);
 
-    await ctx.db.patch(doc._id, { ...sanitizeClientSet(patch), updatedAt: now });
+    const set = sanitizeClientSet(patch);
+    const clear = [...new Set(clearIn ?? [])];
+    const refused = clear.filter((k) => !CLIENT_CLEARABLE_FIELDS.includes(k) || k in set);
+    if (refused.length > 0) throw new ConvexError({ code: "INVALID_FIELD", message: `These fields can't be cleared here: ${refused.join(", ")}.` });
+    const cleared = Object.fromEntries(clear.map((k) => [k, undefined]));
+    await ctx.db.patch(doc._id, { ...set, ...cleared, updatedAt: now });
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "client",
-      entityId: id,
-      entityName: patch.name ?? doc.name,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated client ${patch.name ?? doc.name}`,
-      createdAt: now,
-    });
+    // ONE audit row holding the before/after of ONLY the fields that changed: the sheet's Undo
+    // (`peopleBulkWrites.undoManyNative`) reads it back and restores exactly those fields.
+    const diff = diffFields(doc, { ...doc, ...set, ...cleared }, [...Object.keys(set), ...clear]);
+    const entityName = patch.name ?? doc.name;
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId, entityType: "client", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated client ${entityName}` });
+    } else {
+      await writeActivityLog(ctx, { id: auditId, organizationId: orgId, action: "UPDATE", entityType: "client", entityId: id, entityName, userId: actor.userId, userName: actor.userName, summary: `Updated client ${entityName}`, createdAt: now });
+    }
 
     return { id };
   },

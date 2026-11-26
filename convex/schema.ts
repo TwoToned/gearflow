@@ -1318,6 +1318,27 @@ export default defineSchema({
     .index("by_organizationId", ["organizationId"])
     .index("by_clientId", ["clientId"]),
 
+  // CrewDocument (UX Phase 13, D72, owner-approved 2026-11-24). DIRECT, child of crewMembers.
+  // Identity and licence material (R-8.12): visible only to the member themself or `crew:update`
+  // on a user session (`crewDocumentsVisible`); the bytes live in the `crew-documents` stored-file
+  // folder, which `/api/files` refuses (a gated route serves them). Expiry STATE is derived on read.
+  crewDocuments: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    crewMemberId: v.string(),
+    fileId: v.string(),
+    kind: v.union(v.literal("LICENCE"), v.literal("TICKET"), v.literal("INSURANCE"), v.literal("CONTRACT"), v.literal("ID"), v.literal("OTHER")),
+    name: v.optional(v.string()),
+    expiresAt: v.optional(v.number()),
+    createdAt: v.number(),
+    createdById: v.string(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_crewMemberId", ["crewMemberId"])
+    .index("by_fileId", ["fileId"]),
+
   // SupplierContact (UX Phase 13, B3, owner-approved 2026-11-25). DIRECT. More people at a
   // supplier than the one embedded `suppliers.contactName/email/phone` (which stays). No
   // primary flag: the embedded contact IS the primary. Cap 50/supplier in the write layer.

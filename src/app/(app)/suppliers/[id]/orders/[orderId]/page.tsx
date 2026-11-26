@@ -26,15 +26,6 @@ import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DeleteDialog } from "@/components/ui/delete-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -55,15 +46,6 @@ import { fileSizeLabel } from "@/lib/file-size";
 import type { ActionMenuSpec } from "@/lib/primitives/types";
 import { isOnHire, orderHireState, returnLateDays } from "../../../../../../../convex/lib/orderHireState";
 import { SUPPLIER_INVOICE_FOLDER } from "../../../../../../../convex/lib/supplierRecordCore";
-
-const ORDER_STATUS_OPTIONS = ["DRAFT", "ORDERED", "PARTIAL", "RECEIVED", "CANCELLED"] as const;
-type OrderStatus = (typeof ORDER_STATUS_OPTIONS)[number];
-
-/** Date input value ("YYYY-MM-DD") from an epoch-ms timestamp, for pre-filling the edit form. */
-function toDateInputValue(ms: number | null | undefined): string {
-  if (!ms) return "";
-  return new Date(ms).toISOString().slice(0, 10);
-}
 
 type OrderDetail = NonNullable<ReturnType<typeof useSupplierOrderDetail>>;
 
@@ -88,18 +70,7 @@ function SupplierOrderDetailContent({ params }: { params: Promise<{ id: string; 
 
   const order = useSupplierOrderDetail(orgId, orderId);
   const orderWrites = useSupplierOrderWrites();
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-
-  const updateMutation = useServerMutation({
-    mutationFn: (data: { status: OrderStatus; orderDate?: string; expectedDate?: string; notes?: string }) =>
-      orderWrites.update(orderId, data),
-    onSuccess: () => {
-      toast.success("Order updated");
-      setEditOpen(false);
-    },
-    onError: (e) => toast.error(e.message),
-  });
 
   const deleteMutation = useServerMutation({
     mutationFn: () => orderWrites.remove(orderId),
@@ -126,17 +97,7 @@ function SupplierOrderDetailContent({ params }: { params: Promise<{ id: string; 
 
   return (
     <>
-      <OrderRecord order={order} supplierId={supplierId} orderId={orderId} orgId={orgId} onEdit={() => setEditOpen(true)} onDelete={() => setDeleteOpen(true)} />
-
-      {/* Header edit dialog (WS7 #946 — the "Not built" edit flow FEATUREDOCS/22
-          previously documented as out of scope for #789). */}
-      <OrderEditDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        order={order}
-        isPending={updateMutation.isPending}
-        onConfirm={(data) => updateMutation.mutate(data)}
-      />
+      <OrderRecord order={order} supplierId={supplierId} orderId={orderId} orgId={orgId} onEdit={() => router.push(`/suppliers/${supplierId}/orders/${orderId}?edit=1`)} onDelete={() => setDeleteOpen(true)} />
 
       <DeleteDialog
         open={deleteOpen}
@@ -333,89 +294,6 @@ function InvoiceSection({ order, orderId }: { order: OrderDetail; orderId: strin
         </Button>
       </CanDo>
     </SidebarSection>
-  );
-}
-
-/**
- * Header edit dialog (WS7 #946) — status (machine-guarded server-side)/orderDate/
- * expectedDate/notes only; orderNumber/type/supplierId/projectId are fixed at
- * creation. Resets its local state from `order` each time it opens.
- */
-function OrderEditDialog({
-  open, onOpenChange, order, isPending, onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  order: OrderDetail;
-  isPending: boolean;
-  onConfirm: (data: { status: OrderStatus; orderDate?: string; expectedDate?: string; notes?: string }) => void;
-}) {
-  const [status, setStatus] = useState<OrderStatus>(order.status as OrderStatus);
-  const [orderDate, setOrderDate] = useState(toDateInputValue(order.orderDate));
-  const [expectedDate, setExpectedDate] = useState(toDateInputValue(order.expectedDate));
-  const [notes, setNotes] = useState(order.notes ?? "");
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        onOpenChange(v);
-        if (v) {
-          setStatus(order.status as OrderStatus);
-          setOrderDate(toDateInputValue(order.orderDate));
-          setExpectedDate(toDateInputValue(order.expectedDate));
-          setNotes(order.notes ?? "");
-        }
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit order</DialogTitle>
-          <DialogDescription>Update the order&apos;s status, dates, and notes.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="order-edit-status">Status</Label>
-            <Select value={status} onValueChange={(v) => v && setStatus(v as OrderStatus)}>
-              <SelectTrigger id="order-edit-status">
-                <SelectValue>{supplierOrderStatusLabels[status] ?? formatLabel(status)}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {ORDER_STATUS_OPTIONS.map((s) => (
-                  <SelectItem key={s} value={s}>{supplierOrderStatusLabels[s] ?? formatLabel(s)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="order-edit-order-date">Order date</Label>
-              <Input id="order-edit-order-date" type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="order-edit-expected-date">Expected date</Label>
-              <Input id="order-edit-expected-date" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="order-edit-notes">Notes</Label>
-            <Textarea id="order-edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="line" onClick={() => onOpenChange(false)} disabled={isPending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => onConfirm({ status, orderDate: orderDate || undefined, expectedDate: expectedDate || undefined, notes: notes || undefined })}
-            disabled={isPending}
-          >
-            {isPending ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

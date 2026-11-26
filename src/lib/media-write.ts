@@ -1,6 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
 import { getConvexClient } from "@/lib/convex-client";
-import { deleteFromS3, storageKeyFromUrl } from "@/lib/storage";
 import { mapGalleryFile, type GalleryFile } from "@/lib/media-read";
 import { MEDIA_SPECS, type MediaKind } from "@/lib/media-specs";
 import { api } from "../../convex/_generated/api";
@@ -95,12 +94,12 @@ export async function addMediaConvex(kind: MediaKind, input: AddMediaInput): Pro
 
 /**
  * Remove a media row (Convex-only) + its file (S3 + Convex). Promotes the next
- * PHOTO if the removed one was primary. `refCountFile` (subHire) checks all media
- * tables before deleting the file. Throws if the media is missing / wrong org.
+ * PHOTO if the removed one was primary. The file is deleted only when nothing else holds
+ * it. Throws if the media is missing / wrong org.
  */
 export async function removeMediaConvex(
   kind: MediaKind,
-  opts: { organizationId: string; mediaId: string; refCountFile?: boolean },
+  opts: { organizationId: string; mediaId: string },
 ): Promise<void> {
   const spec = MEDIA_SPECS[kind];
   const convex = await getConvexClient();
@@ -116,25 +115,9 @@ export async function removeMediaConvex(
 
   await convex.mutation(spec.convex.remove, { id: opts.mediaId } as AnyArgs);
 
-  const fileDoc = (await convex.query(api.fileUploads.getById, { id: fileId })) as Doc<"fileUploads"> | null;
-  if (fileDoc) {
-    try {
-      await deleteFromS3(fileDoc.storageKey);
-      // The thumbnail is a separate Convex storage object with its OWN opaque id —
-      // extract it from thumbnailUrl (/api/files/{thumbStorageId}), not by rewriting
-      // the original key (which only worked for the old S3 path scheme).
-      if (fileDoc.thumbnailUrl) {
-        const thumbKey = storageKeyFromUrl(fileDoc.thumbnailUrl);
-        if (thumbKey) await deleteFromS3(thumbKey);
-      }
-    } catch {
-      // best-effort S3 cleanup
-    }
-    const stillReferenced = opts.refCountFile
-      ? await convex.query(api.fileUploads.isReferencedByMedia, { fileId })
-      : false;
-    if (!stillReferenced) await convex.mutation(api.fileUploads.remove, { id: fileId });
-  }
+  // The ONE remove rule: the file (bytes, thumbnail, records) goes only when nothing else holds it once this
+  // row is gone, decided inside Convex in one transaction (`deleteStoredFileIfUnreferenced`).
+  await convex.mutation(api.fileUploads.removeIfUnreferenced, { orgId: opts.organizationId, fileId });
 
   if (spec.photo && wasPrimary && media.type === "PHOTO") {
     const rest = (await convex.query(spec.convex.listByParent, { parentId } as AnyArgs)) as Array<{

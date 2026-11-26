@@ -1,112 +1,80 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useServerMutation } from "@/hooks/use-server-mutation";
-import { toast } from "sonner";
-import { Truck, Mail } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { supplierSchema, type SupplierFormValues } from "@/lib/validations/supplier";
 import { useSupplierWrites } from "@/hooks/use-supplier-writes";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { useOrgCountry } from "@/lib/use-org-country";
+import { showError } from "@/lib/show-error";
 import { TagInput } from "@/components/ui/tag-input";
 import { AddressInput } from "@/components/ui/address-input";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FormSheet } from "@/components/ui/form-sheet";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  SmartFormLayout, SmartFormRail, SmartFormPreview, SmartFormSection, SmartFormField, SmartFormActions,
-} from "@/components/ui/smart-form";
+import { SmartFormSection, SmartFormField } from "@/components/ui/smart-form";
+import { useSheetAnnounce } from "./use-sheet-announce";
 
-interface SupplierFormProps {
+/**
+ * `SupplierSheet` (UX Phase 13 slice 4): the ONE create and edit surface for a supplier, on `FormSheet` (it replaces the
+ * `/suppliers/new` and `/suppliers/[id]/edit` pages, which redirect to `?new=1` / `?edit=1`). Every save toasts with
+ * the server's exact Undo (`useSheetAnnounce`).
+ */
+interface SupplierSheetProps {
   initialData?: SupplierFormValues & { id: string };
+  onClose: () => void;
+  onSaved?: (r: { id: string }) => void;
 }
 
-export function SupplierForm({ initialData }: SupplierFormProps) {
-  const router = useRouter();
+const CREATE_DEFAULTS: SupplierFormValues = {
+  name: "", contactName: "", email: "", phone: "", website: "", address: "", latitude: null, longitude: null,
+  notes: "", accountNumber: "", paymentTerms: "", defaultLeadTime: "", tags: [], isActive: true,
+};
+
+export function SupplierSheet({ initialData, onClose, onSaved }: SupplierSheetProps) {
   const isEditing = !!initialData;
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
   const supplierWrites = useSupplierWrites();
   const orgCountry = useOrgCountry();
-
   const orgTags = useOrgTags(orgId);
+  const announce = useSheetAnnounce("supplier");
+  const [saving, setSaving] = useState(false);
 
-  const form = useForm<SupplierFormValues>({
-    resolver: zodResolver(supplierSchema),
-    defaultValues: initialData || {
-      name: "",
-      contactName: "",
-      email: "",
-      phone: "",
-      website: "",
-      address: "",
-      latitude: null,
-      longitude: null,
-      notes: "",
-      accountNumber: "",
-      paymentTerms: "",
-      defaultLeadTime: "",
-      tags: [],
-      isActive: true,
-    },
-  });
-
+  const form = useForm<SupplierFormValues>({ resolver: zodResolver(supplierSchema), defaultValues: initialData ?? CREATE_DEFAULTS });
   const v = form.watch();
 
-  const mutation = useServerMutation({
-    mutationFn: (data: SupplierFormValues) =>
-      isEditing ? supplierWrites.update(initialData.id, data) : supplierWrites.create(data),
-    onSuccess: (result) => {
-      toast.success(isEditing ? "Supplier updated" : "Supplier created");
-      router.push(`/suppliers/${result.id}`);
-    },
-    onError: (e) => toast.error(e.message),
+  const submit = form.handleSubmit(async (data) => {
+    setSaving(true);
+    try {
+      const saved = initialData ? await supplierWrites.update(initialData.id, data) : await supplierWrites.create(data);
+      if (initialData) announce.updated("supplier", data.name, saved);
+      else announce.created("supplier", data.name, saved);
+      onClose();
+      onSaved?.(saved);
+    } catch (e) {
+      showError(e, { fallbackTitle: "Could not save the supplier" });
+    } finally {
+      setSaving(false);
+    }
   });
 
-  // ─── Live-preview derivations ──────────────────────────────────
-  const previewName = (v.name || "New supplier").trim();
-  const primaryContact = (v.contactName || v.email || "").trim();
-
-  const helperTip = !v.name
-    ? "Your bench for when the warehouse comes up short — a name's enough to get them on the list."
-    : !primaryContact
-      ? "Add a contact so purchase orders reach the right desk."
-      : "Looking good. Address, terms and lead time are optional — fill what you know.";
-
   return (
-    <SmartFormLayout
-      onSubmit={form.handleSubmit((d) => mutation.mutate(d))}
-      aside={
-        <>
-          <SmartFormRail eyebrow={isEditing ? "Editing" : "New supplier"} tip={helperTip} />
-          <SmartFormPreview>
-            <div className="overflow-hidden rounded-[var(--r)] border border-line bg-card p-3 shadow-[var(--sh-card)]">
-              <div className="flex items-start gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--r)] bg-paper-2 text-muted">
-                  <Truck className="h-4 w-4" strokeWidth={1.5} />
-                </div>
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className={cn("text-card-title font-semibold leading-tight", previewName === "New supplier" ? "text-muted" : "text-ink")}>
-                    {previewName}
-                  </p>
-                  <p className={cn("flex items-center gap-1.5 text-caption", primaryContact ? "text-muted" : "text-muted")}>
-                    <Mail className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-                    {primaryContact || "No contact yet"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </SmartFormPreview>
-        </>
-      }
+    <FormSheet
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={isEditing ? `Edit ${initialData.name || "supplier"}` : "New supplier"}
+      description={isEditing ? undefined : "Your bench for when the warehouse comes up short. A name is enough to get them on the list."}
+      primaryLabel={isEditing ? "Save" : "Create supplier"}
+      onSubmit={submit}
+      submitting={saving}
+      dirty={form.formState.isDirty}
     >
       <div className="space-y-8">
         {/* Identity */}
@@ -217,14 +185,6 @@ export function SupplierForm({ initialData }: SupplierFormProps) {
         </section>
       </div>
 
-      <SmartFormActions>
-        <Button type="button" variant="line" onClick={() => router.back()}>
-          Cancel
-        </Button>
-        <Button type="submit" loading={mutation.isPending}>
-          {isEditing ? "Update supplier" : "Create supplier"}
-        </Button>
-      </SmartFormActions>
-    </SmartFormLayout>
+    </FormSheet>
   );
 }

@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { type FunctionArgs } from "convex/server";
 import { createId } from "@paralleldrive/cuid2";
+import { z } from "zod";
 import { requireOrganization } from "@/lib/auth-server";
+import { requirePermission } from "@/lib/org-context";
+import { CREW_DOCUMENTS_FOLDER } from "../../../../convex/lib/crewDocumentCore";
 import { validateCsrfOrigin } from "@/lib/csrf";
 import { getConvexClient, toConvexDoc } from "@/lib/convex-client";
 import { api } from "../../../../convex/_generated/api";
@@ -32,6 +35,10 @@ const ALLOWED_MIME_TYPES = new Set([
   "text/plain",
 ]);
 
+/** `purpose` is validated, never trusted as free text (R-8.2.3). Absent = an ordinary upload. */
+const uploadPurposeSchema = z.enum(["crew-document"]).optional();
+const CREW_DOCUMENT_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
+
 const MAX_SIZE_MB = env.UPLOAD_MAX_SIZE_MB;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
@@ -52,12 +59,33 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const folder = (formData.get("folder") as string) || "misc";
     const entityId = (formData.get("entityId") as string) || "unknown";
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
+
+    // `purpose: "crew-document"` is the ONLY way into the reserved crew-documents folder (identity
+    // material, served by its own gated route). It needs crew:update and takes PDFs and images only; a
+    // client naming that folder directly is refused, so no other upload can be made to look like one.
+    const purpose = uploadPurposeSchema.safeParse(formData.get("purpose") ?? undefined);
+    if (!purpose.success) return NextResponse.json({ error: "Unknown upload purpose." }, { status: 400 });
+    const isCrewDocument = purpose.data === "crew-document";
+    const requestedFolder = (formData.get("folder") as string) || "misc";
+    if (requestedFolder === CREW_DOCUMENTS_FOLDER && !isCrewDocument) {
+      return NextResponse.json({ error: "That folder is reserved." }, { status: 400 });
+    }
+    if (isCrewDocument) {
+      try {
+        await requirePermission("crew", "update");
+      } catch {
+        return NextResponse.json({ error: "You don't have permission to upload crew documents." }, { status: 403 });
+      }
+      if (!CREW_DOCUMENT_MIME_TYPES.has(file.type)) {
+        return NextResponse.json({ error: "Crew documents must be a PDF or an image." }, { status: 400 });
+      }
+    }
+    const folder = isCrewDocument ? CREW_DOCUMENTS_FOLDER : requestedFolder;
 
     if (file.size > MAX_SIZE_BYTES) {
       return NextResponse.json(

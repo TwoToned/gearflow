@@ -1,5 +1,5 @@
 import { v, ConvexError } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, type MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { canSeeCrewPay } from "./lib/crewPayVisibility";
 import { MEMBER_RATE_FIELDS } from "./lib/crewPayFields";
@@ -11,7 +11,12 @@ import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
+import { PEOPLE_EDIT_FIELDS } from "./lib/peopleEditFields";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
+import { deleteStoredFilesIfUnreferenced } from "./lib/deleteStoredFile";
+import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
 import * as enums from "./lib/validators";
 
 /** Fields diffed for the crew-member UPDATE audit (parity with the old updateCrewMember). */
@@ -151,17 +156,10 @@ export const createNative = mutation({
       await bumpCrewMemberCounters(ctx, fields.organizationId, null, fields);
     }
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: fields.organizationId,
-      action: "CREATE",
-      entityType: "crew_member",
-      entityId: fields.id,
-      entityName: `${fields.firstName} ${fields.lastName}`,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Created crew member ${fields.firstName} ${fields.lastName}`,
-      createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, {
+      orgId: fields.organizationId, entityType: "crew_member", entityId: fields.id, entityName: `${fields.firstName} ${fields.lastName}`, auditId, actor, now: fields.createdAt ?? fields.updatedAt ?? 0,
+      action: "CREATE", summary: `Created crew member ${fields.firstName} ${fields.lastName}`, op: { op: "add", table: "crewMembers", rowId: fields.id, snapshot: null },
     });
 
     return { id: fields.id };
@@ -197,6 +195,9 @@ export const updateNative = mutation({
     const payVisible = await canSeeCrewPay(ctx, orgId);
     const NEVER_CLEAR = new Set(["id", "organizationId", ...(payVisible ? [] : MEMBER_RATE_FIELDS)]);
     const setObj = sanitizeClientSet(set, payVisible ? [] : MEMBER_RATE_FIELDS); // strip organizationId/id — no cross-tenant reassign
+    // Only the member form's fields may be written or cleared here: server-owned fields (the iCal feed's `icalToken`
+    // / `icalEnabled`, which have their own path) are refused, never silently written and never copied into an audit row.
+    assertEditable([...Object.keys(setObj), ...clear]);
     // R-8.6.2 — the create path already re-enforces crewMemberSchema's bounds; a
     // direct-mutation caller could otherwise skip them on update by only ever calling
     // updateNative with an out-of-bound value.
@@ -220,23 +221,44 @@ export const updateNative = mutation({
     // built `details.changes` from before→after over CREW_AUDIT_FIELDS).
     const entityName = `${afterRest.firstName ?? doc.firstName} ${afterRest.lastName ?? doc.lastName}`;
     const changes = buildChanges(beforeRest, afterRest, CREW_AUDIT_FIELDS);
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "crew_member",
-      entityId: id,
-      entityName,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated crew member ${entityName}`,
-      details: changes.length > 0 ? { changes } : undefined,
-      createdAt: now,
-    });
+    // The before/after of ONLY the fields this edit touched, beside the readable `changes`, so the
+    // sheet's Undo (`peopleBulkWrites.undoManyNative`) restores exactly them.
+    const touched = [...new Set([...Object.keys(setObj), ...clear.filter((k) => !NEVER_CLEAR.has(k))])].filter((k) => EDITABLE.has(k));
+    const diff = diffFields(beforeRest, afterRest, touched);
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId, entityType: "crew_member", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated crew member ${entityName}`, extraDetails: changes.length > 0 ? { changes } : undefined });
+    } else {
+      await writeActivityLog(ctx, {
+        id: auditId, organizationId: orgId, action: "UPDATE", entityType: "crew_member", entityId: id, entityName,
+        userId: actor.userId, userName: actor.userName, summary: `Updated crew member ${entityName}`,
+        details: changes.length > 0 ? { changes } : undefined, createdAt: now,
+      });
+    }
 
     return { id };
   },
 });
+
+/** The fields `updateNative` may write or clear (`lib/peopleEditFields.ts`) plus `updatedAt`, which the hook stamps. */
+const EDITABLE: ReadonlySet<string> = new Set(PEOPLE_EDIT_FIELDS.crew);
+function assertEditable(keys: string[]): void {
+  const refused = keys.filter((k) => !EDITABLE.has(k) && k !== "updatedAt" && k !== "id" && k !== "organizationId");
+  if (refused.length > 0) throw new ConvexError({ code: "INVALID_FIELD", message: `These fields can't be edited here: ${refused.join(", ")}.` });
+}
+
+/** Only an INACTIVE or ARCHIVED member (or one the list shows inactive through a legacy `isActive:false`) may be deleted. */
+function isDeletableCrewStatus(m: { status?: string; isActive?: boolean }): boolean {
+  return m.status === "INACTIVE" || m.status === "ARCHIVED" || m.isActive === false;
+}
+
+/** A member's documents go with them, stored files included (identity material is never orphaned). */
+async function deleteCrewDocuments(ctx: MutationCtx, orgId: string, crewMemberId: string): Promise<void> {
+  const docs = await ctx.db.query("crewDocuments").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", crewMemberId)).take(MAX_CREW_DOCUMENTS + 1);
+  const mine = docs.filter((x) => x.organizationId === orgId);
+  for (const d of mine) await ctx.db.delete(d._id);
+  // After every row is gone (so a file two of them shared is free), with ONE set of holder scans for all of them.
+  await deleteStoredFilesIfUnreferenced(ctx, orgId, mine.map((d) => d.fileId));
+}
 
 /**
  * deleteNative — remove a crew member row + DELETE audit, atomic. RBAC(crew, delete).
@@ -261,6 +283,9 @@ export const deleteNative = mutation({
     const doc = await ctx.db.query("crewMembers").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc) throw new ConvexError({ code: "NOT_FOUND", message: "Crew member not found." });
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    // C2 (server half of the record's "Delete only when Inactive"): a member who is still active (or on
+    // leave) cannot be deleted, so the API cannot do what the UI hides. Deactivate or archive first.
+    if (!isDeletableCrewStatus(doc)) throw new ConvexError({ code: "NOT_INACTIVE", message: "Deactivate this crew member before deleting them." });
     const name = `${doc.firstName} ${doc.lastName}`;
 
     // Scheduling cascade (folded in — was 3 separate server round-trips). All by
@@ -283,6 +308,7 @@ export const deleteNative = mutation({
     const avails = (await ctx.db.query("crewAvailabilities").withIndex("by_crewMemberId", (q) => q.eq("crewMemberId", id)).collect())
       .filter((av) => av.organizationId == null || av.organizationId === orgId);
     for (const av of avails) await ctx.db.delete(av._id);
+    await deleteCrewDocuments(ctx, orgId, id);
 
     await ctx.db.delete(doc._id);
     await bumpCrewMemberCounters(ctx, orgId, doc, null);

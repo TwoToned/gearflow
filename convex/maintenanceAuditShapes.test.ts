@@ -25,39 +25,51 @@ const writerFiles = [
 
 /** The body of the `{ ... }` literal whose `{` is at `open` (string- and nesting-aware), without the outer braces. */
 function literalBody(source: string, open: number): string {
-  let depth = 0;
-  let quote: string | null = null;
-  for (let i = open; i < source.length; i++) {
-    const c = source[i];
-    if (quote) {
-      if (c === "\\") i++;
-      else if (c === quote) quote = null;
-    } else if (c === '"' || c === "'" || c === "`") quote = c;
-    else if (c === "{" || c === "(" || c === "[") depth++;
-    else if ((c === "}" || c === ")" || c === "]") && --depth === 0) return source.slice(open + 1, i);
+  let end = source.length;
+  walk(source, open, (_c, i, depth) => {
+    if (depth !== 0) return false;
+    end = i;
+    return true;
+  });
+  return source.slice(open + 1, end);
+}
+
+/** The index of the quote that closes the string literal opening at `i` (a backslash escapes the next character). */
+function stringEnd(s: string, i: number): number {
+  for (let j = i + 1; j < s.length; j++) {
+    if (s[j] === "\\") j++;
+    else if (s[j] === s[i]) return j;
   }
-  return source.slice(open + 1);
+  return s.length;
+}
+
+/**
+ * Visits every character OUTSIDE a string literal from `from`, with the nesting depth AFTER it (an opening bracket
+ * counts itself, a closing one has already left). `visit` returns true to stop.
+ */
+function walk(s: string, from: number, visit: (c: string, i: number, depth: number) => boolean): void {
+  let depth = 0;
+  for (let i = from; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"' || c === "'" || c === "`") i = stringEnd(s, i);
+    else {
+      depth += "{([".includes(c) ? 1 : "})]".includes(c) ? -1 : 0;
+      if (visit(c, i, depth)) return;
+    }
+  }
 }
 
 /** The top-level items of a literal body, split on commas that sit outside every nesting and string. */
 function topLevelItems(body: string): string[] {
   const items: string[] = [];
-  let depth = 0;
-  let quote: string | null = null;
   let start = 0;
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i];
-    if (quote) {
-      if (c === "\\") i++;
-      else if (c === quote) quote = null;
-    } else if (c === '"' || c === "'" || c === "`") quote = c;
-    else if (c === "{" || c === "(" || c === "[") depth++;
-    else if (c === "}" || c === ")" || c === "]") depth--;
-    else if (c === "," && depth === 0) {
+  walk(body, 0, (c, i, depth) => {
+    if (c === "," && depth === 0) {
       items.push(body.slice(start, i));
       start = i + 1;
     }
-  }
+    return false;
+  });
   items.push(body.slice(start));
   return items.map((s) => s.trim()).filter(Boolean);
 }

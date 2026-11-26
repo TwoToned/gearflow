@@ -4,23 +4,29 @@
  * `ReadBudget`, so the whole call is bounded however big the org is, and a
  * read the budget could not cover surfaces instead of vanishing:
  *
- * - `truncated`  — the candidate scan stopped before the end of the older jobs.
+ * - `truncated`  — the DISPLAY scan stopped before the end of the older jobs (a
+ *   finished job that ran long may be missing from the timeline).
+ * - `claimsComplete` — false when the budget cut the scan of jobs that hold or
+ *   pencil gear; then no job is "none" and no Gear cell is a number (unknown).
  * - a job whose lines (or a model's stock) were beyond the budget reports
  *   clash state `unknown`, never `none` (`deriveJobFacts`).
  *
- * Scan ORDER is what makes truncation safe for a visible window: first every
- * job that STARTS inside the window (complete, in index order), then older
- * jobs nearest-first under their own allowance. So a cut can only hide a job
- * that started before the window AND before every older job already read; it
- * can never hide one that starts inside what the person is looking at.
+ * Gear claims never depend on history: every ALIVE job (enquiry through on
+ * site) is read through the status index, so a long-running job that started
+ * years ago still counts. Only the display of FINISHED jobs reads by start
+ * date: first every job that STARTS inside the window (complete, in index
+ * order), then older jobs nearest-first under their own allowance. So a cut
+ * can only hide a finished job that started before the window AND before every
+ * older job already read.
  * No whole-set read anywhere: a `take` or an iterator, always under the budget.
  */
 import type { QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { getProjectWindow } from "./projectWindow";
+import { HARD_PROJECT_STATUSES, PENCILLED_PROJECT_STATUSES } from "./availabilityCore";
 import { candidateBoardProjects, type DateRange } from "./overbookingBoard";
 import { ReadBudget } from "./readBudget";
-import { deriveJobFacts, type JobFacts } from "./scheduleBoard";
+import { deriveJobFacts, type JobFacts, type ScheduleFlagInput } from "./scheduleBoard";
 
 /** The floor `undefined` sorts to in an index range (see `overbookingFetch.ts`). */
 const MIN_TS = -8_640_000_000_000_000;
@@ -46,6 +52,10 @@ export interface ScheduleRead {
   /** clientId → name, for the visible jobs (a client the budget could not cover is absent: the job prints no client). */
   clientNames: Map<string, string>;
   truncated: boolean;
+  /** Every alive job was read: the clash words and the Gear numbers are exact. */
+  claimsComplete: boolean;
+  /** What the clash words and the Gear grid are both derived from: one read, two readings. */
+  inputs: ScheduleFlagInput;
 }
 
 /** Calendar rule (unchanged from `projectMatchesCalendarWindow`): the bar is the RENTAL window. */
@@ -60,18 +70,28 @@ function overlapsWindow(p: Doc<"projects">, range: DateRange): boolean {
   return start != null && end != null && start <= range.end && end >= range.start;
 }
 
+type ProjectStatus = NonNullable<Doc<"projects">["status"]>;
+
 interface Scan {
   budget: ReadBudget;
   orgId: string;
   range: DateRange;
   found: Map<string, Doc<"projects">>;
   olderLeft: number;
+  /** The display scan is incomplete. */
   truncated: boolean;
+  /** The budget cut a scan: gear claims may be missing. */
+  claimsCut: boolean;
 }
 
 /** Take one document from the shared budget; false (and `truncated`) when it is spent. */
 function spend(s: Scan, older: boolean): boolean {
-  if (!s.budget.hasRoom || (older && s.olderLeft <= 0)) {
+  if (!s.budget.hasRoom) {
+    s.truncated = true;
+    s.claimsCut = true;
+    return false;
+  }
+  if (older && s.olderLeft <= 0) {
     s.truncated = true;
     return false;
   }
@@ -101,9 +121,14 @@ async function scanProjects(ctx: QueryCtx, s: Scan): Promise<void> {
     .query("projects")
     .withIndex("by_organizationId_projectStartDate", (q) => q.eq("organizationId", orgId).gt("projectStartDate", MIN_TS).lt("projectStartDate", range.start))
     .order("desc");
-  // 1. Everything that STARTS inside the window, by either date (complete first); 2. older jobs, nearest first, under their own allowance.
+  // 0. Every alive job overlapping the window (claims); 1. everything that STARTS inside the window, by either date (complete first); 2. older jobs, nearest first, under their own allowance.
   const all = () => true;
+  const aliveStatuses = [...HARD_PROJECT_STATUSES, ...PENCILLED_PROJECT_STATUSES] as ProjectStatus[];
+  const alive = aliveStatuses.map((status) => () =>
+    drain(s, ctx.db.query("projects").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)), false, (p) => p.isTemplate !== true && overlapsWindow(p, range)),
+  );
   const steps: (() => Promise<boolean>)[] = [
+    ...alive,
     () => drain(s, rental, false, all),
     () => drain(s, project, false, all),
     () => drain(s, olderRental, true, (p) => isVisible(p, range) || overlapsWindow(p, range)),
@@ -174,7 +199,7 @@ const byWindowStart = (a: Doc<"projects">, b: Doc<"projects">) => (getProjectWin
 
 export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRange, limits: ScheduleLimits = SCHEDULE_LIMITS): Promise<ScheduleRead> {
   const budget = new ReadBudget(limits.reads);
-  const scan: Scan = { budget, orgId, range, found: new Map(), olderLeft: limits.older, truncated: false };
+  const scan: Scan = { budget, orgId, range, found: new Map(), olderLeft: limits.older, truncated: false, claimsCut: false };
   await scanProjects(ctx, scan);
 
   const all = [...scan.found.values()];
@@ -192,10 +217,11 @@ export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRang
 
   const modelIds = [...new Set(lines.map((l) => l.modelId).filter((m): m is string => !!m))];
   const stock = await readStock(ctx, orgId, modelIds, budget, limits.perModelUnits);
-  const facts = deriveJobFacts({
+  const inputs: ScheduleFlagInput = {
     range, projects: all, lines, unreadProjectIds: unread,
     models: stock.models, assets: stock.assets, bulkAssets: stock.bulkAssets, unknownModelIds: stock.unknown,
-  });
+    claimsComplete: !scan.claimsCut,
+  };
   const clientNames = await readClientNames(ctx, orgId, visible, budget);
-  return { visible, facts, models: stock.models, clientNames, truncated: scan.truncated };
+  return { visible, facts: deriveJobFacts(inputs), models: stock.models, clientNames, truncated: scan.truncated, claimsComplete: inputs.claimsComplete, inputs };
 }

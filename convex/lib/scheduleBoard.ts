@@ -72,6 +72,8 @@ export interface ScheduleFlagInput {
   bulkAssets: BoardBulkAsset[];
   /** Models whose stock could not be read in full. */
   unknownModelIds: ReadonlySet<string>;
+  /** Every alive job was read. When false no job is `none` (a job we never saw could clash with it). */
+  claimsComplete: boolean;
 }
 
 type Ref = { id: string; projectNumber: string };
@@ -159,7 +161,7 @@ export function deriveJobFacts(input: ScheduleFlagInput): Map<string, JobFacts> 
     const isAlive = projectById.has(p.id);
     const unread = input.unreadProjectIds.has(p.id);
     const own = isAlive && !unread ? (demand.get(p.id) ?? []) : null;
-    const unchecked = unread || (own ?? []).some((l) => !modelKnown(l.modelId!));
+    const unchecked = unread || !input.claimsComplete || (own ?? []).some((l) => !modelKnown(l.modelId!));
     const mine = rows.get(p.id) ?? [];
     out.set(p.id, { state: stateOf(mine, isAlive, unchecked), rows: mine, ...gearOf(own) });
   }

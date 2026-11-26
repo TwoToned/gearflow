@@ -71,7 +71,7 @@ async function seedBase(t: T, stock = 2) {
 async function load(t: T, limits: Partial<typeof SCHEDULE_LIMITS>) {
   return await t.run(async (ctx) => {
     const r = await loadSchedule(ctx, ORG, { start: START, end: END }, { ...SCHEDULE_LIMITS, ...limits });
-    return { visible: r.visible.map((p) => p.id).sort(), truncated: r.truncated, facts: Object.fromEntries(r.facts) };
+    return { visible: r.visible.map((p) => p.id).sort(), truncated: r.truncated, claimsComplete: r.claimsComplete, facts: Object.fromEntries(r.facts) };
   });
 }
 
@@ -136,14 +136,37 @@ describe("scheduleBoard: the read is bounded and says so", () => {
     const t = makeT();
     await seedBase(t, 2);
     await seedJob(t, { id: "inside", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 2 * DAY });
-    // A long job that started 3 days before the window and is still running: nearest older.
-    await seedJob(t, { id: "running", status: "CONFIRMED", from: NOW - 3 * DAY, to: NOW + 2 * DAY });
+    // A FINISHED job that started 3 days before the window and ran into it: the nearest older.
+    await seedJob(t, { id: "running", status: "RETURNED", from: NOW - 3 * DAY, to: NOW + 2 * DAY });
     // Older history, all ended long before the window.
     for (let i = 0; i < 6; i++) await seedJob(t, { id: `old${i}`, status: "RETURNED", from: NOW - (100 + i) * DAY, to: NOW - (99 + i) * DAY });
     const read = await load(t, { older: 3 });
     expect(read.visible).toEqual(["inside", "running"]);
     // The older allowance ran out before the oldest history: the cut is surfaced.
     expect(read.truncated).toBe(true);
+  });
+
+  test("an alive job that started years ago still counts (claims never depend on history), and one that clashes says so", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "ancient", status: "CONFIRMED", from: NOW - 900 * DAY, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    for (let i = 0; i < 6; i++) await seedJob(t, { id: `old${i}`, status: "RETURNED", from: NOW - (100 + i) * DAY, to: NOW - (99 + i) * DAY });
+    await seedJob(t, { id: "later", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 3 * DAY, lines: [{ qty: 1 }] });
+    const read = await load(t, { older: 2 });
+    expect(read.visible).toEqual(["ancient", "later"]);
+    expect(read.claimsComplete).toBe(true);
+    expect(read.facts.later.state).toBe("clash");
+    expect(read.facts.ancient.state).toBe("none");
+  });
+
+  test("when the budget cuts the alive scan, no job is none: the check cannot be trusted", async () => {
+    const t = makeT();
+    await seedBase(t, 5);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "b", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    const read = await load(t, { reads: 1 });
+    expect(read.claimsComplete).toBe(false);
+    expect(Object.values(read.facts).every((f) => (f as { state: string }).state !== "none")).toBe(true);
   });
 
   test("a cut that bites the older jobs still reports every job that starts inside the window", async () => {

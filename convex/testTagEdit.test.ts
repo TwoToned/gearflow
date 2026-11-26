@@ -290,6 +290,16 @@ describe("Retire's exact Undo", () => {
     await expect(undoRetire(t, "nope")).rejects.toThrow();
   });
 
+  test("refuses once anything touched the item after the retire (its updatedAt moved), even though it is still retired", async () => {
+    const t = makeT();
+    await seed(t);
+    await retire(t);
+    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.updateNative, { id: "t1", orgId: ORG, patch: { notes: "touched" }, now: NOW + 5 });
+    expect(await item(t)).toMatchObject({ status: "RETIRED", notes: "touched" });
+    await expect(undoRetire(t)).rejects.toThrow(/changed since/);
+    expect((await item(t)).status).toBe("RETIRED");
+  });
+
   test("refuses another person, a second Undo, and once the item was reactivated since", async () => {
     const t = makeT();
     await seed(t);

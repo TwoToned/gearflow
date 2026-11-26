@@ -664,7 +664,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: "Create new maintenance record",
     icon: "Wrench",
     pages: ["/maintenance"],
-    action: { type: "navigate", path: "/maintenance/new" },
+    action: { type: "navigate", path: "/maintenance?new=1" },
     requiredPermission: ["maintenance", "create"],
   },
 

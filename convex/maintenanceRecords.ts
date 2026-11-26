@@ -6,6 +6,9 @@ import { requireOrgReadFor, requireOrgReadDocFor, requireService } from "./lib/a
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { withoutCost } from "./lib/maintenanceLabour";
+
 
 export const agentOps: AgentOpsAnnotations = {
   list: { summary: "List maintenance records for the org.", danger: "low", mcpTier: 2 },
@@ -29,10 +32,12 @@ export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "maintenance"); // Phase 2 read bootstrap (#998)
-    return await ctx.db
+    const hidden = !(await canSeeJobCost(ctx, orgId));
+    const rows = await ctx.db
       .query("maintenanceRecords")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
+    return hidden ? rows.map((r) => withoutCost(r, true)) : rows;
   },
 });
 
@@ -41,7 +46,7 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("maintenanceRecords").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "maintenance"); // Phase 2 read bootstrap (#998)
-    return doc;
+    return doc ? withoutCost(doc, !(await canSeeJobCost(ctx, doc.organizationId))) : doc;
   },
 });
 
@@ -269,8 +274,8 @@ async function userName(
   return { id: userId, name: cache.get(userId) ?? null };
 }
 
-function mapScalars(doc: Doc<"maintenanceRecords">) {
-  return {
+function mapScalars(doc: Doc<"maintenanceRecords">, costHidden = false) {
+  return withoutCost({
     id: doc.id,
     organizationId: doc.organizationId,
     kitId: doc.kitId ?? null,
@@ -292,7 +297,7 @@ function mapScalars(doc: Doc<"maintenanceRecords">) {
     tags: doc.tags ?? [],
     createdAt: toIso(doc.createdAt) ?? new Date(doc._creationTime).toISOString(),
     updatedAt: toIso(doc.updatedAt) ?? new Date(doc._creationTime).toISOString(),
-  };
+  }, costHidden);
 }
 
 const STATUS_RANK: Record<string, number> = {
@@ -347,6 +352,7 @@ export const recordsPage = query({
   },
   handler: async (ctx, args) => {
     await requireOrgReadFor(ctx, args.orgId, "maintenance");
+    const costHidden = !(await canSeeJobCost(ctx, args.orgId));
     const page = args.page ?? 1;
     const pageSize = args.pageSize ?? 25;
     const dir: "asc" | "desc" = args.sortOrder === "desc" ? "desc" : "asc";
@@ -428,7 +434,8 @@ export const recordsPage = query({
         case "nextDueDate": return r.nextDueDate ?? null;
         case "createdAt": return r.createdAt ?? r._creationTime;
         case "updatedAt": return r.updatedAt ?? r._creationTime;
-        case "cost": return r.cost ?? null;
+        // A hidden cost is not a sort key either (the order would leak it): it falls to the default.
+        case "cost": return costHidden ? (r.createdAt ?? r._creationTime) : (r.cost ?? null);
         default: return r.createdAt ?? r._creationTime;
       }
     };
@@ -450,7 +457,7 @@ export const recordsPage = query({
     const enriched = [];
     for (const r of slice) {
       enriched.push({
-        ...mapScalars(r),
+        ...mapScalars(r, costHidden),
         assets: buildLinks(linksByRecord.get(r.id) ?? [], assetMap, modelMap),
         reportedBy: await userName(ctx, args.orgId, r.reportedById, userCache),
         assignedTo: await userName(ctx, args.orgId, r.assignedToId, userCache),
@@ -502,7 +509,7 @@ export const recordDetail = query({
 
     const userCache = new Map<string, string | null>();
     return {
-      ...mapScalars(record),
+      ...mapScalars(record, !(await canSeeJobCost(ctx, orgId))),
       assets: buildLinks(links, assetMap, modelMap),
       reportedBy: await userName(ctx, orgId, record.reportedById, userCache),
       assignedTo: await userName(ctx, orgId, record.assignedToId, userCache),

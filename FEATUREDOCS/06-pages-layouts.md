@@ -108,7 +108,7 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/locations/[id]` | Location detail |
 | `/locations/[id]/edit` | Edit location |
 | `/maintenance` | Maintenance record list |
-| `/maintenance/new` | Create maintenance record |
+| `/maintenance/new` | Redirects to the Maintenance sheet (`/maintenance?new=1`); `/maintenance/[id]/edit` redirects to `/maintenance/[id]?edit=1` |
 | `/maintenance/[id]` | Maintenance detail |
 | `/test-and-tag` | T&T overview |
 | `/test-and-tag/registry` | T&T item list |

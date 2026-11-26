@@ -155,7 +155,7 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/crew/timesheets": "the Crew page's Timesheets head word (D48); a deep link, not a sub-row",
   "/maintenance/due": "service schedules and check-off, reached from Maintenance's page menu (moves into dialogs, 14a-3b)",
   "/test-and-tag/registry": "redirect to the Test & tag list's All word (`/test-and-tag?seg=all`, Phase 14, D44)",
-  "/maintenance/new": "create flow",
+  "/maintenance/new": "redirect to the Maintenance sheet (`/maintenance?new=1`, Phase 14)",
   "/assets/models/new": "create flow",
   "/assets/registry/new": "redirect to the Assets list's create sheet (`/assets/registry?new=serialized|bulk`, Phase 12)",
   "/clients/new": "create flow",

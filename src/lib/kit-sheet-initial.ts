@@ -1,3 +1,4 @@
+import { toDateInput } from "@/lib/date-input";
 import type { KitFormValues } from "@/lib/validations/kit";
 
 /** A kit's own fields as the Kit sheet edits or duplicates them (status, photos and the flags are not the sheet's). */
@@ -30,11 +31,6 @@ export interface KitSheetSource {
 /** A stored number: `0` is a real value (a weightless case, a free kit), only absent / null is blank. */
 const num = (n: number | string | null | undefined): number | undefined => (n == null || n === "" ? undefined : Number(n));
 
-/** Epoch ms as the `yyyy-mm-dd` a date input shows (the UTC day, which is how the save stored it). */
-export function dateInputValue(ms: number | null | undefined): string | undefined {
-  return ms == null ? undefined : new Date(ms).toISOString().slice(0, 10);
-}
-
 /**
  * The Kit sheet's starting values from a kit read. One mapping for the record page's Edit and Duplicate: a stored `0`
  * stays `0` (it must survive an unchanged save, never read as "cleared"), and a blank is blank.
@@ -52,7 +48,7 @@ export function kitSheetInitialOf(kit: KitSheetSource): KitSheetInitial {
     caseType: kit.caseType || undefined,
     caseDimensions: kit.caseDimensions || undefined,
     notes: kit.notes || undefined,
-    purchaseDate: dateInputValue(kit.purchaseDate),
+    purchaseDate: toDateInput(kit.purchaseDate) || undefined,
     purchasePrice: num(kit.purchasePrice),
     tags: kit.tags ?? [],
     checkMode: (kit.checkMode || "KIT_LEVEL") as "KIT_LEVEL" | "PER_ITEM",

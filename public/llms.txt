@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (737 agent-reachable)
+## Operations (748 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -332,8 +332,19 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `maintenanceBulkWrites.undoBulkEditNative` (mutation, scope: maintenance:update)
 - `maintenanceCheckoffWrites.checkOffBulkSession` (mutation, scope: maintenance:update)
 - `maintenanceCheckoffWrites.checkOffUnit` (mutation, scope: maintenance:update)
+- `maintenanceEditWrites.editNative` (mutation, scope: maintenance:update)
+- `maintenanceEditWrites.undoEditNative` (mutation, scope: maintenance:update)
+- `maintenanceLifecycleWrites.completeNative` (mutation, scope: maintenance:update)
+- `maintenanceLifecycleWrites.reopenNative` (mutation, scope: maintenance:update)
+- `maintenanceLifecycleWrites.undoNative` (mutation, scope: maintenance:update)
 - `maintenanceList.listPage` (query, scope: maintenance:read)
 - `maintenanceList.segmentCounts` (query, scope: maintenance:read)
+- `maintenanceParts.listForRecord` (query, scope: maintenance:read)
+- `maintenancePartsWrites.addNative` (mutation, scope: maintenance:update)
+- `maintenancePartsWrites.editNative` (mutation, scope: maintenance:update)
+- `maintenancePartsWrites.markArrivedNative` (mutation, scope: maintenance:update)
+- `maintenancePartsWrites.removeNative` (mutation, scope: maintenance:update)
+- `maintenancePartsWrites.undoNative` (mutation, scope: maintenance:update)
 - `maintenanceRecordAssets.getById` (query, scope: maintenance:read)
 - `maintenanceRecordAssets.list` (query, scope: maintenance:read)
 - `maintenanceRecords.assetsForSelect` (query, scope: maintenance:read)

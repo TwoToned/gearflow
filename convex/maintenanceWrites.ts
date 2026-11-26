@@ -15,6 +15,9 @@ import { assertStrLen, assertNumRange, assertArrayMax } from "./lib/fieldGuards"
 import { assertProjectInOrg } from "./projectLineItems";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import { retireAssetCore } from "./lib/assetRetire";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { MAX_MAINTENANCE_MONEY } from "./lib/maintenanceCost";
+import { assertNewMaintenancePhotos, releaseRemovedMaintenancePhotos } from "./lib/maintenancePhotos";
 import * as enums from "./lib/validators";
 import {
   loadUndoableMaintenanceCreate,
@@ -69,7 +72,7 @@ function assertMaintenanceFields(f: {
 }): void {
   assertStrLen(f.title, "title", { min: 1, max: 200 });
   assertStrLen(f.description, "description", { max: 5000 });
-  assertNumRange(f.cost, "cost", { min: 0 });
+  assertNumRange(f.cost, "cost", { min: 0, max: MAX_MAINTENANCE_MONEY });
   assertStrLen(f.partsUsed, "partsUsed", { max: 2000 });
   assertArrayMax(f.photos, "photos", 20);
 }
@@ -104,7 +107,7 @@ async function fetchOrgAsset(
  * Mark assets IN_MAINTENANCE, but ONLY if currently AVAILABLE (the load-bearing
  * guard — mirrors the Prisma `where: { status: AVAILABLE }`). Per-row org re-check.
  */
-async function holdAssets(
+export async function holdAssets(
   ctx: MutationCtx,
   orgId: string,
   assetIds: string[],
@@ -196,7 +199,7 @@ type AssetDisposition = "RETURN_TO_SERVICE" | "KEEP_OUT_OF_SERVICE" | "RETIRE";
  * matching archiveNative) — the record-level "Updated maintenance record" audit
  * covers everything else.
  */
-async function applyAssetDispositions(
+export async function applyAssetDispositions(
   ctx: MutationCtx,
   orgId: string,
   dispositions: { assetId: string; disposition: AssetDisposition }[],
@@ -240,7 +243,7 @@ async function applyAssetDispositions(
  * Filters out WS6 CHECKOFF rows — a recurring-PM progress row sharing this
  * record's id is never a hold/release link (see maintenanceRecordAssetKind.ts).
  */
-async function existingLinks(ctx: MutationCtx, recordId: string) {
+export async function existingLinks(ctx: MutationCtx, recordId: string) {
   return (
     await ctx.db
       .query("maintenanceRecordAssets")
@@ -267,7 +270,7 @@ async function allRecordAssetRows(ctx: MutationCtx, recordId: string) {
  * (recordId, assetId); rejects a link-id that collides with a DIFFERENT parent
  * (foreign id → cross-tenant injection). Org-checks the asset first.
  */
-async function insertLink(
+export async function insertLink(
   ctx: MutationCtx,
   orgId: string,
   recordId: string,
@@ -348,6 +351,8 @@ export const createNative = mutation({
     await assertEmitSideEffectsAgentTrue(ctx, a.emitSideEffects);
     const actor = await resolveActor(ctx, a.actor);
     assertMaintenanceFields(a);
+    // A photo on a NEW job must be this actor's own fresh upload into the maintenance folder, held by nothing.
+    await assertNewMaintenancePhotos(ctx, { orgId: a.orgId, actorUserId: actor.userId, photos: a.photos, existing: [] });
 
     if (a.projectId) await assertProjectInOrg(ctx, a.projectId, a.orgId);
 
@@ -386,7 +391,7 @@ export const createNative = mutation({
       ...(a.assignedToId ? { assignedToId: a.assignedToId } : {}),
       ...(a.scheduledDate != null ? { scheduledDate: a.scheduledDate } : {}),
       ...(a.completedDate != null ? { completedDate: a.completedDate } : {}),
-      ...(a.cost != null ? { cost: a.cost } : {}),
+      ...(a.cost != null && (await canSeeJobCost(ctx, a.orgId)) ? { cost: a.cost } : {}), // labour is job cost: a hidden caller sets none
       ...(a.partsUsed ? { partsUsed: a.partsUsed } : {}),
       photos: a.photos ?? [],
       ...(a.result ? { result: a.result } : {}),
@@ -504,6 +509,8 @@ export const updateNative = mutation({
       throw new ConvexError("Maintenance record not found");
     }
     assertMaintenanceFields(a);
+    // Only photos NEW on this save are proven (a photo already on the job stays valid however old or shared it is now).
+    await assertNewMaintenancePhotos(ctx, { orgId: a.orgId, actorUserId: actor.userId, photos: a.photos, existing: record.photos ?? [] });
 
     // Validate reporter/assignee membership only when CHANGED, so a record whose original
     // reporter/assignee has since left the org can still be edited/re-saved.
@@ -579,14 +586,19 @@ export const updateNative = mutation({
       assignedToId: a.assignedToId || undefined,
       scheduledDate: a.scheduledDate ?? undefined,
       completedDate: a.completedDate ?? undefined,
-      cost: a.cost ?? undefined,
+      // Labour is job cost: a caller who cannot see it neither sets nor clears it (the write follows the read).
+      cost: (await canSeeJobCost(ctx, a.orgId)) ? (a.cost ?? undefined) : record.cost,
       partsUsed: a.partsUsed || undefined,
-      photos: a.photos ?? [],
+      // The two ARRAYS are the exception to this write's full-replace: omitted means UNCHANGED, never cleared (clearing
+      // is an explicit `[]`). A dropped photo deletes stored bytes, so a partial caller must not wipe them.
+      photos: a.photos ?? record.photos ?? [],
       result: a.result ?? undefined,
       nextDueDate: a.nextDueDate ?? undefined,
-      tags: a.tags ?? [],
+      tags: a.tags ?? record.tags ?? [],
       updatedAt: a.now,
     });
+    // A photo this save dropped: its bytes go only through `deleteStoredFileIfUnreferenced`, after the patch above.
+    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: a.photos ?? record.photos ?? [] });
 
     // Link diff: drop removed links, add the genuinely-new ones.
     for (const l of links) {
@@ -652,6 +664,11 @@ export const deleteNative = mutation({
     // BOTH kinds (LINK + WS6 CHECKOFF), so a deleted record's progress history
     // doesn't orphan.
     for (const l of await allRecordAssetRows(ctx, a.id)) await ctx.db.delete(l._id);
+    // …and its parts (D76), org re-checked per row (`by_maintenanceRecordId` is global).
+    const parts = await ctx.db.query("maintenanceParts").withIndex("by_maintenanceRecordId", (q) => q.eq("maintenanceRecordId", a.id)).take(500);
+    for (const p of parts) if (p.organizationId === a.orgId) await ctx.db.delete(p._id);
+    // Its photos' bytes, only through `deleteStoredFileIfUnreferenced` and only after the record row is gone.
+    await releaseRemovedMaintenancePhotos(ctx, { orgId: a.orgId, before: record.photos ?? [], after: [] });
 
     await writeActivityLog(ctx, {
       id: a.auditId,

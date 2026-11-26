@@ -113,6 +113,23 @@ describe("activity log: crew pay in field diffs is written, and redacted on read
     expect(activityMoneyRedactor({ pay: false, jobCost: false })(noChanges)).toEqual(noChanges);
   });
 
+  test("a MAINTENANCE row's labour (`cost`) and a part's `unitPrice` are job cost: dropped from fieldEdit, partOp and lifecycle for a caller without it, by entity", () => {
+    const snap = (before: Record<string, unknown>, after: Record<string, unknown>) => ({ before, after, serverSavedAt: 1, authorId: "u" });
+    const edit = { entityType: "maintenance", details: { fieldEdit: snap({ title: "A", cost: 50 }, { title: "B", cost: 80 }) } };
+    const part = { entityType: "maintenance", details: { partOp: snap({ name: "Strut", unitPrice: 12.5, quantity: 2 }, { name: "Strut", unitPrice: 15, quantity: 2 }) } };
+    const life = { entityType: "maintenance", details: { lifecycle: snap({ status: "IN_PROGRESS", cost: 50 }, { status: "COMPLETED", cost: 120 }) } };
+    const hide = activityMoneyRedactor({ pay: true, jobCost: false });
+    expect(hide(edit).details.fieldEdit.after).toEqual({ title: "B" });
+    expect(hide(edit).details.fieldEdit.before).toEqual({ title: "A" });
+    expect(hide(part).details.partOp.after).toEqual({ name: "Strut", quantity: 2 });
+    expect(hide(life).details.lifecycle.before).toEqual({ status: "IN_PROGRESS" });
+    // A caller who sees job cost reads the rows untouched.
+    expect(activityMoneyRedactor({ pay: true, jobCost: true })(part)).toBe(part);
+    // By ENTITY: a job LINE's `unitPrice` is a visible sell price and a non-maintenance `cost` is not this rule.
+    const line = { entityType: "lineItem", details: { fieldEdit: snap({ unitPrice: 10, cost: 3 }, { unitPrice: 12, cost: 4 }) } };
+    expect(hide(line)).toBe(line);
+  });
+
   test("the exact-Undo snapshot (details.fieldEdit) is redacted by the SAME lists, by field name", () => {
     const fieldEdit = {
       before: { name: "A", margin: 5, defaultDayRate: 100, discountPercent: 10 },

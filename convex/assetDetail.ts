@@ -4,6 +4,8 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { assetHistoryReason, assetHistoryText } from "./lib/assetHistory";
 import { getAuthContext, isAgentNoFinancials, redactFields, requireOrgPermission } from "./lib/auth";
+import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { withoutCost } from "./lib/maintenanceLabour";
 import { ASSET_COST_FIELDS, MODEL_COST_FIELDS } from "./lib/gearCostFields";
 import { pick, FILE_META_FIELDS } from "./lib/dto";
 
@@ -192,8 +194,13 @@ export const bundle = query({
   args: { assetId: v.string(), orgId: v.string() },
   handler: async (ctx, { assetId, orgId }) => {
     await requireOrgPermission(ctx, orgId, "asset", "read");
-    const detail = await readAssetDetail(ctx, assetId, orgId);
-    if (!detail || !(await isAgentNoFinancials(ctx, await getAuthContext(ctx)))) return detail;
+    const found = await readAssetDetail(ctx, assetId, orgId);
+    if (!found) return found;
+    // A maintenance row's `cost` is LABOUR = JOB cost (`canSeeJobCost`: `invoice:read` and not a `noFinancials` key),
+    // not gear cost: the same rule and helper as every other maintenance read. ABSENT, never zeroed.
+    const labourHidden = !(await canSeeJobCost(ctx, orgId));
+    const detail = { ...found, maintenanceRecords: found.maintenanceRecords.map((r) => withoutCost(r, labourHidden)) };
+    if (!(await isAgentNoFinancials(ctx, await getAuthContext(ctx)))) return detail;
     // A `noFinancials` key never sees what the unit or its model COST: ABSENT, never zeroed.
     const noModelCost = <M extends Record<string, unknown> | null>(m: M): M => (m ? redactFields(m, MODEL_COST_FIELDS) : m);
     return {

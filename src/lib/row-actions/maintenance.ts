@@ -1,4 +1,4 @@
-import { CalendarClock, ExternalLink, Pencil, Trash2, UserPlus, Wrench } from "lucide-react";
+import { CalendarClock, CheckCircle2, ExternalLink, PackageCheck, Pencil, RotateCcw, Trash2, UserPlus, Wrench } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
 
@@ -55,6 +55,62 @@ export function buildMaintenanceBulkActions(ctx: MaintenanceBulkCtx): BulkAction
     ctx.onReschedule && { key: "reschedule", label: (n) => `Reschedule ${n}`, group: "organise", icon: CalendarClock, onSelect: ctx.onReschedule },
   ];
   return actions.filter((a): a is BulkAction => !!a);
+}
+
+/**
+ * The maintenance RECORD page's ⋯ (UX Phase 14, 14b-3): `Complete…` only on an open job, `Reopen` only on a completed
+ * one, `Delete…` last in red. A verb the caller cannot do (an omitted handler) or the job's state does not allow is
+ * ABSENT. Complete and Reopen each have an exact Undo, so neither carries a confirm; Delete has none and says so.
+ */
+export interface MaintenanceRecordCtx {
+  title: string;
+  /** The job's stored status. */
+  status: string;
+  onComplete?: () => void;
+  onReopen?: () => void;
+  onDelete?: () => void;
+}
+
+export function buildMaintenanceRecordActions(ctx: MaintenanceRecordCtx): ActionMenuSpec {
+  const open = ctx.status !== "COMPLETED" && ctx.status !== "CANCELLED";
+  return {
+    items: compact([
+      open && ctx.onComplete && { key: "complete", label: "Complete…", group: "edit", icon: CheckCircle2, onSelect: ctx.onComplete },
+      ctx.status === "COMPLETED" && ctx.onReopen && { key: "reopen", label: "Reopen", group: "edit", icon: RotateCcw, onSelect: ctx.onReopen },
+      ctx.onDelete && {
+        key: "delete",
+        label: "Delete…",
+        group: "danger",
+        icon: Trash2,
+        danger: true,
+        onSelect: ctx.onDelete,
+        confirm: {
+          title: `Delete ${ctx.title}?`,
+          body: "This removes the job, its parts and its work-order history. Assets it was holding are released. This can't be undone.",
+          confirmLabel: "Delete job",
+        },
+      },
+    ]),
+  };
+}
+
+/** A part row's ⋯: `Mark arrived` only while it is on order; `Remove` is red and last (it has an Undo, so no confirm). */
+export interface MaintenancePartCtx {
+  name: string;
+  arrived: boolean;
+  onEdit?: () => void;
+  onMarkArrived?: () => void;
+  onRemove?: () => void;
+}
+
+export function buildMaintenancePartActions(ctx: MaintenancePartCtx): ActionMenuSpec {
+  return {
+    items: compact([
+      ctx.onEdit && { key: "edit", label: "Edit", group: "edit", icon: Pencil, kbd: "E", onSelect: ctx.onEdit },
+      !ctx.arrived && ctx.onMarkArrived && { key: "arrived", label: "Mark arrived", group: "edit", icon: PackageCheck, onSelect: ctx.onMarkArrived },
+      ctx.onRemove && { key: "remove", label: "Remove", group: "danger", icon: Trash2, danger: true, onSelect: ctx.onRemove, confirm: { title: `Remove ${ctx.name}?`, body: "The part is taken off this job. You can undo it from the toast.", confirmLabel: "Remove part" } },
+    ]),
+  };
 }
 
 /** The page ⋯ words (a link to the existing service-schedule and check-off page until it moves into dialogs). */

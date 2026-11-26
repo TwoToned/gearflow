@@ -22,6 +22,7 @@ beforeAll(() => {
 });
 
 const nav = vi.hoisted(() => ({ search: "", push: vi.fn(), replace: vi.fn() }));
+vi.mock("@/components/maintenance/maintenance-sheet-host", () => ({ MaintenanceSheetHost: () => null }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace }),
   usePathname: () => "/maintenance",
@@ -119,6 +120,16 @@ describe("MaintenanceList (smoke)", () => {
     await user.click(screen.getByRole("button", { name: "Replace lamp actions" }));
     for (const word of ["Edit", "Reschedule…", "Assign…", "Delete…"]) expect(await screen.findByText(word)).toBeTruthy();
     expect(screen.getByRole("menuitem", { name: /^Open/ })).toBeTruthy();
+  });
+
+  it("Log maintenance and a row's Edit open the sheet through the URL (no page)", async () => {
+    const user = userEvent.setup();
+    render(<MaintenanceList />);
+    await user.click(screen.getAllByRole("button", { name: "Log maintenance" })[0]);
+    expect(nav.push).toHaveBeenCalledWith("/maintenance?new=1");
+    await user.click(screen.getByRole("button", { name: "Replace lamp actions" }));
+    await user.click(await screen.findByText("Edit"));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance/m1?edit=1");
   });
 
   it("bulk Reschedule: pick a date, the write gets the selected ids, the toast says what was skipped and its Undo is the exact server call", async () => {

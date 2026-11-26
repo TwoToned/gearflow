@@ -1223,6 +1223,27 @@ export default defineSchema({
     .index("by_maintenanceRecordId_assetId", ["maintenanceRecordId", "assetId"])
     .index("by_bulkAssetId", ["bulkAssetId"]),
 
+  // One part ordered or used on a maintenance record (UX Phase 14, D76). The record's COST is DERIVED
+  // (parts + labour, convex/lib/maintenanceCost.ts), never stored; `maintenanceRecords.cost` is the LABOUR.
+  // "On order" vs "arrived" is derived: `arrivedAt` absent = on order.
+  maintenanceParts: defineTable({
+    id: v.string(),
+    organizationId: v.string(),
+    maintenanceRecordId: v.string(),
+    name: v.string(), // 1-200
+    supplierName: v.optional(v.string()), // free text, <= 200
+    quantity: v.number(), // whole number >= 1
+    unitPrice: v.optional(v.number()), // >= 0; absent = unpriced (NOT $0)
+    etaDate: v.optional(v.number()), // epoch ms
+    arrivedAt: v.optional(v.number()), // epoch ms; absent = on order
+    sortOrder: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_cuid", ["id"])
+    .index("by_organizationId", ["organizationId"])
+    .index("by_maintenanceRecordId", ["maintenanceRecordId"]),
+
   // Client
   clients: defineTable({
     id: v.string(),

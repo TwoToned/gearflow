@@ -73,6 +73,7 @@ export const DIRECT_TABLES = [
   "lineItemMergeMaps",
   "locationMedia",
   "locations",
+  "maintenanceParts",
   "maintenanceRecords",
   "members",
   "modelBulkAccessories",
@@ -297,7 +298,9 @@ export const CLASSIFIED_TABLES: string[] = [...EXPORTED_TABLES, ...EXCLUDED_TABL
 // with its own by_organizationId index).
 // UX Phase 10 Slice E: +1 — projectTaskLinks (PARENT_JOIN via projectTasks, the approved schema
 // has no by_organizationId index).
-export const EXPECTED_TABLE_COUNT = 133;
+// UX Phase 14 14b-3 (D76): +1 — maintenanceParts (DIRECT — a part on a maintenance record, has its own
+// by_organizationId index).
+export const EXPECTED_TABLE_COUNT = 134;
 
 /**
  * Assert the classification is internally consistent (no dupes, expected total).

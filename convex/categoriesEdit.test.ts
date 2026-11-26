@@ -115,6 +115,18 @@ describe("editNative", () => {
     expect((await cat(t, "mid"))!.parentId).toBeUndefined();
   });
 
+  test("the category tree read is bounded and FAILS CLOSED: past 2000 categories a parent change is refused, never judged on a partial tree", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 2000; i++) await ctx.db.insert("categories", { id: `filler${i}`, organizationId: ORG, name: `f${i}` } as never); // + the 4 seeded = 2004
+    });
+    await expect(edit(t, { parentId: "other" })).rejects.toMatchObject({ data: { code: "TOO_MANY" } });
+    expect((await cat(t, "mid"))!.parentId).toBe("root");
+    await edit(t, { name: "Renamed" }, { auditId: "e2" }); // an edit that needs no tree still works
+    expect((await cat(t, "mid"))!.name).toBe("Renamed");
+  });
+
   test("a caller without model:update is refused", async () => {
     const t = makeT();
     await seed(t, "viewer");
@@ -288,12 +300,31 @@ describe("deleting a category the org's settings name (no dangling id)", () => {
     expect(await cat(t, "leaf")).toBeNull();
   });
 
-  test("once the reference is removed from Settings the delete works; an unreadable or empty blob blocks nothing", async () => {
+  test("an absent, blank or empty-object settings blob names nothing, so it blocks nothing", async () => {
+    for (const blob of [null, "", "   ", "{}"]) {
+      const t = makeT();
+      await seed(t);
+      if (blob !== null) await setSettings(t, blob);
+      await del(t, "other", "d1");
+      expect(await cat(t, "other")).toBeNull();
+    }
+  });
+
+  test("an unreadable settings blob (bad JSON, not an object, a wrongly shaped key) FAILS CLOSED: the delete is refused, nothing moves", async () => {
+    for (const blob of ["{ not json", "[]", "42", "null", JSON.stringify({ containerCategoryIds: "mid" }), JSON.stringify({ containerCategoryIds: [1, 2] }), JSON.stringify({ prepKitCategoryId: 7 })]) {
+      const t = makeT();
+      await seed(t);
+      await setSettings(t, blob);
+      await expect(del(t, "other", "d1")).rejects.toMatchObject({ data: { code: "SETTINGS_UNREADABLE" } });
+      expect(await cat(t, "other")).not.toBeNull();
+      expect((await model(t, "mo1")).categoryId).toBe("mid");
+    }
+  });
+
+  test("once the reference is removed from Settings the delete works", async () => {
     const t = makeT();
     await seed(t);
-    await setSettings(t, "{ not json");
-    await del(t, "other", "d1");
-    expect(await cat(t, "other")).toBeNull();
+    await setSettings(t, JSON.stringify({ containerCategoryIds: ["x"] }));
     await t.run(async (ctx) => {
       const row = await ctx.db.query("orgSettings").withIndex("by_organizationId", (q) => q.eq("organizationId", ORG)).first();
       await ctx.db.patch(row!._id, { settings: JSON.stringify({ containerCategoryIds: ["mid"] }) });

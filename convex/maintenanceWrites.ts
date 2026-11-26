@@ -16,6 +16,7 @@ import { assertProjectInOrg } from "./projectLineItems";
 import { isLinkRow } from "./lib/maintenanceRecordAssetKind";
 import { retireAssetCore } from "./lib/assetRetire";
 import { canSeeJobCost } from "./lib/crewPayVisibility";
+import { MAX_MAINTENANCE_MONEY } from "./lib/maintenanceCost";
 import { assertNewMaintenancePhotos, releaseRemovedMaintenancePhotos } from "./lib/maintenancePhotos";
 import * as enums from "./lib/validators";
 import {
@@ -71,7 +72,7 @@ function assertMaintenanceFields(f: {
 }): void {
   assertStrLen(f.title, "title", { min: 1, max: 200 });
   assertStrLen(f.description, "description", { max: 5000 });
-  assertNumRange(f.cost, "cost", { min: 0 });
+  assertNumRange(f.cost, "cost", { min: 0, max: MAX_MAINTENANCE_MONEY });
   assertStrLen(f.partsUsed, "partsUsed", { max: 2000 });
   assertArrayMax(f.photos, "photos", 20);
 }

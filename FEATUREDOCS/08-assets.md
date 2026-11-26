@@ -444,6 +444,26 @@ line-item design.
 - **Routes**: `/assets/categories` (list table), `/assets/categories/[id]` (detail page)
 - **Hierarchy**: Self-referential `parentId` on Category model. Table view indents children under parents.
 - **Relations**: Category → Model[], Category → Kit[], Category → children Category[]
-- **Detail page**: Subcategories grid + tabbed Models/Kits tables with counts
+- **Detail page** (UX Phase 14, 14b-5, `CategoryRecord`): header word derived from the live counts (`2 models without
+  rates`, `12 models`, `Empty`; a model with a rate of 0 HAS a rate), Overview (contents, parent, the default Test & tag
+  class + interval), Models (with `Including subcategories`, which widens the read to the whole subtree via
+  `categories.detail`'s `includeSubcategories`), Kits, Subcategories and History. Edit is the sheet (`?edit=1`).
+- **Edit sheet** (`CategorySheet`, `categoriesEditWrites.editNative`): name, parent, icon, description, tags, Xero code and
+  the default Test & tag class + interval. A plain `recordFieldEdit` with an exact `undoEditNative` (ids only: author,
+  10-minute server window, once, compare-and-set). A save sends only what changed against the values the sheet opened
+  with (`src/lib/changed-edit.ts`). A parent is a category of this org that is neither the category itself nor anything
+  below it (no cycles; checked again on Undo).
+- **Delete** (`categoriesEditWrites.deleteNative`) moves the category's models and kits to Uncategorised and its
+  subcategories up to the deleted category's own parent (or the top), then removes it, and has an EXACT Undo
+  (`undoDeleteNative`): the forward audit row records the whole stored category and the ids it moved; the Undo
+  recreates the category under the same id and puts exactly those rows back, refusing as a whole unless each is still
+  as the delete left it, its parent still exists, and no category with that id exists again. Author, 10-minute server
+  window, once. A category holding more than 500 models, kits or subcategories is refused (move some out first). The
+  older `removeNative` (refuses a category that is not empty) is unchanged.
+- **Default Test & tag class + interval (D77)**: `categories.defaultEquipmentClass` and `categories.defaultTestIntervalMonths`,
+  both optional. A model's own value wins; otherwise its OWN category's (never a parent category's); otherwise the
+  caller's fallback (class `CLASS_I`, the org's default interval). ONE resolver (`convex/lib/categoryTestDefaults.ts`)
+  feeds the per-asset registration, the backfill and the model edit's propagation to its T&T items. A category's default
+  applies when an item is registered or a model is saved; changing a category's default does not rewrite existing items.
 - **Permissions**: Uses `"model"` resource (no dedicated category permission resource)
 - **Sidebar**: Under Assets with `Tags` icon, `resource: "model"`

@@ -22,6 +22,53 @@ the default tax rate** live on **Billing** (the old Billing "Tax rate" box wrote
 which nothing reads, so it was dropped, not moved); the **API kill switch** lives on
 **Danger zone** (`/settings/danger-zone`, same `setOrgApiKillSwitch`, `orgSettings:update`).
 
+## Settings → Team (UX Phase 17, D58, D59)
+
+`/settings/team` is five hairline sections with a mono count: Members, Invitations, Join requests,
+Join policy, Roles & permissions. Rows are the shared `LineRowList` (tick, shift-range, select-page,
+row ⋯, phone cards) with a contextual `BulkBar`: members `Change role… n` / red `Remove n`,
+invitations `Resend n` / red `Revoke n`. A verb the role can't use is ABSENT. Invite is a dialog
+(inline email validation: malformed, already a member, already invited; the roles the viewer may
+hand out as radios with `ASSIGNABLE_ROLE_OPTIONS` descriptions). Join policy is three radio rows with
+a `Save join policy` bar and a leave guard. Pure model: `src/lib/team-model.ts`; surfaces:
+`src/components/settings/team/*`.
+
+**One role policy** (`src/lib/member-role-policy.ts`, read by the invite, single and bulk role
+change, removal, resend/revoke and Undo): an actor may hand out a role, or touch a member, only when
+that role's rights (read from `rolePermissions`, never a second ranking) are a STRICT subset of their
+own; the Owner is never a target or assignable. So an Admin can't raise anyone to Admin or touch an
+Admin, and the owner can't be demoted or removed by any path (there is no "last owner" special case:
+ownership is only ever transferred). `addMemberByEmail` now also requires `orgMembers:invite` on the
+server. There is ONE role list: `ASSIGNABLE_ROLE_OPTIONS` (the member list and the join-request
+picker used hand-kept copies that had drifted: warehouse was missing).
+
+**Writes** (`src/server/team.ts` → `src/lib/team-writes.ts`): bulk calls are capped at 50 ids, run the
+policy per row, and report what changed and what was skipped with the reason (never a whole-call
+failure). Restrictive writes mirror to Convex first (strict), then Prisma.
+- **Resend** extends the SAME invitation and re-emails the same link, so there is one live token,
+  never two. **Revoke** sets `cancelled`.
+- **Undo** (role change, resend, revoke) takes ONLY a server-signed token (`team-undo-token.ts`, HMAC
+  with the same key as the Xero OAuth state). Team data lives in Better Auth's tables whose audit rows
+  are best-effort mirrors, so "read your own audit row" has nowhere reliable to read from and a schema
+  change was not on the table; the token carries the prior state and can't be forged or edited. It is
+  author-only, 10 minutes on the server clock, once (an `undo:<id>` marker row, as in
+  `fieldEditUndo`), and compare-and-set against the state the write left (all or nothing; the policy is
+  re-checked at undo time). Resend's Undo puts the prior expiry back; the email can't be recalled and the
+  toast says so. Revoke's Undo restores the identical row only if nothing re-invited that email or
+  added it as a member meanwhile.
+- **Remove has NO Undo**: it emails the person and ends their access, and re-adding creates a new
+  membership (new id, new joined date), not the one removed. The confirm dialog says so.
+- An invitation's Expired state is derived from `expiresAt` on read (`getPendingInvitations` now returns
+  pending rows past their date so they can be resent; bounded to 200).
+
+**Roles grid** (D58): read-only, every cell computed from `PERMISSION_REGISTRY` + `hasPermission`
+(`src/lib/roles-grid.ts`), never a copy. A cell reads `All`, `3/6` or `—`; a resource opens to
+per-action ticks; the footer is `Actions granted n/m`. The phone shows the six roles as rows. Editing
+roles is a later, separate schema decision. `PermissionMatrix` (unused) is deleted.
+
+Known pre-existing gap, not changed here: approving or rejecting a join request or SSO approval gates
+on `orgMembers:create`, an action no role but the owner holds, so an Admin can't approve.
+
 ## Org Settings (`Organization.metadata` JSON)
 ```json
 {

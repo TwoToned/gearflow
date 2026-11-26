@@ -26,7 +26,7 @@ import {
   type TeamUndoPayload,
 } from "@/lib/team-undo-token";
 
-export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface TeamActor {
   organizationId: string;
@@ -35,7 +35,7 @@ export interface TeamActor {
   role: string | null;
 }
 
-export interface TeamSkip {
+interface TeamSkip {
   id: string;
   label: string;
   reason: string;
@@ -294,7 +294,7 @@ export async function revokeInvitations(actor: TeamActor, ids: string[]): Promis
 
 // ─── Undo ──────────────────────────────────────────────────────────────────
 
-export class TeamUndoRefused extends Error {}
+class TeamUndoRefused extends Error {}
 
 /** The `undo:<id>` marker: written once, so a token can never be replayed. */
 async function claimTeamUndo(actor: TeamActor, tokenId: string, kind: string): Promise<void> {

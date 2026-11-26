@@ -25,7 +25,7 @@ const resendItem = z.object({
   newExpiresAt: z.number().int(),
 });
 
-export const teamUndoPayloadSchema = z.discriminatedUnion("kind", [
+const teamUndoPayloadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("role"), items: z.array(roleItem).min(1).max(100) }),
   z.object({ kind: z.literal("revoke"), items: z.array(revokeItem).min(1).max(100) }),
   z.object({ kind: z.literal("resend"), items: z.array(resendItem).min(1).max(100) }),
@@ -41,7 +41,7 @@ const envelopeSchema = z.object({
 });
 export type TeamUndoEnvelope = z.infer<typeof envelopeSchema>;
 
-export class TeamUndoTokenError extends Error {}
+class TeamUndoTokenError extends Error {}
 
 // HMAC-SHA256 over a token payload, not a password hash (see xero-oauth-state.ts).
 function sign(encoded: string): string {

@@ -9,14 +9,7 @@ import { Check, X, Clock } from "lucide-react";
 import { getPendingJoinRequests, approveJoinRequest, rejectJoinRequest } from "@/server/org-join";
 import { useActiveOrganization } from "@/lib/auth-client";
 import { toast } from "sonner";
-
-const BUILT_IN_ROLES = [
-  { value: "admin", label: "Admin" },
-  { value: "manager", label: "Manager" },
-  { value: "member", label: "Member" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "viewer", label: "Viewer" },
-];
+import { ASSIGNABLE_ROLE_OPTIONS } from "@/lib/role-descriptions";
 
 /** B2 (#1094) — verified-domain "ask to join" requests, reviewed here rather
  *  than a second queue: the design doc calls for these landing beside
@@ -81,11 +74,11 @@ export function JoinRequestApprovals() {
             >
               <SelectTrigger className="h-8 w-36 text-xs">
                 <SelectValue>
-                  {BUILT_IN_ROLES.find((r) => r.value === (roleOverrides[request.id] || "member"))?.label}
+                  {ASSIGNABLE_ROLE_OPTIONS.find((r) => r.value === (roleOverrides[request.id] || "member"))?.label}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {BUILT_IN_ROLES.map((r) => (
+                {ASSIGNABLE_ROLE_OPTIONS.map((r) => (
                   <SelectItem key={r.value} value={r.value}>
                     {r.label}
                   </SelectItem>

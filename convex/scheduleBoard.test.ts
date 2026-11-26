@@ -12,6 +12,7 @@ import { rolePermissions } from "./lib/permissionsCore";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { loadSchedule, SCHEDULE_LIMITS } from "./lib/scheduleFetch";
+import { deriveGearGrid } from "./lib/gearGrid";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -255,5 +256,85 @@ describe("scheduleBoard: the read is bounded and says so", () => {
     const read = await load(t, { reads: 6 });
     expect(read.facts.a.state).toBe("unknown");
     expect(read.facts.b.state).toBe("unknown");
+  });
+});
+
+describe("scheduleBoard.grid: the free count per model per day", () => {
+  const dayStarts = [0, 1, 2, 3, 4].map((i) => NOW + i * DAY);
+  const gridOf = (t: T) => t.withIdentity(asUser).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: START + 4 * DAY });
+  /** The grid through `loadSchedule` with limits, as plain data: per row, which cells are unknown. */
+  const unknownCells = (t: T, limits: Partial<typeof SCHEDULE_LIMITS>) =>
+    t.run(async (ctx) => {
+      const r = await loadSchedule(ctx, ORG, { start: START, end: START + 4 * DAY }, { ...SCHEDULE_LIMITS, ...limits });
+      return { complete: r.claimsComplete, rows: deriveGearGrid(r.inputs, dayStarts).map((row) => row.cells.map((c) => c.unknown)) };
+    });
+
+  test("free = stock - held; short on a hard overage; pencilled risk only when it would take the free count below zero", async () => {
+    const t = makeT();
+    await seedBase(t, 2);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 2 * DAY, lines: [{ qty: 2 }] });
+    await seedJob(t, { id: "b", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "p", status: "QUOTED", from: NOW + 3 * DAY, to: NOW + 3 * DAY, lines: [{ qty: 2 }] });
+    await seedJob(t, { id: "q", status: "QUOTED", from: NOW, to: NOW, lines: [{ qty: 2 }] });
+    const res = await gridOf(t);
+    expect(res.rows).toHaveLength(1);
+    const cells = res.rows[0].cells;
+    // day 0: A holds 2 (free 0); Q pencils 2 with nothing free: at risk 2
+    expect(cells[0]).toMatchObject({ unknown: false, free: 0, held: 2, short: 0, pencilled: 2, atRisk: 2 });
+    // day 1: A 2 + B 1 over 2 in stock: short 1
+    expect(cells[1]).toMatchObject({ free: -1, held: 3, short: 1 });
+    // day 3: P pencils 2 against 2 free: fits, no risk
+    expect(cells[3]).toMatchObject({ free: 2, held: 0, pencilled: 2, atRisk: 0 });
+    expect(cells[4]).toMatchObject({ free: 2, held: 0, short: 0 });
+    expect(res.rows[0]).toMatchObject({ owned: 2, inService: 0, unknown: false });
+    expect(res.rows[0].claims.map((c) => `${c.projectId}:${c.layer}:${c.qty}`).sort()).toEqual(["a:hard:2", "b:hard:1", "p:pencilled:2", "q:pencilled:2"]);
+  });
+
+  test("it agrees with the job words: a day is short where a held job says clash, at risk where a pencilled one would clash", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "b", status: "CONFIRMED", from: NOW + 1 * DAY, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "c", status: "QUOTED", from: NOW + 4 * DAY, to: NOW + 4 * DAY, lines: [{ qty: 1 }, { qty: 1 }] });
+    const [grid, jobs] = await Promise.all([gridOf(t), jobsOf(t)]);
+    const shortDays = grid.rows[0].cells.map((c, i) => (c.short > 0 ? i : -1)).filter((i) => i >= 0);
+    expect(shortDays).toEqual([1]);
+    expect(jobs.jobs.find((j) => j.id === "b")?.clash).toBe("clash");
+    expect(jobs.jobs.find((j) => j.id === "a")?.clash).toBe("none");
+    expect(grid.rows[0].cells[4].atRisk).toBe(1);
+    expect(jobs.jobs.find((j) => j.id === "c")?.clash).toBe("wouldClash");
+  });
+
+  test("off-inventory units hold no stock, and units out of service shrink it", async () => {
+    const t = makeT();
+    await seedBase(t, 3);
+    await t.run((ctx) => ctx.db.insert("assets", { id: "AM", organizationId: ORG, modelId: "mdl", assetTag: "A-M", status: "IN_MAINTENANCE" }));
+    await seedJob(t, { id: "c", status: "CONFIRMED", from: NOW, to: NOW, lines: [{ qty: 4, off: 1 }] });
+    const row = (await gridOf(t)).rows[0];
+    expect(row).toMatchObject({ owned: 4, inService: 1 });
+    expect(row.cells[0]).toMatchObject({ held: 3, free: 0, short: 0 });
+  });
+
+  test("a cell whose inputs were cut is unknown, never a number", async () => {
+    const t = makeT();
+    await seedBase(t, 2);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "big", status: "CONFIRMED", from: NOW + 2 * DAY, to: NOW + 3 * DAY, lines: [{ qty: 1 }, { qty: 1 }, { qty: 1 }] });
+    // `big` has more lines than the cap: its days are blind for every model; `a`'s days still read.
+    const blind = await unknownCells(t, { perProjectLines: 2 });
+    expect(blind.rows[0]).toEqual([false, false, true, true, false]);
+    // the alive scan cut: nothing is a number
+    const cut = await unknownCells(t, { reads: 1 });
+    expect(cut.complete).toBe(false);
+    expect(cut.rows.every((r) => r.every(Boolean))).toBe(true);
+  });
+
+  test("another org's jobs never reach the grid, and a role without project read is refused", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "theirs", status: "CONFIRMED", from: NOW, to: NOW, lines: [{ qty: 1 }], org: "org_2" });
+    expect((await gridOf(t)).rows).toHaveLength(0);
+    await t.run((ctx) => ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: NO_JOBS }));
+    await expect(t.withIdentity({ subject: "user_2", orgId: ORG }).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow();
   });
 });

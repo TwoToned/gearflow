@@ -1,5 +1,6 @@
 import { v, ConvexError } from "convex/values";
-import { query } from "./_generated/server";
+import { query, type QueryCtx } from "./_generated/server";
+import { deriveGearGrid } from "./lib/gearGrid";
 import { callerMayRead, requireOrgReadFor } from "./lib/auth";
 import { isConfirmedOrLater } from "./lib/availabilityCore";
 import type { Doc } from "./_generated/dataModel";
@@ -44,16 +45,40 @@ function jobRow(p: Doc<"projects">, f: JobFacts, clientNames: Map<string, string
   };
 }
 
+const DAY_MS = 86_400_000;
+
+/** The shared guard: org read, the caller's own role, and a bounded range. */
+async function authorise(ctx: QueryCtx, orgId: string, startMs: number, endMs: number): Promise<void> {
+  await requireOrgReadFor(ctx, orgId, "project");
+  if (!(await callerMayRead(ctx, orgId, "project"))) {
+    throw new ConvexError({ code: "FORBIDDEN", message: "You do not have access to jobs." });
+  }
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs || endMs - startMs > MAX_RANGE_DAYS * DAY_MS) {
+    throw new ConvexError({ code: "INVALID_RANGE", message: `The schedule range must be 1 to ${MAX_RANGE_DAYS} days.` });
+  }
+}
+
+/**
+ * The Gear view (D81, spec §9o.4): the free count per model per day over the
+ * range, for every model a job holds or pencils in it. Same read, same budget
+ * and same claim math as `jobs` (`convex/lib/gearGrid.ts`); a cell the read could
+ * not cover in full is `unknown`, never a number.
+ */
+export const grid = query({
+  args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
+  handler: async (ctx, { orgId, startMs, endMs }) => {
+    await authorise(ctx, orgId, startMs, endMs);
+    const read = await loadSchedule(ctx, orgId, { start: startMs, end: endMs });
+    const dayStarts: number[] = [];
+    for (let d = Math.floor(startMs / DAY_MS) * DAY_MS; d <= endMs; d += DAY_MS) dayStarts.push(d);
+    return { truncated: read.truncated, claimsComplete: read.claimsComplete, dayStarts, rows: deriveGearGrid(read.inputs, dayStarts) };
+  },
+});
+
 export const jobs = query({
   args: { orgId: v.string(), startMs: v.number(), endMs: v.number() },
   handler: async (ctx, { orgId, startMs, endMs }) => {
-    await requireOrgReadFor(ctx, orgId, "project");
-    if (!(await callerMayRead(ctx, orgId, "project"))) {
-      throw new ConvexError({ code: "FORBIDDEN", message: "You do not have access to jobs." });
-    }
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs || endMs - startMs > MAX_RANGE_DAYS * 86_400_000) {
-      throw new ConvexError({ code: "INVALID_RANGE", message: `The schedule range must be 1 to ${MAX_RANGE_DAYS} days.` });
-    }
+    await authorise(ctx, orgId, startMs, endMs);
     const { visible, facts, models, clientNames, truncated } = await loadSchedule(ctx, orgId, { start: startMs, end: endMs });
     return {
       truncated,
@@ -64,6 +89,11 @@ export const jobs = query({
 });
 
 export const agentOps: AgentOpsAnnotations = {
+  grid: {
+    summary: "The free gear count per model per day over a date range (held and pencilled demand, from the overbooking engine claims).",
+    danger: "low",
+    mcpTier: 3,
+  },
   jobs: {
     summary: "The jobs whose rental window overlaps a date range, each with a clash / would-clash flag derived from the overbooking engine.",
     danger: "low",

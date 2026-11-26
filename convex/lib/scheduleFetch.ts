@@ -176,6 +176,7 @@ async function readStock(ctx: QueryCtx, orgId: string, modelIds: string[], budge
       out.unknown.add(modelId);
       continue;
     }
+    out.models.push(model); // kept even when its units are not (the Gear grid still names the row)
     const assets = await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(want);
     const bulks = await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(want);
     budget.take(assets.length + bulks.length);
@@ -183,7 +184,6 @@ async function readStock(ctx: QueryCtx, orgId: string, modelIds: string[], budge
       out.unknown.add(modelId);
       continue;
     }
-    out.models.push(model);
     out.assets.push(...assets.filter((a) => a.organizationId === orgId));
     out.bulkAssets.push(...bulks.filter((b) => b.organizationId === orgId));
   }

@@ -1,7 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { MutationCtx } from "../_generated/server";
 import { effectiveTestDefaults } from "./categoryTestDefaults";
-import { categoryOfModel, orgCategoriesById } from "./categoryTestDefaultsLoad";
+import { categoriesByIds, categoryOfModel } from "./categoryTestDefaultsLoad";
 
 /**
  * Convex-native port of `src/server/test-tag-assets.ts#backfillTestTagAssets`.
@@ -139,7 +139,7 @@ export async function backfillTestTagAssetsCore(
   if (unlinkedAssets.length === 0) return { created: 0, retired };
 
   const defaultIntervalMonths = await orgDefaultIntervalMonths(ctx, organizationId);
-  const categories = await orgCategoriesById(ctx, organizationId);
+  const categories = await categoriesByIds(ctx, organizationId, unlinkedAssets.map(({ model }) => model.categoryId));
   let created = 0;
   for (const { asset, model } of unlinkedAssets) {
     // The model's own default wins, then its OWN category's (D77), then the fallbacks: ONE resolver.

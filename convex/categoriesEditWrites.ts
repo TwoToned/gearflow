@@ -11,6 +11,7 @@ import { assertStrLen, assertNumRange, assertTags } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit, undoMarkerId } from "./lib/fieldEditUndo";
 import { assertWithinUndoWindow } from "./lib/undoWindow";
 import { assertNotUsedBySettings } from "./lib/categorySettingsRefs";
+import { collectCapped } from "./lib/pagination";
 import * as enums from "./lib/validators";
 
 /**
@@ -55,8 +56,13 @@ async function loadCategory(ctx: MutationCtx, orgId: string, id: string): Promis
   return cat;
 }
 
+/** The most categories one org's tree read covers; past it the operation fails CLOSED rather than judge a partial tree. */
+const MAX_CATEGORIES = 2000;
+
 async function orgCategories(ctx: MutationCtx, orgId: string): Promise<Doc<"categories">[]> {
-  return await ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)).collect(); // r9.8-ok: categories is a small bounded per-org tree — see docs/exceptions.md R-8.3.3
+  const { rows, truncated } = await collectCapped(ctx.db.query("categories").withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)), MAX_CATEGORIES);
+  if (truncated) throw refuse("TOO_MANY", `This organisation has more than ${MAX_CATEGORIES} categories, too many to check the category tree safely.`);
+  return rows;
 }
 
 /** `id` and every category below it (a parentId walk over the org's tree). */

@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CONTACTS_PER_SUPPLIER, MAX_DOCUMENTS_PER_SUPPLIER } from "./lib/supplierRecordCore";
 
@@ -91,7 +92,8 @@ export const createNative = mutation({
     if (dup) throw new ConvexError("Supplier already exists");
 
     await ctx.db.insert("suppliers", { id: a.id, organizationId: a.orgId, ...toDoc(a), createdAt: a.now, updatedAt: a.now });
-    await logSupplier(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "CREATE", id: a.id, name: a.name, summary: `Created supplier ${a.name}` });
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, { orgId: a.orgId, entityType: "supplier", entityId: a.id, entityName: a.name, auditId: a.auditId, actor, now: a.now, action: "CREATE", summary: `Created supplier ${a.name}`, op: { op: "add", table: "suppliers", rowId: a.id, snapshot: null } });
     return { id: a.id };
   },
 });

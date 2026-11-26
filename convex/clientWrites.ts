@@ -7,6 +7,7 @@ import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
@@ -122,17 +123,10 @@ export const createNative = mutation({
 
     await ctx.db.insert("clients", fields);
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: fields.organizationId,
-      action: "CREATE",
-      entityType: "client",
-      entityId: fields.id,
-      entityName: fields.name,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Created client ${fields.name}`,
-      createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, {
+      orgId: fields.organizationId, entityType: "client", entityId: fields.id, entityName: fields.name, auditId, actor, now: fields.createdAt ?? fields.updatedAt ?? 0,
+      action: "CREATE", summary: `Created client ${fields.name}`, op: { op: "add", table: "clients", rowId: fields.id, snapshot: null },
     });
 
     return { id: fields.id };

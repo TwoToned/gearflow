@@ -8,6 +8,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
 import { assertStrLen } from "./lib/fieldGuards";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_FILES_PER_ORDER, SUPPLIER_INVOICE_FOLDER } from "./lib/supplierRecordCore";
 import { assertAttachableUpload } from "./lib/attachableUpload";
@@ -108,17 +109,10 @@ export const createNative = mutation({
       updatedAt: a.now,
     });
 
-    await writeActivityLog(ctx, {
-      id: a.auditId,
-      organizationId: a.orgId,
-      action: "CREATE",
-      entityType: "supplierOrder",
-      entityId: a.id,
-      entityName: a.orderNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Created order ${a.orderNumber}`,
-      createdAt: a.now,
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, {
+      orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: a.orderNumber, auditId: a.auditId, actor, now: a.now,
+      action: "CREATE", summary: `Created order ${a.orderNumber}`, op: { op: "add", table: "supplierOrders", rowId: a.id, snapshot: null },
     });
 
     return { id: a.id };

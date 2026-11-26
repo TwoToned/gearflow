@@ -12,6 +12,7 @@ import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
 import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
+import { recordRowOp } from "./lib/rowOpUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
@@ -154,17 +155,10 @@ export const createNative = mutation({
       await bumpCrewMemberCounters(ctx, fields.organizationId, null, fields);
     }
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: fields.organizationId,
-      action: "CREATE",
-      entityType: "crew_member",
-      entityId: fields.id,
-      entityName: `${fields.firstName} ${fields.lastName}`,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Created crew member ${fields.firstName} ${fields.lastName}`,
-      createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
+    // The audit row is also what the sheet's create Undo reads (`peopleCreateUndo.undoCreateNative`).
+    await recordRowOp(ctx, {
+      orgId: fields.organizationId, entityType: "crew_member", entityId: fields.id, entityName: `${fields.firstName} ${fields.lastName}`, auditId, actor, now: fields.createdAt ?? fields.updatedAt ?? 0,
+      action: "CREATE", summary: `Created crew member ${fields.firstName} ${fields.lastName}`, op: { op: "add", table: "crewMembers", rowId: fields.id, snapshot: null },
     });
 
     return { id: fields.id };

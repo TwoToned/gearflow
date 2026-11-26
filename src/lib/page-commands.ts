@@ -247,7 +247,7 @@ const RAW_PAGE_COMMANDS: PageCommand[] = [
       },
       {
         label: "T&T Reports",
-        href: "/test-and-tag/reports",
+        href: "/test-and-tag?dialog=reports",
         aliases: ["tntreports", "ttreports", "testreports", "tagreports", "compliancereports"],
         icon: "BarChart3",
         description: "Test & Tag reports and certificates",

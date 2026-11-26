@@ -29,7 +29,12 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org1" } }) }));
-vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => true }));
+const perms = vi.hoisted(() => ({ denied: new Set<string>() }));
+vi.mock("@/lib/use-permissions", () => ({ useCanDo: (r: string, a: string) => !perms.denied.has(`${r}:${a}`) }));
+// The three dialogs are proven on their own; here they are markers, so the list's wiring (what opens what) is what is tested.
+vi.mock("@/components/test-tag/reports-dialog", () => ({ ReportsDialog: (p: { open: boolean }) => (p.open ? <div data-testid="reports">reports</div> : null) }));
+vi.mock("@/components/test-tag/print-tags-dialog", () => ({ PrintTagsDialog: (p: { ids: string[] | null }) => (p.ids ? <div data-testid="print">{`print:${p.ids.join(",")}`}</div> : null) }));
+vi.mock("@/components/test-tag/schedule-test-dialog", () => ({ ScheduleTestDialog: (p: { items: { id: string; assetId: string | null }[] | null }) => (p.items ? <div data-testid="schedule">{`schedule:${p.items.map((i) => `${i.id}/${i.assetId}${(i as { retired?: boolean }).retired ? "/retired" : ""}`).join(",")}`}</div> : null) }));
 vi.mock("@/hooks/use-keyboard-shortcut", () => ({ useKeyboardShortcut: () => undefined }));
 vi.mock("@/hooks/use-test-profiles", () => ({ useTestProfiles: () => [{ id: "p1", name: "Leads" }] }));
 vi.mock("@/hooks/use-organization", () => ({ useOrganization: () => ({ data: { settings: { testTag: { dueSoonThresholdDays: 30 } } } }) }));
@@ -67,7 +72,7 @@ const item = (over: Record<string, unknown>) => ({
 });
 const PAGE = {
   items: [
-    item({}),
+    item({ linkedAsset: { id: "a1", assetTag: "A-1" } }),
     item({ id: "t2", testTagId: "TT-0002", description: "Power board", state: "FAILED", nextDueDate: null }),
     item({ id: "t3", testTagId: "TT-0003", description: "Old kettle", state: "RETIRED" }),
   ],
@@ -99,6 +104,8 @@ import { TestTagList } from "../test-tag-list";
 beforeEach(() => {
   nav.search = "";
   nav.push.mockClear();
+  nav.replace.mockClear();
+  perms.denied.clear();
   Object.values(writes).forEach((f) => f.mockClear());
   toasts.plain = [];
   toasts.undo = undefined;
@@ -140,5 +147,63 @@ describe("TestTagList (smoke)", () => {
     expect(toasts.title).toBe("Reactivated TT-0003");
     toasts.undo?.();
     expect(writes.undoReactivate).toHaveBeenCalledWith("t3");
+  });
+
+  it("Reports… opens the dialog from the URL, and is absent without reports:view", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<TestTagList />);
+    await user.click(screen.getByRole("button", { name: "Test & tag options" }));
+    await user.click(await screen.findByText("Reports…"));
+    expect(nav.push).toHaveBeenCalledWith("/test-and-tag?dialog=reports");
+    unmount();
+    nav.search = "dialog=reports";
+    const second = render(<TestTagList />);
+    expect(screen.getByTestId("reports")).toBeTruthy();
+    second.unmount();
+    perms.denied.add("reports:view");
+    render(<TestTagList />);
+    expect(screen.queryByTestId("reports")).toBeNull(); // the URL alone cannot open it for a caller without the permission
+    await user.click(screen.getByRole("button", { name: "Test & tag options" }));
+    expect(await screen.findByText("Quick test")).toBeTruthy();
+    expect(screen.queryByText("Reports…")).toBeNull();
+  });
+
+  it("a row's Schedule… and Export report are offered, but Schedule… not on a retired item", async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(<TestTagList />);
+    await user.click(screen.getByRole("button", { name: "Extension lead 10m actions" }));
+    await user.click(await screen.findByText("Export report"));
+    expect(open).toHaveBeenCalledWith("/api/test-tag-reports/item-history?format=pdf&testTagAssetId=t1", "_blank");
+    await user.click(screen.getByRole("button", { name: "Extension lead 10m actions" }));
+    await user.click(await screen.findByText("Schedule…"));
+    expect(screen.getByTestId("schedule").textContent).toBe("schedule:t1/a1");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Old kettle actions" }));
+    expect(await screen.findByText("Reactivate")).toBeTruthy();
+    expect(screen.queryByText("Schedule…")).toBeNull();
+    open.mockRestore();
+  });
+
+  it("the bulk bar's Print tags passes the selected ids and Schedule skips a retired item; without maintenance:create there is no Schedule", async () => {
+    const user = userEvent.setup();
+    render(<TestTagList />);
+    await user.click(screen.getByRole("checkbox", { name: "Select Extension lead 10m" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Old kettle" }));
+    await user.click(await screen.findByRole("button", { name: /Print tags \(2\)/ }));
+    expect(screen.getByTestId("print").textContent).toBe("print:t1,t3");
+    await user.click(await screen.findByRole("button", { name: /Schedule 2/ }));
+    expect(screen.getByTestId("schedule").textContent).toBe("schedule:t1/a1,t3/null/retired");
+  });
+
+  it("without maintenance:create and reports:view neither verb is on a row", async () => {
+    perms.denied.add("maintenance:create");
+    perms.denied.add("reports:view");
+    const user = userEvent.setup();
+    render(<TestTagList />);
+    await user.click(screen.getByRole("button", { name: "Extension lead 10m actions" }));
+    expect(await screen.findByText("Open")).toBeTruthy();
+    expect(screen.queryByText("Schedule…")).toBeNull();
+    expect(screen.queryByText("Export report")).toBeNull();
   });
 });

@@ -23,6 +23,10 @@ beforeAll(() => {
 
 const nav = vi.hoisted(() => ({ search: "", push: vi.fn(), replace: vi.fn() }));
 vi.mock("@/components/maintenance/maintenance-sheet-host", () => ({ MaintenanceSheetHost: () => null }));
+// The three dialogs are proven on their own; here they are markers, so the list's wiring (what opens what) is what is tested.
+vi.mock("@/components/maintenance/checkoff-dialog", () => ({ CheckoffDialog: (p: { open: boolean; recordId?: string | null }) => (p.open ? <div data-testid="checkoff">{`checkoff:${p.recordId ?? "all"}`}</div> : null) }));
+vi.mock("@/components/maintenance/service-schedules-dialog", () => ({ ServiceSchedulesDialog: (p: { open: boolean }) => (p.open ? <div data-testid="schedules">schedules</div> : null) }));
+vi.mock("@/components/maintenance/record/complete-record-dialog", () => ({ CompleteRecordDialog: (p: { open: boolean; id: string | null }) => (p.open ? <div data-testid="complete">{`complete:${p.id}`}</div> : null) }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace }),
   usePathname: () => "/maintenance",
@@ -70,8 +74,13 @@ const rec = (over: Record<string, unknown>) => ({
   ...over,
 });
 const PAGE = {
-  items: [rec({}), rec({ id: "m2", title: "Service fan", overdue: true, scheduledDate: NOW - 86_400_000, assignedTo: null, cost: 120 })],
-  total: 2,
+  items: [
+    rec({}),
+    rec({ id: "m2", title: "Service fan", overdue: true, scheduledDate: NOW - 86_400_000, assignedTo: null, cost: 120 }),
+    rec({ id: "m3", title: "Annual PM", type: "PREVENTATIVE" }),
+    rec({ id: "m4", title: "Old job", status: "COMPLETED", completedDate: NOW - 86_400_000 }),
+  ],
+  total: 4,
   page: 1,
   pageSize: 25,
   totalPages: 1,
@@ -162,11 +171,47 @@ describe("MaintenanceList (smoke)", () => {
     expect(writes.bulkAssign).toHaveBeenCalledWith(["m1"], "u2");
   });
 
-  it("the page menu links to the service schedules and check-off page", async () => {
+  it("the page menu opens Check off cycle and Service schedules as dialogs through the URL (no page)", async () => {
     const user = userEvent.setup();
     render(<MaintenanceList />);
     await user.click(screen.getByRole("button", { name: "Maintenance options" }));
-    await user.click(await screen.findByText("Service schedules and check-off"));
-    expect(nav.push).toHaveBeenCalledWith("/maintenance/due");
+    await user.click(await screen.findByText("Check off cycle…"));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance?dialog=checkoff");
+    await user.click(screen.getByRole("button", { name: "Maintenance options" }));
+    await user.click(await screen.findByText("Service schedules…"));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance?dialog=schedules");
+  });
+
+  it("the dialogs open from the URL, and closing drops the params (the rest of the query stays)", () => {
+    nav.search = "dialog=checkoff&record=m1&seg=all";
+    const { unmount } = render(<MaintenanceList />);
+    expect(screen.getByTestId("checkoff").textContent).toBe("checkoff:m1");
+    unmount();
+    nav.search = "dialog=schedules";
+    render(<MaintenanceList />);
+    expect(screen.getByTestId("schedules")).toBeTruthy();
+  });
+
+  it("a preventative open row offers Check off cycle… for ITS record; a completed row offers neither verb", async () => {
+    const user = userEvent.setup();
+    render(<MaintenanceList />);
+    await user.click(screen.getByRole("button", { name: "Annual PM actions" }));
+    await user.click(await screen.findByText("Check off cycle…"));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance?dialog=checkoff&record=m3");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Old job actions" }));
+    expect(await screen.findByRole("menuitem", { name: /^Open/ })).toBeTruthy();
+    expect(screen.queryByText("Mark done…")).toBeNull();
+    expect(screen.queryByText("Check off cycle…")).toBeNull();
+  });
+
+  it("an open row offers Mark done… (the Complete dialog for that record); Check off cycle… only for a preventative one", async () => {
+    const user = userEvent.setup();
+    render(<MaintenanceList />);
+    await user.click(screen.getByRole("button", { name: "Replace lamp actions" }));
+    expect(await screen.findByText("Mark done…")).toBeTruthy();
+    expect(screen.queryByText("Check off cycle…")).toBeNull(); // a REPAIR
+    await user.click(screen.getByText("Mark done…"));
+    expect(screen.getByTestId("complete").textContent).toBe("complete:m1");
   });
 });

@@ -1,4 +1,4 @@
-import { CalendarClock, CheckCircle2, ExternalLink, PackageCheck, Pencil, RotateCcw, Trash2, UserPlus, Wrench } from "lucide-react";
+import { CalendarClock, CheckCircle2, ExternalLink, ListChecks, PackageCheck, Pencil, RotateCcw, Trash2, UserPlus, Wrench } from "lucide-react";
 
 import type { ActionItem, ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
 
@@ -12,6 +12,10 @@ export interface MaintenanceActionCtx {
   title: string;
   onOpen: () => void;
   onEdit?: () => void;
+  /** Present only for an open job (the Complete dialog, with its exact Undo). */
+  onMarkDone?: () => void;
+  /** Present only for a recurring preventative job with a cycle to check off. */
+  onCheckOff?: () => void;
   onReschedule?: () => void;
   onAssign?: () => void;
   onDelete?: () => void;
@@ -25,6 +29,8 @@ export function buildMaintenanceActions(ctx: MaintenanceActionCtx): ActionMenuSp
     items: compact([
       { key: "open", label: "Open", group: "edit", icon: ExternalLink, onSelect: ctx.onOpen },
       ctx.onEdit && { key: "edit", label: "Edit", group: "edit", icon: Pencil, kbd: "E", onSelect: ctx.onEdit },
+      ctx.onMarkDone && { key: "mark-done", label: "Mark done…", group: "edit", icon: CheckCircle2, onSelect: ctx.onMarkDone },
+      ctx.onCheckOff && { key: "check-off", label: "Check off cycle…", group: "edit", icon: ListChecks, onSelect: ctx.onCheckOff },
       ctx.onReschedule && { key: "reschedule", label: "Reschedule…", group: "organise", icon: CalendarClock, onSelect: ctx.onReschedule },
       ctx.onAssign && { key: "assign", label: "Assign…", group: "organise", icon: UserPlus, onSelect: ctx.onAssign },
       ctx.onDelete && {
@@ -113,7 +119,12 @@ export function buildMaintenancePartActions(ctx: MaintenancePartCtx): ActionMenu
   };
 }
 
-/** The page ⋯ words (a link to the existing service-schedule and check-off page until it moves into dialogs). */
-export function buildMaintenancePageMenu(onService: () => void): ActionMenuSpec {
-  return { items: [{ key: "service", label: "Service schedules and check-off", group: "organise", icon: Wrench, onSelect: onService }] };
+/** The page menu: the two dialogs that replaced the old `/maintenance/due` page. A verb with no handler is ABSENT. */
+export function buildMaintenancePageMenu(ctx: { onCheckoff?: () => void; onSchedules?: () => void }): ActionMenuSpec {
+  return {
+    items: compact([
+      ctx.onCheckoff && { key: "checkoff", label: "Check off cycle…", group: "organise", icon: ListChecks, onSelect: ctx.onCheckoff },
+      ctx.onSchedules && { key: "schedules", label: "Service schedules…", group: "organise", icon: Wrench, onSelect: ctx.onSchedules },
+    ]),
+  };
 }

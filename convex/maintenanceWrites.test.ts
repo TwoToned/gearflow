@@ -656,3 +656,26 @@ describe("maintenanceWrites.undoCreateNative (exact undo)", () => {
     await expect(undo(t)).rejects.toThrow(/can't be undone/);
   });
 });
+
+describe("maintenanceWrites.createNative — a retired asset takes no new open job", () => {
+  test.each(["SCHEDULED", "IN_PROGRESS", "AWAITING_PARTS", "QA"] as const)("a new %s job on a RETIRED asset is refused and nothing is written", async (status) => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "RETIRED");
+    await expect(t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status })).rejects.toMatchObject({ data: { code: "ASSET_RETIRED" } });
+    expect(await rec(t, "rec1")).toBeNull();
+    expect((await asset(t, "as1"))?.status).toBe("RETIRED");
+  });
+
+  test("one retired asset among several refuses the whole job, naming it", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "AVAILABLE"); await seedAsset(t, "as2", "RETIRED");
+    await expect(t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, assetLinks: [{ id: "l1", assetId: "as1" }, { id: "l2", assetId: "as2" }] })).rejects.toThrow(/AS2/);
+    expect(await rec(t, "rec1")).toBeNull();
+  });
+
+  test("history stays recordable: a COMPLETED record on a retired asset is allowed, and a SCHEDULED job on an active asset is unaffected", async () => {
+    const t = makeT(); await seed(t); await seedAsset(t, "as1", "RETIRED"); await seedAsset(t, "as2", "AVAILABLE");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, status: "COMPLETED", result: "PASS" });
+    expect((await rec(t, "rec1"))?.status).toBe("COMPLETED");
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...baseCreate, recordId: "rec2", auditId: "a2", assetLinks: [{ id: "l9", assetId: "as2" }], status: "SCHEDULED" });
+    expect((await rec(t, "rec2"))?.status).toBe("SCHEDULED");
+  });
+});

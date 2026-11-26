@@ -64522,6 +64522,43 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "testTagList.labelsFor",
+    "module": "testTagList",
+    "fn": "labelsFor",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "testTag",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "testTag",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "ids",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "6f0a0f7e59cef7f7",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The printed tag data (latest test result, date, tester, next due) for up to 100 test and tag items; never-tested items are listed as skipped.",
+    "danger": null,
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "testTagList.listPage",
     "module": "testTagList",
     "fn": "listPage",
@@ -72698,10 +72735,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1402,
-  agentReachable: 755,
-  queries: 489,
+  total: 1403,
+  agentReachable: 756,
+  queries: 490,
   mutations: 913,
-  agentReachableQueries: 351,
+  agentReachableQueries: 352,
   agentReachableMutations: 404,
 } as const;

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { Facts, HealthRows, Headline, RecordRows, RecordShell, type HealthItem, type RecordRow, type RecordTab } from "@/components/people/record-shell";
 import { LabelTemplate } from "@/components/test-tag/label-template";
+import { ScheduleTestDialog } from "@/components/test-tag/schedule-test-dialog";
 import { TestTagSheetHost } from "@/components/test-tag/test-tag-sheet-host";
 import { Button } from "@/components/ui/button";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
@@ -21,8 +22,11 @@ import { buildTestTagRecordActions } from "@/lib/row-actions/test-tag";
 import { showError } from "@/lib/show-error";
 import { applianceTypeLabels, equipmentClassLabels, testTagResultLabels } from "@/lib/status-labels";
 import { testReadingWords, testTagChecks, testTagStateWord, type TestTagChecks, type TestTagWord } from "@/lib/test-tag-record-facts";
+import { itemHistoryReportUrl } from "@/lib/test-tag-reports";
+import type { ScheduleItem } from "@/lib/test-tag-schedule";
 import { testTagSheetInitialOf } from "@/lib/test-tag-sheet";
 import { useCanDo } from "@/lib/use-permissions";
+import { pickLabelRecord } from "../../../../convex/lib/testTagLabelRecord";
 import { api } from "../../../../convex/_generated/api";
 
 /** The item as `testTagAssets.detail` returns it (dates are ISO strings there). */
@@ -204,12 +208,14 @@ function useDueSoonDays(orgId: string | undefined): number | undefined {
 }
 
 /** The record's actions, each present only when the caller may: the one primary, Edit, and the menu. */
-function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => void) {
+function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => void, onSchedule: () => void) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const canUpdate = useCanDo("testTag", "update");
   const canDelete = useCanDo("testTag", "delete");
+  const canSchedule = useCanDo("maintenance", "create");
+  const canReport = useCanDo("reports", "view");
   const cmd = useRecordCommands(item, onDeleted);
   const edit = () => {
     const q = new URLSearchParams(params.toString());
@@ -226,17 +232,27 @@ function useHeaderActions(item: ItemDetail, retired: boolean, onDeleted: () => v
       testTagId: item.testTagId,
       retired,
       // The old page's path, unchanged: the browser print dialog over the one `LabelTemplate`, offered when a test exists.
-      onPrintLabel: canUpdate && item.testRecords[0] ? () => window.print() : undefined,
+      onPrintLabel: canUpdate && labelRecordOf(item) ? () => window.print() : undefined,
       onRetire: canUpdate ? () => void cmd.retire() : undefined,
       onReactivate: canUpdate ? () => void cmd.reactivate() : undefined,
       onDelete: canDelete ? () => void cmd.remove() : undefined,
+      onSchedule: canSchedule ? onSchedule : undefined,
+      onExportReport: canReport ? () => void window.open(itemHistoryReportUrl(item.id), "_blank") : undefined,
     }),
   };
 }
 
+/**
+ * The test the label shows: the ONE rule `Print tags` uses too (`pickLabelRecord`): the record dated at the item's own
+ * `lastTestDate`. No match (or no test) means no label: it fails closed rather than print another test.
+ */
+function labelRecordOf(item: ItemDetail): ItemDetail["testRecords"][number] | null {
+  return pickLabelRecord(item.testRecords, ms(item.lastTestDate), (r) => ms(r.testDate) ?? NaN);
+}
+
 /** The hidden label the print dialog prints (`print:block` only): the latest test, through the one label template. */
 function PrintableLabel({ item }: { item: ItemDetail }) {
-  const last = item.testRecords[0];
+  const last = labelRecordOf(item);
   if (!last) return null;
   return (
     <div className="hidden print:block">
@@ -259,7 +275,8 @@ function RecordBody({ item, orgId }: { item: ItemDetail; orgId: string | undefin
   const word = testTagStateWord(facts, now, dueSoonDays);
   const checks = testTagChecks(facts, now, dueSoonDays);
   const retired = word.state === "RETIRED";
-  const act = useHeaderActions(item, retired, () => router.push("/test-and-tag"));
+  const [scheduling, setScheduling] = React.useState<ScheduleItem[] | null>(null);
+  const act = useHeaderActions(item, retired, () => router.push("/test-and-tag"), () => setScheduling([{ id: item.id, testTagId: item.testTagId, assetId: item.asset?.id ?? null }]));
   const health = healthOf(checks, { recordTest: act.recordTest, edit: act.edit });
   const tabs: RecordTab[] = [
     { value: "overview", label: "Overview", panel: <Overview item={item} word={word} checks={checks} health={health} /> },
@@ -281,6 +298,7 @@ function RecordBody({ item, orgId }: { item: ItemDetail; orgId: string | undefin
         rail={<Facts title="At a glance" facts={[{ label: "Status", value: word.label }, { label: "Last test", value: dateOf(item.lastTestDate) }, { label: "Next due", value: nextDueText(item, word) }, { label: "Tests", value: item._count.testRecords }]} />}
       />
       <PrintableLabel item={item} />
+      <ScheduleTestDialog items={scheduling} onClose={() => setScheduling(null)} />
       <TestTagSheetHost item={testTagSheetInitialOf(item)} retired={retired} />
     </>
   );

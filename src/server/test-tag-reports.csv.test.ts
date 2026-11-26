@@ -10,7 +10,7 @@ import type { TTAsset, TTRecord, SubTestRecord } from "@/lib/test-tag-read";
 
 vi.mock("@/lib/convex-client", () => ({ getConvexClient: vi.fn() }));
 vi.mock("@/lib/org-context", () => ({
-  getOrgContext: vi.fn(async () => ({ organizationId: "org_1" })),
+  requirePermission: vi.fn(async () => ({ organizationId: "org_1" })),
 }));
 vi.mock("@/lib/models-read", () => ({ getModelById: vi.fn(async () => null) }));
 vi.mock("@/lib/assets-read", () => ({
@@ -150,5 +150,31 @@ describe("T&T report CSV exports", () => {
     const [header, row] = parseCsv(await exportRegisterCSV({}));
     expect(row[header.indexOf("lastTestDate")]).toBe("");
     expect(row[header.indexOf("nextDueDate")]).not.toBe("");
+  });
+});
+
+describe("the report server actions gate themselves (reports:view)", () => {
+  it("every exported report function is refused for a caller without reports:view, before reading anything", async () => {
+    const { requirePermission } = await import("@/lib/org-context");
+    const fns = await import("./test-tag-reports");
+    const call: Record<string, () => Promise<unknown>> = {
+      getRegisterReportData: () => fns.getRegisterReportData({}),
+      exportRegisterCSV: () => fns.exportRegisterCSV({}),
+      getOverdueReportData: () => fns.getOverdueReportData({}),
+      getSessionReportData: () => fns.getSessionReportData({}),
+      getItemHistoryReportData: () => fns.getItemHistoryReportData("x"),
+      getDueScheduleReportData: () => fns.getDueScheduleReportData({}),
+      getClassSummaryReportData: () => fns.getClassSummaryReportData({}),
+      getTesterActivityReportData: () => fns.getTesterActivityReportData({}),
+      getFailedItemsReportData: () => fns.getFailedItemsReportData({}),
+      getBulkSummaryReportData: () => fns.getBulkSummaryReportData("b", {}),
+      getComplianceCertificateData: () => fns.getComplianceCertificateData({}),
+      getReportPreviewCount: () => fns.getReportPreviewCount("register", {}),
+    };
+    for (const [name, run] of Object.entries(call)) {
+      vi.mocked(requirePermission).mockRejectedValueOnce(new Error("Forbidden"));
+      await expect(run(), name).rejects.toThrow("Forbidden");
+    }
+    expect(vi.mocked(requirePermission)).toHaveBeenCalledWith("reports", "view");
   });
 });

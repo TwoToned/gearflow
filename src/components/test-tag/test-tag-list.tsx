@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
+import { PrintTagsDialog } from "@/components/test-tag/print-tags-dialog";
+import { ReportsDialog } from "@/components/test-tag/reports-dialog";
+import { ScheduleTestDialog } from "@/components/test-tag/schedule-test-dialog";
 import { ListPage } from "@/components/ui/list-page";
 import type { ListPrimary } from "@/components/ui/list-page-parts";
 import { UrlSavedViewsMenu } from "@/components/ui/url-saved-views";
@@ -29,8 +32,10 @@ import {
   type TestTagSource,
 } from "@/lib/list-views/test-tag";
 import { announceListWrite } from "@/lib/list-write-toast";
-import { buildTestTagActions, buildTestTagPageMenu } from "@/lib/row-actions/test-tag";
+import { buildTestTagActions, buildTestTagBulkActions, buildTestTagPageMenu } from "@/lib/row-actions/test-tag";
 import { showError } from "@/lib/show-error";
+import type { ScheduleItem } from "@/lib/test-tag-schedule";
+import { itemHistoryReportUrl } from "@/lib/test-tag-reports";
 import { useCanDo } from "@/lib/use-permissions";
 import type { OrgSettings } from "@/lib/org-settings-types";
 
@@ -46,6 +51,8 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
   const { state, setState } = useListUrlState(TEST_TAG_SPEC);
   const canCreate = useCanDo("testTag", "create");
   const canUpdate = useCanDo("testTag", "update");
+  const canSchedule = useCanDo("maintenance", "create");
+  const canReport = useCanDo("reports", "view");
   const writes = useTestTagWrites();
   const profiles = useTestProfiles(orgId);
   // The org's own due-soon horizon (Settings › Test & tag); absent = the server's default of 14 days.
@@ -55,6 +62,26 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
   const page = useAuthedQuery(api.testTagList.listPage, orgId ? { orgId, ...testTagQueryArgs(state, now, dueSoonDays) } : "skip");
   const counts = useAuthedQuery(api.testTagList.segmentCounts, orgId ? { orgId, now, dueSoonDays } : "skip");
   const { data: items, total, isLoading } = usePaginatedTableResult(page as { items: TestTagSource[]; total: number; totalPages: number } | undefined);
+
+  const pathname = usePathname();
+  const params = useSearchParams();
+  /** Reports is a page dialog in the URL (`?dialog=reports`), so the old link and the nav sub-row land on it. */
+  const reportsOpen = canReport && params.get("dialog") === "reports";
+  const setReportsOpen = (open: boolean) => {
+    const q = new URLSearchParams(params.toString());
+    if (open) q.set("dialog", "reports");
+    else q.delete("dialog");
+    const qs = q.toString();
+    (open ? router.push : router.replace)(qs ? `${pathname}?${qs}` : pathname);
+  };
+  const [printing, setPrinting] = React.useState<string[] | null>(null);
+  const [scheduling, setScheduling] = React.useState<ScheduleItem[] | null>(null);
+  // Phone pages accumulate: handlers read the row at click time, from every row seen so far.
+  const seen = React.useRef(new Map<string, TestTagSource>());
+  React.useEffect(() => {
+    for (const t of items) seen.current.set(t.id, t);
+  }, [items]);
+  const scheduleItem = (t: TestTagSource): ScheduleItem => ({ id: t.id, testTagId: t.testTagId, assetId: t.linkedAsset?.id ?? null, retired: t.state === "RETIRED" });
 
   useKeyboardShortcut("n", () => canCreate && router.push("/test-and-tag/new"));
 
@@ -86,12 +113,15 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
         onOpen: () => router.push(`/test-and-tag/${t.id}`),
         onQuickTest: canCreate ? () => router.push("/scan?mode=tt") : undefined,
         onReactivate: canUpdate && t.state === "RETIRED" ? () => void reactivate(t.id, t.testTagId) : undefined,
+        onSchedule: canSchedule && t.state !== "RETIRED" ? () => setScheduling([scheduleItem(t)]) : undefined,
+        onExportReport: canReport ? () => void window.open(itemHistoryReportUrl(t.id), "_blank") : undefined,
       }),
     ),
   );
   const primary: ListPrimary | undefined = canCreate ? { label: "Register item", onSelect: () => router.push("/test-and-tag/new") } : undefined;
 
   return (
+    <>
     <ListPage
       spec={TEST_TAG_SPEC}
       title="Test & tag"
@@ -111,11 +141,23 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
       pageMenu={buildTestTagPageMenu({
         onSync: canCreate ? () => void sync() : undefined,
         onQuickTest: canCreate ? () => router.push("/scan?mode=tt") : undefined,
-        onReports: () => router.push("/test-and-tag/reports"),
+        onReports: canReport ? () => setReportsOpen(true) : undefined,
       })}
+      bulk={(ids) =>
+        buildTestTagBulkActions({
+          onPrintTags: () => setPrinting(ids),
+          onSchedule: canSchedule
+            ? () => setScheduling(ids.flatMap((id) => { const t = seen.current.get(id); return t ? [scheduleItem(t)] : []; }))
+            : undefined,
+        })
+      }
       notice={(page as { truncated?: boolean } | undefined)?.truncated ? "Showing the first items only: narrow the list to see the rest." : undefined}
       empty={{ title: "No test and tag items", description: "Register the equipment you test, or sync it from your assets.", action: primary }}
       toolbarExtra={<UrlSavedViewsMenu tableId="test-tag" spec={TEST_TAG_SPEC} state={state} setState={setState} />}
     />
+      <ReportsDialog open={reportsOpen} onOpenChange={setReportsOpen} orgId={orgId} />
+      <PrintTagsDialog ids={printing} orgId={orgId} onClose={() => setPrinting(null)} />
+      <ScheduleTestDialog items={scheduling} onClose={() => setScheduling(null)} />
+    </>
   );
 }

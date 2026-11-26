@@ -15,8 +15,9 @@ Status, Result. Search matches title, description, tags and (within a read budge
   (`maintenanceBulkWrites`): open records only (finished or cancelled ones are skipped and named in the toast), one
   field-edit audit row per changed record, and ONE toast Undo (`undoBulkEditNative`, ids only, all or nothing,
   author, 10 minutes, once, refuses if a record changed since). Neither verb touches an asset hold: that follows
-  STATUS. Complete/Reopen and the parts table are on the record (below); the row's `Mark done` and `Check off cycle` arrive with the dialogs slice (14a-3b).
-- The page menu links to `/maintenance/due` (service schedules and per-cycle check-off) until that moves into dialogs.
+  STATUS. Complete/Reopen and the parts table are on the record (below); the row's `Mark done…` (open jobs, `CompleteRecordDialog`, same write and exact Undo as the record page) and `Check off cycle…` (open preventative jobs) are dialogs (14a-3b).
+- **A retired asset takes no NEW open job:** `maintenanceWrites.createNative` refuses a SCHEDULED / AWAITING_PARTS / IN_PROGRESS / QA record that links a RETIRED asset (`ASSET_RETIRED`, names the tag). A COMPLETED or CANCELLED record is still allowed (history), and the Retire-on-completion disposal acts on an existing record, so it is unaffected.
+- The page menu holds `Check off cycle…` and `Service schedules…`: dialogs in the URL (`?dialog=checkoff[&record=]` / `?dialog=schedules`) hosted by the list. `/maintenance/due` is only a redirect to `/maintenance?dialog=checkoff` (14a-3b, D44).
 
 ## The Maintenance record (UX Phase 14, 14b-3, `/maintenance/[id]`)
 `RecordShell` (`src/components/maintenance/record/maintenance-record.tsx`): a `DetailHeader` whose one word is DERIVED
@@ -271,8 +272,7 @@ and **only ever patch the `maintenanceRecords` row itself**, never
 is **not** handled here — the operator raises a separate `REPAIR` record via
 the ordinary maintenance form (real, correct blocking machinery).
 
-**Worklist** — `/maintenance/due` (`src/app/(app)/maintenance/due/page.tsx`,
-T&T-dashboard shape per `test-and-tag/page.tsx`): stat tiles (overdue / due
+**Worklist** — the `Check off cycle…` dialog (`checkoff-dialog.tsx`; it was the `/maintenance/due` page, which now redirects) and `Service schedules…` (`service-schedules-dialog.tsx`): stat tiles (overdue / due
 soon / in progress) computed from `convex/maintenanceScheduleWorklist.ts`'s
 `dueWorklist` query, then one section per schedule's current open cycle — a
 per-unit checkbox grid for serialised models, or a progress bar + quantity

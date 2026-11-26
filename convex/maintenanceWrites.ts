@@ -6,7 +6,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertEmitSideEffectsAgentTrue } from "./lib/agentArgs";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertMemberInOrg } from "./lib/orgRef";
-import { HOLDING_MAINTENANCE_STATUSES } from "./lib/maintenanceOpen";
+import { HOLDING_MAINTENANCE_STATUSES, isOpenMaintenance } from "./lib/maintenanceOpen";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { writeActivityLog } from "./lib/audit";
@@ -87,6 +87,24 @@ function statusOf(rec: { status?: string | null }): string {
 
 function isHoldingStatus(status: string): boolean {
   return HOLDING_STATUSES.includes(status);
+}
+
+/**
+ * A RETIRED asset is terminal: no NEW open job (scheduled / in progress / awaiting parts / QA) may be raised against it
+ * (UX Phase 14, 14a-3b: `Schedule…` hides retired items, this is the server's own rule). A COMPLETED or CANCELLED record
+ * stays allowed, so history can still be recorded against a retired unit; the Retire-on-completion disposal acts on an
+ * existing record and never creates one, so it is untouched.
+ */
+async function assertNoRetiredAssetForOpenJob(ctx: MutationCtx, orgId: string, assetIds: string[], status: string): Promise<void> {
+  if (!isOpenMaintenance(status)) return;
+  const retired: string[] = [];
+  for (const id of assetIds) {
+    const a = await fetchOrgAsset(ctx, orgId, id);
+    if (a?.status === "RETIRED") retired.push(a.assetTag);
+  }
+  if (retired.length > 0) {
+    throw new ConvexError({ code: "ASSET_RETIRED", message: `${retired.join(", ")} ${retired.length === 1 ? "is" : "are"} retired: a retired asset can't have a new open maintenance job.` });
+  }
 }
 
 /** Fetch an asset by cuid + org re-check (by_cuid is a GLOBAL index). */
@@ -378,6 +396,7 @@ export const createNative = mutation({
     }
 
     const status = a.status ?? "SCHEDULED";
+    await assertNoRetiredAssetForOpenJob(ctx, a.orgId, assetIds, status);
 
     await ctx.db.insert("maintenanceRecords", {
       id: a.recordId,

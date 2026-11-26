@@ -115,7 +115,7 @@ export const NAV: readonly NavItem[] = [
     subs: [
       // The Scan page's Test & tag mode (Phase 16); the old wizard route redirects here.
       { key: "tt-quick-test", label: "Quick Test", url: "/scan?mode=tt", icon: "quickTest", resource: "testTag" },
-      { key: "tt-reports", label: "Reports", url: "/test-and-tag/reports", icon: "reports", resource: "reports" },
+      { key: "tt-reports", label: "Reports", url: "/test-and-tag?dialog=reports", icon: "reports", resource: "reports" },
     ],
   },
   { key: "maintenance", label: "Maintenance", url: "/maintenance", icon: "maintenance", hue: "coral", group: 1, moreGroup: "gear", resource: "maintenance", count: "maintenance" },
@@ -153,7 +153,8 @@ export const NOT_IN_NAV: Readonly<Record<string, string>> = {
   "/test-and-tag/quick-test": "redirect to the Scan page's Test & tag mode (`/scan?mode=tt`, Phase 16)",
   "/crew/settings": "redirect to the Crew roles & rates sheet (`/crew/planner?sheet=roles`, Phase 15)",
   "/crew/timesheets": "the Crew page's Timesheets head word (D48); a deep link, not a sub-row",
-  "/maintenance/due": "service schedules and check-off, reached from Maintenance's page menu (moves into dialogs, 14a-3b)",
+  "/test-and-tag/reports": "redirect to the Test & tag page's Reports dialog (`/test-and-tag?dialog=reports`, Phase 14, D44)",
+  "/maintenance/due": "redirect to the Maintenance page's Check off cycle dialog (`/maintenance?dialog=checkoff`, Phase 14)",
   "/test-and-tag/registry": "redirect to the Test & tag list's All word (`/test-and-tag?seg=all`, Phase 14, D44)",
   "/maintenance/new": "redirect to the Maintenance sheet (`/maintenance?new=1`, Phase 14)",
   "/assets/models/new": "create flow",

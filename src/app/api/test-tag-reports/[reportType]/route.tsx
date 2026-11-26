@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { requireOrganization } from "@/lib/auth-server";
+import { requirePermission } from "@/lib/org-context";
 import { readOrgSettingsBlob } from "@/lib/org-settings-read";
 import { getFileAsDataUri } from "@/lib/storage";
 import { generateTestTagReport } from "@/lib/pdfme/generate-pdf";
@@ -108,6 +109,13 @@ export async function GET(
     session = await requireOrganization();
   } catch {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // The report data functions gate themselves too (`requireReports`); refusing here first makes it a clean 403, not a 500.
+  try {
+    await requirePermission("reports", "view");
+  } catch {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { organizationId } = session;

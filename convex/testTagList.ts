@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -6,6 +6,7 @@ import { requireOrgReadFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { matchesSearch, compareValues, paginateItems } from "./lib/listQuery";
 import { clampPageSize, collectCapped } from "./lib/pagination";
+import { pickLabelRecord } from "./lib/testTagLabelRecord";
 import { resolveNow } from "./lib/projectSegments";
 import {
   TEST_TAG_SEGMENT_KEYS,
@@ -148,7 +149,45 @@ export const segmentCounts = query({
   },
 });
 
+/** The most items one `Print tags` run covers (a sheet of labels, not a bulk job). */
+const MAX_LABELS = 100;
+/**
+ * The most records scanned per item to find the test its label shows: the newest-CREATED 50, through the (org, item) index.
+ * The label's test is the one whose date equals the item's stored `lastTestDate` (`pickLabelRecord`); there is no index by
+ * test date, and guessing "the newest of a few" could print an older test when historic tests were imported after the
+ * current one. 100 items x 50 = 5000 documents at most.
+ */
+const LABEL_SCAN_PER_ITEM = 50;
+
+/**
+ * The data of the printed tag for each item (UX Phase 14, 14a-3b, `Print tags`): the result, date and tester of the test
+ * dated at the item's `lastTestDate`, and its next due date. A compliance label never guesses: an item with no test is in
+ * `skipped` ("never tested"), and one whose latest test is not found in the bounded scan is in `unresolved` (print it from
+ * its record). An id that is not this org's item is ignored. At most 100 ids.
+ */
+export const labelsFor = query({
+  args: { orgId: v.string(), ids: v.array(v.string()) },
+  handler: async (ctx, { orgId, ids }) => {
+    await requireOrgReadFor(ctx, orgId, "testTag");
+    if (ids.length > MAX_LABELS) throw new ConvexError({ code: "TOO_MANY", message: `Print at most ${MAX_LABELS} tags at a time.` });
+    const labels: { id: string; testTagId: string; result: "PASS" | "FAIL"; testDate: number; nextDueDate: number; testerName: string }[] = [];
+    const skipped: { id: string; testTagId: string }[] = [];
+    const unresolved: { id: string; testTagId: string }[] = [];
+    for (const id of [...new Set(ids)]) {
+      const item = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
+      if (!item || item.organizationId !== orgId) continue; // by_cuid is global: another org's item is simply not there
+      const rows = await ctx.db.query("testTagRecords").withIndex("by_organizationId_testTagAssetId", (q) => q.eq("organizationId", orgId).eq("testTagAssetId", id)).order("desc").take(LABEL_SCAN_PER_ITEM);
+      if (rows.length === 0 && item.lastTestDate == null) { skipped.push({ id, testTagId: item.testTagId }); continue; }
+      const last = pickLabelRecord(rows, item.lastTestDate, (r) => r.testDate);
+      if (!last) { unresolved.push({ id, testTagId: item.testTagId }); continue; }
+      labels.push({ id, testTagId: item.testTagId, result: last.result === "PASS" ? "PASS" : "FAIL", testDate: last.testDate, nextDueDate: item.nextDueDate ?? last.testDate, testerName: last.testerName || "\u2014" });
+    }
+    return { labels, skipped, unresolved };
+  },
+});
+
 export const agentOps: AgentOpsAnnotations = {
   listPage: { summary: "One page of the Test and tag list with derived Due / Overdue / Passed / Failed state, last test and tester." },
   segmentCounts: { summary: "Strip counts for the Test and tag list (due, overdue, passed, failed, all, retired)." },
+  labelsFor: { summary: "The printed tag data (latest test result, date, tester, next due) for up to 100 test and tag items; never-tested items are listed as skipped." },
 };

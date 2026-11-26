@@ -1,6 +1,6 @@
 "use server";
 
-import { getOrgContext } from "@/lib/org-context";
+import { requirePermission } from "@/lib/org-context";
 import { serialize } from "@/lib/serialize";
 import { toCsv } from "@/lib/csv";
 import { getModelById } from "@/lib/models-read";
@@ -59,6 +59,13 @@ function fmtDate(d: Date | string | null | undefined): string {
 
 // ─── INTERNAL: Convex loaders + sort/attach helpers ───────────────────────────
 //
+/**
+ * Every exported function here is a callable server action, so the gate is HERE, not only in the route: the Test & tag
+ * reports need `reports:view`, the same permission the Reports dialog / nav row use (`testTag:generate_reports` is declared
+ * but enforced nowhere, and gating on it would 403 roles the UI offers the dialog to).
+ */
+const requireReports = () => requirePermission("reports", "view");
+
 // The reports moved off Prisma to Convex (Phase A read-rewiring). Org-scoped
 // reads come from Convex; tester names (Better Auth `User`) stay on Prisma. The
 // old Prisma `where`/`orderBy`/`include` become JS predicate + sort + attach.
@@ -157,7 +164,7 @@ async function loadRegisterItems(orgId: string, filters: ReportFilters) {
 }
 
 export async function getRegisterReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
   const items = await loadRegisterItems(organizationId, filters);
 
   const statusCounts: Record<string, number> = {};
@@ -172,7 +179,7 @@ export async function getRegisterReportData(filters: ReportFilters) {
 }
 
 export async function exportRegisterCSV(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
   const items = await loadRegisterItems(organizationId, filters);
 
   const headers = ["testTagId", "description", "equipmentClass", "applianceType", "make", "modelName", "serialNumber", "location", "testIntervalMonths", "lastTestDate", "nextDueDate", "status", "linkedAssetTag", "linkedBulkAsset"];
@@ -191,7 +198,7 @@ export async function exportRegisterCSV(filters: ReportFilters) {
 // ─── 2. OVERDUE & NON-COMPLIANT ─────────────────────────────────────────────
 
 export async function getOverdueReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
   const baseFilters = { ...filters, statuses: undefined };
 
   const [all, records, maps] = await Promise.all([
@@ -237,7 +244,7 @@ export async function exportOverdueCSV(filters: ReportFilters) {
 // ─── 3. TEST SESSION ────────────────────────────────────────────────────────
 
 export async function getSessionReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const [allAssets, allRecords, profileMap] = await Promise.all([
     getTestTagAssetsByOrg(organizationId),
@@ -303,7 +310,7 @@ export async function exportSessionCSV(filters: ReportFilters) {
 // ─── 4. ITEM HISTORY ────────────────────────────────────────────────────────
 
 export async function getItemHistoryReportData(testTagAssetId: string) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const item = await getTestTagAssetById(testTagAssetId);
   if (!item || item.organizationId !== organizationId) throw new Error("Test tag asset not found");
@@ -345,7 +352,7 @@ export async function getItemHistoryReportData(testTagAssetId: string) {
 // ─── 5. DUE SCHEDULE ────────────────────────────────────────────────────────
 
 export async function getDueScheduleReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const dateFrom = filters.dateFrom ? new Date(filters.dateFrom) : new Date();
   const dateTo = filters.dateTo ? new Date(filters.dateTo) : (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d; })();
@@ -387,7 +394,7 @@ export async function exportDueScheduleCSV(filters: ReportFilters) {
 // ─── 6. CLASS SUMMARY ───────────────────────────────────────────────────────
 
 export async function getClassSummaryReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
   const all = await getTestTagAssetsByOrg(organizationId);
   const items = all.filter((i) =>
     assetMatchesFilters(i, { ...filters, statuses: undefined, equipmentClasses: undefined, applianceTypes: undefined }),
@@ -432,7 +439,7 @@ export async function exportClassSummaryCSV(filters: ReportFilters) {
 // ─── 7. TESTER ACTIVITY ─────────────────────────────────────────────────────
 
 export async function getTesterActivityReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const [allAssets, allRecords] = await Promise.all([
     getTestTagAssetsByOrg(organizationId),
@@ -490,7 +497,7 @@ export async function exportTesterActivityCSV(filters: ReportFilters) {
 // ─── 8. FAILED ITEMS ────────────────────────────────────────────────────────
 
 export async function getFailedItemsReportData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const [allAssets, allRecords, profileMap] = await Promise.all([
     getTestTagAssetsByOrg(organizationId),
@@ -574,7 +581,7 @@ export async function exportFailedItemsCSV(filters: ReportFilters) {
 // ─── 9. BULK ASSET SUMMARY ──────────────────────────────────────────────────
 
 export async function getBulkSummaryReportData(bulkAssetId: string, filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const bulkAsset = await getBulkAssetById(bulkAssetId);
   if (!bulkAsset || bulkAsset.organizationId !== organizationId) throw new Error("Bulk asset not found");
@@ -617,7 +624,7 @@ export async function exportBulkSummaryCSV(bulkAssetId: string, filters: ReportF
 // ─── 10. COMPLIANCE CERTIFICATE ──────────────────────────────────────────────
 
 export async function getComplianceCertificateData(filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   const [all, records] = await Promise.all([
     getTestTagAssetsByOrg(organizationId),
@@ -646,7 +653,7 @@ export async function getComplianceCertificateData(filters: ReportFilters) {
 // ─── REPORT COUNTS (for preview) ────────────────────────────────────────────
 
 export async function getReportPreviewCount(reportType: string, filters: ReportFilters) {
-  const { organizationId } = await getOrgContext();
+  const { organizationId } = await requireReports();
 
   if (reportType === "session" || reportType === "tester-activity" || reportType === "failed-items") {
     const records = await getTestTagRecordsByOrg(organizationId);

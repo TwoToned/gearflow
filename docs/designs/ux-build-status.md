@@ -32,7 +32,7 @@ https://flow.rvlt.app returns 200/307.
 | 12 | D30–D37, D62, D63, D64 | Accepted 2026-11-24 |
 | 13 | D38, D40, D71–D74 (schema: D71, D72) | Accepted 2026-11-24 |
 | 14 | D41–D45, D75–D80 (schema: D41, D42+D78, D76, D77) | Accepted 2026-11-24 |
-| Wave D3 | phases 17 (D54, D57–D61), 18 (D81–D84) | Gate 0 still to ask |
+| Wave D3 | phases 17 (D54, D57–D61), 18 (D81–D84) | **Accepted 2026-11-26**: all recommended options; D58 = read-only roles grid now (editing later behind a flag, its own schema yes) |
 
 Decisions PRs #1377 and #1379 merged 2026-11-17. Knip baseline lowered 405 → 402 after Phase 0 (#1381).
 
@@ -191,6 +191,15 @@ All subagents run on Sonnet (owner, 2026-11-24). The weekly usage limit stopped 
 - The lapsed `docs/exceptions.md` exceptions: projects.ts/orgProjects collect (expired 2026-10-26) and braces (2026-10-17).
 - Optional schema: an index on test records by (org, item, test date) for an exact single-record "latest test" read. Not needed now: labels pick the record matching the item's stored `lastTestDate` and fail closed if it isn't found.
 - `testTag:generate_reports` is declared in the role tables but enforced nowhere; the report routes and actions now require `reports:view`. Keep the extra permission (and enforce it) or delete it?
+
+### Wave D3 workers (Gate 0 accepted 2026-11-26)
+
+Phases 17 and 18 run in parallel. Each regenerates the API/MCP files, so their PRs merge one at a time (main merged in, regenerated, then merged).
+
+| Phase | Worker | Branch / PR | State | Blockers |
+|---|---|---|---|---|
+| 17 Finance hub + Settings (L) | Sonnet | `claude/ux-17-finance-settings` | building | — |
+| 18 Schedule (L) | Sonnet | `claude/ux-18-schedule` | building | — |
 
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.

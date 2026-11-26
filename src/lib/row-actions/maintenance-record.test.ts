@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildMaintenancePartActions, buildMaintenanceRecordActions } from "@/lib/row-actions/maintenance";
+import { buildMaintenanceActions, buildMaintenancePageMenu, buildMaintenancePartActions, buildMaintenanceRecordActions } from "@/lib/row-actions/maintenance";
 
 const keys = (spec: { items: { key: string }[] }) => spec.items.map((i) => i.key);
 const fn = () => vi.fn();
@@ -21,6 +21,19 @@ describe("buildMaintenanceRecordActions", () => {
   it("a verb with no handler (the caller cannot) is ABSENT, never disabled", () => {
     expect(keys(buildMaintenanceRecordActions({ title: "t", status: "SCHEDULED" }))).toEqual([]);
     expect(keys(buildMaintenanceRecordActions({ title: "t", status: "SCHEDULED", onDelete: fn() }))).toEqual(["delete"]);
+  });
+});
+
+describe("the list row and page menus (14a-3b)", () => {
+  it("a row offers Mark done… and Check off cycle… right after Edit, each only with a handler (absent, never disabled)", () => {
+    const spec = buildMaintenanceActions({ title: "t", onOpen: fn(), onEdit: fn(), onMarkDone: fn(), onCheckOff: fn(), onReschedule: fn(), onDelete: fn() });
+    expect(keys(spec)).toEqual(["open", "edit", "mark-done", "check-off", "reschedule", "delete"]);
+    expect(keys(buildMaintenanceActions({ title: "t", onOpen: fn(), onEdit: fn(), onReschedule: fn() }))).toEqual(["open", "edit", "reschedule"]);
+  });
+
+  it("the page menu holds the two dialogs that replaced /maintenance/due", () => {
+    expect(buildMaintenancePageMenu({ onCheckoff: fn(), onSchedules: fn() }).items.map((i) => i.label)).toEqual(["Check off cycle…", "Service schedules…"]);
+    expect(buildMaintenancePageMenu({}).items).toEqual([]);
   });
 });
 

@@ -1,8 +1,12 @@
 "use client";
 
+import { isOpenMaintenance } from "../../../convex/lib/maintenanceOpen";
+import { CheckoffDialog } from "@/components/maintenance/checkoff-dialog";
 import { MaintenanceSheetHost } from "@/components/maintenance/maintenance-sheet-host";
+import { CompleteRecordDialog } from "@/components/maintenance/record/complete-record-dialog";
+import { ServiceSchedulesDialog } from "@/components/maintenance/service-schedules-dialog";
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
 import { api } from "../../../convex/_generated/api";
@@ -65,6 +69,25 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
     for (const m of items) seen.current.set(m.id, m);
   }, [items]);
 
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const dialog = params.get("dialog");
+  const [markingDone, setMarkingDone] = React.useState<string | null>(null);
+  /** The two page dialogs live in the URL (`?dialog=checkoff|schedules`, `&record=` narrows Check off to one record). */
+  const openDialog = (name: "checkoff" | "schedules", record?: string) => {
+    const q = new URLSearchParams(params.toString());
+    q.set("dialog", name);
+    if (record) q.set("record", record);
+    else q.delete("record");
+    router.push(`${pathname}?${q.toString()}`);
+  };
+  const closeDialog = () => {
+    const q = new URLSearchParams(params.toString());
+    q.delete("dialog");
+    q.delete("record");
+    const qs = q.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname);
+  };
   const [rescheduling, setRescheduling] = React.useState<string[] | null>(null);
   const [assigning, setAssigning] = React.useState<string[] | null>(null);
 
@@ -113,6 +136,8 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
         title: m.title,
         onOpen: () => router.push(`/maintenance/${m.id}`),
         onEdit: canUpdate ? () => router.push(`/maintenance/${m.id}?edit=1`) : undefined,
+        onMarkDone: canUpdate && isOpenMaintenance(m.status) ? () => setMarkingDone(m.id) : undefined,
+        onCheckOff: canUpdate && m.type === "PREVENTATIVE" && isOpenMaintenance(m.status) ? () => openDialog("checkoff", m.id) : undefined,
         onReschedule: canUpdate ? () => setRescheduling([m.id]) : undefined,
         onAssign: canUpdate ? () => setAssigning([m.id]) : undefined,
         onDelete: canDelete ? () => void remove(m.id, m.title) : undefined,
@@ -139,7 +164,7 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
         itemHeader={MAINTENANCE_ITEM_HEADER}
         itemSortKey={MAINTENANCE_ITEM_SORT_KEY}
         primary={primary}
-        pageMenu={buildMaintenancePageMenu(() => router.push("/maintenance/due"))}
+        pageMenu={buildMaintenancePageMenu({ onCheckoff: () => openDialog("checkoff"), onSchedules: () => openDialog("schedules") })}
         notice={(page as { truncated?: boolean } | undefined)?.truncated ? "Showing the first records only: narrow the list to see the rest." : undefined}
         bulk={(ids) =>
           buildMaintenanceBulkActions({
@@ -151,6 +176,9 @@ function MaintenanceListInner({ orgId }: { orgId: string | undefined }) {
         toolbarExtra={<UrlSavedViewsMenu tableId="maintenance" spec={MAINTENANCE_SPEC} state={state} setState={setState} />}
       />
       {canCreate && <MaintenanceSheetHost mode="new" />}
+      <CheckoffDialog open={dialog === "checkoff"} onOpenChange={(o) => !o && closeDialog()} orgId={orgId} recordId={params.get("record")} />
+      <ServiceSchedulesDialog open={dialog === "schedules"} onOpenChange={(o) => !o && closeDialog()} orgId={orgId} />
+      <CompleteRecordDialog orgId={orgId} id={markingDone} open={!!markingDone} onOpenChange={(o) => !o && setMarkingDone(null)} />
       <RescheduleDialog count={rescheduling?.length ?? null} onClose={() => setRescheduling(null)} onSubmit={reschedule} />
       <AssignDialog count={assigning?.length ?? null} members={members} onClose={() => setAssigning(null)} onSubmit={assign} />
     </>

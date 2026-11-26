@@ -20,18 +20,24 @@ describe("buildMaintenanceEdit", () => {
   const before = maintenanceSheetInitialOf(REC);
   const same = { ...before };
 
-  it("never carries status or any field off the edit list", () => {
-    const { set, clear } = buildMaintenanceEdit(same, before);
-    expect(Object.keys(set).sort()).toEqual(["assignedToId", "cost", "description", "photos", "scheduledDate", "tags", "title", "type"].sort());
-    expect(clear.sort()).toEqual(["nextDueDate", "reportedById"]);
-    expect(set).not.toHaveProperty("status");
-    expect(set).not.toHaveProperty("partsUsed");
+  it("an untouched sheet sends NOTHING (so it can never revert someone else's newer edit)", () => {
+    expect(buildMaintenanceEdit(same, before)).toEqual({ set: {}, clear: [] });
   });
 
-  it("a blank box CLEARS its field; a stored 0 labour is sent as 0, never cleared", () => {
-    expect(buildMaintenanceEdit(same, before).set.cost).toBe(0);
-    const r = buildMaintenanceEdit({ ...same, description: "  ", cost: "", assignedToId: "" }, before);
-    expect(r.clear).toEqual(expect.arrayContaining(["description", "cost", "assignedToId"]));
+  it("only the changed fields go, never status or a field off the edit list; a changed-to-blank box CLEARS; a stored 0 labour is a value", () => {
+    const r = buildMaintenanceEdit({ ...same, title: " Fix the desk ", description: "", tags: ["x", "y"], cost: "", assignedToId: "" }, before);
+    expect(r.set).toEqual({ title: "Fix the desk", tags: ["x", "y"] });
+    expect(r.clear.sort()).toEqual(["assignedToId", "cost", "description"]);
+    expect(buildMaintenanceEdit({ ...same, cost: "0" }, before)).toEqual({ set: {}, clear: [] });
+    expect(buildMaintenanceEdit({ ...same, cost: "5" }, before).set).toEqual({ cost: 5 });
+    for (const k of ["status", "partsUsed"]) expect(r.set).not.toHaveProperty(k);
+  });
+
+  it("another user's newer edit is not reverted: a sheet that opened with the old photos and changed the title sends no photos", () => {
+    const r = buildMaintenanceEdit({ ...same, title: "Renamed" }, before);
+    expect(r.set).toEqual({ title: "Renamed" });
+    expect(r.set).not.toHaveProperty("photos");
+    expect(r.set).not.toHaveProperty("tags");
   });
 
   it("a caller whose read carried no labour never sends it, set or clear", () => {

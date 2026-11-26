@@ -114,6 +114,8 @@ export function MaintenanceSheet({ open, onOpenChange, record }: Props) {
   const { options: members } = useMemberRoster(orgId);
   const orgTags = useOrgTags(orgId);
   const [values, setValues] = React.useState<MaintenanceSheetValues>(() => valuesOf(record));
+  // The record as the sheet OPENED with it: a save sends only what changed against it, so a newer edit is never reverted.
+  const [openedRecord, setOpenedRecord] = React.useState(record);
   const [dirty, setDirty] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
@@ -121,6 +123,7 @@ export function MaintenanceSheet({ open, onOpenChange, record }: Props) {
   React.useEffect(() => {
     if (!open) return;
     setValues(valuesOf(record));
+    setOpenedRecord(record);
     setDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the sheet opens or its target changes
   }, [open, record?.id]);
@@ -135,7 +138,7 @@ export function MaintenanceSheet({ open, onOpenChange, record }: Props) {
   const assetOptions = (assets ?? []).map((a: { id: string; label: string }) => ({ value: a.id, label: a.label }));
 
   const saveEdit = async () => {
-    const r = await writes.edit(record!.id, buildMaintenanceEdit(values, record!));
+    const r = await writes.edit(record!.id, buildMaintenanceEdit(values, openedRecord ?? record!));
     if (!r.changed) toast("Nothing changed");
     else if (!r.undoable) toast.success(`Updated ${values.title.trim()}`, { description: "A removed photo was deleted, so this can't be undone." });
     else announceListWrite({ title: `Updated ${values.title.trim()}`, undoneTitle: "Change undone", performUndo: async () => void (await writes.undoEdit(record!.id, r.auditId)) });

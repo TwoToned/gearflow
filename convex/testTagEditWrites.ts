@@ -7,7 +7,7 @@ import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
-import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { diffFields, recordFieldEdit, sameValue, undoFieldEdit } from "./lib/fieldEditUndo";
 import { assertRefInOrg } from "./lib/orgRef";
 import { deriveNextDueDate } from "./lib/testTagNextDue";
 import * as enums from "./lib/validators";
@@ -71,6 +71,10 @@ function assertBounds(set: EditSet, clear: string[]): void {
   assertStrLen(set.notes, "Notes", { max: 2000 });
   assertNumRange(set.testIntervalMonths, "Test interval", { min: 1, max: 120, integer: true });
   assertNumRange(set.outletCount, "Outlet count", { min: 1, max: 50, integer: true });
+  // A link is set to a record id or CLEARED through `clear`; an empty string is neither.
+  assertStrLen(set.assetId, "Asset link", { min: 1 });
+  assertStrLen(set.bulkAssetId, "Bulk asset link", { min: 1 });
+  assertStrLen(set.testProfileId, "Test profile", { min: 1 });
 }
 
 /** Linked records are validated only when CHANGED (`by_cuid` is global, so a foreign id would leak). */
@@ -112,10 +116,24 @@ export const editNative = mutation({
     const patch: Record<string, unknown> = { updatedAt: a.now };
     for (const f of Object.keys(diff.after)) patch[f] = next[f]; // an absent value (`undefined`) clears the field
     await ctx.db.patch(item._id, patch);
-    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "testTagAsset", entityId: a.id, entityName: item.testTagId, auditId: a.auditId, actor, summary: `Edited test tag asset ${item.testTagId}`, diff, now: a.now });
+    // Next due is derived from the interval: when the interval changed, the dates it was derived from are COMPARED (never
+    // restored) by the Undo, so a test recorded since refuses it instead of leaving a next due that no longer follows.
+    const extraDetails = "testIntervalMonths" in diff.after ? { guard: { lastTestDate: item.lastTestDate ?? null, nextDueDate: next.nextDueDate ?? null } } : undefined;
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "testTagAsset", entityId: a.id, entityName: item.testTagId, auditId: a.auditId, actor, summary: `Edited test tag asset ${item.testTagId}`, diff, now: a.now, extraDetails });
     return { id: a.id, changed: true };
   },
 });
+
+/** Refuses the Undo of an interval change when the dates its next due was derived from have moved (a test landed since). */
+async function assertDerivedInputsUnchanged(ctx: MutationCtx, orgId: string, id: string, auditId: string, item: Doc<"testTagAssets">): Promise<void> {
+  const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", auditId)).first();
+  if (!row || row.organizationId !== orgId || row.entityId !== id) return; // `undoFieldEdit` refuses an unknown row itself
+  const guard = (row.details as { guard?: { lastTestDate: number | null; nextDueDate: number | null } } | undefined)?.guard;
+  if (!guard) return;
+  if (!sameValue(item.lastTestDate, guard.lastTestDate) || !sameValue(item.nextDueDate, guard.nextDueDate)) {
+    throw refuse("CHANGED_SINCE", "Can't undo: the item was tested since, so its next due date no longer follows the interval.");
+  }
+}
 
 export const undoEditNative = mutation({
   returns: v.object({ id: v.string() }),
@@ -126,6 +144,7 @@ export const undoEditNative = mutation({
     await requireOrgPermission(ctx, a.orgId, "testTag", "update");
     const actor = await resolveActor(ctx, a.actor);
     const item = await loadItem(ctx, a.orgId, a.id);
+    await assertDerivedInputsUnchanged(ctx, a.orgId, a.id, a.auditId, item);
     await undoFieldEdit(ctx, {
       orgId: a.orgId, entityType: "testTagAsset", entityId: a.id, entityName: item.testTagId, auditId: a.auditId, actor, now: a.now,
       load: async () => item as Record<string, unknown> & { _id: Doc<"testTagAssets">["_id"] },

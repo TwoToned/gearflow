@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { writeActivityLog } from "./lib/audit";
+import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
@@ -246,8 +246,12 @@ export const retireNative = mutation({
     await assertWritesEnabled(ctx, "testTag");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "testTag", "update");
+    // The pair travels together: an actor without an audit id (or the reverse) is a half-formed call.
+    if (!rawActor !== !auditId) throw new ConvexError({ code: "INVALID_FIELD", message: "A retire takes an actor and an audit id together, or neither." });
     const doc = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Test tag asset not found");
+    if (doc.status === "RETIRED" || doc.isActive === false) throw new ConvexError({ code: "ALREADY_RETIRED", message: "That item is already retired." });
+    if (auditId) await assertAuditIdFree(ctx, auditId);
     await ctx.db.patch(doc._id, { status: "RETIRED", isActive: false, updatedAt: now });
     if (rawActor && auditId) {
       const actor = await resolveActor(ctx, rawActor);

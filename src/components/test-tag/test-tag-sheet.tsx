@@ -59,12 +59,15 @@ export function TestTagSheet({ open, onOpenChange, item }: Props) {
   const assets = useServerQuery({ queryKey: ["tt-sheet-assets", orgId], queryFn: () => convex.query(api.assets.listPage, { orgId: orgId!, pageSize: 500 }), enabled });
   const bulk = useServerQuery({ queryKey: ["tt-sheet-bulk", orgId], queryFn: () => convex.query(api.bulkAssets.listPage, { orgId: orgId!, pageSize: 500 }), enabled });
   const [values, setValues] = React.useState<TestTagSheetValues>(() => valuesOf(item));
+  // What the sheet OPENED with: a save sends only what changed against it, so a newer edit by someone else is never reverted.
+  const [opened, setOpened] = React.useState<TestTagSheetValues>(() => valuesOf(item));
   const [dirty, setDirty] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
     setValues(valuesOf(item));
+    setOpened(valuesOf(item));
     setDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the sheet opens or its target changes
   }, [open, item.id]);
@@ -87,7 +90,7 @@ export function TestTagSheet({ open, onOpenChange, item }: Props) {
     if (problem) return void toast.error(problem);
     setSaving(true);
     try {
-      const r = await writes.edit(item.id, buildTestTagEdit(values));
+      const r = await writes.edit(item.id, buildTestTagEdit(values, opened));
       if (!r.changed) toast("Nothing changed");
       else announceListWrite({ title: `Updated ${item.testTagId}`, undoneTitle: "Change undone", performUndo: async () => void (await writes.undoEdit(item.id, r.auditId)) });
       onOpenChange(false);

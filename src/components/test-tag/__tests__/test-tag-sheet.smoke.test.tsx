@@ -92,6 +92,19 @@ describe("TestTagSheet", () => {
     await waitFor(() => expect(writes.undoEdit).toHaveBeenCalledWith("t1", "ed1"));
   });
 
+  it("only what this sheet changed is sent: someone else's edit made after it opened is not reverted", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<TestTagSheet open onOpenChange={() => {}} item={ITEM} />);
+    // The item changes underneath the open sheet (another user set the make to "Bosch").
+    rerender(<TestTagSheet open onOpenChange={() => {}} item={{ ...ITEM, make: "Bosch" }} />);
+    await user.type(screen.getByLabelText("Notes"), "mine");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writes.edit).toHaveBeenCalled());
+    const [, input] = writes.edit.mock.calls[0] as unknown as [string, { set: Record<string, unknown>; clear: string[] }];
+    expect(input.set).toEqual({ notes: "mine" });
+    expect(input.clear).toEqual([]);
+  });
+
   it("an invalid interval is refused before the write", async () => {
     const user = userEvent.setup();
     render(<TestTagSheet open onOpenChange={() => {}} item={ITEM} />);

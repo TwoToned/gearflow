@@ -14,18 +14,27 @@ describe("testTagSheetInitialOf", () => {
 describe("buildTestTagEdit", () => {
   const v = testTagSheetInitialOf(SRC);
 
-  it("sets the filled fields, clears the blank optional ones, and never carries status, the tag id or next due", () => {
-    const { set, clear } = buildTestTagEdit(v);
-    expect(set).toMatchObject({ description: "Drill", equipmentClass: "CLASS_II", applianceType: "POWER_BOARD", testIntervalMonths: 6, make: "Acme", assetId: "a1", outletCount: 4 });
-    expect(clear.sort()).toEqual(["bulkAssetId", "location", "modelName", "notes", "serialNumber", "testProfileId"]);
+  it("an untouched sheet sends NOTHING (so it can never revert someone else's newer edit)", () => {
+    expect(buildTestTagEdit(v, v)).toEqual({ set: {}, clear: [] });
+  });
+
+  it("only the changed fields go: a changed value is SET, a changed-to-blank optional box is CLEARED, never status, the tag id or next due", () => {
+    const { set, clear } = buildTestTagEdit({ ...v, description: " Hammer drill ", make: "", location: "Bay 2", testIntervalMonths: "12", outletCount: "" }, v);
+    expect(set).toEqual({ description: "Hammer drill", location: "Bay 2", testIntervalMonths: 12 });
+    expect(clear.sort()).toEqual(["make", "outletCount"]);
     for (const k of ["status", "testTagId", "nextDueDate", "id"]) expect(set).not.toHaveProperty(k);
   });
 
-  it("a blank box clears; whitespace is blank; a blank outlet count clears it", () => {
-    const { set, clear } = buildTestTagEdit({ ...v, make: "  ", outletCount: "", description: " Drill " });
-    expect(clear).toEqual(expect.arrayContaining(["make", "outletCount"]));
-    expect(set.description).toBe("Drill");
-    expect(set).not.toHaveProperty("make");
+  it("a field blank before AND now is not cleared; whitespace is blank; a re-typed same value is unchanged", () => {
+    const r = buildTestTagEdit({ ...v, notes: "   ", make: " Acme " }, v);
+    expect(r).toEqual({ set: {}, clear: [] });
+  });
+
+  it("another user's newer edit is not reverted: the sheet that opened with the OLD value and changed only the notes sends only the notes", () => {
+    const opened = { ...v, location: "Bay 1" }; // what this sheet opened with; the server now holds "Bay 9"
+    const r = buildTestTagEdit({ ...opened, notes: "mine" }, opened);
+    expect(r.set).toEqual({ notes: "mine" });
+    expect(r.set).not.toHaveProperty("location");
   });
 });
 

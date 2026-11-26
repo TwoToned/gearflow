@@ -1,3 +1,5 @@
+import { blankToUndefined, changedEdit } from "@/lib/changed-edit";
+
 /**
  * The Test & tag Edit sheet's values and the write they become (UX Phase 14, 14b-4, D80). Pure, so the sheet and its
  * tests share ONE mapping. The sheet carries every field `testTagEditWrites.editNative` sets and NOTHING else: status
@@ -92,22 +94,19 @@ export interface TestTagEditInput {
 }
 
 const CLEARABLE_TEXT = ["make", "modelName", "serialNumber", "location", "notes", "testProfileId", "assetId", "bulkAssetId"] as const;
+const outlets = (s: string): number | undefined => (s.trim() === "" ? undefined : Number(s));
 
-/** The edit write's input: every filled field is SET, every blank clearable field is CLEARED. Status is never in it. */
-export function buildTestTagEdit(v: TestTagSheetValues): TestTagEditInput {
-  const set: Record<string, unknown> = {
-    description: v.description.trim(),
-    equipmentClass: v.equipmentClass,
-    applianceType: v.applianceType,
-    testIntervalMonths: Number(v.testIntervalMonths),
-  };
-  const clear: string[] = [];
-  for (const f of CLEARABLE_TEXT) {
-    const value = v[f].trim();
-    if (value) set[f] = value;
-    else clear.push(f);
-  }
-  if (v.outletCount.trim() === "") clear.push("outletCount");
-  else set.outletCount = Number(v.outletCount);
-  return { set, clear };
+/**
+ * The edit write's input: ONLY the fields changed against the values the sheet opened with (`before`), so another user's
+ * edit made since is never reverted. A changed blank optional box CLEARS its field. Status is never in it.
+ */
+export function buildTestTagEdit(v: TestTagSheetValues, before: TestTagSheetValues): TestTagEditInput {
+  return changedEdit([
+    ["description", v.description.trim(), before.description.trim()],
+    ["equipmentClass", v.equipmentClass, before.equipmentClass],
+    ["applianceType", v.applianceType, before.applianceType],
+    ["testIntervalMonths", Number(v.testIntervalMonths), Number(before.testIntervalMonths)],
+    ...CLEARABLE_TEXT.map((f) => [f, blankToUndefined(v[f]), blankToUndefined(before[f])] as const),
+    ["outletCount", outlets(v.outletCount), outlets(before.outletCount)],
+  ]);
 }

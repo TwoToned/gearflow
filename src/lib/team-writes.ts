@@ -330,32 +330,85 @@ async function undoRoles(actor: TeamActor, items: { memberId: string; from: stri
   return byId;
 }
 
-async function undoInvites(actor: TeamActor, kind: "revoke" | "resend", items: { invitationId: string; expiresAt?: number; newExpiresAt?: number }[]) {
-  const rows = await prisma.invitation.findMany({
-    where: { organizationId: actor.organizationId, id: { in: items.map((i) => i.invitationId) } },
-  });
+type Invitation = Awaited<ReturnType<typeof prisma.invitation.findMany>>[number];
+
+/** Restore a revoked invite only if it is still exactly as the revoke left it and
+ *  bringing it back can't create a second live invite or invite an existing member. */
+async function assertRevokeUndoable(actor: TeamActor, inv: Invitation, expiresAt: number) {
+  if (inv.status !== "cancelled" || inv.expiresAt.getTime() !== expiresAt) throw new TeamUndoRefused(CHANGED_SINCE);
+  const [live, member] = await Promise.all([
+    prisma.invitation.findFirst({ where: { organizationId: actor.organizationId, email: inv.email, status: "pending" } }),
+    prisma.member.findFirst({ where: { organizationId: actor.organizationId, user: { email: inv.email } } }),
+  ]);
+  if (live || member) throw new TeamUndoRefused(`Can't undo: ${inv.email} was invited again or has joined.`);
+}
+
+async function loadInvitesForUndo(actor: TeamActor, ids: string[]) {
+  const rows = await prisma.invitation.findMany({ where: { organizationId: actor.organizationId, id: { in: ids } } });
   const byId = new Map(rows.map((r) => [r.id, r]));
-  for (const i of items) {
-    const inv = byId.get(i.invitationId);
+  for (const id of ids) {
+    const inv = byId.get(id);
     if (!inv) throw new TeamUndoRefused(CHANGED_SINCE);
     const verdict = canManageMember(actor.role, inv.role ?? "member");
     if (!verdict.ok) throw new TeamUndoRefused(verdict.reason);
-    if (kind === "resend") {
-      if (inv.status !== "pending" || inv.expiresAt.getTime() !== i.newExpiresAt) throw new TeamUndoRefused(CHANGED_SINCE);
-      continue;
-    }
-    // Revoke: restore the SAME row only if it is still exactly as the revoke left it
-    // and bringing it back could not create a second live invite or invite a member.
-    if (inv.status !== "cancelled" || inv.expiresAt.getTime() !== i.expiresAt) throw new TeamUndoRefused(CHANGED_SINCE);
-    const [live, member] = await Promise.all([
-      prisma.invitation.findFirst({ where: { organizationId: actor.organizationId, email: inv.email, status: "pending" } }),
-      prisma.member.findFirst({ where: { organizationId: actor.organizationId, user: { email: inv.email } } }),
-    ]);
-    if (live || member) throw new TeamUndoRefused(`Can't undo: ${inv.email} was invited again or has joined.`);
   }
   return byId;
 }
 
+async function undoRevoke(actor: TeamActor, tokenId: string, items: { invitationId: string; expiresAt: number }[]) {
+  const byId = await loadInvitesForUndo(actor, items.map((i) => i.invitationId));
+  for (const i of items) await assertRevokeUndoable(actor, byId.get(i.invitationId)!, i.expiresAt);
+  await claimTeamUndo(actor, tokenId, "revoke");
+  for (const i of items) {
+    const done = await prisma.invitation.updateMany({
+      where: { id: i.invitationId, organizationId: actor.organizationId, status: "cancelled" },
+      data: { status: "pending" },
+    });
+    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+  }
+  return { restored: items.length };
+}
+
+async function undoResend(
+  actor: TeamActor,
+  tokenId: string,
+  items: { invitationId: string; prevExpiresAt: number; newExpiresAt: number }[],
+) {
+  const byId = await loadInvitesForUndo(actor, items.map((i) => i.invitationId));
+  for (const i of items) {
+    const inv = byId.get(i.invitationId)!;
+    if (inv.status !== "pending" || inv.expiresAt.getTime() !== i.newExpiresAt) throw new TeamUndoRefused(CHANGED_SINCE);
+  }
+  await claimTeamUndo(actor, tokenId, "resend");
+  for (const i of items) {
+    const done = await prisma.invitation.updateMany({
+      where: { id: i.invitationId, organizationId: actor.organizationId, status: "pending", expiresAt: new Date(i.newExpiresAt) },
+      data: { expiresAt: new Date(i.prevExpiresAt) },
+    });
+    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+  }
+  return { restored: items.length };
+}
+
+async function undoRoleChanges(actor: TeamActor, tokenId: string, items: { memberId: string; from: string; to: string }[]) {
+  const byId = await undoRoles(actor, items);
+  await claimTeamUndo(actor, tokenId, "role");
+  for (const i of items) {
+    const m = byId.get(i.memberId)!;
+    await upsertMemberMirror(
+      { id: i.memberId, organizationId: actor.organizationId, userId: m.userId, role: i.from, createdAt: m.createdAt },
+      { strict: true },
+    );
+    const done = await prisma.member.updateMany({
+      where: { id: i.memberId, organizationId: actor.organizationId, role: i.to },
+      data: { role: i.from },
+    });
+    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+  }
+  return { restored: items.length };
+}
+
+/** Reverse a Team write. Takes only the server-signed token the forward write returned. */
 export async function undoTeamChange(actor: TeamActor, token: string): Promise<{ restored: number }> {
   let envelope;
   try {
@@ -367,35 +420,16 @@ export async function undoTeamChange(actor: TeamActor, token: string): Promise<{
     throw new TeamUndoRefused("Only the person who made a change can undo it.");
   }
   const body = envelope.body;
+  if (body.kind === "role") return undoRoleChanges(actor, envelope.id, body.items);
+  if (body.kind === "revoke") return undoRevoke(actor, envelope.id, body.items);
+  return undoResend(actor, envelope.id, body.items);
+}
 
-  if (body.kind === "role") {
-    const byId = await undoRoles(actor, body.items);
-    await claimTeamUndo(actor, envelope.id, "role");
-    for (const i of body.items) {
-      const m = byId.get(i.memberId)!;
-      await upsertMemberMirror(
-        { id: i.memberId, organizationId: actor.organizationId, userId: m.userId, role: i.from, createdAt: m.createdAt },
-        { strict: true },
-      );
-      const done = await prisma.member.updateMany({ where: { id: i.memberId, organizationId: actor.organizationId, role: i.to }, data: { role: i.from } });
-      if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
-    }
-    return { restored: body.items.length };
+/** Which permission an Undo needs: read from the signed token, never the client. */
+export function peekTeamUndoKind(token: string): "role" | "revoke" | "resend" {
+  try {
+    return verifyTeamUndoToken(token).body.kind;
+  } catch (e) {
+    throw new TeamUndoRefused(e instanceof Error ? e.message : "That Undo is no longer valid.");
   }
-
-  const byId = await undoInvites(actor, body.kind, body.items);
-  await claimTeamUndo(actor, envelope.id, body.kind);
-  for (const i of body.items) {
-    const inv = byId.get(i.invitationId)!;
-    const where = { id: i.invitationId, organizationId: actor.organizationId };
-    const done =
-      body.kind === "revoke"
-        ? await prisma.invitation.updateMany({ where: { ...where, status: "cancelled" }, data: { status: "pending" } })
-        : await prisma.invitation.updateMany({
-            where: { ...where, status: "pending", expiresAt: inv.expiresAt },
-            data: { expiresAt: new Date((i as { prevExpiresAt: number }).prevExpiresAt) },
-          });
-    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
-  }
-  return { restored: body.items.length };
 }

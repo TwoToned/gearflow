@@ -93,7 +93,7 @@ function Notes({ truncated }: { truncated: boolean }) {
     <>
       {truncated && (
         <p className="text-caption text-muted" data-testid="schedule-truncated">
-          Some earlier jobs that are still running may be missing: the Schedule reads a bounded set.
+          Part of this schedule could not be read in full: jobs marked not checked may clash, and some finished jobs may be missing.
         </p>
       )}
       <p className="text-caption text-muted">Solid bar holds gear · dashed bar is pencilled and holds nothing</p>

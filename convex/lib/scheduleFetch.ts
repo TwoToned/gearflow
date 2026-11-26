@@ -4,8 +4,9 @@
  * `ReadBudget`, so the whole call is bounded however big the org is, and a
  * read the budget could not cover surfaces instead of vanishing:
  *
- * - `truncated`  — the DISPLAY scan stopped before the end of the older jobs (a
- *   finished job that ran long may be missing from the timeline).
+ * - `truncated`  — ANY part of the read was incomplete: a finished older job may
+ *   be missing from the timeline, a job's lines or a model's stock were not read
+ *   in full, or the alive scan was cut. The page says so.
  * - `claimsComplete` — false when the budget cut the scan of jobs that hold or
  *   pencil gear; then no job is "none" and no Gear cell is a number (unknown).
  * - a job whose lines (or a model's stock) were beyond the budget reports
@@ -63,6 +64,11 @@ function isVisible(p: Doc<"projects">, range: DateRange): boolean {
   if (p.isTemplate === true || p.status === "CANCELLED") return false;
   if (p.rentalStartDate == null || p.rentalEndDate == null) return false;
   return p.rentalStartDate <= range.end && p.rentalEndDate >= range.start;
+}
+
+function hasWindow(p: Doc<"projects">): boolean {
+  const { start, end } = getProjectWindow(p);
+  return start != null && end != null;
 }
 
 function overlapsWindow(p: Doc<"projects">, range: DateRange): boolean {
@@ -125,7 +131,7 @@ async function scanProjects(ctx: QueryCtx, s: Scan): Promise<void> {
   const all = () => true;
   const aliveStatuses = [...HARD_PROJECT_STATUSES, ...PENCILLED_PROJECT_STATUSES] as ProjectStatus[];
   const alive = aliveStatuses.map((status) => () =>
-    drain(s, ctx.db.query("projects").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)), false, (p) => p.isTemplate !== true && overlapsWindow(p, range)),
+    drain(s, ctx.db.query("projects").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)), false, (p) => p.isTemplate !== true && hasWindow(p)),
   );
   const steps: (() => Promise<boolean>)[] = [
     ...alive,
@@ -195,6 +201,24 @@ async function readClientNames(ctx: QueryCtx, orgId: string, jobs: Doc<"projects
   return names;
 }
 
+/**
+ * The range the clash words are computed over: the view's range widened to the
+ * whole project window of every alive job drawn in it. A job's word is then the
+ * same in Week, Month and a deep link: it never depends on how much of the job
+ * the view happens to show.
+ */
+function widen(range: DateRange, jobs: Doc<"projects">[]): DateRange {
+  let { start, end } = range;
+  for (const p of jobs) {
+    const w = getProjectWindow(p);
+    if (w.start != null && w.start < start) start = w.start;
+    if (w.end != null && w.end > end) end = w.end;
+  }
+  return { start, end };
+}
+
+const ALIVE: ReadonlySet<string> = new Set([...HARD_PROJECT_STATUSES, ...PENCILLED_PROJECT_STATUSES]);
+
 const byWindowStart = (a: Doc<"projects">, b: Doc<"projects">) => (getProjectWindow(a).start ?? 0) - (getProjectWindow(b).start ?? 0);
 
 export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRange, limits: ScheduleLimits = SCHEDULE_LIMITS): Promise<ScheduleRead> {
@@ -204,7 +228,8 @@ export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRang
 
   const all = [...scan.found.values()];
   const visible = all.filter((p) => isVisible(p, range)).sort(byWindowStart);
-  const alive = candidateBoardProjects(all, range);
+  const wide = widen(range, visible.filter((p) => ALIVE.has(p.status ?? "")));
+  const alive = candidateBoardProjects(all, wide);
   const aliveDocs = alive.map((b) => scan.found.get(b.id)!).sort(byWindowStart);
 
   const lines: Doc<"projectLineItems">[] = [];
@@ -218,10 +243,10 @@ export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRang
   const modelIds = [...new Set(lines.map((l) => l.modelId).filter((m): m is string => !!m))];
   const stock = await readStock(ctx, orgId, modelIds, budget, limits.perModelUnits);
   const inputs: ScheduleFlagInput = {
-    range, projects: all, lines, unreadProjectIds: unread,
+    range: wide, projects: all, lines, unreadProjectIds: unread,
     models: stock.models, assets: stock.assets, bulkAssets: stock.bulkAssets, unknownModelIds: stock.unknown,
     claimsComplete: !scan.claimsCut,
   };
   const clientNames = await readClientNames(ctx, orgId, visible, budget);
-  return { visible, facts: deriveJobFacts(inputs), models: stock.models, clientNames, truncated: scan.truncated, claimsComplete: inputs.claimsComplete, inputs };
+  return { visible, facts: deriveJobFacts(inputs), models: stock.models, clientNames, truncated: scan.truncated || unread.size > 0 || stock.unknown.size > 0 || scan.claimsCut, claimsComplete: inputs.claimsComplete, inputs };
 }

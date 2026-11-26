@@ -7,7 +7,8 @@
 // safe here (no `resolveNow` clamp).
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import { rolePermissions } from "./lib/permissionsCore";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { loadSchedule, SCHEDULE_LIMITS } from "./lib/scheduleFetch";
@@ -77,7 +78,53 @@ async function load(t: T, limits: Partial<typeof SCHEDULE_LIMITS>) {
 
 const jobsOf = (t: T) => t.withIdentity(asUser).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: START, endMs: END });
 
+const NO_JOBS = "test-no-jobs";
+beforeAll(() => {
+  rolePermissions[NO_JOBS] = { ...rolePermissions.member, project: [] };
+});
+afterAll(() => {
+  delete rolePermissions[NO_JOBS];
+});
+
+describe("scheduleBoard.jobs: who may read it", () => {
+  test("a role without project read, and a user who is not in the org, are refused", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await t.run((ctx) => ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: NO_JOBS }));
+    await expect(t.withIdentity({ subject: "user_2", orgId: ORG }).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow();
+    await expect(t.withIdentity({ subject: "user_3", orgId: ORG }).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow();
+    await expect(jobsOf(t)).resolves.toBeTruthy();
+  });
+});
+
 describe("scheduleBoard.jobs: clash words", () => {
+  test("a finished or cancelled job stays none and takes no stock from anyone", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "closed", status: "RETURNED", from: NOW, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "dropped", status: "CANCELLED", from: NOW, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "live", status: "CONFIRMED", from: NOW, to: NOW + 2 * DAY, lines: [{ qty: 1 }] });
+    const res = await jobsOf(t);
+    const by = Object.fromEntries(res.jobs.map((j) => [j.id, j]));
+    expect(by.closed.clash).toBe("none");
+    expect(by.dropped).toBeUndefined();
+    expect(by.live.clash).toBe("none");
+  });
+
+  test("a job reads the same in Week and Month: a clash outside the week still counts", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    // `short` is created second so it is the one that does not fit; the other
+    // job it collides with is only on the 20th, outside the 9-15 week.
+    await seedJob(t, { id: "first", status: "CONFIRMED", from: NOW + 11 * DAY, to: NOW + 11 * DAY, lines: [{ qty: 1 }] });
+    await seedJob(t, { id: "long", status: "CONFIRMED", from: NOW, to: NOW + 20 * DAY, lines: [{ qty: 1 }] });
+    const week = await t.withIdentity(asUser).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: NOW, endMs: NOW + 7 * DAY - 1 });
+    const month = await t.withIdentity(asUser).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: NOW, endMs: NOW + 30 * DAY });
+    expect(week.jobs.find((j) => j.id === "long")?.clash).toBe("clash");
+    expect(month.jobs.find((j) => j.id === "long")?.clash).toBe("clash");
+    expect(week.jobs.find((j) => j.id === "long")?.clashes[0].short).toBe(month.jobs.find((j) => j.id === "long")?.clashes[0].short);
+  });
+
   test("a held job over stock says clash; the one that got there first does not; a pencilled job says would clash", async () => {
     const t = makeT();
     await seedBase(t, 2);
@@ -176,6 +223,17 @@ describe("scheduleBoard: the read is bounded and says so", () => {
     for (let i = 0; i < 5; i++) await seedJob(t, { id: `old${i}`, status: "RETURNED", from: NOW - (50 + i) * DAY, to: NOW - (49 + i) * DAY });
     const read = await load(t, { older: 1 });
     expect(read.visible).toEqual(["in0", "in1", "in2", "in3", "in4"]);
+    expect(read.truncated).toBe(true);
+  });
+
+  test("a spent budget that leaves lines unread is truncated, and the exact-spend case is unread (never read as complete)", async () => {
+    const t = makeT();
+    await seedBase(t, 2);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }, { qty: 1 }] });
+    // 2 project reads leave exactly 2 documents: the job's 2 lines would spend it to zero.
+    const read = await load(t, { reads: 4 });
+    expect(read.facts.a.lineCount).toBeNull();
+    expect(read.facts.a.state).toBe("unknown");
     expect(read.truncated).toBe(true);
   });
 

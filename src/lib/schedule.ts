@@ -13,6 +13,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../convex/_generated/api";
 import { addDays, keyOfMs, weekOf, weekDays, defaultWeek, type WeekStart } from "@/lib/crew-planner";
+import { toCsv } from "@/lib/csv";
 import type { ColorIntent } from "@/lib/status-colors";
 
 export type ScheduleData = FunctionReturnType<typeof api.scheduleBoard.jobs>;
@@ -222,5 +223,19 @@ export function dayFacts(jobs: ScheduleJob[], days: string[]): DayFact[] {
   });
 }
 
+/** The day a phone shows: the one chosen if it is in the week, else today, else the week's first day. */
+export function phoneDayOf(day: string | null, days: string[], todayKey: string): string {
+  if (day && days.includes(day)) return day;
+  return days.includes(todayKey) ? todayKey : days[0];
+}
+
 /** `1 job`, `3 jobs`. */
 export const jobsWord = (n: number): string => `${n} ${n === 1 ? "job" : "jobs"}`;
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+
+/** The range as CSV (through `toCsv`, the formula guard): one row per job shown. */
+export function scheduleCsv(jobs: ScheduleJob[], statusLabel: (s: string) => string): string {
+  const rows = jobs.map((j) => [j.projectNumber, j.name, j.clientName ?? "", statusLabel(j.status), jobFrom(j), jobTo(j), clashWord(j)?.label ?? ""]);
+  return toCsv(["Job", "Name", "Client", "Status", "From", "To", "Gear"], rows);
+}

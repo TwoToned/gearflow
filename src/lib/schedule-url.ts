@@ -44,8 +44,9 @@ export interface ScheduleView {
 }
 
 /** The view the params describe. A legacy `?search=` (global-search deep link) is read as `q` by the caller. */
-export function parseScheduleView(params: URLSearchParams, todayKey: string, startsOn: WeekStart): ScheduleView {
-  const p = ScheduleParamsSchema.parse(Object.fromEntries(SCHEDULE_PARAM_KEYS.map((k) => [k, params.get(k) ?? undefined])));
+export function parseScheduleView(params: URLSearchParams, todayKey: string, startsOn: WeekStart, forceZoom?: ScheduleZoom): ScheduleView {
+  const raw = ScheduleParamsSchema.parse(Object.fromEntries(SCHEDULE_PARAM_KEYS.map((k) => [k, params.get(k) ?? undefined])));
+  const p = forceZoom ? { ...raw, zoom: forceZoom } : raw;
   const anchor = p.date ? (p.zoom === "month" ? monthStart(p.date) : weekOf(p.date, startsOn)) : defaultAnchor(p.zoom, todayKey, startsOn);
   return { zoom: p.zoom, anchor, day: p.day ?? null, job: p.job ?? null };
 }
@@ -58,7 +59,9 @@ export function viewPatch(next: Partial<ScheduleView>, current: ScheduleView, to
   const merged = { ...current, ...next };
   const out: Record<string, string | null> = {};
   out.zoom = merged.zoom === "week" ? null : merged.zoom;
-  out.date = merged.anchor === defaultAnchor(merged.zoom, todayKey, startsOn) ? null : merged.anchor;
+  // The anchor is stored as the range's first day: a week start for Week, the 1st for Month.
+  const anchor = merged.zoom === "month" ? monthStart(merged.anchor) : weekOf(merged.anchor, startsOn);
+  out.date = anchor === defaultAnchor(merged.zoom, todayKey, startsOn) ? null : anchor;
   out.day = merged.day;
   out.job = merged.job;
   return out;

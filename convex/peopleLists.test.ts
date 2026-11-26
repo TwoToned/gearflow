@@ -8,7 +8,7 @@
 import { convexTest, type TestConvex } from "convex-test";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerShardedCounter } from "@convex-dev/sharded-counter/test";
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 
@@ -23,6 +23,16 @@ const asUser = { subject: USER, orgId: ORG };
 const asAgent = { subject: USER, orgId: ORG, akid: KEY };
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 24, 12);
+
+// The reads clamp a caller's `now` to ±48 h of the SERVER clock (`resolveNow`), so a fixed NOW
+// with a real clock stops being honoured two days after it was written. Pin the clock to NOW.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 const day = (n: number) => Math.floor(NOW / DAY) * DAY + n * DAY;
 
 function makeT(): T {

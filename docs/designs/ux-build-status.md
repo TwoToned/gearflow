@@ -172,14 +172,20 @@ Merge order:
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
-| Shared primitives: `FormSheet`, `blankableNumber`, `fieldEditUndo` | Sonnet (Phase 12's) | `claude/ux-forms-sheet` · #1420 | reviewed; one hardening fix (org backstop in `undoFieldEdit`) | merges first; 9, 12, 13, 14 consume |
-| 9 New job wizard, edit sheet, templates (M) | Sonnet | `claude/ux-9-job-wizard` · #1417 | plan approved; slice 1 building | merges before 10 |
-| 10 Job Finance + Tasks & notes tabs (L) | Sonnet | `claude/ux-10-job-finance-tasks` · #1415 | plan approved; Slice A building; + `projectTaskLinks` slice | after 9 |
-| 12 Assets: asset/model pages + sheets (L) | Sonnet | `claude/ux-12-assets` · #1416 | plan approved; Model Archive becomes a true soft archive (the old cascade hard-deleted stock) | merges before 14 |
-| 13 People: lists, records, forms (L) | Sonnet | `claude/ux-13-people` · #1419 | plan approved; slice 1 building | — |
-| 14 Gear: lists, records, forms (L) | Sonnet | `claude/ux-14-gear` · #1418 | plan approved; 14a-1 building | after 12 |
+| Shared primitives: `FormSheet`, `blankableNumber`, `fieldEditUndo` | Sonnet (Phase 12's) | `claude/ux-forms-sheet` · #1420 | **merged** | — |
+| 9 New job wizard, edit sheet, templates (M) | Sonnet | #1417 **merged 2026-11-25** (7c656252); slice 3 #1421 **merged** (febd2811) | **Phase 9 done**, deployed | — |
+| 10 Job Finance + Tasks & notes tabs (L) | Sonnet | #1415 **merged 2026-11-25** (c2e986bf) | **Phase 10 done**, deployed. Post-deploy: owner runs `backfillProjectMargin` (margin ex GST) | — |
+| 12 Assets: asset/model pages + sheets (L) | Sonnet | #1416 **merged** (113de4a3); slice 3 #1426 **merged** (6c176cf1) | done; deployed. Left: slice 2 fixture screenshots (`claude/ux-12-assets-shots`) | — |
+| 13 People: lists, records, forms (L) | Sonnet | #1419 **merged** (4f527fa2); file-rule follow-up #1423 **merged** (463ee37e) | slices 1, 2, B3 done; slice 3 (crew record) open as #1424; slice 4 (sheets + redirects) to come | — |
+| 14 Gear: lists, records, forms (L) | Sonnet | #1418 **merged** (08a64e23); part 2 #1425 open (`claude/ux-14-gear-2`) | 14a-1..3, 14b-1 done; #1425 = 14a-4 + 14b-2 (review fixes pushed c0ee1fd8, needs final verify); 14b-3..5 + 14a-3b on `claude/ux-14-gear-3` | — |
+| Hotfix: model Edit wiped rates/sale stock on save (live prod bug) | overseer | #1422 **merged** (d856a546) | done | owner: spot-check model rates saved before the fix |
 
-All subagents run on Sonnet (owner, 2026-11-24).
+All subagents run on Sonnet (owner, 2026-11-24). **2026-11-25 ~10:40Z: the weekly usage limit stopped every builder until 2026-11-28 08:00 UTC.** Unpushed work was pushed to its branches; resume each builder with SendMessage then.
+
+**Owner decisions pending (end of D2):**
+- Schema: add a `by_fileId`-style holder index so `isFileReferenced` can do an indexed lookup. Today it scans `maintenanceRecords` (cap 5000) and `checkRecords` (cap 2000) and fails closed above that, so an org that large cannot attach files.
+- Whether `update_project` may change status (still deferred).
+- The lapsed `docs/exceptions.md` exceptions: projects.ts/orgProjects collect (expired 2026-10-26) and braces (2026-10-17).
 
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.
@@ -199,3 +205,12 @@ All subagents run on Sonnet (owner, 2026-11-24).
 - Phase 16: `OutletDraft.notes` is dead, and next-due is derived in UTC but shown in local time (can be a day off near midnight).
 - Phase 15: Overbookings `fetchServicesData` misses a run that starts before its date range. The call sheet can't edit a call (needs a narrow `patchCallNative`). The planner's `Export this week`/`Print` and the Accepted colour (`status-colors.ts`) are deferred.
 - Phase 11: `@` palette pages aren't role-gated, and the 800 ms org-switch window.
+- Wave D2 (pre-existing bugs found in review, not fixed in-phase):
+  - `invoicesWrites.createCreditNative` accepts several credit notes per invoice; only the UI stops it.
+  - Sale stock is not returned to the pool on job cancel (it reads as reserved, consistently).
+  - `projectWrites.deleteNative` leaves quotes and invoices orphaned.
+  - Calendar dots and window maths use browser-local midnight, not the org timezone. `overdueCutoff` uses the UTC day.
+  - `overbookingBoard.bundle` uses unbounded `.collect()`s; the range is capped at 366 days.
+  - Client-chosen audit ids: `writeActivityLog` doesn't unique-check, so a pre-written `undo:<id>` can block an Undo.
+  - The edit-sheet Undo bypasses the advisory date-move gate. A Save that also changes managers gets no Undo.
+  - Orphaned uploads from undone attaches (supplier docs, media) need the same server-side sweep as check photos.

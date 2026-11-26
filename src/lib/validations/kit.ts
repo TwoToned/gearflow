@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { blankableNumber } from "./blankable";
 
 export const kitSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
@@ -8,12 +9,13 @@ export const kitSchema = z.object({
   status: z.enum(["AVAILABLE", "CHECKED_OUT", "IN_MAINTENANCE", "RETIRED", "INCOMPLETE"]).default("AVAILABLE"),
   condition: z.enum(["NEW", "GOOD", "FAIR", "POOR", "DAMAGED"]).default("NEW"),
   locationId: z.string().optional(),
-  weight: z.coerce.number().min(0).optional(),
+  // A blank box is BLANK, not 0 (CLAUDE.md: use blankableNumber for any optional money/size field).
+  weight: blankableNumber(z.number().min(0)),
   caseType: z.string().max(200).optional(),
   caseDimensions: z.string().max(200).optional(),
   notes: z.string().max(2000).optional(),
   purchaseDate: z.union([z.coerce.date(), z.literal("")]).optional().transform((val) => val === "" ? undefined : val),
-  purchasePrice: z.coerce.number().min(0).optional(),
+  purchasePrice: blankableNumber(z.number().min(0)),
   image: z.string().optional(),
   images: z.array(z.string()).default([]),
   checkMode: z.enum(["KIT_LEVEL", "PER_ITEM"]).default("KIT_LEVEL"),

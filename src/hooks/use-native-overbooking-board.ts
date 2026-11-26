@@ -3,11 +3,6 @@
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { api } from "../../convex/_generated/api";
 
-/** Preference default (spec decision, WS3 #942): 30-day horizon, URL params +
- *  localStorage own persistence — no org-settings storage. */
-export const DEFAULT_OVERBOOKING_RANGE_DAYS = 30;
-export const OVERBOOKING_RANGE_STORAGE_KEY = "overbookings.rangeDays";
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE = 60_000;
 
@@ -17,7 +12,7 @@ export interface OverbookingProjectRef {
   projectNumber: string;
 }
 
-export interface OverbookingGearRow {
+interface OverbookingGearRow {
   modelId: string;
   modelName: string;
   qty: number;
@@ -37,14 +32,14 @@ interface OverbookingSaleStockContributingLine {
   quantity: number;
 }
 
-export interface OverbookingSaleStockRow {
+interface OverbookingSaleStockRow {
   modelId: string;
   modelName: string;
   shortfallQty: number;
   contributingSaleLines: OverbookingSaleStockContributingLine[];
 }
 
-export interface OverbookingMissingCrewRow {
+interface OverbookingMissingCrewRow {
   serviceId: string;
   projectId: string;
   projectName: string;
@@ -60,7 +55,7 @@ export interface OverbookingMissingCrewRow {
   shortDays: { day: number; shortfall: number }[];
 }
 
-export interface OverbookingUnconfirmedCrewRow {
+interface OverbookingUnconfirmedCrewRow {
   assignmentId: string;
   crewMemberId: string;
   projectId: string;
@@ -70,7 +65,7 @@ export interface OverbookingUnconfirmedCrewRow {
   status: string;
 }
 
-export interface OverbookingDoubleBookingRow {
+interface OverbookingDoubleBookingRow {
   crewMemberId: string;
   severity: "hard" | "soft";
   label: string;

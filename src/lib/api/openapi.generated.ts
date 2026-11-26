@@ -20976,6 +20976,91 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/kitWrites.editNative": {
+      "post": {
+        "operationId": "kitWrites.editNative",
+        "summary": "kitWrites.editNative (mutation)",
+        "description": "Requires scope: kit:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "kit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "clear": {
+                        "type": "array"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "set": {
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "clear",
+                      "id",
+                      "set"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/kitWrites.markCompleteNative": {
       "post": {
         "operationId": "kitWrites.markCompleteNative",
@@ -21163,6 +21248,160 @@ export const OPENAPI_DOCUMENT = {
                     "required": [
                       "assetId",
                       "kitId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/kitWrites.undoCreateNative": {
+      "post": {
+        "operationId": "kitWrites.undoCreateNative",
+        "summary": "kitWrites.undoCreateNative (mutation)",
+        "description": "Requires scope: kit:delete. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "kit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/kitWrites.undoEditNative": {
+      "post": {
+        "operationId": "kitWrites.undoEditNative",
+        "summary": "kitWrites.undoEditNative (mutation)",
+        "description": "Requires scope: kit:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "kit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
                     ],
                     "additionalProperties": false
                   },
@@ -28498,6 +28737,87 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/modelWrites.duplicateNative": {
+      "post": {
+        "operationId": "modelWrites.duplicateNative",
+        "summary": "modelWrites.duplicateNative (mutation)",
+        "description": "Requires scope: model:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "model"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "sourceId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "sourceId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/modelWrites.restoreNative": {
       "post": {
         "operationId": "modelWrites.restoreNative",
@@ -28657,6 +28977,83 @@ export const OPENAPI_DOCUMENT = {
         "operationId": "modelWrites.undoArchiveNative",
         "summary": "modelWrites.undoArchiveNative (mutation)",
         "description": "Requires scope: model:update. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "model"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 200,
+                    "description": "Required for mutations. A retry with the same key replays the first result instead of double-writing."
+                  }
+                },
+                "required": [
+                  "args",
+                  "idempotencyKey"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/modelWrites.undoDuplicateNative": {
+      "post": {
+        "operationId": "modelWrites.undoDuplicateNative",
+        "summary": "modelWrites.undoDuplicateNative (mutation)",
+        "description": "Requires scope: model:create. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
         "x-stability": "tracks-app",
         "tags": [
           "model"

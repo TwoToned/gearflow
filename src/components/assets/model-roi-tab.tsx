@@ -45,12 +45,18 @@ type ModelRoi = ModelRoiData;
 export function ModelRoiTab({ modelId }: { modelId: string }) {
   const [scope, setScope] = useState<RoiScope>("earned");
   const [allTime, setAllTime] = useState(false);
+  // Cost and payback are what the model OWNS the capital for: hidden until asked for, like
+  // Show margin on a job. A `noFinancials` key never gets `fleetCost` at all (absent, not
+  // null), so the toggle and everything behind it are absent for that caller.
+  const [showCost, setShowCost] = useState(false);
 
   const window = useMemo(() => (allTime ? undefined : defaultRoiWindow(scope)), [allTime, scope]);
 
   const { data, isLoading } = useModelRoi(modelId, { scope, from: window?.from, to: window?.to });
 
   if (isLoading || !data) return <Skeleton className="h-72 w-full" />;
+  const costAvailable = !data.costRedacted;
+  const costShown = costAvailable && showCost;
 
   // Mobile card layout for the "where it earned" projects table (rendered below `md`).
   const projectColumns: ColumnDef<ModelRoi["projects"][number]>[] = [
@@ -131,6 +137,17 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        {costAvailable ? (
+          <button
+            type="button"
+            aria-pressed={showCost}
+            onClick={() => setShowCost((s) => !s)}
+            className="ml-auto min-h-11 text-table-cell text-ink-2 underline-offset-4 hover:underline md:min-h-8"
+          >
+            {showCost ? "Hide cost & payback" : "Show cost & payback"}
+          </button>
+        ) : null}
       </div>
 
       {data.truncated && (
@@ -147,15 +164,19 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
         <Panel>
           <Stat bright figure={formatCurrency(data.revenue)} label="Revenue attributed" />
         </Panel>
-        <Panel>
-          <Stat
-            figure={data.fleetCost != null ? formatCurrency(data.fleetCost) : "—"}
-            label={`Fleet cost (${data.unitsOwned} unit${data.unitsOwned === 1 ? "" : "s"})`}
-          />
-        </Panel>
-        <Panel>
-          <Stat figure={formatPayback(data.payback)} label="Paid for itself" />
-        </Panel>
+        {costShown ? (
+          <Panel>
+            <Stat
+              figure={data.fleetCost != null ? formatCurrency(data.fleetCost) : "—"}
+              label={`Fleet cost (${data.unitsOwned} unit${data.unitsOwned === 1 ? "" : "s"})`}
+            />
+          </Panel>
+        ) : null}
+        {costShown ? (
+          <Panel>
+            <Stat figure={formatPayback(data.payback)} label="Paid for itself" />
+          </Panel>
+        ) : null}
         <Panel>
           <Stat
             figure={data.revenuePerUnit != null ? formatCurrency(data.revenuePerUnit) : "—"}
@@ -164,7 +185,7 @@ export function ModelRoiTab({ modelId }: { modelId: string }) {
         </Panel>
       </div>
 
-      {data.fleetCost == null ? (
+      {!costShown ? null : data.fleetCost == null ? (
         <p className="text-caption text-muted">
           {data.unitsOwned === 0
             ? "No units of this model are in the fleet, so there is no capital to measure against."

@@ -1,40 +1,6 @@
-"use client";
-// use-client: interactive client route (below-the-fold interactivity) (R-8.1.1)
+import { redirect } from "next/navigation";
 
-import Link from "next/link";
-import { ModelForm } from "@/components/assets/model-form";
-import { RequirePermission } from "@/components/auth/require-permission";
-import { FadeIn } from "@/components/ui/motion";
-import { PageHeader } from "@/components/layout/page-header";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-
-export default function NewModelPage() {
-  return (
-    <RequirePermission resource="model" action="create">
-    <FadeIn>
-      <div className="mx-auto max-w-5xl space-y-4">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/assets/models" />}>Models</BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>New model</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <PageHeader title="New equipment model" description="Create a model template that assets will be based on." />
-        <ModelForm />
-      </div>
-    </FadeIn>
-    </RequirePermission>
-  );
+/** Create is a sheet over the Models list now (UX Phase 12, D62): this old route is a deep link that opens it. */
+export default function NewModelRedirect() {
+  redirect("/assets/models?new-model=1");
 }

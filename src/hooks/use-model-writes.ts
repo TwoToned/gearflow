@@ -25,6 +25,8 @@ export function useModelWrites() {
   const archiveM = useMutation(api.modelWrites.archiveNative);
   const restoreM = useMutation(api.modelWrites.restoreNative);
   const undoArchiveM = useMutation(api.modelWrites.undoArchiveNative);
+  const duplicateM = useMutation(api.modelWrites.duplicateNative);
+  const undoDuplicateM = useMutation(api.modelWrites.undoDuplicateNative);
   const bulkRatesM = useMutation(api.modelWrites.bulkUpdateRatesNative);
   const undoFieldEditsM = useMutation(api.modelWrites.undoModelFieldEditsNative);
   const setReorderM = useMutation(api.modelWrites.setReorderLevelsNative);
@@ -70,6 +72,19 @@ export function useModelWrites() {
     undoArchive: async (id: string, auditId: string): Promise<{ restored: string[] }> => {
       const org = requireOrg();
       return await undoArchiveM({ id, orgId: org, auditId, now: Date.now(), actor: actor() });
+    },
+    /** A new model copying `sourceId`'s fields only. `auditId` is the handle `undoDuplicate` takes. */
+    duplicate: async (sourceId: string): Promise<{ id: string; name: string; auditId: string }> => {
+      const org = requireOrg();
+      const id = createId();
+      const auditId = createId();
+      const r = await duplicateM({ sourceId, id, orgId: org, now: Date.now(), actor: actor(), auditId });
+      return { ...r, auditId };
+    },
+    /** Deletes exactly the copy one `duplicate` made (refused if edited or used since). */
+    undoDuplicate: async (id: string, auditId: string): Promise<{ deleted: string }> => {
+      const org = requireOrg();
+      return await undoDuplicateM({ id, orgId: org, auditId, now: Date.now(), actor: actor() });
     },
     bulkUpdateRates: async (
       modelIds: string[],

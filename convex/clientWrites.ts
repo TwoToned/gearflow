@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 
@@ -161,20 +162,18 @@ export const updateNative = mutation({
     if (doc.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
     assertClientFields(patch);
 
-    await ctx.db.patch(doc._id, { ...sanitizeClientSet(patch), updatedAt: now });
+    const set = sanitizeClientSet(patch);
+    await ctx.db.patch(doc._id, { ...set, updatedAt: now });
 
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "client",
-      entityId: id,
-      entityName: patch.name ?? doc.name,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated client ${patch.name ?? doc.name}`,
-      createdAt: now,
-    });
+    // ONE audit row holding the before/after of ONLY the fields that changed: the sheet's Undo
+    // (`peopleBulkWrites.undoManyNative`) reads it back and restores exactly those fields.
+    const diff = diffFields(doc, { ...doc, ...set }, Object.keys(set));
+    const entityName = patch.name ?? doc.name;
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId, entityType: "client", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated client ${entityName}` });
+    } else {
+      await writeActivityLog(ctx, { id: auditId, organizationId: orgId, action: "UPDATE", entityType: "client", entityId: id, entityName, userId: actor.userId, userName: actor.userName, summary: `Updated client ${entityName}`, createdAt: now });
+    }
 
     return { id };
   },

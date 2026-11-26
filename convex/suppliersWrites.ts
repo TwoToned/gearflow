@@ -6,6 +6,7 @@ import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { writeActivityLog } from "./lib/audit";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CONTACTS_PER_SUPPLIER, MAX_DOCUMENTS_PER_SUPPLIER } from "./lib/supplierRecordCore";
 
@@ -108,8 +109,15 @@ export const updateNative = mutation({
     const doc = await ctx.db.query("suppliers").withIndex("by_cuid", (q) => q.eq("id", a.id)).first();
     if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Supplier not found");
 
-    await ctx.db.patch(doc._id, { ...toDoc(a), updatedAt: a.now });
-    await logSupplier(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated supplier ${a.name}` });
+    const next = toDoc(a);
+    await ctx.db.patch(doc._id, { ...next, updatedAt: a.now });
+    // The before/after of ONLY the changed fields, for the sheet's exact Undo (`peopleBulkWrites.undoManyNative`).
+    const diff = diffFields(doc, { ...doc, ...next }, Object.keys(next));
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "supplier", entityId: a.id, entityName: a.name, auditId: a.auditId, actor, now: a.now, diff, summary: `Updated supplier ${a.name}` });
+    } else {
+      await logSupplier(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UPDATE", id: a.id, name: a.name, summary: `Updated supplier ${a.name}` });
+    }
     return { id: a.id };
   },
 });

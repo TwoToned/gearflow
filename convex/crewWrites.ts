@@ -11,6 +11,7 @@ import { sanitizeClientSet } from "./lib/sanitizeSet";
 import { writeActivityLog } from "./lib/audit";
 import { bumpCrewMemberCounters, bumpCountersForTable } from "./lib/counters";
 import { buildChanges } from "./lib/auditChanges";
+import { diffFields, recordFieldEdit } from "./lib/fieldEditUndo";
 import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
 import { MAX_CREW_DOCUMENTS } from "./lib/crewDocumentCore";
@@ -222,19 +223,19 @@ export const updateNative = mutation({
     // built `details.changes` from before→after over CREW_AUDIT_FIELDS).
     const entityName = `${afterRest.firstName ?? doc.firstName} ${afterRest.lastName ?? doc.lastName}`;
     const changes = buildChanges(beforeRest, afterRest, CREW_AUDIT_FIELDS);
-    await writeActivityLog(ctx, {
-      id: auditId,
-      organizationId: orgId,
-      action: "UPDATE",
-      entityType: "crew_member",
-      entityId: id,
-      entityName,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: `Updated crew member ${entityName}`,
-      details: changes.length > 0 ? { changes } : undefined,
-      createdAt: now,
-    });
+    // The before/after of ONLY the fields this edit touched, beside the readable `changes`, so the
+    // sheet's Undo (`peopleBulkWrites.undoManyNative`) restores exactly them.
+    const touched = [...new Set([...Object.keys(setObj), ...clear.filter((k) => !NEVER_CLEAR.has(k))])];
+    const diff = diffFields(beforeRest, afterRest, touched);
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId, entityType: "crew_member", entityId: id, entityName, auditId, actor, now, diff, summary: `Updated crew member ${entityName}`, extraDetails: changes.length > 0 ? { changes } : undefined });
+    } else {
+      await writeActivityLog(ctx, {
+        id: auditId, organizationId: orgId, action: "UPDATE", entityType: "crew_member", entityId: id, entityName,
+        userId: actor.userId, userName: actor.userName, summary: `Updated crew member ${entityName}`,
+        details: changes.length > 0 ? { changes } : undefined, createdAt: now,
+      });
+    }
 
     return { id };
   },

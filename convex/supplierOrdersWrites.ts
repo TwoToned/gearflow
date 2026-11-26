@@ -191,20 +191,14 @@ export const updateNative = mutation({
 
     await ctx.db.patch(order._id, patch);
 
-    await writeActivityLog(ctx, {
-      id: a.auditId,
-      organizationId: a.orgId,
-      action: "UPDATE",
-      entityType: "supplierOrder",
-      entityId: a.id,
-      entityName: order.orderNumber,
-      userId: actor.userId,
-      userName: actor.userName,
-      summary: a.status !== previousStatus
-        ? `Changed order ${order.orderNumber} status to ${a.status}`
-        : `Updated order ${order.orderNumber}`,
-      createdAt: a.now,
-    });
+    const summary = a.status !== previousStatus ? `Changed order ${order.orderNumber} status to ${a.status}` : `Updated order ${order.orderNumber}`;
+    // The before/after of ONLY the changed fields, for the sheet's exact Undo (`undoHireChangeNative` is field-agnostic).
+    const diff = diffFields(order, { ...order, ...patch }, ["status", "orderDate", "expectedDate", "notes", "receivedDate"]);
+    if (diff) {
+      await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, auditId: a.auditId, actor, now: a.now, diff, summary });
+    } else {
+      await writeActivityLog(ctx, { id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "supplierOrder", entityId: a.id, entityName: order.orderNumber, userId: actor.userId, userName: actor.userName, summary, createdAt: a.now });
+    }
 
     return { id: a.id };
   },

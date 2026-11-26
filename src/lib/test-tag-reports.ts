@@ -5,7 +5,7 @@
  */
 export type ReportKey = "register" | "overdue" | "session" | "item-history" | "due-schedule" | "class-summary" | "tester-activity" | "failed-items" | "bulk-summary" | "compliance-certificate";
 export type ReportFormat = "pdf" | "csv";
-export type ReportFilter = "dateFrom" | "dateTo" | "search" | "testTagAssetId" | "bulkAssetId";
+type ReportFilter = "dateFrom" | "dateTo" | "search" | "testTagAssetId" | "bulkAssetId";
 
 export interface ReportConfig {
   key: ReportKey;

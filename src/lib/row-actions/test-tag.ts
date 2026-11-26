@@ -67,30 +67,48 @@ export interface TestTagRecordCtx {
   onExportReport?: () => void;
 }
 
+/** Delete…: red, last, with a confirm that names what goes with it. */
+function deleteEntry(testTagId: string, onDelete: () => void): ActionItem {
+  return {
+    key: "delete",
+    label: "Delete…",
+    group: "danger",
+    icon: Trash2,
+    danger: true,
+    onSelect: onDelete,
+    confirm: {
+      title: `Delete ${testTagId}?`,
+      body: "This permanently removes the item, every test recorded against it and their readings. The linked asset is not touched. This can't be undone.",
+      confirmLabel: "Delete item",
+    },
+  };
+}
+
 /**
  * The record page's ⋯ (UX Phase 14, 14b-4, D80): Print label (when there is a test to print), Retire (active items; its toast carries the exact Undo, so no confirm)
  * or Reactivate (retired ones), and Delete… ONLY for a retired item: red, last, with a confirm that names what goes with it.
  */
+/** What an ACTIVE item offers beyond the documents: Schedule… then Retire. */
+function activeEntries(ctx: TestTagRecordCtx): Entry[] {
+  return [
+    ctx.onSchedule && { key: "schedule", label: "Schedule…", group: "organise", icon: CalendarPlus, onSelect: ctx.onSchedule },
+    ctx.onRetire && { key: "retire", label: "Retire", group: "organise", icon: Archive, onSelect: ctx.onRetire },
+  ];
+}
+
+/** What a RETIRED item offers: Reactivate, then Delete… (last). */
+function retiredEntries(ctx: TestTagRecordCtx): Entry[] {
+  return [
+    ctx.onReactivate && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
+    ctx.onDelete && deleteEntry(ctx.testTagId, ctx.onDelete),
+  ];
+}
+
 export function buildTestTagRecordActions(ctx: TestTagRecordCtx): ActionMenuSpec {
   const entries: Entry[] = [
     ctx.onPrintLabel && { key: "print-label", label: "Print label", group: "documents", icon: Printer, onSelect: ctx.onPrintLabel },
     ctx.onExportReport && { key: "export-report", label: "Export report", group: "documents", icon: FileDown, onSelect: ctx.onExportReport },
-    !ctx.retired && ctx.onSchedule && { key: "schedule", label: "Schedule…", group: "organise", icon: CalendarPlus, onSelect: ctx.onSchedule },
-    !ctx.retired && ctx.onRetire && { key: "retire", label: "Retire", group: "organise", icon: Archive, onSelect: ctx.onRetire },
-    ctx.retired && ctx.onReactivate && { key: "reactivate", label: "Reactivate", group: "organise", icon: RotateCcw, onSelect: ctx.onReactivate },
-    ctx.retired && ctx.onDelete && {
-      key: "delete",
-      label: "Delete…",
-      group: "danger",
-      icon: Trash2,
-      danger: true,
-      onSelect: ctx.onDelete,
-      confirm: {
-        title: `Delete ${ctx.testTagId}?`,
-        body: "This permanently removes the item, every test recorded against it and their readings. The linked asset is not touched. This can't be undone.",
-        confirmLabel: "Delete item",
-      },
-    },
+    ...(ctx.retired ? retiredEntries(ctx) : activeEntries(ctx)),
   ];
   return { items: entries.filter((e): e is ActionItem => !!e) };
 }

@@ -23,6 +23,8 @@ beforeAll(() => {
 
 const nav = vi.hoisted(() => ({ search: "", push: vi.fn(), replace: vi.fn() }));
 vi.mock("@/components/test-tag/test-tag-sheet-host", () => ({ TestTagSheetHost: () => null }));
+// The Schedule dialog is proven on its own; here it is a marker, so what the record hands it is what is tested.
+vi.mock("@/components/test-tag/schedule-test-dialog", () => ({ ScheduleTestDialog: (p: { items: { id: string; assetId: string | null }[] | null }) => (p.items ? <div data-testid="schedule">{`schedule:${p.items[0].id}/${p.items[0].assetId}`}</div> : null) }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push, replace: nav.replace }),
   usePathname: () => "/test-and-tag/t1",
@@ -194,5 +196,35 @@ describe("TestTagRecord", () => {
     await openMenu(user).catch(() => {});
     expect(screen.queryByText("Reactivate")).toBeNull();
     expect(screen.queryByText("Delete…")).toBeNull();
+  });
+
+  it("Export report opens that item's history PDF (reports:view) and Schedule… hands the dialog the linked asset (maintenance:create); each is absent without its permission and Schedule… on a retired item", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    perms.allowed = new Set(["testTag:update", "reports:view", "maintenance:create"]);
+    const user = userEvent.setup();
+    const first = render(<TestTagRecord id="t1" orgId="org1" />);
+    await openMenu(user);
+    await user.click(await screen.findByText("Export report"));
+    expect(open).toHaveBeenCalledWith("/api/test-tag-reports/item-history?format=pdf&testTagAssetId=t1", "_blank");
+    await openMenu(user);
+    await user.click(await screen.findByText("Schedule…"));
+    expect(screen.getByTestId("schedule").textContent).toBe("schedule:t1/a1");
+    first.unmount();
+
+    perms.allowed = new Set(["testTag:update"]);
+    const second = render(<TestTagRecord id="t1" orgId="org1" />);
+    await openMenu(user);
+    expect(await screen.findByText("Retire")).toBeTruthy();
+    expect(screen.queryByText("Export report")).toBeNull();
+    expect(screen.queryByText("Schedule…")).toBeNull();
+    second.unmount();
+
+    perms.allowed = new Set(["testTag:update", "maintenance:create"]);
+    data.item = item({ status: "RETIRED", isActive: false });
+    render(<TestTagRecord id="t1" orgId="org1" />);
+    await openMenu(user);
+    expect(await screen.findByText("Reactivate")).toBeTruthy();
+    expect(screen.queryByText("Schedule…")).toBeNull();
+    open.mockRestore();
   });
 });

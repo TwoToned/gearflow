@@ -1,6 +1,7 @@
 import { v, ConvexError } from "convex/values";
 import { createId } from "@paralleldrive/cuid2";
 import { mutation } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -15,6 +16,9 @@ import * as enums from "./lib/validators";
 import { getKitByCuid } from "./lib/kits";
 import { stampLocationMovement } from "./lib/locationMovement";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
+import { kitCostGuard } from "./lib/gearCostRedact";
+import { KIT_COST_FIELDS } from "./lib/gearCostFields";
+import { assertWithinUndoWindow } from "./lib/undoWindow";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 
 /**
@@ -161,7 +165,8 @@ export const createNative = mutation({
     if (fields.categoryId) await assertRefInOrg(ctx, "categories", fields.categoryId, fields.organizationId);
     if (fields.locationId) await assertRefInOrg(ctx, "locations", fields.locationId, fields.organizationId);
 
-    await ctx.db.insert("kits", fields);
+    // What the kit cost is a cost field: a `noFinancials` key cannot set it on create either (the write follows the read).
+    await ctx.db.insert("kits", (await kitCostGuard(ctx)).row(fields));
     await stampLocationMovement(ctx, fields.organizationId, null, fields.locationId ?? null, fields.createdAt ?? fields.updatedAt ?? 0);
     // Advance the asset-tag counter (parity — createKit reserved 1 after insert).
     await reserveAssetTagCounter(ctx, fields.organizationId, 1, fields.createdAt ?? fields.updatedAt ?? 0);
@@ -176,7 +181,8 @@ export const createNative = mutation({
       userId: actor.userId,
       userName: actor.userName,
       summary: `Created kit ${fields.assetTag} - ${fields.name}`,
-      details: { created: { assetTag: fields.assetTag, name: fields.name } },
+      // `serverSavedAt` lets the exact Undo (`undoCreateNative`) enforce its window on the server clock.
+      details: { kind: "kitCreate", serverSavedAt: Date.now(), created: { assetTag: fields.assetTag, name: fields.name } },
       kitId: fields.id,
       createdAt: fields.createdAt ?? fields.updatedAt ?? 0,
     });
@@ -245,6 +251,183 @@ export const updateNative = mutation({
     });
 
     return { id };
+  },
+});
+
+/** The fields the Kit sheet writes, and so the only ones its Undo restores. Status is NOT here (D75). */
+const KIT_EDIT_FIELDS = ["assetTag", "name", "description", "categoryId", "condition", "locationId", "weight", "caseType", "caseDimensions", "notes", "purchaseDate", "purchasePrice", "tags", "checkMode", "xeroAccountCode"] as const;
+
+const kitEditSet = v.object({
+  assetTag: v.optional(v.string()),
+  name: v.optional(v.string()),
+  description: v.optional(v.string()),
+  categoryId: v.optional(v.string()),
+  condition: v.optional(enums.AssetCondition),
+  locationId: v.optional(v.string()),
+  weight: v.optional(v.number()),
+  caseType: v.optional(v.string()),
+  caseDimensions: v.optional(v.string()),
+  notes: v.optional(v.string()),
+  purchaseDate: v.optional(v.number()),
+  purchasePrice: v.optional(v.number()),
+  tags: v.optional(v.array(v.string())),
+  checkMode: v.optional(enums.KitCheckMode),
+  xeroAccountCode: v.optional(v.string()),
+});
+
+/** Refuses a tag another kit of this org already holds (an Undo restoring an old tag must not collide either). */
+async function assertTagFree(ctx: MutationCtx, orgId: string, tag: string, exceptId: string): Promise<void> {
+  const dup = await ctx.db.query("kits").withIndex("by_organizationId_assetTag", (q) => q.eq("organizationId", orgId).eq("assetTag", tag)).first();
+  if (dup && dup.id !== exceptId) throw new ConvexError({ code: "DUPLICATE_ASSET_TAG", message: `Asset tag "${tag}" already exists` });
+}
+
+/** `set` / `clear` with the kit cost fields (`KIT_COST_FIELDS`) removed for a caller whose cost is hidden (a `noFinancials` key). */
+async function withoutHiddenKitCost<S extends Record<string, unknown>>(ctx: MutationCtx, set: S, clear: string[]): Promise<{ set: S; clear: string[] }> {
+  if (!(await kitCostGuard(ctx)).hidden) return { set, clear };
+  const kept = Object.fromEntries(Object.entries(set).filter(([f]) => !(KIT_COST_FIELDS as readonly string[]).includes(f))) as S;
+  return { set: kept, clear: clear.filter((f) => !(KIT_COST_FIELDS as readonly string[]).includes(f)) };
+}
+
+/** A kit with no tags and a save that sends `[]` are the same state: drop the empty list so a no-op save writes nothing and offers no Undo. */
+function withoutNoopEmptyTags<S extends { tags?: string[] }>(set: S, doc: { tags?: string[] | null }): S {
+  if (!set.tags || set.tags.length > 0 || doc.tags?.length) return set;
+  const { tags: _empty, ...rest } = set;
+  void _empty;
+  return rest as S;
+}
+
+/**
+ * An Undo restores EVERY field its edit changed, so for a caller whose cost is hidden (a `noFinancials` key) it
+ * refuses as a whole when the plan would touch what the kit cost (set OR clear): otherwise undoing a user's price
+ * edit would let the key rewrite a number it cannot read (the write follows the read).
+ */
+async function assertHiddenCostUntouched(ctx: MutationCtx, fields: string[]): Promise<void> {
+  if (!(await kitCostGuard(ctx)).hidden) return;
+  if (!fields.some((f) => (KIT_COST_FIELDS as readonly string[]).includes(f))) return;
+  throw new ConvexError({ code: "NOT_UNDOABLE", message: "That change touched what the kit cost, which this key can't see, so it can't be undone here." });
+}
+
+/**
+ * The Kit sheet's save (UX Phase 14, 14b-2): `set` writes fields, `clear` empties them (the old `updateNative`
+ * could not clear a field: an omitted arg leaves it alone). Only KIT_EDIT_FIELDS may be named, so status, the
+ * photos and the flags are untouched. One field-edit audit row records the changed fields; the toast's Undo is
+ * `undoEditNative`. A save that changed nothing writes nothing and returns `changed: false`.
+ */
+export const editNative = mutation({
+  returns: v.object({ id: v.string(), changed: v.boolean() }),
+  args: { orgId: v.string(), id: v.string(), set: kitEditSet, clear: v.array(v.string()), actor: actorValidator, auditId: v.string(), now: v.number() },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const doc = await getKitByCuid(ctx, a.id);
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found: " + a.id);
+    // What the kit COST to buy is a cost field: a `noFinancials` key can neither set nor clear it (the write follows the read).
+    const hiddenCost = await withoutHiddenKitCost(ctx, a.set, a.clear);
+    const set = withoutNoopEmptyTags(hiddenCost.set, doc);
+    const clear = hiddenCost.clear;
+    const clears = clear.filter((f) => (KIT_EDIT_FIELDS as readonly string[]).includes(f) && f !== "name" && f !== "assetTag");
+    if (clears.length !== clear.length) throw new ConvexError("That field can't be cleared here");
+    assertKitFields(set);
+    if (set.assetTag && set.assetTag !== doc.assetTag) await assertTagFree(ctx, a.orgId, set.assetTag, a.id);
+    if (set.categoryId) await assertRefInOrg(ctx, "categories", set.categoryId, a.orgId);
+    if (set.locationId) await assertRefInOrg(ctx, "locations", set.locationId, a.orgId);
+
+    const next: Record<string, unknown> = { ...doc, ...set };
+    for (const f of clears) delete next[f];
+    const diff = diffFields(doc, next, KIT_EDIT_FIELDS);
+    if (!diff) return { id: a.id, changed: false };
+    const patch: Record<string, unknown> = { ...set, updatedAt: a.now };
+    for (const f of clears) patch[f] = undefined;
+    await ctx.db.patch(doc._id, patch);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, (next.locationId as string | undefined) ?? undefined, a.now);
+    await recordFieldEdit(ctx, { orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: (next.assetTag as string) ?? doc.assetTag, auditId: a.auditId, actor, summary: `Updated kit ${doc.assetTag}`, diff, now: a.now, links: { kitId: a.id } });
+    return { id: a.id, changed: true };
+  },
+});
+
+/** The exact Undo of `editNative` (ids only; refuses if a changed field was edited again since, by another person, or after 10 minutes). */
+export const undoEditNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const named = await getKitByCuid(ctx, a.id);
+    await undoFieldEdit(ctx, {
+      orgId: a.orgId, entityType: "kit", entityId: a.id, entityName: named?.assetTag ?? a.id, auditId: a.auditId, actor, now: a.now,
+      load: async () => (named && named.organizationId === a.orgId ? named : null),
+      apply: async (doc, plan) => {
+        const fields = [...Object.keys(plan.set), ...plan.clear];
+        if (fields.some((f) => !(KIT_EDIT_FIELDS as readonly string[]).includes(f))) throw new ConvexError("This change can't be undone");
+        await assertHiddenCostUntouched(ctx, fields);
+        if (typeof plan.set.assetTag === "string") await assertTagFree(ctx, a.orgId, plan.set.assetTag, a.id);
+        if (typeof plan.set.categoryId === "string") await assertRefInOrg(ctx, "categories", plan.set.categoryId, a.orgId);
+        if (typeof plan.set.locationId === "string") await assertRefInOrg(ctx, "locations", plan.set.locationId, a.orgId);
+        const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };
+        for (const f of plan.clear) patch[f] = undefined;
+        await ctx.db.patch(doc._id, patch);
+        if (fields.includes("locationId")) await stampLocationMovement(ctx, a.orgId, doc.locationId, (plan.set.locationId as string | undefined) ?? undefined, a.now);
+      },
+    });
+    return { id: a.id };
+  },
+});
+
+/** Every table whose rows point at a kit by `kitId` (each has a `by_kitId` index): a kit any of them names is not "just created". */
+const KIT_REFERENCE_TABLES = [
+  "kitSerializedItems", "kitBulkItems", "projectLineItems", "kitMedia", "kitCheckItems",
+  "groupTemplateItems", "maintenanceRecords", "checkRecords", "assetScanLogs", "kitRevenueAllocations",
+] as const;
+
+/** Does ANY row (any org: the indexes are global and a cross-org row still means this id is in use) name this kit? */
+async function kitIsReferenced(ctx: MutationCtx, kitId: string): Promise<boolean> {
+  for (const table of KIT_REFERENCE_TABLES) {
+    const q = ctx.db.query(table) as unknown as {
+      withIndex: (n: "by_kitId", f: (b: { eq: (k: "kitId", v: string) => unknown }) => unknown) => { first: () => Promise<unknown> };
+    };
+    if (await q.withIndex("by_kitId", (b) => b.eq("kitId", kitId)).first()) return true;
+  }
+  return false;
+}
+
+/**
+ * The exact Undo of `createNative` (ids only): removes the kit only while it is exactly as created (unedited, and
+ * nothing in `KIT_REFERENCE_TABLES` names it: no members, job lines, photos, checks, templates, maintenance,
+ * check records, scan history or revenue allocations), by the person who created it, inside the 10-minute server
+ * window, once. It deletes only the kit row it created.
+ */
+export const undoCreateNative = mutation({
+  returns: v.object({ id: v.string() }),
+  args: { orgId: v.string(), id: v.string(), auditId: v.string(), now: v.number(), actor: actorValidator },
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "kit");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "kit", "delete");
+    const actor = await resolveActor(ctx, a.actor);
+    const row = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+    const d = row?.details as { kind?: string; serverSavedAt?: number } | undefined;
+    if (!row || row.organizationId !== a.orgId || row.entityType !== "kit" || row.entityId !== a.id || row.action !== "CREATE" || d?.kind !== "kitCreate" || typeof d.serverSavedAt !== "number") {
+      throw new ConvexError("This kit can't be un-created");
+    }
+    if (row.userId !== actor.userId) throw new ConvexError("Only the person who created this kit can undo it");
+    assertWithinUndoWindow(d.serverSavedAt, Date.now(), "change");
+    const marker = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", `undo:${a.auditId}`)).first();
+    if (marker && marker.organizationId === a.orgId) throw new ConvexError("This kit was already undone");
+    const doc = await getKitByCuid(ctx, a.id);
+    if (!doc || doc.organizationId !== a.orgId) throw new ConvexError("Kit not found");
+    if (doc.updatedAt !== row.createdAt) throw new ConvexError("This kit was changed since: it can't be undone");
+    if (await kitIsReferenced(ctx, a.id)) throw new ConvexError("This kit has members, jobs, photos, checks or history now, so it can't be undone");
+    await ctx.db.delete(doc._id);
+    await stampLocationMovement(ctx, a.orgId, doc.locationId, undefined, a.now);
+    await writeActivityLog(ctx, {
+      id: `undo:${a.auditId}`, organizationId: a.orgId, action: "UNDO", entityType: "kit", entityId: a.id, entityName: doc.assetTag,
+      userId: actor.userId, userName: actor.userName, summary: `Undid the creation of kit ${doc.assetTag}`, details: { undoOf: a.auditId }, createdAt: a.now,
+    });
+    return { id: a.id };
   },
 });
 
@@ -549,6 +732,9 @@ export const agentOps: AgentOpsAnnotations = {
   archiveNative: { danger: "high" },
   createNative: { danger: "medium" },
   deleteNative: { danger: "high" },
+  editNative: { danger: "medium", summary: "Edit a kit's own fields (set and clear); never its status, members or photos." },
+  undoEditNative: { danger: "high", summary: "Exactly undo a recent kit edit by its audit id (refuses if a changed field was edited again since)." },
+  undoCreateNative: { danger: "high", summary: "Exactly undo the creation of a kit by its audit id (refuses once it has members, jobs, photos, checks or edits)." },
   markCompleteNative: { danger: "medium", summary: "Clear a kit's reported-missing marker (Mark complete). The kit becomes bookable again." },
   undoMarkCompleteNative: { danger: "medium", summary: "Exactly undo a Mark complete by its audit id." },
   removeBulkItemNative: { danger: "medium" },

@@ -26241,6 +26241,68 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "kitWrites.editNative",
+    "module": "kitWrites",
+    "fn": "editNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "clear",
+        "optional": false,
+        "type": "array"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "set",
+        "optional": false,
+        "type": "object"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "9acf18f9a385f299",
+    "returnsSha": "1cb2a7e9146018e1",
+    "stability": "tracks-app",
+    "summary": "Edit a kit's own fields (set and clear); never its status, members or photos.",
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "kitWrites.markCompleteNative",
     "module": "kitWrites",
     "fn": "markCompleteNative",
@@ -26402,6 +26464,110 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitWrites.undoCreateNative",
+    "module": "kitWrites",
+    "fn": "undoCreateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "delete",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "delete"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo the creation of a kit by its audit id (refuses once it has members, jobs, photos, checks or edits).",
+    "danger": "high",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "kitWrites.undoEditNative",
+    "module": "kitWrites",
+    "fn": "undoEditNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "kit",
+    "action": "update",
+    "scopePairs": [
+      {
+        "resource": "kit",
+        "action": "update"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "ab8c571d6cd63c08",
+    "returnsSha": "8b114161049d5d20",
+    "stability": "tracks-app",
+    "summary": "Exactly undo a recent kit edit by its audit id (refuses if a changed field was edited again since).",
+    "danger": "high",
     "mcpTier": null,
     "agentAccess": null,
     "deniedReason": null
@@ -71053,10 +71219,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1372,
-  agentReachable: 734,
+  total: 1375,
+  agentReachable: 737,
   queries: 486,
-  mutations: 886,
+  mutations: 889,
   agentReachableQueries: 350,
-  agentReachableMutations: 384,
+  agentReachableMutations: 387,
 } as const;

@@ -17,6 +17,7 @@ import { useLocations } from "@/hooks/use-locations";
 import { useOrgTags } from "@/hooks/use-org-tags";
 import { usePaginatedTableResult } from "@/hooks/use-paginated-table-result";
 import { useStableNow } from "@/hooks/use-stable-now";
+import { KitSheetHost } from "@/components/kits/kit-sheet-host";
 import { useKitWrites } from "@/hooks/use-kit-writes";
 import { useWarehouseWrites } from "@/hooks/use-warehouse-writes";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -109,23 +110,26 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
     downloadCsv(toCsv(["Tag", "Name", "State", "Items", "Location"], rows), "kits.csv");
   };
 
-  useKeyboardShortcut("n", () => canCreate && router.push("/kits/new"));
+  const openNew = () => router.push("/kits?new=1");
+  useKeyboardShortcut("n", () => canCreate && openNew());
 
   const rows = items.map((k) =>
     kitRowOf(
       k,
       buildKitActions(k.assetTag, {
         onOpen: () => router.push(`/kits/${k.id}`),
-        onEdit: canUpdate ? () => router.push(`/kits/${k.id}/edit`) : undefined,
+        onEdit: canUpdate ? () => router.push(`/kits/${k.id}?edit=1`) : undefined,
+        onDuplicate: canCreate ? () => router.push(`/kits/${k.id}?copy=1`) : undefined,
         onMarkComplete: canUpdate && k.state?.reportedMissing ? () => void markComplete(k.id, k.assetTag) : undefined,
         onForceReturn: canCheckIn && k.state?.key === "CHECKED_OUT" ? () => void forceReturn([k.id]) : undefined,
       }),
     ),
   );
   const photos = React.useMemo(() => new Map(items.map((k) => [k.id, k.media])), [items]);
-  const primary: ListPrimary | undefined = canCreate ? { label: "New kit", onSelect: () => router.push("/kits/new") } : undefined;
+  const primary: ListPrimary | undefined = canCreate ? { label: "New kit", onSelect: openNew } : undefined;
 
   return (
+    <>
     <ListPage
       spec={KITS_SPEC}
       title="Kits"
@@ -154,5 +158,7 @@ function KitsListInner({ orgId }: { orgId: string | undefined }) {
       empty={{ title: "No kits yet", description: "Bundle gear that always travels together. Create your first kit with New kit.", action: primary }}
       toolbarExtra={<UrlSavedViewsMenu tableId="kits" spec={KITS_SPEC} state={state} setState={setState} />}
     />
+    {canCreate && <KitSheetHost mode="new" />}
+    </>
   );
 }

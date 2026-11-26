@@ -34982,6 +34982,63 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": null
   },
   {
+    "operation": "modelWrites.duplicateNative",
+    "module": "modelWrites",
+    "fn": "duplicateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "sourceId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c02308addaef7f58",
+    "returnsSha": "84923f8b0996be7f",
+    "stability": "tracks-app",
+    "summary": "Duplicate a model: a new catalogue entry copying its fields only (no assets, stock or accessories).",
+    "danger": "low",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "modelWrites.restoreNative",
     "module": "modelWrites",
     "fn": "restoreNative",
@@ -35130,6 +35187,58 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "privilegedArgs": [],
     "argsSha": "679beeea00a4769f",
     "returnsSha": "18d6454b02fa257b",
+    "stability": "tracks-app",
+    "summary": null,
+    "danger": "medium",
+    "mcpTier": null,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "modelWrites.undoDuplicateNative",
+    "module": "modelWrites",
+    "fn": "undoDuplicateNative",
+    "kind": "mutation",
+    "guard": "orgPermission",
+    "resource": "model",
+    "action": "create",
+    "scopePairs": [
+      {
+        "resource": "model",
+        "action": "create"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "actor",
+        "optional": false,
+        "type": "object"
+      },
+      {
+        "name": "auditId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "now",
+        "optional": false,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "679beeea00a4769f",
+    "returnsSha": "1c194cb7aab9b629",
     "stability": "tracks-app",
     "summary": null,
     "danger": "medium",
@@ -71110,10 +71219,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1373,
-  agentReachable: 735,
+  total: 1375,
+  agentReachable: 737,
   queries: 486,
-  mutations: 887,
+  mutations: 889,
   agentReachableQueries: 350,
-  agentReachableMutations: 385,
+  agentReachableMutations: 387,
 } as const;

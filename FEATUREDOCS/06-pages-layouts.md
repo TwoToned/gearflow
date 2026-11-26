@@ -67,9 +67,9 @@ already-pending or already-active tab is always a no-op. Regression test:
 | `/assets/registry/[id]` | Asset detail (tabs: info, history, maintenance, media) |
 | `/assets/registry/[id]/edit` | Edit asset |
 | `/assets/models` | Equipment model list |
-| `/assets/models/new` | Create model |
+| `/assets/models/new` | Redirects to `/assets/models?new-model=1` (the model sheet, [08](./08-assets.md)) |
 | `/assets/models/[id]` | Model detail (specs, assets, kits, accessories, media) |
-| `/assets/models/[id]/edit` | Edit model |
+| `/assets/models/[id]/edit` | Redirects to `/assets/models/[id]?edit-model=[id]` (the model sheet) |
 | `/assets/categories` | Category list (table with indented children) |
 | `/assets/categories/[id]` | Category detail (subcategories, models & kits tabs) |
 | `/availability` | Availability calendar (top-level) — draws RENTAL window bars, not the PROJECT window (deliberate, WS2 #941 — pricing's window is what's visually "booked"; see [11-availability.md](./11-availability.md)) |

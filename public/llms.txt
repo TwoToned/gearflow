@@ -14,7 +14,7 @@ Auth: `Authorization: Bearer <api key>` (Settings → API keys). Bearer-only —
 
 An operation absent from `/operations` is a 404 at `/ops/{operation}` — the surface is closed by default.
 
-## Operations (735 agent-reachable)
+## Operations (737 agent-reachable)
 
 ### (uncategorised)
 - `categorySlotsWrites.moveSubHireGroupToCategory` (mutation, scope: project:manage_line_items,subHire:update)
@@ -392,9 +392,11 @@ An operation absent from `/operations` is a 404 at `/ops/{operation}` — the su
 - `modelWrites.archiveNative` (mutation, scope: model:delete)
 - `modelWrites.bulkUpdateRatesNative` (mutation, scope: model:update)
 - `modelWrites.createNative` (mutation, scope: model:create)
+- `modelWrites.duplicateNative` (mutation, scope: model:create)
 - `modelWrites.restoreNative` (mutation, scope: model:update)
 - `modelWrites.setReorderLevelsNative` (mutation, scope: model:update)
 - `modelWrites.undoArchiveNative` (mutation, scope: model:update)
+- `modelWrites.undoDuplicateNative` (mutation, scope: model:create)
 - `modelWrites.undoModelFieldEditsNative` (mutation, scope: model:update)
 - `modelWrites.undoSaleStockNative` (mutation, scope: model:update)
 - `modelWrites.updateNative` (mutation, scope: model:update)

@@ -469,5 +469,11 @@ line-item design.
   caller's fallback (class `CLASS_I`, the org's default interval). ONE resolver (`convex/lib/categoryTestDefaults.ts`)
   feeds the per-asset registration, the backfill and the model edit's propagation to its T&T items. A category's default
   applies when an item is registered or a model is saved; changing a category's default does not rewrite existing items.
+  **A blank class means INHERIT**: `modelWrites` stores the model's own class only when the caller chose one (it no
+  longer stores a hard `CLASS_I`), and the model sheet says what a blank class or interval would inherit (`inherits
+  Class II · every 6 months from its category`). A model that already stores a class keeps it as its own (no backfill).
+  **A model edit rewrites only the items that follow the model** (`convex/lib/testTagPropagation.ts`): an item's class,
+  type or interval is rewritten only when it still equals the model's PREVIOUS effective value; an item set on its own
+  is left alone, and an edit that changes no T&T default rewrites no item.
 - **Permissions**: Uses `"model"` resource (no dedicated category permission resource)
 - **Sidebar**: Under Assets with `Tags` icon, `resource: "model"`

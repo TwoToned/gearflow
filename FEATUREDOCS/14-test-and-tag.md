@@ -30,8 +30,9 @@ live (a subscription, not a one-shot).
   three fact columns (Dates, Item, Place). Next due is last test + interval, never typed (a failed item says `After repair`).
 - **Tabs**: Overview · Tests (newest first, readings and the tester, `Show 25 more · n left`) · History (the audit log).
   There is no Files tab: a test row carries no files.
-- **`Record test`** is the one primary (the Scan page's Test & tag mode); `Edit` is the real sheet; ⋯ holds `Retire`
-  (active item) or `Reactivate` (retired), and `Delete…` ONLY for a retired item (red, last, naming that every test and
+- **`Record test`** is the one primary (the Scan page's Test & tag mode); `Edit` is the real sheet; ⋯ holds `Print label`
+  (when the item has a test: the browser print dialog over the one `LabelTemplate`, the latest test, for an active or a
+  retired item), `Retire` (active item) or `Reactivate` (retired), and `Delete…` ONLY for a retired item (red, last, naming that every test and
   its readings go too).
 - **Edit sheet** (D80, `TestTagSheet`, `?edit=1`, `TestTagSheetHost`): the fields `testTagEditWrites.editNative` sets
   (description, class, type, make, model, serial, location, interval, profile, outlets, notes, and one link: an asset OR

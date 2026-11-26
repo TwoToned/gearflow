@@ -252,9 +252,10 @@ describe("the exact Delete Undo", () => {
   test("refuses when its parent was deleted since, or a category with that id exists again", async () => {
     const t = makeT();
     await seed(t);
-    await del(t);
-    await del(t, "root", "d2");
-    await expect(undoDel(t)).rejects.toMatchObject({ data: { code: "CHANGED_SINCE" } });
+    await del(t, "leaf", "dl"); // a leaf: nothing to move, so only its PARENT can make the Undo refuse
+    await del(t, "mid", "dm"); // its parent goes away
+    await expect(undoDel(t, "dl", asUser, ACTOR, "leaf")).rejects.toMatchObject({ data: { code: "CHANGED_SINCE" } });
+    expect(await cat(t, "leaf")).toBeNull();
     const u = makeT();
     await seed(u);
     await del(u);

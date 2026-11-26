@@ -74,8 +74,13 @@ const rec = (over: Record<string, unknown>) => ({
   ...over,
 });
 const PAGE = {
-  items: [rec({}), rec({ id: "m2", title: "Service fan", overdue: true, scheduledDate: NOW - 86_400_000, assignedTo: null, cost: 120 })],
-  total: 2,
+  items: [
+    rec({}),
+    rec({ id: "m2", title: "Service fan", overdue: true, scheduledDate: NOW - 86_400_000, assignedTo: null, cost: 120 }),
+    rec({ id: "m3", title: "Annual PM", type: "PREVENTATIVE" }),
+    rec({ id: "m4", title: "Old job", status: "COMPLETED", completedDate: NOW - 86_400_000 }),
+  ],
+  total: 4,
   page: 1,
   pageSize: 25,
   totalPages: 1,
@@ -185,6 +190,19 @@ describe("MaintenanceList (smoke)", () => {
     nav.search = "dialog=schedules";
     render(<MaintenanceList />);
     expect(screen.getByTestId("schedules")).toBeTruthy();
+  });
+
+  it("a preventative open row offers Check off cycle… for ITS record; a completed row offers neither verb", async () => {
+    const user = userEvent.setup();
+    render(<MaintenanceList />);
+    await user.click(screen.getByRole("button", { name: "Annual PM actions" }));
+    await user.click(await screen.findByText("Check off cycle…"));
+    expect(nav.push).toHaveBeenCalledWith("/maintenance?dialog=checkoff&record=m3");
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Old job actions" }));
+    expect(await screen.findByRole("menuitem", { name: /^Open/ })).toBeTruthy();
+    expect(screen.queryByText("Mark done…")).toBeNull();
+    expect(screen.queryByText("Check off cycle…")).toBeNull();
   });
 
   it("an open row offers Mark done… (the Complete dialog for that record); Check off cycle… only for a preventative one", async () => {

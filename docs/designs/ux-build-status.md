@@ -175,17 +175,22 @@ Merge order:
 | Shared primitives: `FormSheet`, `blankableNumber`, `fieldEditUndo` | Sonnet (Phase 12's) | `claude/ux-forms-sheet` · #1420 | **merged** | — |
 | 9 New job wizard, edit sheet, templates (M) | Sonnet | #1417 **merged 2026-11-25** (7c656252); slice 3 #1421 **merged** (febd2811) | **Phase 9 done**, deployed | — |
 | 10 Job Finance + Tasks & notes tabs (L) | Sonnet | #1415 **merged 2026-11-25** (c2e986bf) | **Phase 10 done**, deployed. Post-deploy: owner runs `backfillProjectMargin` (margin ex GST) | — |
-| 12 Assets: asset/model pages + sheets (L) | Sonnet | #1416 **merged** (113de4a3); slice 3 #1426 **merged** (6c176cf1) | done; deployed. Left: slice 2 fixture screenshots (`claude/ux-12-assets-shots`) | — |
-| 13 People: lists, records, forms (L) | Sonnet | #1419 **merged** (4f527fa2); file-rule follow-up #1423 **merged** (463ee37e) | slices 1, 2, B3 done; slice 3 (crew record) open as #1424; slice 4 (sheets + redirects) to come | — |
-| 14 Gear: lists, records, forms (L) | Sonnet | #1418 **merged** (08a64e23); part 2 #1425 open (`claude/ux-14-gear-2`) | 14a-1..3, 14b-1 done; #1425 = 14a-4 + 14b-2 (review fixes pushed c0ee1fd8, needs final verify); 14b-3..5 + 14a-3b on `claude/ux-14-gear-3` | — |
+| 12 Assets: asset/model pages + sheets (L) | Sonnet | #1416 **merged** (113de4a3); slice 3 #1426 **merged** (6c176cf1) | **Phase 12 done**, deployed. Shots: `claude/ux-12-models-shots`, `claude/ux-12-assets-shots` | — |
+| 13 People: lists, records, forms (L) | Sonnet | #1419 (4f527fa2), #1423 (463ee37e), #1424 (299382d4), #1430 (37e93c5e), all **merged** | **Phase 13 done**, deployed. Slice 3 = crew record + crew documents; slice 4 = People sheets, create Undo (`convex/lib/peopleReferences.ts` FK map + schema walk), New job for client. Shots: `claude/ux-13-people-shots`, `claude/ux-13-sheets-shots` | — |
+| 14 Gear: lists, records, forms (L) | Sonnet | #1418 (08a64e23), #1425 (b5be478e), #1431 (47134827), #1432 (a74b950b), #1433 (56a8346f), #1434 (4bec1794), all **merged** | **Phase 14 done**, deployed. 14b-3 maintenance record + parts; 14b-4 T&T record + Edit sheet + Retire Undo; 14b-5 category record + D77 defaults; 14a-3b maintenance/T&T dialogs. Shots: `claude/ux-14-gear-shots` | — |
+| CI: shard the unit suite under the 10-min T-11 budget | Sonnet + overseer | #1428 **merged** (25d6cbf9) | done. 3 shards (~3 min each); `Tests` merges blob reports and enforces the coverage floor once, and fails (never skips) when a shard fails | — |
 | Hotfix: model Edit wiped rates/sale stock on save (live prod bug) | overseer | #1422 **merged** (d856a546) | done | owner: spot-check model rates saved before the fix |
 
-All subagents run on Sonnet (owner, 2026-11-24). **2026-11-25 ~10:40Z: the weekly usage limit stopped every builder until 2026-11-28 08:00 UTC.** Unpushed work was pushed to its branches; resume each builder with SendMessage then.
+All subagents run on Sonnet (owner, 2026-11-24). The weekly usage limit stopped every builder on 2026-11-25 ~10:40Z; it reset early and the wave resumed 2026-11-26 06:30Z with no lost work.
+
+**Wave D2 done 2026-11-26.** Phases 9, 10, 12, 13 and 14 are merged and deployed (prod 307 after each merge). Ratchets re-baselined after the wave: any 103→79, date-format 12→10, collect (full) 696→689, knip 392→391; complexity holds at 631. The Tests job hit its 10-minute timeout on #1424; fixed by sharding (#1428), not by raising the timeout (R-10.2 / T-11).
 
 **Owner decisions pending (end of D2):**
 - Schema: add a `by_fileId`-style holder index so `isFileReferenced` can do an indexed lookup. Today it scans `maintenanceRecords` (cap 5000) and `checkRecords` (cap 2000) and fails closed above that, so an org that large cannot attach files.
 - Whether `update_project` may change status (still deferred).
 - The lapsed `docs/exceptions.md` exceptions: projects.ts/orgProjects collect (expired 2026-10-26) and braces (2026-10-17).
+- Optional schema: an index on test records by (org, item, test date) for an exact single-record "latest test" read. Not needed now: labels pick the record matching the item's stored `lastTestDate` and fail closed if it isn't found.
+- `testTag:generate_reports` is declared in the role tables but enforced nowhere; the report routes and actions now require `reports:view`. Keep the extra permission (and enforce it) or delete it?
 
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.
@@ -214,3 +219,11 @@ All subagents run on Sonnet (owner, 2026-11-24). **2026-11-25 ~10:40Z: the weekl
   - Client-chosen audit ids: `writeActivityLog` doesn't unique-check, so a pre-written `undo:<id>` can block an Undo.
   - The edit-sheet Undo bypasses the advisory date-move gate. A Save that also changes managers gets no Undo.
   - Orphaned uploads from undone attaches (supplier docs, media) need the same server-side sweep as check photos.
+  - Orphaned crew-document files after an undone or failed add need the same sweep.
+  - `incidentWrites` accepts any string in `photos` (no folder check, no `assertAttachableUpload`); maintenance was fixed in 14b-3.
+  - `fileUploads.list` does a per-row `storedFiles` lookup over an org-wide `.collect()`; budget it.
+  - Org export includes crew-document names and expiry (service-gated backup); confirm which role can trigger an export.
+  - The activity CSV strips crew-document details for everyone (it reads with the service identity). A real-caller check would let managers see them.
+  - `categories.detail` collects the org's whole models, kits, assets and media unbounded; `categoriesWrites.updateNative` has no parent-cycle check (the new `editNative` does).
+  - `testTagRecordsWrites` sets the item's `lastTestDate` / next due from EVERY new test, including a backdated one, so entering a historic test pulls the item's next due back. Labels follow the item's `lastTestDate`, so they stay consistent with it.
+  - The people-reference walk doesn't cover polymorphic `entityId` / `entityType` references (e.g. the deprecated `workItemLinks`).

@@ -40,10 +40,18 @@ live (a subscription, not a one-shot).
   field. It is a plain `recordFieldEdit`; the toast Undo is `undoEditNative` (ids only: author, 10-minute server window,
   once, compare-and-set on the fields it changed). **Next due is derived**: a changed interval on a tested item re-derives
   `nextDueDate` (last test + new interval) in the same write, and the Undo restores it; `nextDueDate` is not a settable
-  field. A retired item is not edited (Reactivate first).
+  field. When the interval changed, the audit row also records the dates next due was derived from (`details.guard`:
+  last test, next due) as COMPARED-not-restored inputs, so an Undo refuses once a test has landed since. A retired
+  item is not edited (Reactivate first). A link is set to an id (org-checked when changed) or cleared through `clear`;
+  an empty string is refused.
+- **The sheet sends only what it changed** against the values it OPENED with (`src/lib/changed-edit.ts`, the same rule
+  as the job edit sheet's `buildProjectUpdate`; the Maintenance sheet does the same), so another user's edit made after
+  it opened is never silently reverted.
 - **Retire has an exact Undo** (`retireNative` with an actor and audit id writes the row `undoRetireNative` reads: the
   status, active flag and `updatedAt` it overwrote; refuses unless the author, in the window, once, and the item is
-  still exactly as the retire left it). The Scan page's older retire (no audit id) still retires and offers no Undo.
+  still exactly as the retire left it). It refuses an already-retired item, takes the actor and audit id together or
+  neither, and refuses a reused audit id. The Scan page's older retire (no audit id) still retires and offers no Undo.
+  The attributed actor is always the verified caller (`resolveActor`), never the one in the arguments.
 
 ## Equipment Classes
 - `CLASS_I` — Earth continuity + insulation/leakage

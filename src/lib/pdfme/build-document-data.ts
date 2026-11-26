@@ -99,11 +99,11 @@ export function invoiceLineToDocumentLineItem(line: {
 /**
  * The document's tax rows. A specific invoice describes ITS OWN row: one
  * COMPUTED row whose rate is derived from that row's frozen `taxAmount` over
- * its `subtotal` (`invoiceRowTaxRate`), never the org's current default. A
+ * its taxable base (`invoiceRowTaxRate`), never the org's current default. A
  * live render reads the project's own stored breakdown.
  */
 export function resolveTaxBreakdown(
-  invoice: { subtotal: number; taxAmount: number } | null,
+  invoice: { subtotal: number; taxAmount: number; total?: number } | null,
   storedProjectBreakdown: string | null | undefined,
 ): { rate: number; amount: number }[] {
   if (invoice) {

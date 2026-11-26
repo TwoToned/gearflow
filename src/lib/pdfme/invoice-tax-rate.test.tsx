@@ -45,6 +45,10 @@ describe("a specific invoice's tax row takes its rate from the row", () => {
     expect(invoiceRowTaxRate({ subtotal: 1000, taxAmount: 0 })).toBe(0);
     expect(resolveTaxBreakdown({ subtotal: 1000, taxAmount: 0 }, null)).toEqual([]);
     expect(invoiceRowTaxRate({ subtotal: 0, taxAmount: 5 })).toBe(0);
+    // A FULL invoice keeps the PRE-discount subtotal; its tax was charged on the
+    // post-discount amount (total - tax), so 1000 less 10% at 10% GST is 10%, not 9%.
+    expect(invoiceRowTaxRate({ subtotal: 1000, taxAmount: 90, total: 990 })).toBe(10);
+    expect(resolveTaxBreakdown({ subtotal: 1000, taxAmount: 90, total: 990 }, null)).toEqual([{ rate: 10, amount: 90 }]);
   });
 
   it("a live render (no invoice row) reads the project's own stored breakdown", () => {

@@ -16,6 +16,7 @@ Status, Result. Search matches title, description, tags and (within a read budge
   field-edit audit row per changed record, and ONE toast Undo (`undoBulkEditNative`, ids only, all or nothing,
   author, 10 minutes, once, refuses if a record changed since). Neither verb touches an asset hold: that follows
   STATUS. Complete/Reopen and the parts table are on the record (below); the row's `Mark done…` (open jobs, `CompleteRecordDialog`, same write and exact Undo as the record page) and `Check off cycle…` (open preventative jobs) are dialogs (14a-3b).
+- **A retired asset takes no NEW open job:** `maintenanceWrites.createNative` refuses a SCHEDULED / AWAITING_PARTS / IN_PROGRESS / QA record that links a RETIRED asset (`ASSET_RETIRED`, names the tag). A COMPLETED or CANCELLED record is still allowed (history), and the Retire-on-completion disposal acts on an existing record, so it is unaffected.
 - The page menu holds `Check off cycle…` and `Service schedules…`: dialogs in the URL (`?dialog=checkoff[&record=]` / `?dialog=schedules`) hosted by the list. `/maintenance/due` is only a redirect to `/maintenance?dialog=checkoff` (14a-3b, D44).
 
 ## The Maintenance record (UX Phase 14, 14b-3, `/maintenance/[id]`)

@@ -52,7 +52,7 @@ export function ScheduleTestDialog({ items, onClose }: { items: ScheduleItem[] |
           {plan.skipped.length > 0 && (
             <p className="text-ui-text text-muted" role="status">
               {plan.assetIds.length === 0 ? "Nothing to schedule: " : "Left out: "}
-              {plan.skipped.map((s) => s.name).join(", ")} (no linked asset).
+              {plan.skipped.map((s) => `${s.name} (${s.why})`).join(", ")}.
             </p>
           )}
         </div>

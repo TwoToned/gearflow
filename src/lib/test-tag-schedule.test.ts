@@ -9,6 +9,10 @@ describe("planTestSchedule", () => {
   it("books the linked assets once each and NAMES an item with no linked asset", () => {
     expect(planTestSchedule([A, B, C])).toEqual({ assetIds: ["a1"], skipped: [{ name: "TT-2", why: "no linked asset" }] });
   });
+  it("names a retired item as skipped with its reason, even when it has a linked asset", () => {
+    expect(planTestSchedule([{ ...A, retired: true }, C])).toEqual({ assetIds: ["a1"], skipped: [{ name: "TT-1", why: "retired" }] });
+    expect(planTestSchedule([{ ...A, retired: true }]).assetIds).toEqual([]);
+  });
   it("has nothing to book when no item is linked", () => {
     expect(planTestSchedule([B]).assetIds).toEqual([]);
   });

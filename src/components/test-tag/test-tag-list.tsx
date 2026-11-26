@@ -81,7 +81,7 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
   React.useEffect(() => {
     for (const t of items) seen.current.set(t.id, t);
   }, [items]);
-  const scheduleItem = (t: TestTagSource): ScheduleItem => ({ id: t.id, testTagId: t.testTagId, assetId: t.linkedAsset?.id ?? null });
+  const scheduleItem = (t: TestTagSource): ScheduleItem => ({ id: t.id, testTagId: t.testTagId, assetId: t.linkedAsset?.id ?? null, retired: t.state === "RETIRED" });
 
   useKeyboardShortcut("n", () => canCreate && router.push("/test-and-tag/new"));
 
@@ -147,7 +147,7 @@ function TestTagListInner({ orgId }: { orgId: string | undefined }) {
         buildTestTagBulkActions({
           onPrintTags: () => setPrinting(ids),
           onSchedule: canSchedule
-            ? () => setScheduling(ids.flatMap((id) => { const t = seen.current.get(id); return t && t.state !== "RETIRED" ? [scheduleItem(t)] : []; }))
+            ? () => setScheduling(ids.flatMap((id) => { const t = seen.current.get(id); return t ? [scheduleItem(t)] : []; }))
             : undefined,
         })
       }

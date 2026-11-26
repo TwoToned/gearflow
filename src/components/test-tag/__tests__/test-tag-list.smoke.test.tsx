@@ -34,7 +34,7 @@ vi.mock("@/lib/use-permissions", () => ({ useCanDo: (r: string, a: string) => !p
 // The three dialogs are proven on their own; here they are markers, so the list's wiring (what opens what) is what is tested.
 vi.mock("@/components/test-tag/reports-dialog", () => ({ ReportsDialog: (p: { open: boolean }) => (p.open ? <div data-testid="reports">reports</div> : null) }));
 vi.mock("@/components/test-tag/print-tags-dialog", () => ({ PrintTagsDialog: (p: { ids: string[] | null }) => (p.ids ? <div data-testid="print">{`print:${p.ids.join(",")}`}</div> : null) }));
-vi.mock("@/components/test-tag/schedule-test-dialog", () => ({ ScheduleTestDialog: (p: { items: { id: string; assetId: string | null }[] | null }) => (p.items ? <div data-testid="schedule">{`schedule:${p.items.map((i) => `${i.id}/${i.assetId}`).join(",")}`}</div> : null) }));
+vi.mock("@/components/test-tag/schedule-test-dialog", () => ({ ScheduleTestDialog: (p: { items: { id: string; assetId: string | null }[] | null }) => (p.items ? <div data-testid="schedule">{`schedule:${p.items.map((i) => `${i.id}/${i.assetId}${(i as { retired?: boolean }).retired ? "/retired" : ""}`).join(",")}`}</div> : null) }));
 vi.mock("@/hooks/use-keyboard-shortcut", () => ({ useKeyboardShortcut: () => undefined }));
 vi.mock("@/hooks/use-test-profiles", () => ({ useTestProfiles: () => [{ id: "p1", name: "Leads" }] }));
 vi.mock("@/hooks/use-organization", () => ({ useOrganization: () => ({ data: { settings: { testTag: { dueSoonThresholdDays: 30 } } } }) }));
@@ -193,7 +193,7 @@ describe("TestTagList (smoke)", () => {
     await user.click(await screen.findByRole("button", { name: /Print tags \(2\)/ }));
     expect(screen.getByTestId("print").textContent).toBe("print:t1,t3");
     await user.click(await screen.findByRole("button", { name: /Schedule 2/ }));
-    expect(screen.getByTestId("schedule").textContent).toBe("schedule:t1/a1");
+    expect(screen.getByTestId("schedule").textContent).toBe("schedule:t1/a1,t3/null/retired");
   });
 
   it("without maintenance:create and reports:view neither verb is on a row", async () => {

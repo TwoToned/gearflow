@@ -140,7 +140,7 @@ describe("ScheduleTestDialog", () => {
     render(<ScheduleTestDialog items={[items[1]]} onClose={() => {}} />);
     await user.type(screen.getByLabelText("Date"), "2026-03-02");
     expect((screen.getByRole("button", { name: "Schedule" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByRole("status").textContent).toContain("Nothing to schedule");
+    expect(screen.getByRole("status").textContent).toContain("Nothing to schedule: TT-0002 (no linked asset)");
     expect(writes.create).not.toHaveBeenCalled();
   });
 });

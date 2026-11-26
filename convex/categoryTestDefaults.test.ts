@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { effectiveTestDefaults } from "./lib/categoryTestDefaults";
+import { registerAssetTestTag } from "./lib/testtagBackfill";
 
 const modules = import.meta.glob("./**/*.ts");
 type T = TestConvex<typeof schema>;
@@ -73,14 +74,15 @@ describe("registration reads the category default through the one resolver", () 
     expect(await tt(t, "m_foreign")).toMatchObject({ equipmentClass: "CLASS_I", testIntervalMonths: 3 });
   });
 
-  test("a model edit whose categoryId belongs to another org reads no default from it (the loader is org-checked)", async () => {
+  test("the per-asset registration reads no default from a category of another org (the loader is org-checked)", async () => {
     const t = makeT();
     await seed(t);
-    await t.withIdentity(asUser).mutation(api.testTagAssetsWrites.backfillNative, { orgId: ORG, now: NOW });
-    await t.withIdentity(asUser).mutation(api.modelWrites.updateNative, {
-      id: "m_foreign", orgId: ORG, name: "m_foreign", categoryId: "foreign", requiresTestAndTag: true, now: NOW + 1, actor: { userId: USER, userName: "A" }, auditId: "mf1",
-    } as never).catch(() => null); // the write may also refuse the foreign category outright; either way no foreign default is applied
+    await t.run(async (ctx) => {
+      await registerAssetTestTag(ctx, { organizationId: ORG, assetId: "a_m_foreign", assetTag: "T-m_foreign", modelId: "m_foreign" }, NOW);
+      await registerAssetTestTag(ctx, { organizationId: ORG, assetId: "a_m_inherit", assetTag: "T-m_inherit", modelId: "m_inherit" }, NOW);
+    });
     expect(await tt(t, "m_foreign")).toMatchObject({ equipmentClass: "CLASS_I", testIntervalMonths: 3 });
+    expect(await tt(t, "m_inherit")).toMatchObject({ equipmentClass: "CLASS_II", testIntervalMonths: 6 });
   });
 
   test("a model edit propagates the effective defaults (its own, else its category's) to its existing T&T items", async () => {

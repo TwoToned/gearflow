@@ -87,6 +87,9 @@ export function useTestTagWrites() {
   const undoRecordTestM = useMutation(api.testTagRecordsWrites.undoCreateNative);
   const undoCreateM = useMutation(api.testTagAssetsWrites.undoCreateNative);
   const undoReactivateM = useMutation(api.testTagAssetsWrites.undoReactivateNative);
+  const undoRetireM = useMutation(api.testTagAssetsWrites.undoRetireNative);
+  const editM = useMutation(api.testTagEditWrites.editNative);
+  const undoEditM = useMutation(api.testTagEditWrites.undoEditNative);
 
   const actor = () => ({ userId: session?.user.id ?? "", userName: session?.user.name ?? "" });
   const requireOrg = (): string => { if (!orgId) throw new Error("No active organization"); return orgId; };
@@ -109,7 +112,25 @@ export function useTestTagWrites() {
     },
     retire: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();
-      return await retireM({ id, orgId: org, now: Date.now() });
+      return await retireM({ id, orgId: org, now: Date.now(), actor: actor(), auditId: createId() });
+    },
+    /** The exact reverse of one {@link retire} (ids only; the server reads the retire's own audit row and guards it). */
+    undoRetire: async (id: string): Promise<{ ok: boolean }> => {
+      const org = requireOrg();
+      return await undoRetireM({ orgId: org, id, auditId: createId(), now: Date.now(), actor: actor() });
+    },
+    /**
+     * The Edit sheet's save (`testTagEditWrites.editNative`): sets the filled fields and CLEARS the blank optional ones;
+     * never status. Returns the audit id the toast's Undo takes (`undoEdit`) and whether anything changed.
+     */
+    edit: async (id: string, input: { set: Record<string, unknown>; clear: string[] }): Promise<{ id: string; changed: boolean; auditId: string }> => {
+      const auditId = createId();
+      const r = await editM({ orgId: requireOrg(), id, set: input.set as never, clear: input.clear, actor: actor(), auditId, now: Date.now() });
+      return { ...r, auditId };
+    },
+    /** Exactly reverses {@link edit} (ids only; refuses if a changed field changed since). */
+    undoEdit: async (id: string, auditId: string): Promise<{ id: string }> => {
+      return await undoEditM({ orgId: requireOrg(), id, auditId, now: Date.now(), actor: actor() });
     },
     remove: async (id: string): Promise<{ id: string }> => {
       const org = requireOrg();

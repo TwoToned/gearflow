@@ -54,6 +54,7 @@ export function RecordShell({
   meta,
   banner,
   onEdit,
+  primary,
   menu,
   tabs,
   rail,
@@ -66,6 +67,8 @@ export function RecordShell({
   /** One quiet strip above the tabs (Archived / Merged into…). */
   banner?: React.ReactNode;
   onEdit?: () => void;
+  /** The one primary action beside Edit (`Record test`), when the record has one. */
+  primary?: DetailHeaderProps["primary"];
   menu?: DetailHeaderProps["menu"];
   tabs: RecordTab[];
   rail?: React.ReactNode;
@@ -83,7 +86,7 @@ export function RecordShell({
         <span aria-hidden="true"> › </span>
         <span className="text-ink-2">{title}</span>
       </nav>
-      <DetailHeader title={title} status={status} meta={meta} onEdit={onEdit} menu={menu} strip={banner} />
+      <DetailHeader title={title} status={status} meta={meta} onEdit={onEdit} primary={primary} menu={menu} strip={banner} />
       <TabStrip items={tabs.map(({ panel: _panel, ...item }) => item)} value={active.value} onValueChange={setTab} idPrefix="rec" />
       <div className={cn("grid gap-8", showRail && "lg:grid-cols-[minmax(0,1fr)_260px]")} role="tabpanel" aria-labelledby={`rec-${active.value}`}>
         <div className="min-w-0">{active.panel}</div>

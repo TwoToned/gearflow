@@ -18,8 +18,40 @@
   explicit allow-list; reads are bounded and say `truncated`.
 - Primary `Register item` (`/test-and-tag/new`). Page menu: `Sync from assets` (the backfill), `Quick test` (the Scan
   page's Test & tag mode), `Reports…` (still the reports page).
-- Deferred to the record slice (14b-4): `Edit` / `Retire…` / `Schedule…` / `Print tags` / `Export report` verbs and
-  the `Reports…` dialog; retire has no exact reverse yet.
+- Deferred to the dialogs slice (14a-3b): `Schedule…`, `Print tags`, `Export report` and the `Reports…` dialog.
+
+## The Test & tag record (UX Phase 14, 14b-4, `/test-and-tag/[id]`)
+`TestTagRecord` (`src/components/test-tag/record/test-tag-record.tsx`) on `RecordShell`, reading `testTagAssets.detail`
+live (a subscription, not a one-shot).
+- **Header word is derived** by the list's own rule (`deriveTestTagState`, `src/lib/test-tag-record-facts.ts`):
+  `18d overdue`, `Due in 5d`, `Not yet tested`, `Passed`, `Failed`, `Retired`, with the org's due-soon horizon.
+- **Overview**: `n of m checks clear` (tested inside its interval, the last test passed, a test profile is set; a check
+  with no input is `not checked`, never a pass), each failing row with its one action (`Record test ›` / `Edit ›`), then
+  three fact columns (Dates, Item, Place). Next due is last test + interval, never typed (a failed item says `After repair`).
+- **Tabs**: Overview · Tests (newest first, readings and the tester, `Show 25 more · n left`) · History (the audit log).
+  There is no Files tab: a test row carries no files.
+- **`Record test`** is the one primary (the Scan page's Test & tag mode); `Edit` is the real sheet; ⋯ holds `Print label`
+  (when the item has a test: the browser print dialog over the one `LabelTemplate`, the latest test, for an active or a
+  retired item), `Retire` (active item) or `Reactivate` (retired), and `Delete…` ONLY for a retired item (red, last, naming that every test and
+  its readings go too).
+- **Edit sheet** (D80, `TestTagSheet`, `?edit=1`, `TestTagSheetHost`): the fields `testTagEditWrites.editNative` sets
+  (description, class, type, make, model, serial, location, interval, profile, outlets, notes, and one link: an asset OR
+  a bulk asset), nothing else. There is NO status field and the tag id is not editable. A blank optional box CLEARS its
+  field. It is a plain `recordFieldEdit`; the toast Undo is `undoEditNative` (ids only: author, 10-minute server window,
+  once, compare-and-set on the fields it changed). **Next due is derived**: a changed interval on a tested item re-derives
+  `nextDueDate` (last test + new interval) in the same write, and the Undo restores it; `nextDueDate` is not a settable
+  field. When the interval changed, the audit row also records the dates next due was derived from (`details.guard`:
+  last test, next due) as COMPARED-not-restored inputs, so an Undo refuses once a test has landed since. A retired
+  item is not edited (Reactivate first). A link is set to an id (org-checked when changed) or cleared through `clear`;
+  an empty string is refused.
+- **The sheet sends only what it changed** against the values it OPENED with (`src/lib/changed-edit.ts`, the same rule
+  as the job edit sheet's `buildProjectUpdate`; the Maintenance sheet does the same), so another user's edit made after
+  it opened is never silently reverted.
+- **Retire has an exact Undo** (`retireNative` with an actor and audit id writes the row `undoRetireNative` reads: the
+  status, active flag and `updatedAt` it overwrote; refuses unless the author, in the window, once, and the item is
+  still exactly as the retire left it). It refuses an already-retired item, takes the actor and audit id together or
+  neither, and refuses a reused audit id. The Scan page's older retire (no audit id) still retires and offers no Undo.
+  The attributed actor is always the verified caller (`resolveActor`), never the one in the arguments.
 
 ## Equipment Classes
 - `CLASS_I` — Earth continuity + insulation/leakage

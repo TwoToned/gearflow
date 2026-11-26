@@ -4,7 +4,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireOrgPermission, resolveActor, type Actor } from "./lib/auth";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { writeActivityLog } from "./lib/audit";
+import { assertAuditIdFree, writeActivityLog } from "./lib/audit";
 import { reserveTestTagIdCounter } from "./lib/testTagIdCounter";
 import { backfillTestTagAssetsCore } from "./lib/testtagBackfill";
 import { assertRefInOrg } from "./lib/orgRef";
@@ -12,7 +12,7 @@ import { assertStrLen, assertNumRange } from "./lib/fieldGuards";
 import * as enums from "./lib/validators";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import type { Doc } from "./_generated/dataModel";
-import { loadUndoableRegisterWrite, requireUntouchedNewItem, type RegisterUndoDetails } from "./lib/ttRegisterUndo";
+import { loadUndoableRegisterWrite, requireStillJustRetired, requireUntouchedNewItem, type RegisterUndoDetails } from "./lib/ttRegisterUndo";
 
 /**
  * Native TEST-TAG-ASSET write mutations (Phase 3 browser-direct — replaces
@@ -235,16 +235,32 @@ export const updateNative = mutation({
   },
 });
 
+/**
+ * Retire. With `actor` + `auditId` (the record page) it writes the audit row `undoRetireNative` reads, carrying what it
+ * overwrote; without them (the Scan page's older caller) it retires exactly as before and offers no exact Undo.
+ */
 export const retireNative = mutation({
   returns: v.object({ id: v.string() }),
-  args: { id: v.string(), orgId: v.string(), now: v.number() },
-  handler: async (ctx, { id, orgId, now }) => {
+  args: { id: v.string(), orgId: v.string(), now: v.number(), actor: v.optional(actorValidator), auditId: v.optional(v.string()) },
+  handler: async (ctx, { id, orgId, now, actor: rawActor, auditId }) => {
     await assertWritesEnabled(ctx, "testTag");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "testTag", "update");
+    // The pair travels together: an actor without an audit id (or the reverse) is a half-formed call.
+    if (!rawActor !== !auditId) throw new ConvexError({ code: "INVALID_FIELD", message: "A retire takes an actor and an audit id together, or neither." });
     const doc = await ctx.db.query("testTagAssets").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!doc || doc.organizationId !== orgId) throw new ConvexError("Test tag asset not found");
+    if (doc.status === "RETIRED" || doc.isActive === false) throw new ConvexError({ code: "ALREADY_RETIRED", message: "That item is already retired." });
+    if (auditId) await assertAuditIdFree(ctx, auditId);
     await ctx.db.patch(doc._id, { status: "RETIRED", isActive: false, updatedAt: now });
+    if (rawActor && auditId) {
+      const actor = await resolveActor(ctx, rawActor);
+      const details: RegisterUndoDetails = {
+        kind: "ttRetire", serverSavedAt: Date.now(),
+        before: { status: doc.status ?? null, isActive: doc.isActive ?? null, updatedAt: doc.updatedAt ?? null },
+      };
+      await logTT(ctx, { orgId, actor, auditId, now, action: "UPDATE", id, name: doc.testTagId, summary: `Retired test tag asset ${doc.testTagId}`, details });
+    }
     return { id };
   },
 });
@@ -344,6 +360,32 @@ export const undoReactivateNative = mutation({
   },
 });
 
+/**
+ * The exact reverse of one `retireNative` (record page): puts back the status, active flag and `updatedAt` it
+ * overwrote. Ids only; refuses unless it is the author, inside the server-clock window, the first undo, and the item
+ * is still exactly as the retire left it (not reactivated, edited or tested since).
+ */
+export const undoRetireNative = mutation({
+  returns: v.object({ ok: v.boolean() }),
+  args: undoArgs,
+  handler: async (ctx, a) => {
+    await assertWritesEnabled(ctx, "testTag");
+    await enforceBrowserWriteLimit(ctx);
+    await requireOrgPermission(ctx, a.orgId, "testTag", "update");
+    const actor = await resolveActor(ctx, a.actor);
+    const { forward, details } = await loadUndoableRegisterWrite(ctx, { orgId: a.orgId, id: a.id, kind: "ttRetire", actorUserId: actor.userId, serverNow: Date.now() });
+    const item = await requireStillJustRetired(ctx, a.orgId, a.id, forward);
+    const b = details.before;
+    await ctx.db.patch(item._id, {
+      status: (b?.status ?? "NOT_YET_TESTED") as Doc<"testTagAssets">["status"],
+      isActive: b?.isActive ?? true,
+      updatedAt: b?.updatedAt ?? undefined,
+    });
+    await logTT(ctx, { orgId: a.orgId, actor, auditId: a.auditId, now: a.now, action: "UNDO", id: a.id, name: item.testTagId, summary: `Reactivated ${item.testTagId} (undo of retire)`, details: { undoOf: forward.id } });
+    return { ok: true };
+  },
+});
+
 // backfill is no-audit (parity). Reconciles the org's serialized-asset T&T registrations.
 export const backfillNative = mutation({
   returns: v.object({ created: v.number(), retired: v.number() }),
@@ -374,5 +416,6 @@ export const agentOps: AgentOpsAnnotations = {
   // the other re-retires one — both "high" by the delete/archive rule.
   undoCreateNative: { danger: "high" },
   undoReactivateNative: { danger: "high" },
+  undoRetireNative: { danger: "high" },
   backfillNative: { danger: "medium" },
 };

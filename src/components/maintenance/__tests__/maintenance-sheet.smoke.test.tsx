@@ -100,6 +100,17 @@ describe("MaintenanceSheet", () => {
     await waitFor(() => expect(writes.undoEdit).toHaveBeenCalledWith("r1", "ed1"));
   });
 
+  it("edit: only what this sheet changed is sent: someone else's edit made after it opened is not reverted", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<MaintenanceSheet open onOpenChange={() => {}} record={REC} />);
+    rerender(<MaintenanceSheet open onOpenChange={() => {}} record={{ ...REC, tags: ["theirs"], photos: ["https://f/new.jpg"] }} />);
+    await user.type(screen.getByLabelText("Description"), "mine");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(writes.edit).toHaveBeenCalled());
+    const [, input] = writes.edit.mock.calls[0] as unknown as [string, { set: Record<string, unknown> }];
+    expect(input.set).toEqual({ description: "mine" });
+  });
+
   it("edit: a caller whose read carried no labour does not see the box", () => {
     render(<MaintenanceSheet open onOpenChange={() => {}} record={{ ...REC, labourVisible: false, cost: "" }} />);
     expect(screen.queryByLabelText("Labour")).toBeNull();

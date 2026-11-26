@@ -1,3 +1,4 @@
+import { blankToUndefined, changedEdit } from "@/lib/changed-edit";
 import { fromDateInput, toDateInput } from "@/lib/date-input";
 import { MAX_MAINTENANCE_MONEY } from "../../convex/lib/maintenanceCost";
 import type { MaintenanceFormValues } from "@/lib/validations/maintenance";
@@ -119,20 +120,25 @@ export interface MaintenanceEditInput {
 const sameIds = (a: string[], b: string[]) => a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 
 /**
- * The edit write's input: every filled field is SET, every blank clearable field is CLEARED, labour only when the read
- * carried it, the asset list only when it changed. Status is never in it.
+ * The edit write's input: ONLY the fields changed against the values the sheet opened with (`before`), so another user's
+ * edit made since is never reverted. A changed blank clearable box CLEARS its field; labour only when the read carried
+ * it; the asset list only when it changed and the job is Scheduled. Status is never in it.
  */
 export function buildMaintenanceEdit(v: MaintenanceSheetValues, before: MaintenanceSheetInitial): MaintenanceEditInput {
-  const set: Record<string, unknown> = { title: v.title.trim(), type: v.type, tags: v.tags, photos: v.photos };
-  const clear: string[] = [];
-  const put = (field: string, value: unknown) => (value === undefined ? clear.push(field) : (set[field] = value));
-  put("description", v.description.trim() || undefined);
-  put("scheduledDate", v.scheduledDate ? fromDateInput(v.scheduledDate) : undefined);
-  put("nextDueDate", v.nextDueDate ? fromDateInput(v.nextDueDate) : undefined);
-  put("assignedToId", v.assignedToId || undefined);
-  put("reportedById", v.reportedById || undefined);
-  if (before.labourVisible) put("cost", v.cost.trim() === "" ? undefined : Number(v.cost));
-  const out: MaintenanceEditInput = { set, clear };
+  const day = (s: string): number | undefined => (s ? fromDateInput(s) : undefined);
+  const labour = (s: string): number | undefined => (s.trim() === "" ? undefined : Number(s));
+  const out: MaintenanceEditInput = changedEdit([
+    ["title", v.title.trim(), before.title.trim()],
+    ["type", v.type, before.type],
+    ["tags", v.tags, before.tags],
+    ["photos", v.photos, before.photos],
+    ["description", blankToUndefined(v.description), blankToUndefined(before.description)],
+    ["scheduledDate", day(v.scheduledDate), day(before.scheduledDate)],
+    ["nextDueDate", day(v.nextDueDate), day(before.nextDueDate)],
+    ["assignedToId", v.assignedToId || undefined, before.assignedToId || undefined],
+    ["reportedById", v.reportedById || undefined, before.reportedById || undefined],
+    ...(before.labourVisible ? [["cost", labour(v.cost), labour(before.cost)] as const] : []),
+  ]);
   if (assetsEditable(before.status) && !sameIds(v.assetIds, before.assetIds)) out.assetIds = v.assetIds;
   return out;
 }

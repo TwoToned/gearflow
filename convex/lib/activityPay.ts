@@ -13,8 +13,29 @@ import { JOB_COST_FIELDS, MEMBER_RATE_FIELDS, ROLE_RATE_FIELDS, SERVICE_CREW_COS
  */
 const PAY_FIELDS: readonly string[] = [...MEMBER_RATE_FIELDS, ...ROLE_RATE_FIELDS, ...SERVICE_CREW_COST_FIELDS];
 
-type WithDetails = { details?: unknown };
+type WithDetails = { details?: unknown; entityType?: string };
 export type ActivityRedactor = <R extends WithDetails>(row: R) => R;
+
+/**
+ * On a MAINTENANCE row, job cost is the record's labour (`cost`) and a part's `unitPrice` (UX Phase 14, D76). They are
+ * named by entity, never globally: `unitPrice` is a visible SELL price on a job line, so a name-only list would hide
+ * the wrong thing. The record's field-edit snapshot (`fieldEdit`), a part write (`partOp`) and Complete / Reopen
+ * (`lifecycle`) all carry before/after by field name, so each is filtered the same way.
+ */
+const MAINTENANCE_COST_FIELDS: ReadonlySet<string> = new Set(["cost", "unitPrice"]);
+const MAINTENANCE_SNAPSHOTS = ["fieldEdit", "partOp", "lifecycle"] as const;
+
+function dropMaintenanceCost(d: Record<string, unknown>): Record<string, unknown> {
+  let next = d;
+  for (const key of MAINTENANCE_SNAPSHOTS) {
+    const snap = d[key] as { before?: unknown; after?: unknown } | undefined;
+    if (!snap || typeof snap !== "object") continue;
+    const before = withoutKeys(snap.before, MAINTENANCE_COST_FIELDS);
+    const after = withoutKeys(snap.after, MAINTENANCE_COST_FIELDS);
+    if (before !== snap.before || after !== snap.after) next = { ...next, [key]: { ...snap, before, after } };
+  }
+  return next;
+}
 
 /** `without(obj)` minus the hidden keys; the same object when none were there. */
 function withoutKeys(obj: unknown, hidden: ReadonlySet<string>): unknown {
@@ -51,5 +72,12 @@ function dropChanges<R extends WithDetails>(row: R, hidden: ReadonlySet<string>)
 export function activityMoneyRedactor(seen: { pay: boolean; jobCost: boolean }): ActivityRedactor {
   const hidden = new Set([...(seen.pay ? [] : PAY_FIELDS), ...(seen.jobCost ? [] : JOB_COST_FIELDS)]);
   if (hidden.size === 0) return (row) => row;
-  return (row) => dropChanges(row, hidden);
+  return (row) => {
+    const redacted = dropChanges(row, hidden);
+    if (seen.jobCost || row.entityType !== "maintenance") return redacted;
+    const d = redacted.details as Record<string, unknown> | null | undefined;
+    if (!d || typeof d !== "object") return redacted;
+    const next = dropMaintenanceCost(d);
+    return next === d ? redacted : { ...redacted, details: next };
+  };
 }

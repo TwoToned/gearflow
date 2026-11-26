@@ -29,6 +29,7 @@ import {
 } from "@/lib/list-views/people";
 import { clientActions, clientBulkActions } from "@/lib/row-actions/people";
 import { useCanDo } from "@/lib/use-permissions";
+import { newJobForClientHref } from "@/lib/new-job-url";
 
 /** Clients list (spec §9f.2): the four stat tiles are strip counts, a sub line and the Type filter. */
 export function ClientsList() {
@@ -42,6 +43,7 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
   const { state, setState } = useListUrlState(CLIENTS_SPEC);
   const canCreate = useCanDo("client", "create");
   const canUpdate = useCanDo("client", "update");
+  const canCreateJob = useCanDo("project", "create");
   const page = useAuthedQuery(api.peopleLists.clientPage, orgId ? { orgId, ...clientQueryArgs(state, now) } : "skip");
   const counts = useAuthedQuery(api.peopleLists.clientSegmentCounts, orgId ? { orgId, now } : "skip");
   const items = React.useMemo(() => (page?.items ?? []) as unknown as ClientSource[], [page]);
@@ -61,7 +63,7 @@ function ClientsListInner({ orgId }: { orgId: string | undefined }) {
       {
         onOpen: () => router.push(`/clients/${c.id}`),
         onOpenJob: first ? () => router.push(`/projects/${first.id}`) : undefined,
-        // `New job for client…` waits for the Phase 9 wizard's client preset (today's wizard ignores a client param).
+        onNewJob: canCreateJob ? () => router.push(newJobForClientHref(c.id)) : undefined,
         onOpenInvoices: moneyVisible ? () => router.push("/finance") : undefined,
         onOpenInXero: c.xeroContactId ? () => window.open(`https://go.xero.com/Contacts/View/${encodeURIComponent(c.xeroContactId!)}`, "_blank", "noopener") : undefined,
         onAddTag: canUpdate ? () => setTagIds([c.id]) : undefined,

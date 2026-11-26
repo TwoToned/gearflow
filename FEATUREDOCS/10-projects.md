@@ -304,7 +304,7 @@ redact `details.fieldEdit` by field name with the same lists as `details.changes
 ### Discount default cascade (QW-4 / #953)
 
 `Client.defaultDiscount` (`convex/schema.ts`) is a per-client default discount
-percentage, set on the client record (`client-form.tsx`, `src/lib/client-fields.ts`).
+percentage, set on the client record (`client-sheet.tsx`, `src/lib/client-fields.ts`).
 It snapshots onto `Project.discountPercent` **at project-create time only**:
 
 - **Server-authoritative (R-9.3).** `projectWrites.createNative` resolves it

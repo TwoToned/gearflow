@@ -13,6 +13,7 @@ import { api } from "../../../../../convex/_generated/api";
 import { ActivityTimeline } from "@/components/activity/activity-timeline";
 import { CanDo } from "@/components/auth/permission-gate";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { newJobForClientHref } from "@/lib/new-job-url";
 import { ClientMergeDialog } from "@/components/clients/client-merge-dialog";
 import { ClientContactsManager, ReadOnlyContactsList } from "@/components/clients/client-contacts-manager";
 import { XeroContactCard } from "@/components/clients/xero-contact-card";
@@ -86,6 +87,7 @@ function ClientRecord({ params }: { params: Promise<{ id: string }> }) {
   const updateOne = useMutation(api.clientWrites.updateNative);
   const { data: session } = useSession();
   const canUpdate = useCanDo("client", "update");
+  const canCreateJob = useCanDo("project", "create");
   const canMerge = useCanDo("invoice", "update");
   const [mergeOpen, setMergeOpen] = useState(false);
   const [xeroOpen, setXeroOpen] = useState(false);
@@ -103,7 +105,7 @@ function ClientRecord({ params }: { params: Promise<{ id: string }> }) {
 
   const menu: ActionMenuSpec = {
     items: [
-      { key: "new-job", label: "New job", group: "organise", icon: FilePlus, onSelect: () => router.push("/projects/new") },
+      ...(canCreateJob && active ? [{ key: "new-job", label: "New job for client…", group: "organise" as const, icon: FilePlus, onSelect: () => router.push(newJobForClientHref(id)) }] : []),
       ...(canUpdate ? [{ key: "xero", label: "Sync / Change Xero mapping…", group: "organise" as const, icon: Link2, onSelect: () => setXeroOpen(true) }] : []),
       ...(canUpdate && canMerge && active ? [{ key: "merge", label: "Merge into another client…", group: "organise" as const, icon: GitMerge, onSelect: () => setMergeOpen(true) }] : []),
       ...(canUpdate && !active && !merged ? [{ key: "reactivate", label: "Reactivate", group: "organise" as const, icon: RotateCcw, onSelect: reactivate }] : []),

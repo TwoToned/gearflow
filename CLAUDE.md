@@ -708,6 +708,17 @@ download is `/api/crew/documents/[id]/file`. `crewWrites.deleteNative` refuses a
 (C2) and deletes their documents and files with them. A People list that reads a capped set reads it
 newest-first and shows a figure that the cap could have cut as `at least $X`, never a confident total.
 
+### People create / edit are URL-driven sheets with exact server Undos (UX Phase 13 slice 4)
+Clients, suppliers, crew and supplier orders are created and edited in `src/components/people/sheets/` (`FormSheet`,
+hosted once per route group in `people-sheet-hosts.tsx`): `?new=1` / `?edit=1` / `?new-order=1`, and the old `/new` and
+`/edit` routes only redirect. **Never add a page form back or push to `/…/new`**; build the link with `sheetHref`. Every
+save goes through `useSheetAnnounce` (ONE toast): the write hooks return `{ id, auditId }` and the Undo takes only those
+ids (`peopleCreateUndo.undoCreateNative` for a create, `peopleBulkWrites.undoManyNative` / `undoHireChangeNative` for an
+edit): never a client-supplied "restore to" value. A create's audit row must be `recordRowOp` and an edit's
+`recordFieldEdit`; a new attachment to one of these records must be added to its blocker in `peopleCreateUndo.ts`, or
+the Undo would delete a record something now hangs off. `New job for client…` is `newJobForClientHref` (the wizard's
+`?clientId=`). FEATUREDOCS/22 "People create and edit sheets".
+
 ### Project status advances itself — add a TRIGGER, never a second patch site
 `convex/lib/projectAutoStatus.ts` is the ONE place a job's status moves as a side
 effect of other work (#1160, FEATUREDOCS/76): quote sent → `QUOTED`, first item

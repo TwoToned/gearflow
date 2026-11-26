@@ -228,9 +228,9 @@ service's line item and the project's `serviceCostTotal`. This is enforced from
 | Path | Component | Description |
 |------|-----------|-------------|
 | `/crew` | CrewDashboard / CrewTable | Manager+ sees dashboard with stats, timesheets, assignments, offers; others see crew list |
-| `/crew/new` | CrewMemberForm | Create crew member |
+| `/crew/new` | redirect | Opens the create sheet over the list (`/crew?new=1`, `CrewSheet`) |
 | `/crew/[id]` | Detail page | Profile picture (upload/remove), contact, rates, skills, assignments (with status management), availability, certifications, time entries, calendar, linked user display |
-| `/crew/[id]/edit` | CrewMemberForm | Edit crew member (includes user account linking) |
+| `/crew/[id]/edit` | redirect | Opens the edit sheet over the record (`/crew/[id]?edit=1`, `CrewSheet`; includes user account linking) |
 | `/crew/planner` | CrewPlannerPage → `CrewPlanner` | The Crew workspace's **Planner** word: the shared Crew head (see "Crew workspace" below) over the one-week planner (see "Crew Planner") |
 | `/crew/timesheets` | `TimesheetsList` (`src/components/crew/workspace/timesheets/`) | The Crew workspace's **Timesheets** word on `ListPage` (UX Phase 15, spec §9h.4) — see "Crew workspace" below |
 | `/crew/settings` | redirect | Server redirect to `/crew/planner?sheet=roles`: the roles admin is now the **Crew roles & rates** sheet (`src/components/crew/workspace/roles/`). Old links and bookmarks keep working |
@@ -315,10 +315,11 @@ delete).
 - Falls back to initials (first + last name) when no image
 - **Linked crew members** inherit their profile picture from the linked user account — no separate upload
 
-## Crew Member Form (`/crew/new` + `/crew/[id]/edit`)
-`CrewMemberForm` (`src/components/crew/crew-member-form.tsx`) is built on the
-shared `SmartFormLayout` shell (see [08-assets](./08-assets.md)) — both routes
-render it (edit pre-fills `initialData`, reusing create). Sections: Identity
+## Crew Member Sheet (`/crew?new=1` + `/crew/[id]?edit=1`)
+`CrewSheet` (`src/components/people/sheets/crew-sheet.tsx`, hosted by `CrewSheetHost` in the crew layout; see
+[22-suppliers](./22-suppliers.md) "People create and edit sheets") is a `FormSheet`: create and edit share it (edit
+pre-fills `initialData`), create offers `Save and add another`, and each save toasts with the server's exact Undo.
+The live preview rail is gone. Sections: Identity
 (first/last name, type + status `Select`s with sentence-case labels, linked
 platform user via `ComboboxPicker` with auto-fill) → Contact (email, phone) →
 Rates (day/hourly/overtime) → "More details" accordion (department, default role

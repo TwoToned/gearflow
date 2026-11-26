@@ -181,6 +181,18 @@ describe("a photo already on the record is never re-validated", () => {
   });
 });
 
+describe("labour is bounded on the legacy create and update too", () => {
+  test("a cost above the shared maximum is refused (create and update), the maximum itself is fine", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...base, recordId: "c1", photos: [], cost: 10_000_001, auditId: "ca" })).rejects.toThrow(/at most/);
+    expect(await rec(t, "c1")).toBeNull();
+    await t.withIdentity(asUser).mutation(api.maintenanceWrites.createNative, { ...base, recordId: "c2", photos: [], cost: 10_000_000, auditId: "cb" });
+    await expect(t.withIdentity(asUser).mutation(api.maintenanceWrites.updateNative, { ...base, id: "c2", status: "SCHEDULED", photos: [], cost: 10_000_001, auditId: "ua" })).rejects.toThrow(/at most/);
+    expect((await rec(t, "c2"))?.cost).toBe(10_000_000);
+  });
+});
+
 describe("removal deletes bytes only through deleteStoredFileIfUnreferenced", () => {
   test("a photo an update drops has its bytes deleted when nothing else holds it", async () => {
     const t = makeT();

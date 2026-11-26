@@ -143,26 +143,39 @@ async function heldInPhotoArrays(db: DatabaseReader, orgId: string, files: FileD
   }));
 }
 
+/** `held` beats `unverifiable` beats `free`. */
+function worst(...states: FileRefs[]): FileRefs {
+  return states.includes("held") ? "held" : states.includes("unverifiable") ? "unverifiable" : "free";
+}
+
+type Pending = { file: Doc<"fileUploads">; folder: string | undefined };
+
+/** What the INDEXED holders and the finance folder say about one file, or the file (and its folder) when they cannot settle it. */
+async function indexedAnswer(db: DatabaseReader, orgId: string, fileId: string): Promise<{ done: FileRefs } | Pending> {
+  const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
+  if (!file || file.organizationId !== orgId) return { done: "free" };
+  if (await heldByIndexedTable(db, fileId)) return { done: "held" };
+  const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
+  // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
+  if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) return { done: "held" };
+  return { file, folder: stored?.folder };
+}
+
 /** The state of each of `fileIds` (a missing or foreign file is `free`); the photo scans are shared across the set. */
 export async function fileReferenceStates(db: DatabaseReader, orgId: string, fileIds: string[]): Promise<Map<string, FileRefs>> {
   const out = new Map<string, FileRefs>();
-  const pending: { file: Doc<"fileUploads">; folder: string | undefined }[] = [];
+  const pending: Pending[] = [];
   for (const fileId of new Set(fileIds)) {
-    const file = await db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", fileId)).first();
-    if (!file || file.organizationId !== orgId) { out.set(fileId, "free"); continue; }
-    if (await heldByIndexedTable(db, fileId)) { out.set(fileId, "held"); continue; }
-    const stored = await db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", file.storageKey)).unique();
-    // Finance PDFs are written by the server (`pdfFileId` holds their storage id): never attachable.
-    if (stored?.folder?.startsWith(FINANCE_FOLDER_PREFIX)) { out.set(fileId, "held"); continue; }
-    pending.push({ file, folder: stored?.folder });
+    const answer = await indexedAnswer(db, orgId, fileId);
+    if ("done" in answer) out.set(fileId, answer.done);
+    else pending.push(answer);
   }
   if (pending.length === 0) return out;
   const photos = await heldInPhotoArrays(db, orgId, pending.map((p) => p.file));
   for (const { file, folder } of pending) {
     // The invoice FK has no index, so it is scanned (only for the invoice folder).
     const invoice: FileRefs = folder === INVOICE_UPLOAD_FOLDER ? await heldAsInvoice(db, orgId, file.id) : "free";
-    const photo = photos.get(file.id) ?? "free";
-    out.set(file.id, invoice === "held" || photo === "held" ? "held" : invoice === "unverifiable" || photo === "unverifiable" ? "unverifiable" : "free");
+    out.set(file.id, worst(invoice, photos.get(file.id) ?? "free"));
   }
   return out;
 }

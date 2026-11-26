@@ -54,7 +54,7 @@ type Row = { entityType: string; action: string; details?: unknown };
 const isDoc = (r: Row & { entityId?: string }) => r.entityType === "crewDocument";
 
 /** The crew-document edit row, as each read path returns it. */
-async function reads(t: T, who: Record<string, unknown>) {
+async function reads(t: T, who: Record<string, string | boolean>) {
   const c = t.withIdentity(who);
   const list = (await c.query(api.activityLog.list, { orgId: ORG })).items.find(isDoc);
   const byEntity = (await c.query(api.activityLog.listByEntity, { orgId: ORG, entityType: "crewDocument", entityId: "d1" })).items.find(isDoc);

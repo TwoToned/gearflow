@@ -2,7 +2,10 @@ import { v, ConvexError } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requireService, requireOrgReadFor, requireOrgReadDocFor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
+import type { QueryCtx } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
+import { CREW_DOCUMENTS_FOLDER } from "./lib/crewDocumentCore";
 
 /**
  * Thin CRUD for FileUpload (Convex table "fileUploads"). GENERATED — Phase 2/5.
@@ -14,14 +17,26 @@ import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
  * cuid (`id`) via by_cuid. See FEATUREDOCS/54.
  */
 
+/**
+ * A crew document's file is identity material (owner ruling B2) and is only ever reached through the gated crew
+ * document routes. Its `fileUploads` row would still leak the file name, size and storage key to any
+ * `document:read` caller (or API key), so every generic read here drops a row whose stored folder is
+ * `crew-documents`, whoever asks (the service identity included: none of these callers has a reason to want one).
+ */
+async function withoutCrewDocumentFiles(ctx: QueryCtx, files: Doc<"fileUploads">[]): Promise<Doc<"fileUploads">[]> {
+  const stored = await Promise.all(files.map((f) => ctx.db.query("storedFiles").withIndex("by_storageId", (q) => q.eq("storageId", f.storageKey)).unique()));
+  return files.filter((_, i) => stored[i]?.folder !== CREW_DOCUMENTS_FOLDER);
+}
+
 export const list = query({
   args: { orgId: v.string() },
   handler: async (ctx, { orgId }) => {
     await requireOrgReadFor(ctx, orgId, "document"); // Phase 5 domain slice (#1001)
-    return await ctx.db
+    const files = await ctx.db
       .query("fileUploads")
       .withIndex("by_organizationId", (q) => q.eq("organizationId", orgId)) // r9.8-ok: reactive/full-org read (perf design); reviewed, accepted R-9.8 tradeoff — revisit with pagination if per-org rows grow large
       .collect();
+    return await withoutCrewDocumentFiles(ctx, files);
   },
 });
 
@@ -30,7 +45,7 @@ export const getById = query({
   handler: async (ctx, { id }) => {
     const doc = await ctx.db.query("fileUploads").withIndex("by_cuid", (q) => q.eq("id", id)).unique();
     await requireOrgReadDocFor(ctx, doc, "document"); // Phase 5 domain slice (#1001)
-    return doc;
+    return doc ? ((await withoutCrewDocumentFiles(ctx, [doc]))[0] ?? null) : doc;
   },
 });
 
@@ -45,10 +60,11 @@ export const getByThumbnailUrl = query({
     await requireService(ctx);
     // Point-lookup via by_thumbnailUrl instead of scanning the whole (cross-org)
     // fileUploads table. .first() matches the old .find() (first/only match).
-    return await ctx.db
+    const file = await ctx.db
       .query("fileUploads")
       .withIndex("by_thumbnailUrl", (q) => q.eq("thumbnailUrl", thumbnailUrl))
       .first();
+    return file ? ((await withoutCrewDocumentFiles(ctx, [file]))[0] ?? null) : file;
   },
 });
 

@@ -5,7 +5,7 @@ import { resolveActor } from "./lib/auth";
 import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
-import { assertStrLen } from "./lib/fieldGuards";
+import { assertNumRange, assertStrLen } from "./lib/fieldGuards";
 import { writeActivityLog } from "./lib/audit";
 import { collectCapped } from "./lib/pagination";
 import { deleteStoredFileIfUnreferenced } from "./lib/deleteStoredFile";
@@ -13,7 +13,7 @@ import { assertAttachableUpload } from "./lib/attachableUpload";
 import { diffFields, recordFieldEdit, undoFieldEdit } from "./lib/fieldEditUndo";
 import { claimRowOpUndo, recordRowOp } from "./lib/rowOpUndo";
 import { requireCrewDocumentWriter } from "./lib/crewDocumentAccess";
-import { CREW_DOCUMENTS_FOLDER, MAX_CREW_DOCUMENTS, crewDocumentKind } from "./lib/crewDocumentCore";
+import { CREW_DOCUMENTS_FOLDER, CREW_DOCUMENT_EXPIRY_MAX_MS, CREW_DOCUMENT_EXPIRY_MIN_MS, MAX_CREW_DOCUMENTS, crewDocumentKind } from "./lib/crewDocumentCore";
 
 /**
  * Crew document writes (UX Phase 13, D72). Gate: `crew:update` on a USER session (a member may
@@ -63,6 +63,12 @@ const assertCrewDocumentFile = (ctx: MutationCtx, a: { orgId: string; userId: st
 
 const DOC_FIELDS = ["name", "kind", "expiresAt"] as const;
 
+/** The paired Zod schema's bounds (`crewDocumentSchema`), enforced here too: the browser's parse is bypassable. */
+function assertDocumentFields(f: { name?: string; expiresAt?: number }): void {
+  assertStrLen(f.name, "name", { max: 200 });
+  assertNumRange(f.expiresAt, "expiresAt", { min: CREW_DOCUMENT_EXPIRY_MIN_MS, max: CREW_DOCUMENT_EXPIRY_MAX_MS });
+}
+
 export const addNative = mutation({
   returns: v.object({ id: v.string() }),
   args: {
@@ -72,7 +78,7 @@ export const addNative = mutation({
   handler: async (ctx, a) => {
     await guards(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
-    assertStrLen(a.name, "name", { max: 200 });
+    assertDocumentFields(a);
     const member = await loadMember(ctx, a.orgId, a.crewMemberId);
     await assertCrewDocumentFile(ctx, { orgId: a.orgId, userId: actor.userId, fileId: a.fileId });
     if (await ctx.db.query("crewDocuments").withIndex("by_cuid", (q) => q.eq("id", a.id)).first()) throw new ConvexError("Crew document already exists");
@@ -100,7 +106,7 @@ export const updateNative = mutation({
   handler: async (ctx, a) => {
     await guards(ctx, a.orgId);
     const actor = await resolveActor(ctx, a.actor);
-    assertStrLen(a.name, "name", { max: 200 });
+    assertDocumentFields(a);
     const doc = await loadDocument(ctx, a.orgId, a.crewMemberId, a.documentId);
     const next = { name: clean(a.name), kind: a.kind, expiresAt: a.expiresAt };
     const diff = diffFields(doc, { ...doc, ...next }, DOC_FIELDS);

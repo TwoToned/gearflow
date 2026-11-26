@@ -76,7 +76,6 @@ export function crewDocumentRedactor(visibleMembers: ReadonlySet<string>): Activ
   return (row) => {
     const owner = crewDocumentRowMember(row as { entityType?: string; details?: unknown });
     if (owner === undefined || (owner !== null && visibleMembers.has(owner))) return row;
-    const { details: _dropped, ...rest } = row;
-    return rest as typeof row;
+    return Object.fromEntries(Object.entries(row).filter(([k]) => k !== "details")) as typeof row;
   };
 }

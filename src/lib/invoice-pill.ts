@@ -42,10 +42,14 @@ export function invoiceDatesLine(
   return parts.filter(Boolean).join(" · ");
 }
 
+/** The status word for an already-derived pill state (the Finance hub gets the state from the server). */
+export function invoicePillValue(state: InvoicePillState): StatusValue {
+  return { label: INVOICE_PILL_LABEL[state], intent: PILL_INTENT[state], outline: state === "VOID" };
+}
+
 export function invoiceStatusWord(
   inv: Parameters<typeof invoicePillState>[0],
   now: number,
 ): StatusValue {
-  const state = invoicePillState(inv, now);
-  return { label: INVOICE_PILL_LABEL[state], intent: PILL_INTENT[state], outline: state === "VOID" };
+  return invoicePillValue(invoicePillState(inv, now));
 }

@@ -92,6 +92,20 @@ export function quoteHubRow(quote: Doc<"quotes">, project: HubProjectRef | null,
   return row;
 }
 
+/** Whole days past the due day while overdue, else null. */
+function overdueDaysOf(pill: InvoicePillState, dueDate: number | undefined, now: number): number | null {
+  if (pill !== "OVERDUE" || dueDate == null) return null;
+  return Math.max(1, Math.floor((now - (dueDate + DAY_MS)) / DAY_MS) + 1);
+}
+
+/** A Xero dot-word exists only for an invoice that has been issued (a draft is never pushed, a void is gone). */
+function xeroOf(inv: Doc<"invoices">): InvoiceHubRow["xero"] {
+  if (inv.status === "DRAFT" || inv.status === "VOID") return null;
+  return { status: inv.xeroSyncStatus ?? "NOT_SYNCED", error: inv.lastSyncError ?? null };
+}
+
+const NO_OUTSTANDING: ReadonlySet<InvoicePillState> = new Set(["PAID", "DRAFT", "VOID"]);
+
 export function invoiceHubRow(inv: Doc<"invoices">, project: HubProjectRef | null, now: number, showMoney: boolean): InvoiceHubRow {
   const pill = invoicePillState(inv, now);
   const row: InvoiceHubRow = {
@@ -103,15 +117,14 @@ export function invoiceHubRow(inv: Doc<"invoices">, project: HubProjectRef | nul
     pillLabel: INVOICE_PILL_LABEL[pill],
     issuedAt: inv.issuedAt ?? null,
     dueDate: inv.dueDate ?? null,
-    overdueDays: pill === "OVERDUE" && inv.dueDate != null ? Math.max(1, Math.floor((now - (inv.dueDate + DAY_MS)) / DAY_MS) + 1) : null,
+    overdueDays: overdueDaysOf(pill, inv.dueDate, now),
     hasPdf: inv.pdfFileId != null,
-    // A Xero dot-word exists only for an invoice that has been issued (a draft is never pushed).
-    xero: inv.status === "DRAFT" || inv.status === "VOID" ? null : { status: inv.xeroSyncStatus ?? "NOT_SYNCED", error: inv.lastSyncError ?? null },
+    xero: xeroOf(inv),
     project,
   };
   if (showMoney) {
     row.total = inv.total;
-    row.outstanding = pill === "PAID" || pill === "DRAFT" || pill === "VOID" ? 0 : invoiceOutstanding(inv);
+    row.outstanding = NO_OUTSTANDING.has(pill) ? 0 : invoiceOutstanding(inv);
   }
   return row;
 }
@@ -152,42 +165,29 @@ export function inInvoiceSegment(row: Pick<InvoiceHubRow, "pill">, seg: InvoiceS
 
 const lower = (s: string | null | undefined) => (s ?? "").toLowerCase();
 
-/** The sort value for one quote row. `total` is a sort key ONLY when the caller sees money. */
-export function quoteSortValue(row: QuoteHubRow, key: string, showMoney: boolean): unknown {
-  switch (key) {
-    case "job":
-      return lower(row.project?.projectNumber);
-    case "client":
-      return lower(row.project?.clientName);
-    case "status":
-      return row.status;
-    case "sent":
-      return row.sentAt;
-    case "total":
-      return showMoney ? (row.total ?? null) : null;
-    default:
-      return lower(row.project?.projectNumber) + String(row.version).padStart(4, "0");
-  }
-}
+type QuoteSort = (row: QuoteHubRow, showMoney: boolean) => unknown;
+const QUOTE_SORT_VALUE: Record<string, QuoteSort> = {
+  job: (r) => lower(r.project?.projectNumber),
+  client: (r) => lower(r.project?.clientName),
+  status: (r) => r.status,
+  sent: (r) => r.sentAt,
+  // A hidden money column is not a sort key: it sorts as blank.
+  total: (r, money) => (money ? (r.total ?? null) : null),
+  number: (r) => lower(r.project?.projectNumber) + String(r.version).padStart(4, "0"),
+};
+export const quoteSortValue = (row: QuoteHubRow, key: string, showMoney: boolean): unknown => (QUOTE_SORT_VALUE[key] ?? QUOTE_SORT_VALUE.number)(row, showMoney);
 
-export function invoiceSortValue(row: InvoiceHubRow, key: string, showMoney: boolean): unknown {
-  switch (key) {
-    case "job":
-      return lower(row.project?.projectNumber);
-    case "client":
-      return lower(row.project?.clientName);
-    case "status":
-      return row.pillLabel;
-    case "issued":
-      return row.issuedAt;
-    case "due":
-      return row.dueDate;
-    case "total":
-      return showMoney ? (row.total ?? null) : null;
-    default:
-      return lower(row.invoiceNumber);
-  }
-}
+type InvoiceSort = (row: InvoiceHubRow, showMoney: boolean) => unknown;
+const INVOICE_SORT_VALUE: Record<string, InvoiceSort> = {
+  job: (r) => lower(r.project?.projectNumber),
+  client: (r) => lower(r.project?.clientName),
+  status: (r) => r.pillLabel,
+  issued: (r) => r.issuedAt,
+  due: (r) => r.dueDate,
+  total: (r, money) => (money ? (r.total ?? null) : null),
+  number: (r) => lower(r.invoiceNumber),
+};
+export const invoiceSortValue = (row: InvoiceHubRow, key: string, showMoney: boolean): unknown => (INVOICE_SORT_VALUE[key] ?? INVOICE_SORT_VALUE.number)(row, showMoney);
 
 export const QUOTE_SORTS = new Set(["number", "job", "client", "status", "sent", "total"]);
 export const INVOICE_SORTS = new Set(["number", "job", "client", "status", "issued", "due", "total"]);
@@ -215,6 +215,15 @@ export function monthStartUtc(now: number): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
 }
 
+const sumInto = (w: MoneyWords, i: InvoiceHubRow, monthStart: number): void => {
+  if (i.pill === "ISSUED" || i.pill === "PART_PAID") w.awaitingPayment += i.outstanding ?? 0;
+  if (i.pill === "OVERDUE") w.overdue += i.outstanding ?? 0;
+  if (isInvoicedThisMonth(i, monthStart)) w.invoicedThisMonth += i.total ?? 0;
+};
+
+const isInvoicedThisMonth = (i: InvoiceHubRow, monthStart: number): boolean =>
+  i.issuedAt != null && i.issuedAt >= monthStart && i.pill !== "DRAFT" && i.pill !== "VOID";
+
 /**
  * The four money words, derived on read from rows that carry money (so a caller without job-cost
  * visibility never gets here). Quoted = live SENT quotes; Awaiting payment = what is still owed on
@@ -225,11 +234,7 @@ export function moneyWords(quotes: QuoteHubRow[], invoices: InvoiceHubRow[], now
   const monthStart = monthStartUtc(now);
   const w: MoneyWords = { quoted: 0, awaitingPayment: 0, invoicedThisMonth: 0, overdue: 0 };
   for (const q of quotes) if (q.status === "SENT") w.quoted += q.total ?? 0;
-  for (const i of invoices) {
-    if (i.pill === "ISSUED" || i.pill === "PART_PAID") w.awaitingPayment += i.outstanding ?? 0;
-    if (i.pill === "OVERDUE") w.overdue += i.outstanding ?? 0;
-    if (i.issuedAt != null && i.issuedAt >= monthStart && i.pill !== "DRAFT" && i.pill !== "VOID") w.invoicedThisMonth += i.total ?? 0;
-  }
+  for (const i of invoices) sumInto(w, i, monthStart);
   return { quoted: cents(w.quoted), awaitingPayment: cents(w.awaitingPayment), invoicedThisMonth: cents(w.invoicedThisMonth), overdue: cents(w.overdue) };
 }
 

@@ -22162,6 +22162,187 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render."
   },
   {
+    "operation": "financeHub.hubCounts",
+    "module": "financeHub",
+    "fn": "hubCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The Finance hub's segment counts and, with job-cost visibility, its money words (quoted, awaiting payment, invoiced this month, overdue).",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "financeHub.invoicesPage",
+    "module": "financeHub",
+    "fn": "invoicesPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "includeVoid",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "fb6ba6b1c6c79896",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A page of the org Finance hub's invoices by derived state (Draft, Issued, Paid, Overdue) or the jobs still to invoice a deposit for.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "financeHub.quotesPage",
+    "module": "financeHub",
+    "fn": "quotesPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "includeClosed",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "5db8e4de349e074b",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A page of the org Finance hub's quotes, by derived status (Draft, Sent, Accepted, Expired), searchable and sortable.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "financeOrg.bundle",
     "module": "financeOrg",
     "fn": "bundle",
@@ -72819,10 +73000,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1405,
-  agentReachable: 758,
-  queries: 492,
+  total: 1408,
+  agentReachable: 761,
+  queries: 495,
   mutations: 913,
-  agentReachableQueries: 354,
+  agentReachableQueries: 357,
   agentReachableMutations: 404,
 } as const;

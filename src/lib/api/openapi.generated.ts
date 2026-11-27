@@ -18089,6 +18089,235 @@ export const OPENAPI_DOCUMENT = {
         }
       }
     },
+    "/api/v1/ops/financeHub.hubCounts": {
+      "post": {
+        "operationId": "financeHub.hubCounts",
+        "summary": "financeHub.hubCounts (query)",
+        "description": "Requires scope: invoice:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "invoice"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/financeHub.invoicesPage": {
+      "post": {
+        "operationId": "financeHub.invoicesPage",
+        "summary": "financeHub.invoicesPage (query)",
+        "description": "Requires scope: invoice:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "invoice"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "includeVoid": {
+                        "type": "boolean"
+                      },
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {}
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ops/financeHub.quotesPage": {
+      "post": {
+        "operationId": "financeHub.quotesPage",
+        "summary": "financeHub.quotesPage (query)",
+        "description": "Requires scope: invoice:read. Stability: tracks-app — follows the app's internals directly; shape can change between ordinary refactors.",
+        "x-stability": "tracks-app",
+        "tags": [
+          "invoice"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "args": {
+                    "type": "object",
+                    "properties": {
+                      "includeClosed": {
+                        "type": "boolean"
+                      },
+                      "page": {
+                        "type": "number"
+                      },
+                      "pageSize": {
+                        "type": "number"
+                      },
+                      "search": {
+                        "type": "string"
+                      },
+                      "segment": {
+                        "type": "string"
+                      },
+                      "sortBy": {
+                        "type": "string"
+                      },
+                      "sortOrder": {}
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "args"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success (read, or a replayed write).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Success (a write took effect).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ops/financeOrg.bundle": {
       "post": {
         "operationId": "financeOrg.bundle",

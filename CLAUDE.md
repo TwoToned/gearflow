@@ -1328,6 +1328,13 @@ The Scan page's own two rules:
 - **An issued invoice's tax row comes from its own row** (`resolveTaxBreakdown`, FEATUREDOCS/75), never
   the org's current default tax rate.
 
+### The Finance hub (UX Phase 17) — derived words, money behind the job-cost line
+The `/finance` hub reads ONLY `convex/financeHub.ts` (`quotesPage`, `invoicesPage`, `hubCounts`): a quote's
+word is `effectiveQuoteStatus`, an invoice's is the one `invoicePillState` (Overdue outranks Part paid), never a
+stored column; every money figure and the four money words are behind `canSeeJobCost` (absent, never zero, never
+a sort key); reads are newest-first per status with the cap after the index and a `ReadBudget` for the
+project/client lookups, with `truncated` surfaced as "at least". FEATUREDOCS/66.
+
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 

@@ -1794,3 +1794,33 @@ can't both spend the same rotating refresh token.
   a second full pass reports `patched: 0`.
 - **Stored-bytes rules are unchanged**: every PDF action is a download of the stored artifact,
   a watermarked preview for a draft, or the explicit retry; no new live-render path.
+
+## The org Finance hub (UX Phase 17 slice 3, spec §9j) — read side
+
+`/finance` is now ONE list at a time on `ListPage`: head words `Quotes n` / `Invoices n` (`?tab=`), four money
+words that deep-link (Quoted → `?tab=quotes&seg=sent`, Awaiting payment → `?tab=invoices&seg=issued`, Invoiced
+this month → `…&seg=all`, Overdue → `…&seg=overdue`), each tab's own strip (Quotes: All · Draft · Sent ·
+Accepted · Expired; Invoices: All · Draft · Deposit due · Issued · Paid · Overdue), search, sort and paging in
+the URL. It replaced the five stacked cards (`financeOrg.bundle` stays for the API/MCP; the page no longer reads
+it). Surfaces: `src/components/finance/finance-hub.tsx`, the pure config `src/lib/list-views/finance.ts`.
+
+Reads (`convex/financeHub.ts`, derived facts in `convex/lib/financeHubFacts.ts`): `quotesPage`, `invoicesPage`
+and `hubCounts`, so the strip, the head counts, the money words and the table are derived from the same loaders.
+- **Derived status, never the stored column.** A quote's word is `effectiveQuoteStatus` (Expired = `validUntil <
+  now && SENT`, `PUBLISHED` reads as `SENT`; an expired quote is in `Expired` for 7 days or until acknowledged,
+  older ones are under All only; declined and superseded are under All only after `Also show`). An invoice's word is
+  the ONE pill, `invoicePillState` (D56: Overdue outranks Part paid; Paid outranks Overdue); `Issued` is Issued plus
+  Part paid, `Overdue` is its own. `Deposit due` lists the JOBS still to invoice (a project row with the deposit to
+  raise), not invoice rows.
+- **Money is behind `canSeeJobCost`** (invoice:read and not a `noFinancials` key): totals, owed amounts, the
+  deposit to raise and the four money words are ABSENT (no column, no words, never zero), and `total` is not a
+  sort key for such a caller (a refused key is the default order, ascending). The role/key sentinel sweep is in
+  `convex/financeHub.test.ts`.
+- **Bounds.** Each raw status is read newest-first from `by_organizationId_status` (org and order in the index,
+  then the cap: 150 quotes / 300 invoices per status), and the referenced projects and clients are read by cuid
+  (org-checked) from ONE `ReadBudget`. When any cap bites the response says `truncated` and the page prints
+  "Showing the newest documents" and `at least n` on the head counts.
+- A row opens the job's Finance tab, where the STORED PDF lives; the hub renders no finance document. The row ⋯
+  carries `Open on the job` and, for a fresh expired quote with `invoice:publish`, `Acknowledge expired` (the
+  live write the old Expiring card had). The Xero column and a one-line "Xero isn't connected" note follow the
+  integration's state. Chase, Record payment, Void, bulk verbs and `+ New` land in slice 4.

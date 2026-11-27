@@ -1,0 +1,129 @@
+import { describe, expect, it } from "vitest";
+
+import { defaultListState, parseListState } from "@/lib/list-url-state";
+import {
+  INVOICES_SPEC,
+  QUOTES_SPEC,
+  hubQueryArgs,
+  hubSegments,
+  hubSubline,
+  invoiceColumns,
+  invoiceRow,
+  invoiceStatusLine,
+  moneyWords,
+  parseHubTab,
+  quoteColumns,
+  quoteRow,
+  quoteWhenLine,
+  toRaiseRow,
+  type InvoiceSource,
+  type QuoteSource,
+} from "@/lib/list-views/finance";
+
+const project = { id: "p1", projectNumber: "#2341", name: "Hilton gala", clientName: "Hilton" };
+const quote = (over: Partial<QuoteSource> = {}): QuoteSource => ({
+  id: "q1", version: 3, status: "SENT", dismissed: false, sentAt: Date.UTC(2026, 10, 4), validUntil: null, daysLeft: 5, hasPdf: true, project, total: 5000, ...over,
+});
+const invoice = (over: Partial<InvoiceSource> = {}): InvoiceSource => ({
+  id: "i1", invoiceNumber: "INV-0041", kind: "DEPOSIT", depositPercent: 30, pill: "ISSUED", pillLabel: "Issued", issuedAt: Date.UTC(2026, 10, 6), dueDate: null,
+  overdueDays: null, hasPdf: true, xero: { status: "SYNCED", error: null }, project, total: 3300, outstanding: 3300, ...over,
+});
+
+describe("the hub's money words", () => {
+  it("are four deep links into the lists they count, and ABSENT without money", () => {
+    const words = moneyWords({ quoted: 12345.6, awaitingPayment: 800, invoicedThisMonth: 0, overdue: 70 });
+    expect(words.map((w) => [w.label, w.amount, w.href])).toEqual([
+      ["Quoted", "$12,346", "/finance?tab=quotes&seg=sent"],
+      ["Awaiting payment", "$800", "/finance?tab=invoices&seg=issued"],
+      ["Invoiced this month", "$0", "/finance?tab=invoices&seg=all"],
+      ["Overdue", "$70", "/finance?tab=invoices&seg=overdue"],
+    ]);
+    expect(words[3].tone).toBe("error");
+    expect(moneyWords(undefined)).toEqual([]);
+  });
+});
+
+describe("columns: a money column exists only when the server sent money", () => {
+  it("quotes and invoices", () => {
+    expect(quoteColumns(true).map((c) => c.id)).toContain("total");
+    expect(quoteColumns(false).map((c) => c.id)).not.toContain("total");
+    expect(invoiceColumns(false, true).map((c) => c.id)).toEqual(["job", "status", "issued", "xero"]);
+    expect(invoiceColumns(true, false).map((c) => c.id)).toEqual(["job", "status", "issued", "total"]);
+    expect(invoiceColumns(true, false).every((c) => c.id !== "total" || c.sortKey === "total")).toBe(true);
+  });
+  it("a hidden money field is simply not on the row (never a zero)", () => {
+    const q = quoteRow(quote({ total: undefined }));
+    const i = invoiceRow(invoice({ total: undefined, outstanding: undefined }));
+    expect("total" in q.facts).toBe(false);
+    expect("total" in i.facts).toBe(false);
+  });
+});
+
+describe("rows read the DERIVED words the server sent", () => {
+  it("a quote row is `#2341 v3`, opens the job's Finance tab, and flags a sent quote in its last week", () => {
+    const r = quoteRow(quote());
+    expect(r.title).toBe("#2341 v3");
+    expect(r.href).toBe("/projects/p1?tab=finance");
+    expect(r.status?.label).toBe("Sent");
+    expect(r.flags).toEqual([{ label: "5d left", tone: "warning" }]);
+    expect(quoteRow(quote({ daysLeft: 20 })).flags).toEqual([]);
+  });
+
+  it("an expired quote is a red flag until it is dismissed", () => {
+    const fresh = quoteRow(quote({ status: "EXPIRED", daysLeft: -2 }));
+    expect(fresh.status?.label).toBe("Expired");
+    expect(fresh.flags?.[0].tone).toBe("error");
+    expect(quoteWhenLine({ status: "EXPIRED", daysLeft: -2 })).toBe("expired 2d ago");
+    expect(quoteRow(quote({ status: "EXPIRED", daysLeft: -20, dismissed: true })).flags).toEqual([]);
+  });
+
+  it("an invoice row shows the ONE pill: Overdue outranks Part paid (D56), and the line under it is days late + what is owed", () => {
+    const r = invoiceRow(invoice({ pill: "OVERDUE", pillLabel: "Overdue", overdueDays: 4, outstanding: 70 }));
+    expect(r.status?.label).toBe("Overdue");
+    expect(r.status?.intent).toBe("error");
+    expect(invoiceStatusLine({ pill: "OVERDUE", overdueDays: 4, outstanding: 70 })).toBe("4d overdue · $70 to go");
+    expect(invoiceStatusLine({ pill: "PART_PAID", overdueDays: null, outstanding: 2950 })).toBe("$2,950 to go");
+    expect(invoiceStatusLine({ pill: "PAID", overdueDays: null, outstanding: 0 })).toBeUndefined();
+    expect(invoiceStatusLine({ pill: "PART_PAID", overdueDays: null, outstanding: undefined })).toBeUndefined(); // no money, no "to go"
+  });
+
+  it("kind and Xero words", () => {
+    expect(invoiceRow(invoice()).subtitle).toBe("Deposit 30%");
+    expect(invoiceRow(invoice()).facts.xero).toEqual({ kind: "text", label: "Synced" });
+    expect(invoiceRow(invoice({ xero: { status: "ERROR", error: "x" } })).facts.xero).toEqual({ kind: "text", label: "Failed" });
+    expect(invoiceRow(invoice({ xero: null })).facts.xero).toBeUndefined();
+  });
+
+  it("a job still to invoice is a project row with the deposit to raise (money only when sent)", () => {
+    const r = toRaiseRow({ id: "p3", projectNumber: "#1003", name: "Gala", clientName: "Deposit Co", depositPercent: 30, amount: 3000 });
+    expect(r.status?.label).toBe("Deposit due");
+    expect(r.facts.total).toEqual({ kind: "money", amount: 3000 });
+    expect("total" in toRaiseRow({ id: "p3", projectNumber: "#1003", name: "Gala", clientName: null, depositPercent: 30 }).facts).toBe(false);
+  });
+});
+
+describe("URL state and query args", () => {
+  it("each list has its own segments, sorts and default; the tab is not a list param", () => {
+    expect(QUOTES_SPEC.segments).toEqual(["all", "draft", "sent", "accepted", "expired"]);
+    expect(INVOICES_SPEC.segments).toEqual(["all", "draft", "depositdue", "issued", "paid", "overdue"]);
+    expect(parseListState(new URLSearchParams("tab=invoices&seg=overdue"), INVOICES_SPEC).seg).toBe("overdue");
+    expect(parseListState(new URLSearchParams("seg=nope"), INVOICES_SPEC).seg).toBe("all");
+    expect(parseHubTab("invoices")).toBe("invoices");
+    expect(parseHubTab("junk")).toBe("quotes");
+  });
+
+  it("`show` opts declined/superseded (quotes) or void (invoices) back in", () => {
+    const base = defaultListState(QUOTES_SPEC);
+    expect(hubQueryArgs("quotes", { ...base, filters: { show: ["closed"] } }, 1)).toMatchObject({ includeClosed: true });
+    expect(hubQueryArgs("quotes", base, 1)).toMatchObject({ includeClosed: false });
+    expect(hubQueryArgs("invoices", { ...defaultListState(INVOICES_SPEC), filters: { show: ["void"] } }, 1)).toMatchObject({ includeVoid: true });
+    expect(hubQueryArgs("quotes", base, 7).now).toBe(7);
+  });
+
+  it("segment counts come from the server's strip, and the sub line says `at least` when capped", () => {
+    expect(hubSegments("quotes", { all: 6, sent: 2 }).find((s) => s.key === "sent")?.count).toBe(2);
+    expect(hubSubline({ quotes: { all: 27 }, invoices: { all: 20 } })).toBe("27 quotes · 20 invoices");
+    expect(hubSubline({ quotes: { all: 1 }, invoices: { all: 1 }, truncated: true })).toBe("at least 1 quote · at least 1 invoice");
+    expect(hubSubline(undefined)).toBeUndefined();
+  });
+});

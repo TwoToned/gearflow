@@ -36,6 +36,9 @@ function jobRow(p: Doc<"projects">, f: JobFacts, clientNames: Map<string, string
     projectManagerId: p.projectManagerId ?? null,
     rentalStart: p.rentalStartDate!,
     rentalEnd: p.rentalEndDate!,
+    // The stored job window sides (null = same as rental, R-3.1): a date move carries a SET window by the same offset.
+    windowStart: p.projectStartDate ?? null,
+    windowEnd: p.projectEndDate ?? null,
     clash: f.state,
     clashes: f.rows,
     modelCount: f.modelCount,

@@ -9,6 +9,7 @@ import { downloadCsv } from "@/lib/download-csv";
 import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
 import { buildScheduleJobActions } from "@/lib/row-actions/schedule-job";
 import type { ScheduleJob } from "@/lib/schedule";
+import { confirmSkipReason, moveSkipReason } from "@/lib/schedule-move";
 import { useCanDo } from "@/lib/use-permissions";
 import { jobHref } from "./schedule-sheets";
 import type { ScheduleUrl } from "./use-schedule-url";
@@ -28,10 +29,17 @@ function mineItem(url: ScheduleUrl, userId: string | undefined): ActionItem[] {
  * and `+ New job`. Each verb is absent, never disabled, when the caller cannot
  * use it (the crew planner needs `crew:read`, the primary `project:create`).
  */
-export function useScheduleActions(url: ScheduleUrl, userId: string | undefined, exportCsv: () => string) {
+/** What the row ⋯ and the job sheet run for Confirm… and Move dates…: the page's ONE gated write and its ONE dialog. */
+export interface ScheduleVerbs {
+  confirm: (jobs: ScheduleJob[]) => void | Promise<void>;
+  openMove: (jobs: ScheduleJob[]) => void;
+}
+
+export function useScheduleActions(url: ScheduleUrl, userId: string | undefined, exportCsv: () => string, verbs: ScheduleVerbs) {
   const router = useRouter();
   const canCrew = useCanDo("crew", "read");
   const canCreate = useCanDo("project", "create");
+  const canUpdate = useCanDo("project", "update");
 
   const pageMenu: ActionMenuSpec = {
     items: [
@@ -54,7 +62,9 @@ export function useScheduleActions(url: ScheduleUrl, userId: string | undefined,
       equipment: () => router.push(jobHref(j.id, "equipment")),
       logistics: () => router.push(jobHref(j.id, "logistics")),
       copyLink: () => copy(`${window.location.origin}${jobHref(j.id)}`),
+      confirm: canUpdate && confirmSkipReason(j) == null ? () => void verbs.confirm([j]) : undefined,
+      moveDates: canUpdate && moveSkipReason(j) == null ? () => verbs.openMove([j]) : undefined,
     });
   const primary: ListPrimary | undefined = canCreate ? { label: "+ New job", onSelect: () => router.push("/projects/new") } : undefined;
-  return { pageMenu, menuFor, primary, canCreate };
+  return { pageMenu, menuFor, primary, canCreate, canUpdate };
 }

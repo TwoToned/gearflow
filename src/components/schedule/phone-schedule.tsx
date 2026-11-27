@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ActionMenu } from "@/components/ui/action-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusWord } from "@/components/ui/status-word";
 import { displayDate } from "@/lib/crew-planner";
 import { formatDateDayMonth, formatWeekday } from "@/lib/formatters";
@@ -11,6 +12,7 @@ import { clashWord, dayFacts, jobFrom, jobsOnDay, jobsWord, jobTo, type Schedule
 import { getStatusIntent, intentStyles } from "@/lib/status-colors";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
+import type { JobSelection } from "./jobs-timeline";
 
 /**
  * The Schedule on a phone (spec §9o.6, D82): day mode IS the agenda. Day chips
@@ -26,6 +28,7 @@ interface Props {
   onDay: (day: string) => void;
   onOpenJob: (id: string) => void;
   menuFor: (job: ScheduleJob) => ActionMenuSpec;
+  selection: JobSelection;
 }
 
 function Chips({ jobs, range, day, onDay }: Pick<Props, "jobs" | "range" | "day" | "onDay">) {
@@ -56,10 +59,11 @@ function Chips({ jobs, range, day, onDay }: Pick<Props, "jobs" | "range" | "day"
   );
 }
 
-function Card({ job, onOpen, menu }: { job: ScheduleJob; onOpen: () => void; menu: ActionMenuSpec }) {
+function Card({ job, onOpen, menu, ticked, onTick }: { job: ScheduleJob; onOpen: () => void; menu: ActionMenuSpec; ticked: boolean; onTick: () => void }) {
   const word = clashWord(job);
   return (
-    <li className="flex min-h-[60px] items-center gap-1 rounded-[var(--r)] border border-line-2 bg-card pl-3 pr-1">
+    <li className="flex min-h-[60px] items-center gap-1 rounded-[var(--r)] border border-line-2 bg-card pl-1 pr-1">
+      <Checkbox aria-label={`Select ${job.projectNumber}`} className="min-h-11 min-w-11" checked={ticked} onClick={onTick} />
       <button type="button" onClick={onOpen} className="flex min-h-11 min-w-0 flex-1 flex-col justify-center py-2 text-left">
         <span className="flex min-w-0 items-center gap-1.5 text-ui-text text-ink">
           <span className="font-mono font-medium">{job.projectNumber}</span>
@@ -79,7 +83,7 @@ function Card({ job, onOpen, menu }: { job: ScheduleJob; onOpen: () => void; men
   );
 }
 
-export function PhoneSchedule({ jobs, range, day, onDay, onOpenJob, menuFor }: Props) {
+export function PhoneSchedule({ jobs, range, day, onDay, onOpenJob, menuFor, selection }: Props) {
   const on = jobsOnDay(jobs, day);
   return (
     <div className="flex flex-col gap-3">
@@ -89,7 +93,7 @@ export function PhoneSchedule({ jobs, range, day, onDay, onOpenJob, menuFor }: P
       ) : (
         <ul className="flex flex-col gap-2" aria-label={`Jobs on ${day}`}>
           {on.map((j) => (
-            <Card key={j.id} job={j} onOpen={() => onOpenJob(j.id)} menu={menuFor(j)} />
+            <Card key={j.id} job={j} onOpen={() => onOpenJob(j.id)} menu={menuFor(j)} ticked={selection.ids.has(j.id)} onTick={() => selection.onToggle(j.id, false)} />
           ))}
         </ul>
       )}

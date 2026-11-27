@@ -4,7 +4,9 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
-import { PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
+import { ConfirmStatusImpactDialog } from "@/components/projects/confirm-status-impact-dialog";
+import { DateMoveImpactDialog } from "@/components/projects/date-move-impact-dialog";
+import { BulkBar, PinnedAboveBottomNav } from "@/components/ui/bulk-bar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListHead, ListSegments, type HeadWords, type ListPrimary } from "@/components/ui/list-page-parts";
@@ -22,12 +24,14 @@ import { projectStatusLabels } from "@/lib/status-labels";
 import { useCanDo } from "@/lib/use-permissions";
 import { GearGrid } from "./gear-grid";
 import { ModelDaySheet } from "./gear-sheet";
-import { JobsTimeline } from "./jobs-timeline";
+import { MoveDatesDialog } from "./move-dates-dialog";
+import { JobsTimeline, type JobSelection } from "./jobs-timeline";
 import { PhoneGear } from "./phone-gear";
 import { PhoneSchedule } from "./phone-schedule";
 import { DaySheet, JobSheet } from "./schedule-sheets";
 import { rangeLabel, ScheduleToolbar } from "./schedule-toolbar";
 import { useScheduleActions } from "./use-schedule-actions";
+import { useScheduleBulk } from "./use-schedule-bulk";
 import { useScheduleRead } from "./use-schedule-read";
 import { useScheduleUrl, type ScheduleUrl } from "./use-schedule-url";
 
@@ -45,6 +49,7 @@ export function SchedulePage() {
 }
 
 type Read = ReturnType<typeof useScheduleRead>;
+type Bulk = ReturnType<typeof useScheduleBulk>;
 
 /** The two view words, each a link that keeps the range and filters and drops the strip and open sheets. */
 function useHeadWords(url: ScheduleUrl): HeadWords {
@@ -69,7 +74,8 @@ function ScheduleInner({ orgId }: { orgId: string | undefined }) {
   const read = useScheduleRead(orgId, url, roster.options);
   const headWords = useHeadWords(url);
   const exportCsv = () => (url.mode === "gear" && read.gear.data ? gearCsv(read.gear.data, read.gear.shown) : scheduleCsv(read.jobs.shown, (s) => projectStatusLabels[s] ?? s));
-  const act = useScheduleActions(url, session?.user.id, exportCsv);
+  const bulk = useScheduleBulk(orgId, read.jobs.shown);
+  const act = useScheduleActions(url, session?.user.id, exportCsv, bulk.verbs);
 
   return (
     <div className="space-y-4">
@@ -79,11 +85,13 @@ function ScheduleInner({ orgId }: { orgId: string | undefined }) {
       {url.mode === "gear" ? (
         <GearBody read={read} url={url} today={today} phone={phone} />
       ) : (
-        <JobsBody read={read} url={url} today={today} phone={phone} menuFor={act.menuFor} canCreate={act.canCreate} />
+        <JobsBody read={read} url={url} today={today} phone={phone} menuFor={act.menuFor} canCreate={act.canCreate} selection={bulk.selection} />
       )}
       <Notes truncated={read.truncated} mode={url.mode} />
-      {phone && url.mode === "jobs" && <PhonePrimary primary={act.primary} />}
-      <Sheets url={url} read={read} phone={phone} nameOf={roster.nameOf} />
+      {url.mode === "jobs" && <BulkBar selection={{ count: bulk.ticked.length, clear: bulk.clear }} actions={bulk.actions} noun="job" />}
+      {phone && url.mode === "jobs" && bulk.ticked.length === 0 && <PhonePrimary primary={act.primary} />}
+      <Sheets url={url} read={read} phone={phone} nameOf={roster.nameOf} bulk={bulk} />
+      <GateDialogs bulk={bulk} />
     </div>
   );
 }
@@ -149,7 +157,7 @@ function Notes({ truncated, mode }: { truncated: boolean; mode: "jobs" | "gear" 
 }
 
 /** The job sheet (both views: a Gear cell's `Held by` row opens it), the day sheet (Jobs, desktop) and the model-day sheet (Gear). */
-function Sheets({ url, read, phone, nameOf }: { url: ScheduleUrl; read: Read; phone: boolean; nameOf: Map<string, string> }) {
+function Sheets({ url, read, phone, nameOf, bulk }: { url: ScheduleUrl; read: Read; phone: boolean; nameOf: Map<string, string>; bulk: Bulk }) {
   const canSubHire = useCanDo("subHire", "create");
   const canModel = useCanDo("model", "read");
   const open = read.jobs.data?.jobs.find((j) => j.id === url.view.job) ?? null;
@@ -158,7 +166,7 @@ function Sheets({ url, read, phone, nameOf }: { url: ScheduleUrl; read: Read; ph
   const opened = cell && read.gear.data ? cellAt(read.gear.data, cell.modelId, cell.day) : null;
   return (
     <>
-      <JobSheet job={open} pmName={pm ? nameOf.get(pm) : undefined} onClose={() => url.openJob(null)} />
+      <JobSheet job={open} pmName={pm ? nameOf.get(pm) : undefined} onClose={() => url.openJob(null)} verbs={open ? bulk.sheetVerbsFor(open) : undefined} />
       {!phone && url.mode === "jobs" && <DaySheet day={url.view.day} jobs={read.jobs.shown} onOpenJob={url.openJob} onClose={() => url.openDay(null)} />}
       <ModelDaySheet opened={opened} onOpenJob={url.openJob} onClose={() => url.openCell(null)} canSubHire={canSubHire} canModel={canModel} />
     </>
@@ -172,15 +180,15 @@ interface BodyProps {
   phone: boolean;
 }
 
-function JobsBody({ read, url, today, phone, menuFor, canCreate }: BodyProps & { menuFor: (j: ScheduleJob) => ActionMenuSpec; canCreate: boolean }) {
+function JobsBody({ read, url, today, phone, menuFor, canCreate, selection }: BodyProps & { menuFor: (j: ScheduleJob) => ActionMenuSpec; canCreate: boolean; selection: JobSelection }) {
   const { data, shown } = read.jobs;
   if (!data) return <ScheduleSkeleton />;
   if (shown.length === 0) return <ScheduleEmpty filtered={data.jobs.length > 0} url={url} canCreate={canCreate} />;
   if (phone) {
     const day = phoneDayOf(url.view.day, url.range.days, today);
-    return <PhoneSchedule jobs={shown} range={url.range} day={day} onDay={url.openDay} onOpenJob={url.openJob} menuFor={menuFor} />;
+    return <PhoneSchedule jobs={shown} range={url.range} day={day} onDay={url.openDay} onOpenJob={url.openJob} menuFor={menuFor} selection={selection} />;
   }
-  return <JobsTimeline jobs={shown} range={url.range} today={today} onOpenJob={url.openJob} onOpenDay={url.openDay} menuFor={menuFor} />;
+  return <JobsTimeline jobs={shown} range={url.range} today={today} onOpenJob={url.openJob} onOpenDay={url.openDay} menuFor={menuFor} selection={selection} />;
 }
 
 function GearBody({ read, url, today, phone }: BodyProps) {
@@ -193,6 +201,18 @@ function GearBody({ read, url, today, phone }: BodyProps) {
     return <PhoneGear data={data} rows={shown} day={phoneDayOf(url.view.day, keys, today)} onDay={url.openDay} onOpenCell={open} />;
   }
   return <GearGrid data={data} rows={shown} range={url.range} today={today} categoryName={read.categoryName} onOpenCell={open} />;
+}
+
+/** The two existing heads-up dialogs (confirm-impact and date-move-impact) and the Move dates dialog, each hosted once. */
+function GateDialogs({ bulk }: { bulk: Bulk }) {
+  const w = bulk.writes;
+  return (
+    <>
+      <ConfirmStatusImpactDialog open={!!w.confirmGate.pending} impact={w.confirmGate.pending?.impact ?? null} pending={false} onConfirm={w.confirmGate.confirmPending} onCancel={w.cancelConfirm} />
+      <DateMoveImpactDialog open={!!w.moveGate.pending} rows={w.moveGate.pending?.rows ?? []} pending={false} onConfirm={w.moveGate.confirmPending} onCancel={w.cancelMove} />
+      <MoveDatesDialog jobs={bulk.moveJobs} onClose={bulk.closeMove} onMove={(jobs, days) => void bulk.move(jobs, days)} />
+    </>
+  );
 }
 
 function ScheduleSkeleton() {

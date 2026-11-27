@@ -503,6 +503,8 @@ async function auditProjectEdit(
   a: {
     orgId: string; project: Doc<"projects">; setObj: Record<string, unknown>; clear: string[];
     actor: { userId: string; userName: string }; auditId: string; now: number; summary: string;
+    /** The write opted into the dates lock (`lockDates`): recorded, so the exact Undo honours it too. */
+    lockDates?: boolean;
   },
 ): Promise<void> {
   const fields = [...Object.keys(a.setObj), ...a.clear].filter((f) => f !== "updatedAt");
@@ -512,7 +514,7 @@ async function auditProjectEdit(
     orgId: a.orgId, entityType: "project", entityId: a.project.id, entityName: a.project.projectNumber,
     auditId: a.auditId, actor: a.actor, summary: a.summary, now: a.now, links: { projectId: a.project.id },
   };
-  if (diff) return recordFieldEdit(ctx, { ...base, diff });
+  if (diff) return recordFieldEdit(ctx, { ...base, diff, ...(a.lockDates ? { extraDetails: { lockDates: true } } : {}) });
   await writeActivityLog(ctx, {
     id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project", entityId: a.project.id,
     entityName: a.project.projectNumber, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary,
@@ -663,7 +665,7 @@ export const updateNative = mutation({
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
     await auditProjectEdit(ctx, {
-      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`,
+      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`, lockDates,
     });
 
     return { id };

@@ -46,11 +46,11 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 
 // The EXISTING writes and reads: nothing here is a new mutation.
 const w = vi.hoisted(() => ({
-  updateStatus: vi.fn(async (_id: string, _s: string) => {}),
-  updateSchedule: vi.fn(async (_id: string, _p: unknown, _o?: unknown) => ({ auditId: "aud" })),
-  undoUpdate: vi.fn(async (_id: string, _a: string) => {}),
-  impact: vi.fn((_projectId: string) => ({ hardOverbookingModelCount: 0, hardOverbookingQty: 0, unconfirmedCrewCount: 0 })),
-  dateImpact: vi.fn((_projectId: string) => ({ rows: [] as unknown[], windowMoved: true })),
+  updateStatus: vi.fn<(id: string, status: string) => Promise<void>>(async () => {}),
+  updateSchedule: vi.fn<(id: string, patch: unknown, opts?: unknown) => Promise<{ auditId: string }>>(async () => ({ auditId: "aud" })),
+  undoUpdate: vi.fn<(id: string, auditId: string) => Promise<void>>(async () => {}),
+  impact: vi.fn<(projectId: string) => { hardOverbookingModelCount: number; hardOverbookingQty: number; unconfirmedCrewCount: number }>(() => ({ hardOverbookingModelCount: 0, hardOverbookingQty: 0, unconfirmedCrewCount: 0 })),
+  dateImpact: vi.fn<(projectId: string) => { rows: unknown[]; windowMoved: boolean }>(() => ({ rows: [], windowMoved: true })),
   live: vi.fn((): { id: string; status: string }[] => []),
 }));
 vi.mock("@/hooks/use-native-project-writes", () => ({
@@ -84,12 +84,13 @@ const jobs = [
   mk("2337", "2026-11-10", "2026-11-11", { status: "CONFIRMED" }),
   mk("2370", "2026-11-09", "2026-11-15", { status: "CHECKED_OUT" }),
 ];
+const fx = vi.hoisted(() => ({ jobs: undefined as unknown[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
     useAuthedQuery: (f: FunctionReference<"query">, args: unknown) => {
       if (args === "skip" || getFunctionName(f) !== "scheduleBoard:jobs") return undefined;
-      return { truncated: false, models: [{ id: "m1", name: "EM4", categoryId: null }], jobs };
+      return { truncated: false, models: [{ id: "m1", name: "EM4", categoryId: null }], jobs: fx.jobs ?? jobs };
     },
   };
 });
@@ -109,6 +110,8 @@ beforeEach(() => {
   nav.push.mockClear();
   perms.deny = new Set();
   vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
+  fx.jobs = undefined;
   w.updateStatus.mockClear();
   w.updateSchedule.mockClear();
   w.updateSchedule.mockImplementation(async () => ({ auditId: "aud" }));
@@ -183,7 +186,7 @@ describe("Confirm n: the existing confirm gate, its ONE onProceed, ONE Undo", ()
     w.updateStatus.mockClear();
     lastToast().undo!();
     await waitFor(() => expect(w.updateStatus.mock.calls).toEqual([["2350", "QUOTED"]]));
-    await waitFor(() => expect(lastToast().title).toBe("1 job had moved on, left as it is"));
+    await waitFor(() => expect(lastToast().title).toBe("1 job had moved on, left as it is (#2351)"));
   });
 
   it("a clash raises the existing heads-up for that row: Cancel keeps it Quoted and names it, Confirm anyway proceeds, and the batch carries on", async () => {
@@ -275,6 +278,42 @@ describe("Move dates: the existing date-move gate, its ONE onProceed, the server
     await user.click(within(dialog).getByRole("button", { name: "Move 1" }));
     await waitFor(() => expect(lastToast().title).toBe("Moved 0 jobs by -7 days · skipped #2350: Dates are locked while the gear is out"));
     expect(lastToast().undo).toBeUndefined(); // nothing changed, nothing to undo
+  });
+});
+
+describe("the bulk cap and the Undo's kept rows", () => {
+  it("more than 50 ticked jobs: a clear message and nothing runs (the server still gates each row)", async () => {
+    fx.jobs = Array.from({ length: 51 }, (_, i) => mk(`3${String(i).padStart(3, "0")}`, "2026-11-10", "2026-11-12", { status: "QUOTED", holds: false }));
+    const user = userEvent.setup();
+    render(<SchedulePage />);
+    await user.click(screen.getByRole("checkbox", { name: "Select every job shown" }));
+    await user.click(screen.getByRole("button", { name: "Confirm 51" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("51 jobs selected: 50 at most at a time. Untick some and try again."));
+    expect(w.updateStatus).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Move dates 51…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "1 day later" }));
+    await user.click(within(dialog).getByRole("button", { name: "Move 51" }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(2));
+    expect(w.updateSchedule).not.toHaveBeenCalled();
+  });
+
+  it("a Move Undo the server refuses for a row (changed or deployed since) leaves it and NAMES it, and the other rows are still undone", async () => {
+    w.undoUpdate.mockImplementation(async (id: string) => {
+      if (id === "2350") throw new Error("DATES_LOCKED");
+    });
+    const user = userEvent.setup();
+    render(<SchedulePage />);
+    await user.click(screen.getByRole("checkbox", { name: "Select #2350" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select #2351" }));
+    await user.click(screen.getByRole("button", { name: "Move dates 2…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "1 day later" }));
+    await user.click(within(dialog).getByRole("button", { name: "Move 2" }));
+    await waitFor(() => expect(lastToast().undo).toBeDefined(), { timeout: 3000 });
+    lastToast().undo!();
+    await waitFor(() => expect(w.undoUpdate).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    await waitFor(() => expect(lastToast().title).toBe("1 job had changed since, left as it is (#2350)"), { timeout: 3000 });
   });
 });
 

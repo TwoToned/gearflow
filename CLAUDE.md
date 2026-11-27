@@ -776,8 +776,11 @@ The Gear view's free count per model per day (`scheduleBoard.grid`, `convex/lib/
 day (`free = effective − held`), never a stored or re-derived count; a cell whose inputs were cut is `unknown` and prints no number.
 The Schedule's bulk `Confirm n` / `Move dates…` add no write path: they loop the existing per-job write behind the existing
 gate (`useConfirmStatusGate`, `useDateMoveGate`, each ONE `onProceed`), skipped rows are named, ONE Undo per batch
-(`useRestoreJobStatuses`, `undoUpdateNative`). Locked dates (gear out, finished) are the SERVER's rule: `updateNative` with
-`lockDates` (`convex/lib/projectDatesLock.ts`); the menus only hide what it would refuse.
+(`useRestoreJobStatuses`, `undoUpdateNative`; Confirm's Undo restores the status only, the snapshot and `pricingLocked` stay).
+The Schedule opts into a server refusal of date moves on jobs whose gear is out or that are finished
+(`updateNative` with `lockDates`, `convex/lib/projectDatesLock.ts`, recorded on the audit row so the exact Undo honours it
+too); other writers (the job edit sheet, Logistics, API/MCP/Mira) can still move deployed dates. The menus only hide what
+the server would refuse.
 
 ### The floor — the column is DERIVED, Undo is EXACT, the pull sheet is ONE list
 `/warehouse` (the floor, FEATUREDOCS/12) has three rules that look relaxable and aren't:

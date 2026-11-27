@@ -9,7 +9,11 @@
 import { datesLockedReason } from "../../convex/lib/projectDatesLock";
 import { addDays, keyOfMs } from "@/lib/crew-planner";
 import type { ScheduleJob } from "@/lib/schedule";
+import { shiftWindowWithRental } from "@/lib/project-form-dates";
 import type { ProjectSchedulePatch } from "@/lib/validations/project";
+
+/** The most jobs one bulk Confirm or Move acts on (the server's agent cap is 50; each row is still gated server-side). */
+export const MAX_SCHEDULE_BULK = 50;
 
 /** `Move by`: a week or a day either way. */
 export const MOVE_OPTIONS = [
@@ -43,13 +47,26 @@ export interface DateMove {
   to: { start: string; end: string };
 }
 
-/** Every date side moves by the same whole calendar days (UTC, so DST never shifts a date); times are untouched. */
+/**
+ * The rental window moves by whole calendar days; a SET job window is carried by the ONE shared rule
+ * (`shiftWindowWithRental`, D25: each side moves by its own rental side's delta, a blank side stays
+ * blank, times untouched), never a second copy of it here.
+ */
 export function moveDates(job: Pick<ScheduleJob, "rentalStart" | "rentalEnd" | "windowStart" | "windowEnd">, days: number): DateMove {
   const rentalStart = dayStr(job.rentalStart, days);
   const rentalEnd = dayStr(job.rentalEnd, days);
+  const shifted = shiftWindowWithRental(
+    { rentalStartDate: keyOfMs(job.rentalStart), rentalEndDate: keyOfMs(job.rentalEnd) },
+    {
+      rentalStartDate: rentalStart,
+      rentalEndDate: rentalEnd,
+      projectStartDate: job.windowStart != null ? keyOfMs(job.windowStart) : undefined,
+      projectEndDate: job.windowEnd != null ? keyOfMs(job.windowEnd) : undefined,
+    },
+  );
   const patch: ProjectSchedulePatch = { rentalStartDate: rentalStart, rentalEndDate: rentalEnd };
-  if (job.windowStart != null) patch.projectStartDate = dayStr(job.windowStart, days);
-  if (job.windowEnd != null) patch.projectEndDate = dayStr(job.windowEnd, days);
+  if (shifted.projectStartDate) patch.projectStartDate = shifted.projectStartDate;
+  if (shifted.projectEndDate) patch.projectEndDate = shifted.projectEndDate;
   return {
     patch,
     before: { start: job.windowStart ?? job.rentalStart, end: job.windowEnd ?? job.rentalEnd },

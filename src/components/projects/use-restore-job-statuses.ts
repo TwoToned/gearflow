@@ -12,23 +12,25 @@ import { plural } from "@/lib/list-write-toast";
  * restores each row to the status it had before the write, but ONLY rows whose
  * LIVE status (read from the server at undo time, never the snapshot) is still
  * the one the write set. Rows that moved on since are left alone and named in
- * the toast. Never a second reverse implementation.
+ * the toast. Never a second reverse implementation. It restores the STATUS only: the pricing snapshot and
+ * `pricingLocked` a Confirm raised stay (same as the Jobs list).
  */
 export function useRestoreJobStatuses(orgId: string | undefined) {
   const convex = useConvex();
   const statusWrites = useNativeProjectStatus(orgId);
-  return (rows: { id: string; status?: string | null }[], wrote: string) => async (): Promise<string | void> => {
+  return (rows: { id: string; status?: string | null; projectNumber?: string }[], wrote: string) => async (): Promise<string | void> => {
     if (!orgId) return;
     const live = await convex.query(api.projects.listByIds, { orgId, ids: rows.map((r) => r.id) });
     const current = new Map(live.map((p) => [p.id, p.status ?? "ENQUIRY"]));
-    let movedOn = 0;
+    const kept: string[] = [];
     for (const r of rows) {
       if (current.get(r.id) !== wrote) {
-        movedOn++;
+        kept.push(r.projectNumber ?? r.id);
         continue;
       }
       await statusWrites.updateStatus(r.id, r.status ?? "ENQUIRY");
     }
-    return movedOn > 0 ? `${plural(movedOn, "job")} had moved on, left as ${movedOn === 1 ? "it is" : "they are"}` : undefined;
+    // The rows left alone are NAMED, never just counted.
+    return kept.length > 0 ? `${plural(kept.length, "job")} had moved on, left as ${kept.length === 1 ? "it is" : "they are"} (${kept.slice(0, 4).join(", ")}${kept.length > 4 ? ` +${kept.length - 4} more` : ""})` : undefined;
   };
 }

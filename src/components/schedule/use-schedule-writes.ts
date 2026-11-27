@@ -124,17 +124,18 @@ function useMoveBatch(orgId: string | undefined, w: Waiters) {
   };
   const run = async (rows: ScheduleJob[], days: number) => {
     const out = await runBulk(rows, { name: numberOf, gate: moveSkipReason, apply: (j) => moveRow(j, days) });
-    const done = out.done.flatMap((j) => (audits.current.has(j.id) ? [{ id: j.id, auditId: audits.current.get(j.id)! }] : []));
+    const done = out.done.flatMap((j) => (audits.current.has(j.id) ? [{ id: j.id, name: numberOf(j), auditId: audits.current.get(j.id)! }] : []));
     const undo = async (): Promise<string | void> => {
-      let kept = 0;
+      const kept: string[] = [];
       for (const d of done) {
         try {
           await projectWrites.undoUpdate(d.id, d.auditId);
         } catch {
-          kept++;
+          kept.push(d.name);
         }
       }
-      return kept > 0 ? `${plural(kept, "job")} had changed since, left as ${kept === 1 ? "it is" : "they are"}` : undefined;
+      // Rows the exact Undo refused (changed since, or deployed since) are NAMED, never just counted.
+      return kept.length > 0 ? `${plural(kept.length, "job")} had changed since, left as ${kept.length === 1 ? "it is" : "they are"} (${kept.slice(0, 4).join(", ")}${kept.length > 4 ? ` +${kept.length - 4} more` : ""})` : undefined;
     };
     announce(`Moved ${plural(out.done.length, "job")} by ${days > 0 ? "+" : ""}${days} ${Math.abs(days) === 1 ? "day" : "days"}`, out, undo);
   };

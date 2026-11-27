@@ -7,6 +7,7 @@ import type { AgentOpsAnnotations } from "./lib/agentOps";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
 import { undoFieldEdit } from "./lib/fieldEditUndo";
+import { assertDatesMovable } from "./lib/projectDatesLock";
 import { LOCKED_PROJECT_FIELDS, assertPricingUnlocked } from "./lib/projectLocks";
 import { recalcIfInputsWritten, PROJECT_UPDATE_IMMUTABLE } from "./projectWrites";
 
@@ -49,6 +50,22 @@ async function assertRestoredRefsInOrg(
   }
 }
 
+/**
+ * A move that opted into the dates lock (`updateNative` `lockDates`, recorded on its audit row) is
+ * undone under the SAME rule: if the job's gear is now out (or it is finished) and the undo would put
+ * dates back, it refuses with `DATES_LOCKED` instead of rewriting a deployed job's dates.
+ */
+async function assertDatesStillMovable(
+  ctx: MutationCtx,
+  a: { orgId: string; auditId: string },
+  project: Doc<"projects">,
+  plan: { set: Record<string, unknown>; clear: string[] },
+): Promise<void> {
+  const audit = await ctx.db.query("activityLogs").withIndex("by_cuid", (q) => q.eq("id", a.auditId)).first();
+  const details = audit && audit.organizationId === a.orgId ? (audit.details as { lockDates?: boolean } | undefined) : undefined;
+  if (details?.lockDates === true) assertDatesMovable(project.status, [...Object.keys(plan.set), ...plan.clear]);
+}
+
 export const undoUpdateNative = mutation({
   returns: v.object({ restored: v.array(v.string()) }),
   args: { orgId: v.string(), projectId: v.string(), auditId: v.string(), actor: actorValidator, now: v.number() },
@@ -65,6 +82,7 @@ export const undoUpdateNative = mutation({
       },
       apply: async (project, plan) => {
         assertRestorable(plan);
+        await assertDatesStillMovable(ctx, a, project, plan);
         await assertRestoredRefsInOrg(ctx, a.orgId, project, plan);
         if (LOCKED_PROJECT_FIELDS.some((f) => f in plan.set || plan.clear.includes(f))) assertPricingUnlocked(project);
         const patch: Record<string, unknown> = { ...plan.set, updatedAt: a.now };

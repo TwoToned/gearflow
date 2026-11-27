@@ -2,11 +2,13 @@
 
 import * as React from "react";
 
+import { toast } from "sonner";
+
 import { useRangeSelection } from "@/components/crew/workspace/planner/use-range-selection";
 import { useCanDo } from "@/lib/use-permissions";
 import type { ScheduleJob } from "@/lib/schedule";
 import { buildScheduleBulkActions } from "@/lib/row-actions/schedule-bulk";
-import { confirmSkipReason, moveSkipReason } from "@/lib/schedule-move";
+import { confirmSkipReason, MAX_SCHEDULE_BULK, moveSkipReason } from "@/lib/schedule-move";
 import type { JobSelection } from "./jobs-timeline";
 import type { JobSheetVerbs } from "./schedule-sheets";
 import { useScheduleWrites } from "./use-schedule-writes";
@@ -32,11 +34,19 @@ export function useScheduleBulk(orgId: string | undefined, shown: ScheduleJob[])
     onToggle: (id, shift) => sel.toggle(id, order, shift),
     onToggleAll: (on) => sel.setAll(order, on),
   };
+  /** A client cap with a clear message (the server still gates every row): a bulk write never runs past it. */
+  const withinCap = (jobs: ScheduleJob[]): boolean => {
+    if (jobs.length <= MAX_SCHEDULE_BULK) return true;
+    toast.error(`${jobs.length} jobs selected: ${MAX_SCHEDULE_BULK} at most at a time. Untick some and try again.`);
+    return false;
+  };
   const confirm = async (jobs: ScheduleJob[]) => {
+    if (!withinCap(jobs)) return;
     await writes.confirmMany(jobs);
     sel.clear();
   };
   const move = async (jobs: ScheduleJob[], days: number) => {
+    if (!withinCap(jobs)) return;
     await writes.moveMany(jobs, days);
     sel.clear();
   };

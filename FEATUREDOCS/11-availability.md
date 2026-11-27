@@ -31,18 +31,24 @@ that applies to none, or that the caller cannot use (`project:update`), is absen
   `updateStatus(id, "CONFIRMED")` (`updateStatusNative`, with its own server gates). No clash: no UI change. A clash raises
   the existing `ConfirmStatusImpactDialog` for that row: Cancel skips only that row (`kept as Quoted`), `Confirm anyway`
   proceeds. A server refusal skips the row with the server's own message. Undo is `useRestoreJobStatuses`, extracted from
-  the Jobs list (`use-restore-job-statuses.ts`, one closure for both): exact rows, live-status guarded.
+  the Jobs list (`use-restore-job-statuses.ts`, one closure for both): exact rows, live-status guarded, rows left alone are
+  NAMED. It restores the STATUS only: the pricing snapshot and `pricingLocked` a Confirm raised stay (same as the Jobs list).
 - **Move dates** moves the rental window and a SET job window by the same whole calendar days (UTC), times untouched
   (`src/lib/schedule-move.ts`); services and crew calls keep their dates (the Logistics tab moves them). It runs
   `useDateMoveGate` (now taking an optional per-call target so ONE gate and ONE `onProceed` serve a batch), whose
   `onProceed` is `updateSchedule(id, patch, { lockDates: true })`, the same `updateNative`. The heads-up is the existing
   `DateMoveImpactDialog` (button `Move anyway`). Undo is `undoUpdate` per recorded audit id (`undoUpdateNative`: restores
-  exactly the fields that edit changed, refusing if any changed since; a refusal is counted in the toast).
-- **Locked dates are the SERVER's rule.** `updateNative` takes an opt-in `lockDates` flag; with it, a date change on a job
-  whose gear is out (`CHECKED_OUT`, `ON_SITE`) or that is finished (`RETURNED`, `COMPLETED`, `INVOICED`, `CANCELLED`) is
-  refused with `DATES_LOCKED`. The rule is one function (`convex/lib/projectDatesLock.ts`), imported by the menus only to hide
-  what the server would refuse. Opt-in on purpose: extending a hire from the job's own edit sheet or Logistics tab is a
-  different surface and is unchanged. The job sheet says `Dates are locked while the gear is out.` in words.
+  exactly the fields that edit changed, refusing if any changed since; a refusal names the job in the toast).
+- **The Schedule opts into a server refusal (`lockDates`); other writers can still move deployed dates.** `updateNative`
+  takes an opt-in `lockDates` flag, and the Schedule's Move always sends it. With it, a date change on a job whose gear is out
+  (`CHECKED_OUT`, `ON_SITE`) or that is finished (`RETURNED`, `COMPLETED`, `INVOICED`, `CANCELLED`) is refused with
+  `DATES_LOCKED`, so a hidden or stale menu cannot move one. The rule is one function (`convex/lib/projectDatesLock.ts`),
+  imported by the menus only to hide what the server would refuse. It is NOT a lock on the job: the job edit sheet, the
+  Logistics tab and the API / MCP / Mira can still move a deployed job's dates (extending a hire is a real need), and
+  spec §9o.5 only asks the sheet to SAY the dates are locked (it does, in words). Making it the default is an owner call.
+  The flag is recorded on the move's audit row, so its exact Undo honours the same rule: if the job has been deployed since,
+  the Undo refuses with `DATES_LOCKED` rather than rewriting a deployed job's dates.
+- A bulk verb runs on at most 50 jobs (`MAX_SCHEDULE_BULK`, a clear message past it; the server still gates every row).
 - One `announceListWrite` toast per batch, skipped rows NAMED and grouped by their own reason
   (`skipped #2370: Dates are locked while the gear is out; #2337: kept its dates`), ONE Undo closure.
 - **Follow-ups (not built):** bulk `Sub-hire n short` from a Gear selection (the cover needs a supplier and price: the

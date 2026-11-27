@@ -394,6 +394,37 @@ describe("projectWrites.updateNative lockDates (the Schedule's date move)", () =
     await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, set: {}, clear: ["projectEndDate"], auditId: "log2", lockDates: true })).rejects.toThrow(/locked/i);
   });
 
+  describe("the exact Undo of a locked move honours the same lock", () => {
+    const undoArgs = { orgId: ORG, projectId: "p1", auditId: "log1", actor: ACTOR, now: NOW };
+    const deploy = (t: ReturnType<typeof convexTest>) => t.run(async (ctx) => { const p = await ctx.db.query("projects").first(); if (p) await ctx.db.patch(p._id, { status: "CHECKED_OUT" }); });
+
+    test("while the job can still move, the Undo restores the dates", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs);
+      expect(await dateOf(t)).toBeNull();
+    });
+
+    test("once the gear is out, the Undo of a lockDates move refuses with DATES_LOCKED and the dates stay", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true });
+      await deploy(t);
+      await expect(t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs)).rejects.toThrow(/locked/i);
+      expect(await dateOf(t)).toBe(NOW + 86_400_000);
+    });
+
+    test("an edit made WITHOUT lockDates is undone as before, even on a job that is now out (the lock is the Schedule's opt-in)", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, move);
+      await deploy(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs);
+      expect(await dateOf(t)).toBeNull();
+    });
+  });
+
   test("without lockDates nothing changes: the job's own edit still moves a deployed job's dates", async () => {
     const t = makeT();
     await seedProject(t, "member", false, "CHECKED_OUT");

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { chaseSummary } from "@/components/projects/project-quote-rail";
+import { chaseSummary } from "@/lib/finance-chase";
 import { quoteRowFlags, standardQuoteRowActions, ownerOnlyQuoteRowActions } from "@/lib/row-actions/quote-row";
 
 /**

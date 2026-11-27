@@ -22,7 +22,7 @@ interface Job {
   id: string;
   status: string;
   win: Window;
-  lines: { qty: number; off?: number; optional?: boolean; subHire?: boolean; type?: string; status?: string }[];
+  lines: { qty: number; off?: number; optional?: boolean; subHire?: boolean; type?: string; status?: string; kitParent?: boolean; kitChild?: boolean }[];
 }
 
 function project(j: Job): BoardProject & { projectManagerId?: string | null } {
@@ -32,10 +32,15 @@ function project(j: Job): BoardProject & { projectManagerId?: string | null } {
 function lines(jobs: Job[]): BoardLineItem[] {
   let n = 0;
   return jobs.flatMap((j) =>
-    j.lines.map((l) => ({
-      id: `L${n}`, projectId: j.id, modelId: "m1", quantity: l.qty, offInventoryQuantity: l.off, status: l.status ?? "CONFIRMED",
-      isOptional: l.optional, subHireId: l.subHire ? "sh" : null, type: l.type ?? "EQUIPMENT", createdAt: ++n,
-    })),
+    j.lines.map(
+      (l) =>
+        ({
+          // a kit PARENT row carries the kit, not a model (no stock of its own); its member lines are ordinary model demand
+          id: `L${n}`, projectId: j.id, modelId: l.kitParent ? null : "m1", kitId: l.kitParent ? "kit1" : undefined, isKitChild: l.kitChild ? true : undefined,
+          quantity: l.qty, offInventoryQuantity: l.off, status: l.status ?? "CONFIRMED",
+          isOptional: l.optional, subHireId: l.subHire ? "sh" : null, type: l.type ?? "EQUIPMENT", createdAt: ++n,
+        }) as BoardLineItem,
+    ),
   );
 }
 
@@ -124,6 +129,25 @@ describe("the grid reads the board's own sweep over real datetimes", () => {
   });
 });
 
+describe("kit demand", () => {
+  test("a kit parent holds no stock of its own; its member lines are the model's demand, exactly as the board counts them", () => {
+    const jobs: Job[] = [
+      { id: "K", status: "CONFIRMED", win: [D2, D2 + DAY], lines: [{ qty: 1, kitParent: true }, { qty: 1, kitChild: true }, { qty: 1, kitChild: true }] },
+      { id: "B", status: "CONFIRMED", win: [D2, D2 + DAY], lines: [{ qty: 1 }] },
+    ];
+    const inp = input(jobs, { serialised: units(2) });
+    const board = computeGearShortageBoard(RANGE, inp.projects, inp.lines, inp.models, inp.assets, inp.bulkAssets);
+    const r = deriveGearGrid(inp, DAYS)[0];
+    // held = the kit's two member lines + B's one; the parent row is not demand
+    expect(r.cells[2]).toMatchObject({ held: 3, short: 1 });
+    expect(board.hard).toHaveLength(1);
+    expect(board.hard[0]).toMatchObject({ modelId: "m1", qty: 1 });
+    // and a kit-only job is a row only through its members, never through the parent
+    const parentOnly = deriveGearGrid(input([{ id: "P", status: "CONFIRMED", win: [D2, D2], lines: [{ qty: 3, kitParent: true }] }], { serialised: units(1) }), DAYS);
+    expect(parentOnly).toEqual([]);
+  });
+});
+
 describe("a cell that was not read in full is unknown, never a number", () => {
   const jobs: Job[] = [{ id: "A", status: "CONFIRMED", win: [D2, D2], lines: [{ qty: 1 }] }];
 
@@ -182,6 +206,9 @@ function randomTrial(rand: () => number): { jobs: Job[]; stock: Stock } {
           subHire: rand() < 0.15,
           type: rand() < 0.1 ? "SALE" : "EQUIPMENT",
           status: rand() < 0.1 ? "CANCELLED" : "CONFIRMED",
+          // kit shapes: a parent row (no model) and member lines flagged as kit children
+          kitParent: rand() < 0.1,
+          kitChild: rand() < 0.15,
         };
       }),
     };

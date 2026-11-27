@@ -14,6 +14,7 @@ import { assertProjectMoneyFields, assertFinite } from "./lib/moneyGuards";
 import { assertStrLen, assertTags } from "./lib/fieldGuards";
 import { MAX_TAGS } from "./lib/tagLimits";
 import { assertBulkSizeOk } from "./lib/rateLimiter";
+import { assertDatesMovable } from "./lib/projectDatesLock";
 import { assertRefInOrg, assertClientContactBelongsToClient, assertMemberInOrg } from "./lib/orgRef";
 import { assertWritesEnabled } from "./lib/writeGuard";
 import { enforceBrowserWriteLimit } from "./lib/rateLimiter";
@@ -502,6 +503,8 @@ async function auditProjectEdit(
   a: {
     orgId: string; project: Doc<"projects">; setObj: Record<string, unknown>; clear: string[];
     actor: { userId: string; userName: string }; auditId: string; now: number; summary: string;
+    /** The write opted into the dates lock (`lockDates`): recorded, so the exact Undo honours it too. */
+    lockDates?: boolean;
   },
 ): Promise<void> {
   const fields = [...Object.keys(a.setObj), ...a.clear].filter((f) => f !== "updatedAt");
@@ -511,7 +514,7 @@ async function auditProjectEdit(
     orgId: a.orgId, entityType: "project", entityId: a.project.id, entityName: a.project.projectNumber,
     auditId: a.auditId, actor: a.actor, summary: a.summary, now: a.now, links: { projectId: a.project.id },
   };
-  if (diff) return recordFieldEdit(ctx, { ...base, diff });
+  if (diff) return recordFieldEdit(ctx, { ...base, diff, ...(a.lockDates ? { extraDetails: { lockDates: true } } : {}) });
   await writeActivityLog(ctx, {
     id: a.auditId, organizationId: a.orgId, action: "UPDATE", entityType: "project", entityId: a.project.id,
     entityName: a.project.projectNumber, userId: a.actor.userId, userName: a.actor.userName, summary: a.summary,
@@ -551,8 +554,11 @@ export const updateNative = mutation({
     actor: actorValidator,
     auditId: v.string(),
     now: v.number(),
+    // The Schedule's date move (UX Phase 18): refuse a date change on a job whose dates are locked
+    // (gear out, or finished). Opt-in, so the job's own edit and Logistics surfaces are unchanged.
+    lockDates: v.optional(v.boolean()),
   },
-  handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now }) => {
+  handler: async (ctx, { id, orgId, set, clear, actor: suppliedActor, auditId, now, lockDates }) => {
     await assertWritesEnabled(ctx, "project");
     await enforceBrowserWriteLimit(ctx);
     await requireOrgPermission(ctx, orgId, "project", "update");
@@ -561,6 +567,7 @@ export const updateNative = mutation({
     const project = await ctx.db.query("projects").withIndex("by_cuid", (q) => q.eq("id", id)).first();
     if (!project) throw new ConvexError({ code: "NOT_FOUND", message: "Project not found." });
     if (project.organizationId !== orgId) throw new ConvexError("Forbidden: organization mismatch.");
+    if (lockDates) assertDatesMovable(project.status, [...Object.keys(sanitizeClientSet(set, PROJECT_UPDATE_IMMUTABLE)), ...clear]);
 
     // strip organizationId/id (no cross-tenant reassign) + the recalc-owned money anchors,
     // the server-owned `revision` counter (#986) and isTemplate (no client-forged totals,
@@ -658,7 +665,7 @@ export const updateNative = mutation({
 
     const name = (typeof setObj.name === "string" ? setObj.name : undefined) ?? project.name;
     await auditProjectEdit(ctx, {
-      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`,
+      orgId, project, setObj, clear, actor, auditId, now, summary: `Updated project ${project.projectNumber} - ${name}`, lockDates,
     });
 
     return { id };

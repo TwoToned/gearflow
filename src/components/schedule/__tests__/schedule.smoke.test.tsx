@@ -44,6 +44,12 @@ vi.mock("@/hooks/use-member-roster", () => ({
   useMemberRoster: () => ({ nameOf: new Map([["me", "Alice"]]), options: [{ id: "me", name: "Alice" }] }),
 }));
 vi.mock("@/hooks/use-categories", () => ({ useCategories: () => [{ id: "cat1", name: "Audio" }] }));
+// The bulk verbs' writes are covered in schedule-bulk.smoke.test.tsx; here they are inert.
+vi.mock("@/hooks/use-native-project-writes", () => ({
+  useNativeProjectStatus: () => ({ updateStatus: vi.fn() }),
+  useProjectWrites: () => ({ updateSchedule: vi.fn(), undoUpdate: vi.fn() }),
+}));
+vi.mock("convex/react", () => ({ useConvex: () => ({ query: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }) }));
 
 const ms = (d: string) => Date.parse(`${d}T00:00:00.000Z`);
@@ -204,7 +210,7 @@ describe("Schedule (smoke)", () => {
     const user = userEvent.setup();
     render(<SchedulePage />);
     await user.click(screen.getByRole("button", { name: "#2337 actions" }));
-    expect((await screen.findAllByRole("menuitem")).map((i) => i.textContent)).toEqual(["Open job", "Equipment ›", "Logistics ›", "Copy link"]);
+    expect((await screen.findAllByRole("menuitem")).map((i) => i.textContent)).toEqual(["Move dates…", "Open job", "Equipment ›", "Logistics ›", "Copy link"]);
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Schedule options" }));
     expect((await screen.findAllByRole("menuitem")).map((i) => i.textContent)).toEqual([

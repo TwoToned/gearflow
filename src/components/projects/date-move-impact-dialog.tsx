@@ -27,9 +27,12 @@ export function DateMoveImpactDialog({
   pending,
   onConfirm,
   onCancel,
+  confirmLabel = "Save anyway",
 }: {
   open: boolean;
   rows: DateMoveImpactRow[];
+  /** Additive: the proceed button's words (the Schedule says `Move anyway`). */
+  confirmLabel?: string;
   pending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -61,7 +64,7 @@ export function DateMoveImpactDialog({
         </DialogHeader>
         <DialogFooter>
           <Button variant="line" onClick={onCancel} disabled={pending}>Cancel</Button>
-          <Button variant="primary" onClick={onConfirm} disabled={pending}>Save anyway</Button>
+          <Button variant="primary" onClick={onConfirm} disabled={pending}>{confirmLabel}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

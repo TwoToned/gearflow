@@ -11,6 +11,7 @@ import { displayDate, keyOfMs } from "@/lib/crew-planner";
 import { formatDateDayMonth, formatWeekdayDayMonth } from "@/lib/formatters";
 import { clashWord, jobFrom, jobHold, jobsOnDay, jobsWord, jobTo, type ScheduleJob } from "@/lib/schedule";
 import { intentStyles, getStatusIntent } from "@/lib/status-colors";
+import { moveSkipReason } from "@/lib/schedule-move";
 import { projectStatusLabels } from "@/lib/status-labels";
 import { cn } from "@/lib/utils";
 
@@ -105,7 +106,19 @@ function useSheetSide(): "bottom" | "right" {
   return useIsMobile() ? "bottom" : "right";
 }
 
-export function JobSheet({ job, pmName, onClose }: { job: ScheduleJob | null; pmName: string | undefined; onClose: () => void }) {
+/** The sheet's two verbs, run through the page's gates: absent when they do not apply (not Quoted, locked dates, or no `project:update`). */
+export interface JobSheetVerbs {
+  confirm?: (job: ScheduleJob) => void;
+  moveDates?: (job: ScheduleJob) => void;
+}
+
+/** `Dates are locked while the gear is out.`: said in words for everyone, not only the people who could have moved them. */
+function LockedDates({ job }: { job: ScheduleJob }) {
+  const why = moveSkipReason(job);
+  return why ? <p className="text-ui-text text-muted">{why}</p> : null;
+}
+
+export function JobSheet({ job, pmName, onClose, verbs }: { job: ScheduleJob | null; pmName: string | undefined; onClose: () => void; verbs?: JobSheetVerbs }) {
   const side = useSheetSide();
   const word = job ? clashWord(job) : null;
   return (
@@ -125,10 +138,21 @@ export function JobSheet({ job, pmName, onClose }: { job: ScheduleJob | null; pm
             </SheetHeader>
             <Facts job={job} pmName={pmName} />
             <ClashRows job={job} />
+            <LockedDates job={job} />
             <SheetFooter className="flex-col gap-2 sm:flex-col">
               <Button asChild>
                 <Link href={jobHref(job.id)}>Open job</Link>
               </Button>
+              {verbs?.confirm && (
+                <Button type="button" variant="line" onClick={() => verbs.confirm!(job)}>
+                  Confirm…
+                </Button>
+              )}
+              {verbs?.moveDates && (
+                <Button type="button" variant="line" onClick={() => verbs.moveDates!(job)}>
+                  Move dates…
+                </Button>
+              )}
               <Button asChild variant="line">
                 <Link href={jobHref(job.id, "equipment")}>Equipment ›</Link>
               </Button>

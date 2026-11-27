@@ -369,6 +369,70 @@ describe("projectWrites.archiveNative", () => {
   });
 });
 
+describe("projectWrites.updateNative lockDates (the Schedule's date move)", () => {
+  const move = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW, set: { rentalStartDate: NOW + 86_400_000, rentalEndDate: NOW + 2 * 86_400_000 }, clear: [] as string[] };
+  const dateOf = (t: ReturnType<typeof convexTest>) => t.run(async (ctx) => (await ctx.db.query("projects").first())?.rentalStartDate);
+
+  test.each(["CHECKED_OUT", "ON_SITE", "RETURNED", "COMPLETED", "INVOICED", "CANCELLED"])("a %s job's dates are refused by the server, and unchanged", async (status) => {
+    const t = makeT();
+    await seedProject(t, "member", false, status);
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true })).rejects.toThrow(/locked|finished/i);
+    expect(await dateOf(t)).toBeNull();
+  });
+
+  test.each(["ENQUIRY", "QUOTED", "AWAITING_PAYMENT", "CONFIRMED", "PREPPING"])("a %s job's dates move", async (status) => {
+    const t = makeT();
+    await seedProject(t, "member", false, status);
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true });
+    expect(await dateOf(t)).toBe(NOW + 86_400_000);
+  });
+
+  test("only a DATE change is refused: another field on a deployed job still saves, and so does a clear of a date side", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "CHECKED_OUT");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, set: { crewNotes: "Truck at 7" }, lockDates: true });
+    await expect(t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, set: {}, clear: ["projectEndDate"], auditId: "log2", lockDates: true })).rejects.toThrow(/locked/i);
+  });
+
+  describe("the exact Undo of a locked move honours the same lock", () => {
+    const undoArgs = { orgId: ORG, projectId: "p1", auditId: "log1", actor: ACTOR, now: NOW };
+    const deploy = (t: ReturnType<typeof convexTest>) => t.run(async (ctx) => { const p = await ctx.db.query("projects").first(); if (p) await ctx.db.patch(p._id, { status: "CHECKED_OUT" }); });
+
+    test("while the job can still move, the Undo restores the dates", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true });
+      await t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs);
+      expect(await dateOf(t)).toBeNull();
+    });
+
+    test("once the gear is out, the Undo of a lockDates move refuses with DATES_LOCKED and the dates stay", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, { ...move, lockDates: true });
+      await deploy(t);
+      await expect(t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs)).rejects.toThrow(/locked/i);
+      expect(await dateOf(t)).toBe(NOW + 86_400_000);
+    });
+
+    test("an edit made WITHOUT lockDates is undone as before, even on a job that is now out (the lock is the Schedule's opt-in)", async () => {
+      const t = makeT();
+      await seedProject(t, "member", false, "CONFIRMED");
+      await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, move);
+      await deploy(t);
+      await t.withIdentity(asUser(ORG)).mutation(api.projectEditUndo.undoUpdateNative, undoArgs);
+      expect(await dateOf(t)).toBeNull();
+    });
+  });
+
+  test("without lockDates nothing changes: the job's own edit still moves a deployed job's dates", async () => {
+    const t = makeT();
+    await seedProject(t, "member", false, "CHECKED_OUT");
+    await t.withIdentity(asUser(ORG)).mutation(api.projectWrites.updateNative, move);
+    expect(await dateOf(t)).toBe(NOW + 86_400_000);
+  });
+});
+
 describe("projectWrites.updateNative", () => {
   const uargs = { id: "p1", orgId: ORG, actor: ACTOR, auditId: "log1", now: NOW };
   test("member patches fields + UPDATE audit (label from doc)", async () => {

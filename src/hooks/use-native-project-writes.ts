@@ -453,7 +453,12 @@ export function useProjectWrites(orgId: string | undefined) {
    * site contact. `undefined` leaves a field, `""` clears it. Same `updateNative`
    * (and the same server-side checks) as the full edit, with only these keys.
    */
-  const updateSchedule = async (id: string, patch: ProjectSchedulePatch): Promise<void> => {
+  const updateSchedule = async (
+    id: string,
+    patch: ProjectSchedulePatch,
+    /** `lockDates`: the server refuses the write when the job's dates are locked (gear out, or finished): the Schedule's move. */
+    opts?: { lockDates?: boolean },
+  ): Promise<{ auditId: string }> => {
     if (!orgId || !session?.user) throw new Error("Not ready");
     const parsed = projectSchedulePatchSchema.parse(patch);
     const set: Record<string, unknown> = { updatedAt: Date.now() };
@@ -463,16 +468,19 @@ export function useProjectWrites(orgId: string | undefined) {
       if (value === "") clear.push(key);
       else set[key] = /Date$/.test(key) ? new Date(value).getTime() : value;
     }
+    const auditId = createId();
     try {
       await updateM({
         id, orgId, set, clear,
         actor: { userId: session.user.id, userName: session.user.name ?? "" },
-        auditId: createId(),
+        auditId,
         now: Date.now(),
+        ...(opts?.lockDates ? { lockDates: true } : {}),
       });
     } catch (e) {
       throw mapProjectWriteError(e, false);
     }
+    return { auditId };
   };
 
   /**

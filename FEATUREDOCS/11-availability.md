@@ -21,6 +21,33 @@ Move dates verbs (D84) follow in later slices.
   window the engine reads. Held = a quiet raised bar; pencilled = dashed, hatched, holds nothing. Colour lives only in
   the status dot-word and the `clash` / `would clash` word.
 
+### Selection, `Confirm n` and `Move dates…` (D84, slice 3)
+Always-on checkboxes in the Jobs timeline's label column (header = every job shown, shift-click a range) and on the phone
+cards; ticks count only while their job is still SHOWN. The bulk bar (`BulkBar`, replacing the sticky `+ New job` on a
+phone) offers `Confirm n` (the ticked QUOTED jobs) and `Move dates n…` (the ticked jobs whose dates are not locked); a verb
+that applies to none, or that the caller cannot use (`project:update`), is absent. The same two verbs sit in the row ⋯
+(`Confirm…`, `Move dates…`, edit group, absent when they do not apply) and the job sheet. There is NO new write path:
+- **Confirm** runs `useConfirmStatusGate` (the Jobs list and job header's own gate), whose ONE `onProceed` is
+  `updateStatus(id, "CONFIRMED")` (`updateStatusNative`, with its own server gates). No clash: no UI change. A clash raises
+  the existing `ConfirmStatusImpactDialog` for that row: Cancel skips only that row (`kept as Quoted`), `Confirm anyway`
+  proceeds. A server refusal skips the row with the server's own message. Undo is `useRestoreJobStatuses`, extracted from
+  the Jobs list (`use-restore-job-statuses.ts`, one closure for both): exact rows, live-status guarded.
+- **Move dates** moves the rental window and a SET job window by the same whole calendar days (UTC), times untouched
+  (`src/lib/schedule-move.ts`); services and crew calls keep their dates (the Logistics tab moves them). It runs
+  `useDateMoveGate` (now taking an optional per-call target so ONE gate and ONE `onProceed` serve a batch), whose
+  `onProceed` is `updateSchedule(id, patch, { lockDates: true })`, the same `updateNative`. The heads-up is the existing
+  `DateMoveImpactDialog` (button `Move anyway`). Undo is `undoUpdate` per recorded audit id (`undoUpdateNative`: restores
+  exactly the fields that edit changed, refusing if any changed since; a refusal is counted in the toast).
+- **Locked dates are the SERVER's rule.** `updateNative` takes an opt-in `lockDates` flag; with it, a date change on a job
+  whose gear is out (`CHECKED_OUT`, `ON_SITE`) or that is finished (`RETURNED`, `COMPLETED`, `INVOICED`, `CANCELLED`) is
+  refused with `DATES_LOCKED`. The rule is one function (`convex/lib/projectDatesLock.ts`), imported by the menus only to hide
+  what the server would refuse. Opt-in on purpose: extending a hire from the job's own edit sheet or Logistics tab is a
+  different surface and is unchanged. The job sheet says `Dates are locked while the gear is out.` in words.
+- One `announceListWrite` toast per batch, skipped rows NAMED and grouped by their own reason
+  (`skipped #2370: Dates are locked while the gear is out; #2337: kept its dates`), ONE Undo closure.
+- **Follow-ups (not built):** bulk `Sub-hire n short` from a Gear selection (the cover needs a supplier and price: the
+  Overbookings board defers it for the same reason, FEATUREDOCS/65); a `Sub-hire requested` row on the model-day sheet.
+
 ### The Gear view (D81, `?view=gear`)
 Head words `Jobs  Gear` (links that keep the range and filters and drop the strip and the open sheets). `scheduleBoard.grid`
 returns, for every model a job holds or pencils in the range, the free count per day. **It is the same read, budget and

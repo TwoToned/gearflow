@@ -157,18 +157,23 @@ function Notes({ truncated, mode }: { truncated: boolean; mode: "jobs" | "gear" 
 }
 
 /** The job sheet (both views: a Gear cell's `Held by` row opens it), the day sheet (Jobs, desktop) and the model-day sheet (Gear). */
-function Sheets({ url, read, phone, nameOf, bulk }: { url: ScheduleUrl; read: Read; phone: boolean; nameOf: Map<string, string>; bulk: Bulk }) {
+/** The Gear cell's sheet, read from the LIVE grid by `?cell=`. */
+function GearSheet({ url, read }: { url: ScheduleUrl; read: Read }) {
   const canSubHire = useCanDo("subHire", "create");
   const canModel = useCanDo("model", "read");
-  const open = read.jobs.data?.jobs.find((j) => j.id === url.view.job) ?? null;
-  const pm = open?.projectManagerId ?? null;
   const cell = parseCell(url.view.cell);
   const opened = cell && read.gear.data ? cellAt(read.gear.data, cell.modelId, cell.day) : null;
+  return <ModelDaySheet opened={opened} onOpenJob={url.openJob} onClose={() => url.openCell(null)} canSubHire={canSubHire} canModel={canModel} />;
+}
+
+function Sheets({ url, read, phone, nameOf, bulk }: { url: ScheduleUrl; read: Read; phone: boolean; nameOf: Map<string, string>; bulk: Bulk }) {
+  const open = read.jobs.data?.jobs.find((j) => j.id === url.view.job) ?? null;
+  const pm = open?.projectManagerId ?? null;
   return (
     <>
       <JobSheet job={open} pmName={pm ? nameOf.get(pm) : undefined} onClose={() => url.openJob(null)} verbs={open ? bulk.sheetVerbsFor(open) : undefined} />
       {!phone && url.mode === "jobs" && <DaySheet day={url.view.day} jobs={read.jobs.shown} onOpenJob={url.openJob} onClose={() => url.openDay(null)} />}
-      <ModelDaySheet opened={opened} onOpenJob={url.openJob} onClose={() => url.openCell(null)} canSubHire={canSubHire} canModel={canModel} />
+      <GearSheet url={url} read={read} />
     </>
   );
 }
@@ -209,7 +214,7 @@ function GateDialogs({ bulk }: { bulk: Bulk }) {
   return (
     <>
       <ConfirmStatusImpactDialog open={!!w.confirmGate.pending} impact={w.confirmGate.pending?.impact ?? null} pending={false} onConfirm={w.confirmGate.confirmPending} onCancel={w.cancelConfirm} />
-      <DateMoveImpactDialog open={!!w.moveGate.pending} rows={w.moveGate.pending?.rows ?? []} pending={false} onConfirm={w.moveGate.confirmPending} onCancel={w.cancelMove} />
+      <DateMoveImpactDialog confirmLabel="Move anyway" open={!!w.moveGate.pending} rows={w.moveGate.pending?.rows ?? []} pending={false} onConfirm={w.moveGate.confirmPending} onCancel={w.cancelMove} />
       <MoveDatesDialog jobs={bulk.moveJobs} onClose={bulk.closeMove} onMove={(jobs, days) => void bulk.move(jobs, days)} />
     </>
   );

@@ -1,5 +1,6 @@
 "use server";
 
+import { INVITE_TTL_MS } from "@/lib/invite-ttl";
 import { createId } from "@paralleldrive/cuid2";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -1094,7 +1095,7 @@ export async function adminInviteUser(email: string) {
       email: normalizedEmail,
       role: "member",
       status: "pending",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
       inviterId: session.user.id,
     },
   });

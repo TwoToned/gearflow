@@ -22215,9 +22215,24 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "agentReachable": true,
     "args": [
       {
+        "name": "clientIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
         "name": "includeVoid",
         "optional": true,
         "type": "boolean"
+      },
+      {
+        "name": "issued",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "kindIn",
+        "optional": true,
+        "type": "array"
       },
       {
         "name": "now",
@@ -22258,10 +22273,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "sortOrder",
         "optional": true,
         "type": "union"
+      },
+      {
+        "name": "xeroIn",
+        "optional": true,
+        "type": "array"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "fb6ba6b1c6c79896",
+    "argsSha": "a9ca3113b5b9e7a4",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "A page of the org Finance hub's invoices by derived state (Draft, Issued, Paid, Overdue) or the jobs still to invoice a deposit for.",
@@ -22286,6 +22306,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     ],
     "agentReachable": true,
     "args": [
+      {
+        "name": "clientIn",
+        "optional": true,
+        "type": "array"
+      },
       {
         "name": "includeClosed",
         "optional": true,
@@ -22322,6 +22347,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "sent",
+        "optional": true,
+        "type": "string"
+      },
+      {
         "name": "sortBy",
         "optional": true,
         "type": "string"
@@ -22330,10 +22360,15 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "name": "sortOrder",
         "optional": true,
         "type": "union"
+      },
+      {
+        "name": "validity",
+        "optional": true,
+        "type": "string"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "5db8e4de349e074b",
+    "argsSha": "83b1d8e0a8510964",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "A page of the org Finance hub's quotes, by derived status (Draft, Sent, Accepted, Expired), searchable and sortable.",

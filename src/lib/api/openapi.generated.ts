@@ -18171,8 +18171,17 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "clientIn": {
+                        "type": "array"
+                      },
                       "includeVoid": {
                         "type": "boolean"
+                      },
+                      "issued": {
+                        "type": "string"
+                      },
+                      "kindIn": {
+                        "type": "array"
                       },
                       "page": {
                         "type": "number"
@@ -18189,7 +18198,10 @@ export const OPENAPI_DOCUMENT = {
                       "sortBy": {
                         "type": "string"
                       },
-                      "sortOrder": {}
+                      "sortOrder": {},
+                      "xeroIn": {
+                        "type": "array"
+                      }
                     },
                     "additionalProperties": false
                   }
@@ -18254,6 +18266,9 @@ export const OPENAPI_DOCUMENT = {
                   "args": {
                     "type": "object",
                     "properties": {
+                      "clientIn": {
+                        "type": "array"
+                      },
                       "includeClosed": {
                         "type": "boolean"
                       },
@@ -18269,10 +18284,16 @@ export const OPENAPI_DOCUMENT = {
                       "segment": {
                         "type": "string"
                       },
+                      "sent": {
+                        "type": "string"
+                      },
                       "sortBy": {
                         "type": "string"
                       },
-                      "sortOrder": {}
+                      "sortOrder": {},
+                      "validity": {
+                        "type": "string"
+                      }
                     },
                     "additionalProperties": false
                   }

@@ -119,6 +119,25 @@ export function claimsOnDay(row: GearRow, dayStart: number): { held: GearClaim[]
   return { held: on.filter((c) => c.layer === "hard"), pencilled: on.filter((c) => c.layer === "pencilled") };
 }
 
+type GearSegment = GearRow["shortSegments"][number];
+
+/** Each job the board's sweep leaves short in the stretches that touch the day, with its largest shortfall there. */
+function overOn(segs: GearSegment[], dayStart: number): { projectId: string; qty: number }[] {
+  const to = dayStart + DAY_MS - 1;
+  const by = new Map<string, number>();
+  for (const s of segs) {
+    if (s.startMs > to || s.endMs < dayStart) continue;
+    for (const o of s.over) by.set(o.projectId, Math.max(by.get(o.projectId) ?? 0, o.qty));
+  }
+  return [...by].map(([projectId, qty]) => ({ projectId, qty }));
+}
+
+/** The jobs that do not fit on a hard-short day (exactly the ones the board lists), each with its own shortfall. */
+export const shortfallsOn = (row: GearRow, dayStart: number) => overOn(row.shortSegments, dayStart);
+
+/** The pencilled jobs that would not fit on a day if confirmed (exactly the ones the board lists as pencilled collisions). */
+export const risksOn = (row: GearRow, dayStart: number) => overOn(row.riskSegments, dayStart);
+
 /** A cell by model and day key; null when the model or the day is not in the grid. */
 export function cellAt(data: GearData, modelId: string, day: string): { row: GearRow; cell: GearCell; dayStart: number } | null {
   const row = data.rows.find((r) => r.modelId === modelId);

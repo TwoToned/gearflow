@@ -24,25 +24,32 @@ Move dates verbs (D84) follow in later slices.
 ### The Gear view (D81, `?view=gear`)
 Head words `Jobs  Gear` (links that keep the range and filters and drop the strip and the open sheets). `scheduleBoard.grid`
 returns, for every model a job holds or pencils in the range, the free count per day. **It is the same read, budget and
-claim math as the Jobs view** (`convex/lib/gearGrid.ts` on `loadSchedule`'s inputs), never a second formula:
-`free = effective − held`, `short = max(0, held − effective)`, `atRisk = max(0, pencilled − max(0, effective − held))`,
-where `effective` is `computeStockBreakdown` (`availabilityCore`), held/pencilled are the board's per-project claims
-(`stockBackedQty`, held statuses from `HARD_PROJECT_STATUSES`) and `atRisk` equals the board's pencilled FCFS overage
-(`allocateFifo` telescopes to it). A test pins that the grid is short on exactly the days a held job says `clash`.
+claim math as the Jobs view** (`convex/lib/gearGrid.ts` on `loadSchedule`'s inputs), never a second formula and never a
+day-granular sum. Rental dates are datetimes, so a day is an INTERVAL: stock 1, A ends 10:00 and B starts 14:00 is not
+short. A cell is read off the board's own claims and sweep (`aggregateDemandByModel`, `sweepModelConflicts`: FCFS, hard
+before pencilled, `stockBackedQty`, held statuses from `HARD_PROJECT_STATUSES`, stock from `computeStockBreakdown`) over
+the day's interval: `held` = the PEAK concurrent held demand inside the day, `free = effective − held`, `short` = the
+board's peak hard overage inside the day, `atRisk` = its peak pencilled overage. So "short on D" holds exactly when the
+Overbookings board and the Jobs `clash` word have a conflict overlapping D. Pinned in `convex/gearGrid.test.ts`: the
+10:00 / 14:00 case, a genuine same-day overlap, and a seeded property test against `computeGearShortageBoard` over 300
+random datetime windows (serialised and bulk stock, sub-hire, SALE, cancelled, optional and off-inventory lines).
+The row also carries the board's conflict stretches (`shortSegments`, `riskSegments`), so the sheet lists exactly the jobs
+that do not fit.
 - **Cells.** A plain day prints the number (faint when nothing holds it); a shortfall prints a red `short 2` with
   `held 14` under it; a pencilled risk prints the free number amber with `pencilled −2`; Month shrinks a cell to the
   number (`−2`). A cell the read could not cover prints `—` / `not checked`, never a number: a model whose stock was beyond
   the budget (the whole row), every model on the days an unread job covers, everything when the alive scan was cut.
 - **Strip** `All · Short · At risk` (counts of models, following the range and filters). Status and PM narrow the rows to
   models those jobs hold; the numbers stay the whole org's. Rows are grouped by category and list only models with a
-  claim in the range.
+  claim inside the days shown (the claim range is wider, so a model only the widening reached has no row).
 - **Model-day sheet** (`?cell=modelId:day`): Serviceable, Held, Free; `Held by` and `Pencilled, holds nothing` rows (each
   opens the job sheet; the Jobs read runs only while a `?job=` is open); `would be short 2 if #2350 confirms`;
   `Sub-hire n…` (a hard shortfall, `subHire:create`) opens the Overbookings board's own prefilled
   `SubHireShortfallDialog` (the cover itself is written on the job's Equipment tab, `coverShortfallNative`);
   `Overbookings ›`; `Open model ›` (`model:read`). A verb the caller cannot use is absent.
 - **Phone**: day chips (`Wed 12 · 1 short` red) and the models of ONE day as cards (`short 2` or `9 free`).
-- Not in this slice: a `Sub-hire requested` row on the sheet (the board still shows the shortfall until the gear arrives).
+- **Follow-up (not built):** a `Sub-hire requested` row on the sheet (the board still shows the shortfall until the gear arrives).
+- A model whose doc the budget could not read is a row named `Model not loaded` with every cell unknown; a cut read with no rows says it could not check, never that nothing is booked.
 - **A status-less job is alive** to the board (`candidateBoardProjects` reads it as pencilled), so the alive scan also reads
   `status: undefined` (its own index value) from the same budget: its demand is never missed.
 

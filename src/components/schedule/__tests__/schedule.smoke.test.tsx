@@ -66,9 +66,12 @@ const claim = (id: string, layer: string, qty: number, from: string, to: string)
 const gearRows = [
   { modelId: "m1", name: "EM4 receiver", categoryId: "cat1", owned: 12, inService: 1, unknown: false,
     cells: [cell({ free: 12 }), cell({ free: 12 }), cell({ free: -2, held: 14, short: 2 }), cell({ free: 4, held: 8 }), cell({ free: 1, held: 0, pencilled: 3, atRisk: 2 }), cell({ free: 12, held: 0 }), cell({ free: 12 })],
-    claims: [claim("2337", "hard", 10, "2026-11-11", "2026-11-11"), claim("2342", "hard", 4, "2026-11-11", "2026-11-11"), claim("2350", "pencilled", 3, "2026-11-13", "2026-11-13")] },
+    claims: [claim("2337", "hard", 10, "2026-11-11", "2026-11-11"), claim("2342", "hard", 4, "2026-11-11", "2026-11-11"), claim("2350", "pencilled", 3, "2026-11-13", "2026-11-13")],
+    // the board's sweep: #2337 got there first and fits; only #2342 is short (2)
+    shortSegments: [{ startMs: ms("2026-11-11"), endMs: ms("2026-11-11"), over: [{ projectId: "2342", qty: 2 }] }],
+    riskSegments: [{ startMs: ms("2026-11-13"), endMs: ms("2026-11-13"), over: [{ projectId: "2350", qty: 2 }] }] },
   { modelId: "m2", name: "Beltpack", categoryId: null, owned: 8, inService: 0, unknown: true,
-    cells: days.map(() => ({ unknown: true, free: 0, held: 0, pencilled: 0, short: 0, atRisk: 0 })), claims: [claim("2337", "hard", 2, "2026-11-11", "2026-11-12")] },
+    cells: days.map(() => ({ unknown: true, free: 0, held: 0, pencilled: 0, short: 0, atRisk: 0 })), claims: [claim("2337", "hard", 2, "2026-11-11", "2026-11-12")], shortSegments: [], riskSegments: [] },
 ];
 const q = vi.hoisted(() => ({ args: undefined as unknown, gearArgs: undefined as unknown, jobsCalled: 0, truncated: false, jobs: undefined as unknown[] | undefined, rows: undefined as unknown[] | undefined, dayStarts: undefined as number[] | undefined }));
 vi.mock("@/hooks/use-authed-query", async () => {
@@ -359,7 +362,34 @@ describe("Schedule, Gear view (D81)", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Sub-hire 2…" }));
     const dialogs = await screen.findAllByRole("dialog");
-    expect(dialogs.some((d) => d.textContent?.includes("Sub-hire EM4 receiver?"))).toBe(true);
+    const dialog = dialogs.find((d) => d.textContent?.includes("Sub-hire EM4 receiver?"))!;
+    expect(dialog).toBeTruthy();
+    // only the job the board leaves short, with its own shortfall: #2337 fits and is NOT listed
+    expect(within(dialog).getByText(/#2342 — Job 2342 · short 2/)).toBeTruthy();
+    expect(within(dialog).queryByText(/#2337/)).toBeNull();
+  });
+
+  it("an unknown cell's sheet says what it lists may be incomplete; a model that was never loaded is labelled neutrally", async () => {
+    nav.search = "view=gear&cell=m2:2026-11-11";
+    q.rows = [{ ...gearRows[1], name: "Model not loaded" }];
+    render(<SchedulePage />);
+    const sheet = await screen.findByRole("dialog");
+    expect(within(sheet).getByRole("region", { name: "Held by (may be incomplete)" })).toBeTruthy();
+    expect(within(sheet).getByText("Model not loaded")).toBeTruthy();
+  });
+
+  it("a cut read with nothing to show says it could not check, never that nothing is booked", () => {
+    q.rows = [];
+    q.truncated = true;
+    render(<SchedulePage />);
+    expect(screen.getByText("Couldn't check this range in full")).toBeTruthy();
+    expect(screen.queryByText("No gear is booked in this range")).toBeNull();
+  });
+
+  it("an uncut empty grid says no gear is booked", () => {
+    q.rows = [];
+    render(<SchedulePage />);
+    expect(screen.getByText("No gear is booked in this range")).toBeTruthy();
   });
 
   it("a not-checked cell's sheet shows no number, and the verbs a caller cannot use are absent", async () => {

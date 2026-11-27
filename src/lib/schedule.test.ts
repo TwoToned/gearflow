@@ -15,7 +15,7 @@ import {
   type ScheduleFilters,
   type ScheduleJob,
 } from "@/lib/schedule";
-import { parseScheduleView, viewPatch } from "@/lib/schedule-url";
+import { parseCell, parseScheduleView, segmentFor, viewPatch } from "@/lib/schedule-url";
 
 const ms = (key: string) => Date.parse(`${key}T00:00:00.000Z`);
 
@@ -128,21 +128,33 @@ describe("words, strip, filters", () => {
 describe("the URL", () => {
   it("defaults are plain: no params open this week", () => {
     const v = parseScheduleView(new URLSearchParams(), "2026-11-11", 1);
-    expect(v).toEqual({ zoom: "week", anchor: "2026-11-09", day: null, job: null });
-    expect(viewPatch({}, v, "2026-11-11", 1)).toEqual({ zoom: null, date: null, day: null, job: null });
+    expect(v).toEqual({ zoom: "week", anchor: "2026-11-09", day: null, job: null, cell: null });
+    expect(viewPatch({}, v, "2026-11-11", 1)).toEqual({ zoom: null, date: null, day: null, job: null, cell: null });
   });
 
   it("normalises a deep link date (the ⌘K row) to its week or month and drops junk", () => {
     expect(parseScheduleView(new URLSearchParams("date=2026-11-12"), "2026-11-11", 1).anchor).toBe("2026-11-09");
     expect(parseScheduleView(new URLSearchParams("zoom=month&date=2026-11-12"), "2026-11-11", 1).anchor).toBe("2026-11-01");
     const junk = parseScheduleView(new URLSearchParams("zoom=year&date=nope&day=2026-13-40&job="), "2026-11-11", 1);
-    expect(junk).toEqual({ zoom: "week", anchor: "2026-11-09", day: null, job: null });
+    expect(junk).toEqual({ zoom: "week", anchor: "2026-11-09", day: null, job: null, cell: null });
   });
 
   it("writes a non-default month and the open sheets", () => {
     const v = parseScheduleView(new URLSearchParams(), "2026-11-11", 1);
     expect(viewPatch({ zoom: "month", anchor: "2026-12-01", day: "2026-12-03" }, v, "2026-11-11", 1)).toEqual({
-      zoom: "month", date: "2026-12-01", day: "2026-12-03", job: null,
+      zoom: "month", date: "2026-12-01", day: "2026-12-03", job: null, cell: null,
     });
+  });
+});
+
+describe("the Gear URL", () => {
+  it("reads a cell and drops a junk one; a strip word from the other view reads as all", () => {
+    const v = parseScheduleView(new URLSearchParams("cell=mdl_1:2026-11-11"), "2026-11-11", 1);
+    expect(parseCell(v.cell)).toEqual({ modelId: "mdl_1", day: "2026-11-11" });
+    expect(parseScheduleView(new URLSearchParams("cell=nope"), "2026-11-11", 1).cell).toBeNull();
+    expect(parseCell(null)).toBeNull();
+    expect(segmentFor("gear", "short")).toBe("short");
+    expect(segmentFor("gear", "clashes")).toBe("all");
+    expect(segmentFor("jobs", "atrisk")).toBe("all");
   });
 });

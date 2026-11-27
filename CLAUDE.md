@@ -772,6 +772,8 @@ surface, and never store the words.** `unknown` is never rendered as "no clash".
 reads comes from ONE `ReadBudget` (`convex/lib/scheduleFetch.ts`; no `.collect()`): jobs that start inside the window are
 read first, older jobs nearest-first under their own allowance, and a cut sets `truncated`. A new Schedule read joins the
 same budget. The page state is the URL (`src/lib/schedule-url.ts`); a phone is one week of day chips (day mode is the agenda).
+The Gear view's free count per model per day (`scheduleBoard.grid`, `convex/lib/gearGrid.ts`) is the SAME claims summed per
+day (`free = effective − held`), never a stored or re-derived count; a cell whose inputs were cut is `unknown` and prints no number.
 
 ### The floor — the column is DERIVED, Undo is EXACT, the pull sheet is ONE list
 `/warehouse` (the floor, FEATUREDOCS/12) has three rules that look relaxable and aren't:

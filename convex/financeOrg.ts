@@ -89,7 +89,7 @@ async function fetchQuotesByRawStatus(ctx: QueryCtx, orgId: string, status: "SEN
 /** Projects at CONFIRMED-or-later, one capped scan per status (same idiom as
  *  dashboardStats.ts's OPEN_MAINTENANCE_STATUSES loop) — feeds "deposit due",
  *  plus seeds the shared project map. */
-async function fetchConfirmedOrLaterProjects(ctx: QueryCtx, orgId: string) {
+export async function fetchConfirmedOrLaterProjects(ctx: QueryCtx, orgId: string) {
   const projectDocsById = new Map<string, Doc<"projects">>();
   let hitCap = false;
   for (const status of CONFIRMED_OR_LATER_STATUSES) {
@@ -254,7 +254,7 @@ function buildNeverSent(
 /** Deposit due: DEPOSIT_BALANCE clients whose deposit invoice hasn't issued —
  *  the per-project nudge chip (project-finance-panel.tsx), lifted to org
  *  scope over the same CONFIRMED+ candidate set. */
-function buildDepositDue(
+export function buildDepositDue(
   projectDocsById: Map<string, Doc<"projects">>,
   issuedByProjectId: Map<string, Doc<"invoices">[]>,
   clientsById: Map<string, Doc<"clients">>,

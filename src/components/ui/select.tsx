@@ -8,7 +8,6 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const Select = SelectPrimitive.Root;
-const SelectGroup = SelectPrimitive.Group;
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
@@ -91,21 +90,6 @@ const SelectContent = React.forwardRef<
 ));
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
-const SelectLabel = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Label>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Label
-    ref={ref}
-    className={cn(
-      "px-2.5 py-1 text-[12px] font-semibold text-muted",
-      className,
-    )}
-    {...props}
-  />
-));
-SelectLabel.displayName = SelectPrimitive.Label.displayName;
-
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
@@ -170,11 +154,9 @@ NativeSelect.displayName = "NativeSelect";
 
 export {
   Select,
-  SelectGroup,
   SelectValue,
   SelectTrigger,
   SelectContent,
-  SelectLabel,
   SelectItem,
   SelectSeparator,
   SelectScrollUpButton,

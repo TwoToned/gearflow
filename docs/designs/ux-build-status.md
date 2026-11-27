@@ -198,8 +198,19 @@ Phases 17 and 18 run in parallel. Each regenerates the API/MCP files, so their P
 
 | Phase | Worker | Branch / PR | State | Blockers |
 |---|---|---|---|---|
-| 17 Finance hub + Settings (L) | Sonnet | `claude/ux-17-finance-settings` | building | — |
-| 18 Schedule (L) | Sonnet | `claude/ux-18-schedule` | building | — |
+| 17 Finance hub + Settings (L) | Sonnet | #1437 (493045c7), #1441 (ddee5ce4), #1443 (c6461c27), all **merged** | **Phase 17 done**, deployed. Settings index (D57), Billing (D60), Danger zone (D61), Team with read-only roles grid (D58) + Resend/Undo (D59), Finance hub on ListPage (D54–D56). Shots: `claude/ux-17-shots` | — |
+| 18 Schedule (L) | Sonnet | #1438 (1ad502d3), #1439 (d17b8a8d), #1442 (2c1b8c45), all **merged** | **Phase 18 done**, deployed. Jobs view (clash / would clash / not checked), Gear view (D81, board parity), real month (D83), no desktop Agenda (D82), bulk Confirm + Move dates (D84). Shots: `claude/ux-18-schedule-shots` | — |
+| Hotfix: Better Auth org endpoints bypassed the role policy (live on prod) | Sonnet + overseer | #1440 **merged** (3088eb4c) | done; prod probe: disabled endpoints 404, kept 401 | owner: audit member roles vs the activity log for changes made through the bypass |
+
+**Wave D3 done 2026-11-27.** The owner dismissed CodeQL #289 (HKDF/HMAC of `BETTER_AUTH_SECRET` flagged as a weak password hash: a false positive). The owner asked the overseer to decide the remaining open calls with safe defaults (no schema changes): Deposit due follows the job page's rule (FULL_UPFRONT clients' agreed, uninvoiced jobs appear); `lockDates` stays opt-in (the Schedule refuses moving deployed dates; the job page / Logistics / API can still extend a hire); the hub hides Void once a payment is recorded, and the server is unchanged.
+
+**Owner decisions still open (deferred, nothing blocked):**
+- Schema: the `by_fileId`-style holder index (see above), and an optional test-record index on (org, item, test date).
+- Whether `update_project` may change a job's status.
+- The lapsed `docs/exceptions.md` exceptions (projects.ts/orgProjects collect, braces).
+- `testTag:generate_reports`: it is declared but enforced nowhere (report routes require `reports:view`). Keep and enforce it, or delete it?
+- Whether `updateNative` should lock deployed dates by default (`lockDates`), with an override.
+- Whether `invoicesWrites.voidNative` should refuse while a non-voided payment exists, and void the Xero copy.
 
 ### Logged follow-ups (not in any phase)
 - CSV importers don't strip the formula guard's leading `'` on re-import.
@@ -236,3 +247,10 @@ Phases 17 and 18 run in parallel. Each regenerates the API/MCP files, so their P
   - `categories.detail` collects the org's whole models, kits, assets and media unbounded; `categoriesWrites.updateNative` has no parent-cycle check (the new `editNative` does).
   - `testTagRecordsWrites` sets the item's `lastTestDate` / next due from EVERY new test, including a backdated one, so entering a historic test pulls the item's next due back. Labels follow the item's `lastTestDate`, so they stay consistent with it.
   - The people-reference walk doesn't cover polymorphic `entityId` / `entityType` references (e.g. the deprecated `workItemLinks`).
+- Wave D3 (found in review, not fixed in-phase):
+  - `voidNative` allows voiding an invoice with recorded payments and never touches Xero; the hub hides Void when a payment exists.
+  - Join-request approval gates on `orgMembers:create`, which only the owner holds, so an Admin can't approve. Bulk approve/reject isn't built.
+  - `transferOwnership` checks the owner role but writes no activity row.
+  - The 17 other settings section pages still use the old card + Save chrome (not the dirty-bar pattern).
+  - Schedule: a `Sub-hire requested` row on the model-day sheet; bulk `Sub-hire n short` from a Gear selection; models with no booking in range get no Gear row.
+  - The legacy raw-secret Xero state verify branch in `xero-oauth-state.ts` can be deleted one release after #1441.

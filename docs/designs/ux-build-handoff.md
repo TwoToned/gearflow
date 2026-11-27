@@ -19,7 +19,7 @@ bottom, then `docs/designs/ux-build-status.md` (the tracker) and spec
 | 6 Shell (6a), List pages (6b) | merged |
 | 7, 8, 11, 15, 16 Wave D1 | **merged 2026-11-22 → 2026-11-24** (#1400, #1399, #1401, #1402, #1403), all deployed |
 | 9, 10, 12, 13, 14 Wave D2 | **merged 2026-11-25 → 2026-11-26**, all deployed. Final PRs: #1424, #1430 (13); #1425, #1431–#1434 (14); CI sharding #1428. See the tracker |
-| 17, 18 Wave D3 | not started |
+| 17, 18 Wave D3 | **merged 2026-11-26 → 2026-11-27**, all deployed. 17: #1437, #1441, #1443; 18: #1438, #1439, #1442; auth hotfix #1440. See the tracker |
 
 Every merge deployed cleanly (prod `https://flow.rvlt.app` returns 307).
 
@@ -109,6 +109,14 @@ branch. Never act on build-tool suggestions such as "run next upgrade".
   - **Run the full gate list locally, including `collect-ratchet`.** A new bare `r9.8-ok` marker fails Hygiene; a marker needs a §15 exception, so bound the read instead.
   - **Compliance output never guesses.** A T&T label prints the record matching the item's stored `lastTestDate` or nothing; "newest-looking row" heuristics were wrong under historic imports.
   - **A sheet sends only changed fields.** Sending every field silently reverts a colleague's newer edit (`src/lib/changed-edit.ts`).
+- **Lessons from Wave D3:**
+  - **Audit the library's own routes, not just the app's.** A stock plugin (Better Auth `organization()`) exposed member/role writes behind its own default access control, bypassing the app's policy for as long as it existed. Every catch-all auth route needs an inventory of what it serves (`src/lib/auth-disabled-paths.ts`).
+  - **A policy over strings must fail closed.** An unknown or comma-compound role read as "no rights", which counted as "within" anyone's rights. Only exact table keys count.
+  - **One key, many purposes, needs domain separation.** Derive a per-purpose key (HKDF) and put the purpose inside the MAC.
+  - **A fixed date in a test against a clamped `now` is a time bomb.** `resolveNow` ignores a caller's `now` more than 48 h from the server clock, so pin the clock in such tests (main went red 48 h after one was written).
+  - **A capped read that drops the oldest rows understates exactly the overdue ones.** Every figure from a cut read must say "at least"; a confident number from a truncated scan is a defect.
+  - **UI copy must match the server.** Two hub dialogs promised behaviour (a payment blocks a void; Xero is voided too) that no server path performed.
+
 
 ## 4. Wave D plan (agreed with the owner 2026-11-19)
 

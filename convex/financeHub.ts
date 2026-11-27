@@ -155,8 +155,9 @@ export const quotesPage = query({
     const seg = knownSeg<QuoteSegment>(QUOTE_SEGMENTS, a.segment);
     const filtered = rows.filter((r) => inQuoteSegment(r, seg, a.includeClosed === true) && (!a.search || matchesSearch(quoteSearchWords(r), a.search)));
     // A hidden money column is not a sort key: it falls back to the default order.
-    const sortBy = QUOTE_SORTS.has(a.sortBy ?? "") && (a.sortBy !== "total" || showMoney) ? (a.sortBy as string) : "number";
-    const d = a.sortOrder === "desc" ? -1 : 1;
+    const asked = QUOTE_SORTS.has(a.sortBy ?? "") && (a.sortBy !== "total" || showMoney);
+    const sortBy = asked ? (a.sortBy as string) : "number";
+    const d = asked && a.sortOrder === "desc" ? -1 : 1; // a refused sort key is the default order, ascending: asc and desc read the same
     const sorted = [...filtered].sort((x, y) => compareValues(quoteSortValue(x, sortBy, showMoney), quoteSortValue(y, sortBy, showMoney), d) || compareValues(x.id, y.id, 1));
     const { items, total, totalPages } = paginateItems(sorted, page, pageSize);
     return { items, total, totalPages, page, pageSize, truncated: truncated || budget.truncated, moneyVisible: showMoney, now };
@@ -194,8 +195,9 @@ export const invoicesPage = query({
     const budget = new ReadBudget(READ_BUDGET);
     const { rows, truncated } = await loadInvoiceRows(ctx, a.orgId, now, showMoney, budget);
     const filtered = rows.filter((r) => inInvoiceSegment(r, seg, a.includeVoid === true) && (!a.search || matchesSearch(invoiceSearchWords(r), a.search)));
-    const sortBy = INVOICE_SORTS.has(a.sortBy ?? "") && (a.sortBy !== "total" || showMoney) ? (a.sortBy as string) : "number";
-    const d = a.sortOrder === "desc" ? -1 : 1;
+    const asked = INVOICE_SORTS.has(a.sortBy ?? "") && (a.sortBy !== "total" || showMoney);
+    const sortBy = asked ? (a.sortBy as string) : "number";
+    const d = asked && a.sortOrder === "desc" ? -1 : 1; // a refused sort key is the default order, ascending: asc and desc read the same
     const sorted = [...filtered].sort((x, y) => compareValues(invoiceSortValue(x, sortBy, showMoney), invoiceSortValue(y, sortBy, showMoney), d) || compareValues(x.id, y.id, 1));
     const { items, total, totalPages } = paginateItems(sorted, page, pageSize);
     return { kind: "invoices" as const, items, total, totalPages, page, pageSize, truncated: truncated || budget.truncated, moneyVisible: showMoney, now };

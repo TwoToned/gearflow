@@ -212,7 +212,6 @@ export interface NativeOrgFinanceCounts {
   quotesOutCount: number;
   expiringCount: number;
   neverSentCount: number;
-  depositDueCount: number;
   outstandingCount: number;
   /** D88: issued invoices past their due day and not settled. */
   overdueCount: number;

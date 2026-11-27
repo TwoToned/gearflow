@@ -1794,3 +1794,74 @@ can't both spend the same rotating refresh token.
   a second full pass reports `patched: 0`.
 - **Stored-bytes rules are unchanged**: every PDF action is a download of the stored artifact,
   a watermarked preview for a draft, or the explicit retry; no new live-render path.
+
+## The org Finance hub (UX Phase 17 slice 3, spec §9j) — read side
+
+`/finance` is now ONE list at a time on `ListPage`: head words `Quotes n` / `Invoices n` (`?tab=`), four money
+words that deep-link (Quoted → `?tab=quotes&seg=sent`, Awaiting payment → `?tab=invoices&seg=issued`, Invoiced
+this month → `…&seg=all`, Overdue → `…&seg=overdue`), each tab's own strip (Quotes: All · Draft · Sent ·
+Accepted · Expired; Invoices: All · Draft · Deposit due · Issued · Paid · Overdue), search, sort and paging in
+the URL. It replaced the five stacked cards (`financeOrg.bundle` stays for the API/MCP; the page no longer reads
+it). Surfaces: `src/components/finance/finance-hub.tsx`, the pure config `src/lib/list-views/finance.ts`.
+
+Reads (`convex/financeHub.ts`, derived facts in `convex/lib/financeHubFacts.ts`): `quotesPage`, `invoicesPage`
+and `hubCounts`, so the strip, the head counts, the money words and the table are derived from the same loaders.
+- **Derived status, never the stored column.** A quote's word is `effectiveQuoteStatus` (Expired = `validUntil <
+  now && SENT`, `PUBLISHED` reads as `SENT`; an expired quote is in `Expired` for 7 days or until acknowledged,
+  older ones are under All only; declined and superseded are under All only after `Also show`). An invoice's word is
+  the ONE pill, `invoicePillState` (D56: Overdue outranks Part paid; Paid outranks Overdue); `Issued` is Issued plus
+  Part paid, `Overdue` is its own. `Deposit due` lists the JOBS still to invoice (a project row with the deposit to
+  raise), and is the JOB PAGE's own rule: `depositDueForJob` (`convex/lib/invoicingState.ts`, built on
+  `deriveInvoicingState`, re-exported by `src/lib/project-invoicing-state.ts`) says an agreed job whose invoicing has
+  NOT started and which still has something to raise is due; the client's `paymentProfile` does not gate it (it only
+  supplies the default %). The old org-board copy (`financeOrg`'s DEPOSIT_BALANCE rule, `depositDue` /
+  `depositDueCount`) is gone. Each candidate job's invoices are read through `invoices.by_projectId` (org-checked,
+  from the budget); a job the budget can't cover is counted as unknown, never shown as a confident Deposit due.
+- **Money is behind `canSeeJobCost`** (invoice:read and not a `noFinancials` key): totals, owed amounts, the
+  deposit to raise and the four money words are ABSENT (no column, no words, never zero), and `total` is not a
+  sort key for such a caller (a refused key is the default order, ascending). The role/key sentinel sweep is in
+  `convex/financeHub.test.ts`.
+- **Bounds, and "at least".** Each raw status is read newest-first from `by_organizationId_status` (org and order in
+  the index, then the cap: 150 quotes, 300 draft/void and 1,500 ISSUED invoices), and the referenced projects and
+  clients come from ONE `ReadBudget`. A paid invoice stays ISSUED, and no index reaches "unpaid" or "overdue" without
+  the settled ones, so a cut ISSUED read drops the OLDEST rows: exactly the long-overdue ones. Every figure or count
+  derived from a cut read is therefore a floor and the server flags it (`hubCounts.approx`): the head count prints
+  `27+`, the sub line and the money words print `at least`, and the tab's strip counts are left off (a bare number
+  would be a confident floor). Never a confident number that is too low.
+- **Org timezone.** `Invoiced this month` starts at the first instant of the month in the ORG's timezone
+  (`startOfMonthInTimezone`; invoices are stamped in it) and the row dates print in it (`timezone` is returned with
+  every page), so 00:10 on 1 Dec in Sydney is December.
+- A caller without invoice read (`callerMayRead`) gets empty pages and `null` counts, on top of the org match.
+- A row opens the job's Finance tab, where the STORED PDF lives; the hub renders no finance document. The row ⋯
+  carries `Open on the job` and, for a fresh expired quote with `invoice:publish`, `Acknowledge expired` (the
+  live write the old Expiring card had). The Xero column and a one-line "Xero isn't connected" note follow the
+  integration's state. Chase, Record payment, Void, bulk verbs and `+ New` land in slice 4.
+
+### Hub actions, bulk and filters (UX Phase 17 slice 4, spec §9j.2)
+
+Every verb calls an EXISTING write or route; the hub invents none, and a verb the caller may not do is ABSENT
+(`src/lib/row-actions/finance.ts`, pure builders: a handler is passed only when the permission holds).
+- **Chase is copy-only (D54).** `ChaseDialog` builds text with `src/lib/finance-chase.ts` and copies it to the
+  clipboard; Flow never emails a client. Money lines appear only when the row carried money. Proved at runtime
+  (no mail function is called) and structurally (`finance-no-email.test.ts` scans the hub's modules).
+- **Draft previews name the exact document** (`hubPreviewHref`): an invoice by `invoiceId`, a quote by the `versionId` it was built from (a draft with none previews the live version).
+- **Record payment** (`RecordPaymentDialog`), **Mark accepted** (`AcceptQuoteDialog`, its gates and
+  justification), **Void** (`VoidInvoiceDialog`: a reason; the copy says exactly what `voidNative` does: the invoice goes VOID, the job's money is recounted, the number and document stay, and Xero is NOT touched. `voidNative` does not check payments, so the hub offers Void only on an invoice with no recorded payment, `hasPayments` on the row) and
+  **Delete draft** run the existing mutations through `useHubActions`. Void and delete are confirmed `danger`
+  verbs; none of them has an exact reverse, so none offers an Undo (documented, not omitted by accident).
+- **PDFs are stored bytes.** `Open PDF` streams `/api/finance/{quote,invoice}/[id]/pdf`; `Generate PDF` uses the
+  attach-once `generate*Artifact` (never overwrites); a draft only `Preview`s (watermarked, never stored).
+- **Bulk** (`src/lib/finance-bulk.ts`): capped at 50 (`MAX_FINANCE_BULK`), each row checked for eligibility and then
+  written by the existing mutation, which gates it server-side; a refusal is that row's skip. The toast names
+  what was skipped and why. No bulk verb has an exact reverse, so none offers Undo.
+- **Export** (`src/lib/finance-export.ts`) goes through `toCsv` (formula guard) and prints a money column only
+  when the server sent money for the rows.
+- **Filters** (Client, Kind, Issued, Xero, Show) are list-URL params on `QUOTES_SPEC`/`INVOICES_SPEC`, resolved
+  server-side in `convex/lib/financeHubFacts.ts` (`quotePassesFilters` / `invoicePassesFilters`), so counts and
+  pages agree. `Invoiced this month` links to `?tab=invoices&seg=all&issued=month`.
+- **+ New…** opens `JobPickerDialog` (jobs via `projects.listPage`), then goes to that job's Finance tab; the hub
+  creates no document itself.
+- **Filter args are bounded server-side** (`assertFilterBounds` in `convex/financeHub.ts`): at most 50 values per array, 64 characters per client id, 200 per search; `sent`/`validity`/`issued` are literal unions (`7d|30d|90d`, `issued` also `month`) and `kindIn`/`xeroIn` use the schema's own enums.
+- **Bulk ticks span pages.** Ticked ids resolve against every row the hook has seen (a phone's "Show more" keeps earlier pages ticked); a tick with no row data left is named in the toast ("N selected rows no longer in the list"), never dropped, and the 50-cap counts what was ticked.
+- **Bulk Xero push is paced** (`XERO_PUSH_SPACING_MS`, 4 s between starts): Xero allows 60 calls a minute per organisation, a push makes up to ~4, and `xero-client` has no 429 retry. A bulk push of n therefore takes about 4n seconds. It shows a progress toast (`Pushing 12 of 50 to Xero…`) with a Cancel that stops starting new pushes and reports what ran (`cancelled, N not started`), and refuses a second batch while one is running.
+

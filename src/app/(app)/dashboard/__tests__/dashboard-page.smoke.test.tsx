@@ -81,7 +81,7 @@ vi.mock("@/hooks/use-native-dashboard", () => ({
   useNativeOrgFinanceCounts: (orgId?: string) => {
     m.financeArg.push(orgId);
     return orgId
-      ? { quotesOutCount: 0, expiringCount: 0, neverSentCount: 0, depositDueCount: 0, outstandingCount: 2, overdueCount: 2, overdueOutstanding: 16975, overdueTruncated: false }
+      ? { quotesOutCount: 0, expiringCount: 0, neverSentCount: 0, outstandingCount: 2, overdueCount: 2, overdueOutstanding: 16975, overdueTruncated: false }
       : undefined;
   },
   useNativeMyOpenTasks: () => [TASK],

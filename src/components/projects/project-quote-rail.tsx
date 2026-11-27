@@ -23,6 +23,7 @@ import { summarizeDrift, describeDrift } from "@/lib/quote-drift";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { chaseSummary } from "@/lib/finance-chase";
 import { quoteStatusIntent, intentStyles, intentBorderClass } from "@/lib/status-colors";
 import { daysUntilValidUntil, QUOTE_EXPIRING_SOON_DAYS } from "@/lib/quote-validity";
 import { useCanDo, useIsOwner } from "@/lib/use-permissions";
@@ -698,38 +699,6 @@ function QuoteRailTargetDialogs({
  * so the operator has enough context to write their own follow-up. Pure so
  * it's testable without mounting the rail.
  */
-function pluralDays(n: number): string {
-  return n === 1 ? "" : "s";
-}
-
-function chaseValidUntilLine(validUntil: number, daysLeft: number | null): string {
-  if (daysLeft != null && daysLeft < 0) {
-    const overdue = Math.abs(daysLeft);
-    return `Expired: ${formatDate(new Date(validUntil))} (${overdue} day${pluralDays(overdue)} ago)`;
-  }
-  const suffix = daysLeft != null ? ` (${daysLeft} day${pluralDays(daysLeft)} left)` : "";
-  return `Valid until: ${formatDate(new Date(validUntil))}${suffix}`;
-}
-
-export function chaseSummary(
-  projectNumber: string,
-  quote: Pick<QuoteRevisionDoc, "version" | "sentAt" | "publishedAt" | "validUntil">,
-  pricing: { subtotal: number | null; taxAmount: number | null; total: number | null },
-  now: number,
-): string {
-  const sentAt = quote.sentAt ?? quote.publishedAt ?? null;
-  const daysLeft = quote.validUntil != null ? daysUntilValidUntil(quote.validUntil, now) : null;
-  const lines = [
-    `Quote — ${projectNumber} v${quote.version}`,
-    pricing.subtotal != null ? `Subtotal: ${formatCurrency(pricing.subtotal)}` : null,
-    pricing.taxAmount != null ? `GST: ${formatCurrency(pricing.taxAmount)}` : null,
-    pricing.total != null ? `Total: ${formatCurrency(pricing.total)}` : null,
-    sentAt != null ? `Sent: ${formatDate(new Date(sentAt))}` : null,
-    quote.validUntil != null ? chaseValidUntilLine(quote.validUntil, daysLeft) : null,
-  ].filter(Boolean);
-  return lines.join("\n");
-}
-
 function QuoteRowActions({
   quote,
   flags,

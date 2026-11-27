@@ -22162,6 +22162,222 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "deniedReason": "SERVICE-gated like every function in this module (no agent escape hatch); feeds only the session-gated draft-preview render."
   },
   {
+    "operation": "financeHub.hubCounts",
+    "module": "financeHub",
+    "fn": "hubCounts",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "aa779fb8e4bbb517",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "The Finance hub's segment counts and, with job-cost visibility, its money words (quoted, awaiting payment, invoiced this month, overdue), with `approx` flags where a read was cut.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "financeHub.invoicesPage",
+    "module": "financeHub",
+    "fn": "invoicesPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "clientIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "includeVoid",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "issued",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "kindIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "xeroIn",
+        "optional": true,
+        "type": "array"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "0ecefc530a4a18bf",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A page of the org Finance hub's invoices by derived state (Draft, Issued, Paid, Overdue) or the jobs still to invoice a deposit for.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
+    "operation": "financeHub.quotesPage",
+    "module": "financeHub",
+    "fn": "quotesPage",
+    "kind": "query",
+    "guard": "orgReadFor",
+    "resource": "invoice",
+    "action": "read",
+    "scopePairs": [
+      {
+        "resource": "invoice",
+        "action": "read"
+      }
+    ],
+    "agentReachable": true,
+    "args": [
+      {
+        "name": "clientIn",
+        "optional": true,
+        "type": "array"
+      },
+      {
+        "name": "includeClosed",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
+        "name": "now",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "orgId",
+        "optional": false,
+        "type": "string"
+      },
+      {
+        "name": "page",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "pageSize",
+        "optional": true,
+        "type": "number"
+      },
+      {
+        "name": "search",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "segment",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sent",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "sortBy",
+        "optional": true,
+        "type": "string"
+      },
+      {
+        "name": "sortOrder",
+        "optional": true,
+        "type": "union"
+      },
+      {
+        "name": "validity",
+        "optional": true,
+        "type": "union"
+      }
+    ],
+    "privilegedArgs": [],
+    "argsSha": "c62d5af7474b3327",
+    "returnsSha": "74234e98afe7498f",
+    "stability": "tracks-app",
+    "summary": "A page of the org Finance hub's quotes, by derived status (Draft, Sent, Accepted, Expired), searchable and sortable.",
+    "danger": "low",
+    "mcpTier": 3,
+    "agentAccess": null,
+    "deniedReason": null
+  },
+  {
     "operation": "financeOrg.bundle",
     "module": "financeOrg",
     "fn": "bundle",
@@ -22192,7 +22408,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
     "argsSha": "3a029b11cc797978",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
-    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, deposit due, outstanding.",
+    "summary": "The org's chaseable finance rows: quotes out, expiring, never sent, outstanding (deposit due moved to the Finance hub, `financeHub.ts`: one rule with the job page).",
     "danger": "low",
     "mcpTier": 2,
     "agentAccess": null,
@@ -72824,10 +73040,10 @@ export const API_REGISTRY_BY_OPERATION: ReadonlyMap<string, RegistryOperation> =
 
 /** Counts published so the coverage table and any consumer agree by construction. */
 export const REGISTRY_COUNTS = {
-  total: 1405,
-  agentReachable: 758,
-  queries: 492,
+  total: 1408,
+  agentReachable: 761,
+  queries: 495,
   mutations: 913,
-  agentReachableQueries: 354,
+  agentReachableQueries: 357,
   agentReachableMutations: 404,
 } as const;

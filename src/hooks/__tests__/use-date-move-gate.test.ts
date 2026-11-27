@@ -121,6 +121,29 @@ describe("useDateMoveGate", () => {
     expect(result.current.pending).toBeNull();
   });
 
+  it("ONE gate and ONE onProceed serve a batch: a per-call target names the job, its status and its current window (the Schedule's bulk Move dates)", async () => {
+    queryMock.mockResolvedValue(WITH_ROWS);
+    const onProceed = vi.fn();
+    // the creation-time job is a placeholder; each request carries its own target
+    const { result } = renderHook(() => useDateMoveGate("org1", "", undefined, { start: null, end: null }, onProceed));
+
+    await act(async () => {
+      await result.current.requestSave(WINDOW_B, "second", { projectId: "p2", status: "CONFIRMED", window: WINDOW_A });
+    });
+    expect(queryMock).toHaveBeenCalledWith(expect.anything(), { orgId: "org1", projectId: "p2", start: WINDOW_B.start, end: WINDOW_B.end });
+    expect(result.current.pending?.data).toBe("second");
+    act(() => result.current.confirmPending());
+    expect(onProceed).toHaveBeenCalledWith("second");
+
+    // a not-yet-confirmed target proceeds at once, whatever the placeholder says
+    queryMock.mockClear();
+    await act(async () => {
+      await result.current.requestSave(WINDOW_B, "third", { projectId: "p3", status: "QUOTED", window: WINDOW_A });
+    });
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(onProceed).toHaveBeenLastCalledWith("third");
+  });
+
   it("skips the preview when a window side is still unset (dateless target)", async () => {
     const onProceed = vi.fn();
     const { result } = renderHook(() => useDateMoveGate("org1", "p1", "CONFIRMED", WINDOW_A, onProceed));

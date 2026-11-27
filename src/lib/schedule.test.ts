@@ -22,7 +22,7 @@ const ms = (key: string) => Date.parse(`${key}T00:00:00.000Z`);
 function job(id: string, from: string, to: string, over: Partial<ScheduleJob> = {}): ScheduleJob {
   return {
     id, projectNumber: `#${id}`, name: `Job ${id}`, status: "CONFIRMED", holds: true, clientId: null, clientName: null,
-    projectManagerId: null, rentalStart: ms(from), rentalEnd: ms(to), clash: "none", clashes: [], modelCount: 1, modelIds: ["m1"],
+    projectManagerId: null, rentalStart: ms(from), rentalEnd: ms(to), windowStart: null, windowEnd: null, clash: "none", clashes: [], modelCount: 1, modelIds: ["m1"],
     lineCount: 1, unitCount: 1, ...over,
   };
 }

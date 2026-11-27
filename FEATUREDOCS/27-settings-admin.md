@@ -22,6 +22,69 @@ the default tax rate** live on **Billing** (the old Billing "Tax rate" box wrote
 which nothing reads, so it was dropped, not moved); the **API kill switch** lives on
 **Danger zone** (`/settings/danger-zone`, same `setOrgApiKillSwitch`, `orgSettings:update`).
 
+## Settings → Team (UX Phase 17, D58, D59)
+
+`/settings/team` is five hairline sections with a mono count: Members, Invitations, Join requests,
+Join policy, Roles & permissions. Rows are the shared `LineRowList` (tick, shift-range, select-page,
+row ⋯, phone cards) with a contextual `BulkBar`: members `Change role… n` / red `Remove n`,
+invitations `Resend n` / red `Revoke n`. A verb the role can't use is ABSENT. Invite is a dialog
+(inline email validation: malformed, already a member, already invited; the roles the viewer may
+hand out as radios with `ASSIGNABLE_ROLE_OPTIONS` descriptions). Join policy is three radio rows with
+a `Save join policy` bar and a leave guard. Pure model: `src/lib/team-model.ts`; surfaces:
+`src/components/settings/team/*`.
+
+**One role policy** (`src/lib/member-role-policy.ts`, read by the invite, single and bulk role
+change, removal, resend/revoke and Undo): an actor may hand out a role, or touch a member, only when
+that role's rights (read from `rolePermissions`, never a second ranking) are a STRICT subset of their
+own; the Owner is never a target or assignable. So an Admin can't raise anyone to Admin or touch an
+Admin, and the owner can't be demoted or removed by any path (there is no "last owner" special case:
+ownership is only ever transferred). `addMemberByEmail` now also requires `orgMembers:invite` on the
+server. There is ONE role list: `ASSIGNABLE_ROLE_OPTIONS` (the member list and the join-request
+picker used hand-kept copies that had drifted: warehouse was missing).
+
+**Writes** (`src/server/team.ts` → `src/lib/team-writes.ts`): bulk calls are capped at 50 ids (schema-pinned,
+`validations/team.test.ts`), run the policy per row, and report what changed and what was skipped with the
+reason (never a whole-call failure). An unexpected error on one row skips THAT row; the rows that did change
+keep their Undo.
+- **Fails closed.** A role only counts if it is exactly a `rolePermissions` key. An unknown, empty or
+  comma-compound role ("admin,member") can't be a target, an actor or an assigned role; any compound naming
+  "owner" is the owner. The Better Auth endpoints that could write such a role are switched off
+  (`src/lib/auth-disabled-paths.ts`, the hotfix for the stock `organization()` plugin's default admin access
+  control); this policy is the second line.
+- **Order.** Prisma is the source of truth: a role change writes it FIRST with a compare-and-set on the role it
+  read (`where: { id, role }`, count checked), then mirrors to Convex (strict). If the mirror fails, Prisma is
+  compensated (CAS back) and the row is reported. Removal is the one exception, Convex-FIRST: a revocation whose
+  mirror write failed after Prisma committed would leave a stale grant (RBAC reads the mirror), so it fails closed.
+- **Resend** extends the SAME invitation and re-emails the same link, so there is one live token, never two.
+  **Cooldown:** at most one resend per invitation per 10 minutes, on the server: last-sent is derived from
+  `expiresAt - 7d`, plus a per-window marker so resend, Undo, resend can't mail someone in a loop. **Revoke**
+  sets `cancelled` (CAS on status and expiry).
+- **Undo** (role change, resend, revoke) takes ONLY a server-signed token (`team-undo-token.ts`, HMAC under a
+  purpose-separated HKDF key, `hmac-purpose.ts`, purpose `team-undo:v1`, so it can't verify as, or be forged from,
+  any other signed token; Xero state has its own purpose and still accepts its pre-change form for its 10-minute
+  life). Team data lives in Better Auth's tables whose audit rows are best-effort mirrors, so "read your own audit
+  row" has nowhere reliable to read from and a schema change was not on the table. It is author-only, 10 minutes
+  on the server clock, once, and atomic: EVERY row is pre-checked (Prisma role AND the Convex mirror must both
+  equal what the write left, else refuse) before anything is written; the once-marker (`undo:<id>`) is claimed only
+  after the pre-checks pass, so a refused Undo never burns the token; the writes are one Prisma `$transaction`
+  with a compare-and-set per row (a miss rolls everything back); then the mirror, and if it fails Prisma is put
+  back and the failure reported. The policy is re-checked at undo time. Resend's Undo puts the prior expiry back
+  (the email can't be recalled; the toast says so). Revoke's Undo restores the identical row only if nothing
+  re-invited that email or added it as a member meanwhile.
+- **Remove has NO Undo**: it emails the person and ends their access, and re-adding creates a new membership
+  (new id, new joined date), not the one removed. The confirm dialog says so.
+- `addMemberByEmail` takes a Zod body (`inviteSchema`) and throws `UserFacingError`s.
+- An invitation's Expired state is derived from `expiresAt` on read (`getPendingInvitations` now returns
+  pending rows past their date so they can be resent; bounded to 200).
+
+**Roles grid** (D58): read-only, every cell computed from `PERMISSION_REGISTRY` + `hasPermission`
+(`src/lib/roles-grid.ts`), never a copy. A cell reads `All`, `3/6` or `—`; a resource opens to
+per-action ticks; the footer is `Actions granted n/m`. The phone shows the six roles as rows. Editing
+roles is a later, separate schema decision. `PermissionMatrix` (unused) is deleted.
+
+Known pre-existing gap, not changed here: approving or rejecting a join request or SSO approval gates
+on `orgMembers:create`, an action no role but the owner holds, so an Admin can't approve.
+
 ## Org Settings (`Organization.metadata` JSON)
 ```json
 {

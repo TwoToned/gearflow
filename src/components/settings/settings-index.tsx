@@ -29,7 +29,9 @@ import { cn, focusRing } from "@/lib/utils";
 function useTeamFact(caps: SettingsCaps, orgId: string | undefined): SettingsStatusInputs["team"] {
   const { data: members } = useOrgMembers(caps.orgMembersRead ? orgId : undefined);
   const { data: invitations } = usePendingInvitations(caps.orgMembersRead ? orgId : undefined);
-  return members ? { members: members.length, invitations: invitations?.length ?? 0 } : null;
+  // An expired invite is not "invited" any more (derived from expiresAt, never stored).
+  const live = (invitations ?? []).filter((i) => new Date(i.expiresAt).getTime() >= Date.now());
+  return members ? { members: members.length, invitations: live.length } : null;
 }
 
 function useMiraFact(caps: SettingsCaps, orgId: string | undefined): SettingsStatusInputs["mira"] {

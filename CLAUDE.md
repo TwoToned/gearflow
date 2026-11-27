@@ -1316,6 +1316,25 @@ The Scan page's own two rules:
 - Every input path ends in ONE `scan(tag)` (`src/components/scan/use-scan-session.ts`).
 - A save hands its ONE `announceListWrite` closure to both the toast and Last scans.
 
+### Settings and Team (UX Phase 17) — one registry, one role policy, a signed Undo
+- **`/settings` is an index driven by ONE table, `src/lib/settings-registry.ts`** (rows, search parts,
+  gate, status key). Add a settings page = one row there; the drift test fails otherwise. The layout
+  decides a gate only once its inputs have loaded (never flash Access denied). FEATUREDOCS/27.
+- **Who may give which role to whom is `src/lib/member-role-policy.ts`** (strict subset of the actor's
+  rights, read from `rolePermissions`; the Owner is never a target). Menus read it AND the server
+  enforces it: never write a second role check or a hand-kept role list (`ASSIGNABLE_ROLE_OPTIONS`).
+- **Team Undo takes only the server-signed token** (`src/lib/team-undo-token.ts`): Better Auth data has
+  no reliable audit row to read, so the token carries the prior state; author, 10-minute server window,
+  once-marker (claimed only after every pre-check) and a compare-and-set transaction apply. Member removal has
+  no Undo (no exact reverse). **Every signed token has its own purpose** (`src/lib/hmac-purpose.ts`, HKDF):
+  never sign a new token type with the raw `BETTER_AUTH_SECRET`.
+- **Never expose a stock Better Auth org write.** The `organization()` plugin's default admin role can change
+  roles, remove members and invite as admin with no knowledge of the role policy; those endpoints are in
+  `disabledPaths` (`src/lib/auth-disabled-paths.ts`) and a test drives the real handler. A new Better Auth
+  endpoint that writes members/roles/invitations must go through the policy or stay disabled.
+- **An issued invoice's tax row comes from its own row** (`resolveTaxBreakdown`, FEATUREDOCS/75), never
+  the org's current default tax rate.
+
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
 

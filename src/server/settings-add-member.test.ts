@@ -8,14 +8,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const getOrgContext = vi.fn();
+const requirePermission = vi.fn();
 vi.mock("@/lib/org-context", () => ({
   getOrgContext: (...a: unknown[]) => getOrgContext(...a),
+  requirePermission: (...a: unknown[]) => requirePermission(...a),
 }));
 
 const invitationFindFirst = vi.fn();
 const invitationCreate = vi.fn();
 const userFindFirst = vi.fn();
 const memberFindFirst = vi.fn();
+/** The actor's own membership row (looked up by userId) vs the "already a member" check (by email). */
+let actorRole: string | null = "owner";
+let existingMember: unknown = null;
 const organizationFindUnique = vi.fn();
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -24,7 +29,13 @@ vi.mock("@/lib/prisma", () => ({
       create: (...a: unknown[]) => invitationCreate(...a),
     },
     user: { findFirst: (...a: unknown[]) => userFindFirst(...a) },
-    member: { findFirst: (...a: unknown[]) => memberFindFirst(...a) },
+    member: {
+      findFirst: (...a: unknown[]) => {
+        memberFindFirst(...a);
+        const where = (a[0] as { where: { userId?: string } }).where;
+        return Promise.resolve(where.userId ? (actorRole ? { role: actorRole } : null) : existingMember);
+      },
+    },
     organization: { findUnique: (...a: unknown[]) => organizationFindUnique(...a) },
   },
 }));
@@ -45,6 +56,9 @@ const ACTOR = { organizationId: "org_A", userId: "user_owner", userName: "Owner"
 beforeEach(() => {
   vi.clearAllMocks();
   getOrgContext.mockResolvedValue(ACTOR);
+  requirePermission.mockResolvedValue(ACTOR);
+  actorRole = "owner";
+  existingMember = null;
   invitationFindFirst.mockResolvedValue(null);
   organizationFindUnique.mockResolvedValue({ name: "Acme" });
   invitationCreate.mockResolvedValue({ id: "inv_1" });
@@ -53,7 +67,7 @@ beforeEach(() => {
 describe("addMemberByEmail — invite-only, never a direct add", () => {
   it("creates an invitation instead of a Member row for a known user's account", async () => {
     userFindFirst.mockResolvedValue({ id: "user_target" });
-    memberFindFirst.mockResolvedValue(null); // not already a member
+    existingMember = null; // not already a member
 
     const result = await addMemberByEmail("target@example.com", "member");
 
@@ -87,7 +101,7 @@ describe("addMemberByEmail — invite-only, never a direct add", () => {
 
   it("rejects a known user who is already a member", async () => {
     userFindFirst.mockResolvedValue({ id: "user_target" });
-    memberFindFirst.mockResolvedValue({ id: "member_1" });
+    existingMember = { id: "member_1" };
 
     await expect(addMemberByEmail("target@example.com", "member")).rejects.toThrow(
       /already a member/i,
@@ -107,5 +121,25 @@ describe("addMemberByEmail — invite-only, never a direct add", () => {
   it("rejects an invalid role before touching the database", async () => {
     await expect(addMemberByEmail("target@example.com", "owner")).rejects.toThrow(/invalid role/i);
     expect(invitationFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("needs orgMembers:invite on the server (the UI hiding the button was the only gate)", async () => {
+    requirePermission.mockRejectedValue(new Error("Permission denied"));
+    await expect(addMemberByEmail("target@example.com", "member")).rejects.toThrow(/permission denied/i);
+    expect(requirePermission).toHaveBeenCalledWith("orgMembers", "invite");
+    expect(invitationCreate).not.toHaveBeenCalled();
+  });
+
+  it("an admin can invite a manager but never another admin (no raising above their own rights)", async () => {
+    actorRole = "admin";
+    await addMemberByEmail("a@example.com", "manager");
+    expect(invitationCreate).toHaveBeenCalledTimes(1);
+    await expect(addMemberByEmail("b@example.com", "admin")).rejects.toThrow(/only the owner/i);
+    expect(invitationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("the warehouse role is assignable (the old hand-kept list had drifted)", async () => {
+    await addMemberByEmail("w@example.com", "warehouse");
+    expect(invitationCreate).toHaveBeenCalledTimes(1);
   });
 });

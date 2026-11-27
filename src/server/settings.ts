@@ -7,7 +7,10 @@ import { sendEmail } from "@/lib/email";
 import { invitationEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
-import { removeMemberMirror } from "@/lib/member-mirror";
+import { canAssignRole } from "@/lib/member-role-policy";
+import { inviteSchema } from "@/lib/validations/team";
+import { INVITE_TTL_MS } from "@/lib/invite-ttl";
+import { UserFacingError } from "@/lib/errors/user-facing-error";
 import {
   readOrgSettings,
   readOrgSettingsBlob,
@@ -243,24 +246,27 @@ export async function getNextAssetTag(): Promise<string> {
   return tags[0];
 }
 
-const VALID_BUILT_IN_ROLES = ["admin", "manager", "member", "warehouse", "viewer"] as const;
-
 export async function addMemberByEmail(email: string, role: string) {
-  const { organizationId, userId, userName } = await getOrgContext();
-
-  // Only built-in roles (custom roles were removed).
-  if (!(VALID_BUILT_IN_ROLES as readonly string[]).includes(role)) {
-    throw new Error("Invalid role");
+  // The verb needs `orgMembers:invite` (it had no server gate before: only the UI hid the
+  // button), and the ONE role policy decides which roles this actor may hand out: an Admin
+  // can't invite another Admin, and `owner` is never assignable.
+  const { organizationId, userId, userName } = await requirePermission("orgMembers", "invite");
+  const actorMember = await prisma.member.findFirst({ where: { organizationId, userId }, select: { role: true } });
+  const parsed = inviteSchema.safeParse({ email, role });
+  if (!parsed.success) {
+    throw new UserFacingError({ code: "INVALID_INVITE", title: "Invalid invite", message: parsed.error.issues[0]?.message ?? "Invalid invite" });
   }
+  const verdict = canAssignRole(actorMember?.role, parsed.data.role);
+  if (!verdict.ok) throw new UserFacingError({ code: "ROLE_NOT_ALLOWED", title: "Can't give that role", message: verdict.reason });
 
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = parsed.data.email;
 
   // Check for existing pending invitation
   const existingInvite = await prisma.invitation.findFirst({
     where: { organizationId, email: normalizedEmail, status: "pending" },
   });
   if (existingInvite) {
-    throw new Error("An invitation has already been sent to this email.");
+    throw new UserFacingError({ code: "ALREADY_INVITED", title: "Already invited", message: "An invitation has already been sent to this email." });
   }
 
   // Every membership requires the recipient to accept (#1073, A3) — no
@@ -277,7 +283,7 @@ export async function addMemberByEmail(email: string, role: string) {
       },
     });
     if (existingMember) {
-      throw new Error("This person is already a member of your organization.");
+      throw new UserFacingError({ code: "ALREADY_MEMBER", title: "Already a member", message: "This person is already a member of your organization." });
     }
   }
 
@@ -290,9 +296,9 @@ export async function addMemberByEmail(email: string, role: string) {
     data: {
       organizationId,
       email: normalizedEmail,
-      role,
+      role: parsed.data.role,
       status: "pending",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
       inviterId: userId,
     },
   });
@@ -306,7 +312,7 @@ export async function addMemberByEmail(email: string, role: string) {
     ...invitationEmail({
       orgName: org?.name || "an organization",
       inviterName: userName,
-      role,
+      role: parsed.data.role,
       acceptUrl,
       platformName: pName,
     }),
@@ -326,27 +332,6 @@ export async function addMemberByEmail(email: string, role: string) {
   return serialize({ id: invitation.id, invited: true, email: normalizedEmail });
 }
 
-export async function removeMember(memberId: string) {
-  const { organizationId } = await getOrgContext();
-
-  const member = await prisma.member.findFirst({
-    where: { id: memberId, organizationId },
-  });
-
-  if (!member) throw new Error("Member not found");
-  if (member.role === "owner") throw new Error("Cannot remove the owner");
-
-  // Restrictive (revocation): remove from the Convex mirror FIRST (strict), then
-  // commit the Prisma delete (§3.3.4).
-  await removeMemberMirror(
-    { organizationId, userId: member.userId },
-    { strict: true },
-  );
-
-  await prisma.member.delete({ where: { id: memberId } });
-  return { success: true };
-}
-
 export async function getMembers() {
   const { organizationId } = await getOrgContext();
 
@@ -354,6 +339,7 @@ export async function getMembers() {
     where: { organizationId },
     include: { user: { select: { id: true, name: true, email: true, image: true } } },
     orderBy: { createdAt: "asc" },
+    take: 500,
   });
 
   return serialize(members);
@@ -369,30 +355,12 @@ export async function getPendingInvitations() {
   }
 
   const invitations = await prisma.invitation.findMany({
-    where: {
-      organizationId,
-      status: "pending",
-      expiresAt: { gte: new Date() },
-    },
+    // Pending rows INCLUDING ones past `expiresAt`: Expired is derived on read
+    // (`inviteStatus`) so an expired invite can be resent from Team. Bounded newest-first.
+    where: { organizationId, status: "pending" },
     orderBy: { createdAt: "desc" },
+    take: 200,
   });
 
   return serialize(invitations);
-}
-
-/** Revoke a pending invitation for the current organization. */
-export async function revokeInvitation(invitationId: string) {
-  const { organizationId } = await getOrgContext();
-
-  const invitation = await prisma.invitation.findFirst({
-    where: { id: invitationId, organizationId, status: "pending" },
-  });
-  if (!invitation) throw new Error("Invitation not found");
-
-  await prisma.invitation.update({
-    where: { id: invitationId },
-    data: { status: "cancelled" },
-  });
-
-  return { success: true };
 }

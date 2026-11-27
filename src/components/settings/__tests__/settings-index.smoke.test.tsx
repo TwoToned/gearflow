@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/use-settings-caps", () => ({ useSettingsCaps: () => state.caps }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org_1" } }) }));
 vi.mock("@/hooks/use-org-members", () => ({ useOrgMembers: () => ({ data: [{}, {}, {}] }) }));
-vi.mock("@/hooks/use-pending-invitations", () => ({ usePendingInvitations: () => ({ data: [{}] }) }));
+vi.mock("@/hooks/use-pending-invitations", () => ({ usePendingInvitations: () => ({ data: [{ expiresAt: "2099-01-01T00:00:00Z" }, { expiresAt: "2000-01-01T00:00:00Z" }] }) }));
 vi.mock("@/hooks/use-xero-linked", () => ({ useXeroIntegration: () => ({ isConnected: true }) }));
 vi.mock("@/hooks/use-server-query", () => ({
   useServerQuery: () => ({ data: { hasApiKey: true, writeAccessEnabled: false } }),

@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { useIsMobile } from "@/hooks/use-mobile";
 import { displayDate, keyOfMs } from "@/lib/crew-planner";
 import { formatWeekdayDayMonth } from "@/lib/formatters";
-import { claimsOnDay, type GearCell, type GearClaim, type GearRow } from "@/lib/schedule-gear";
+import { claimsOnDay, risksOn, shortfallsOn, type GearCell, type GearClaim, type GearRow } from "@/lib/schedule-gear";
 import { intentStyles } from "@/lib/status-colors";
 import { cn } from "@/lib/utils";
 
@@ -72,13 +72,12 @@ function Numbers({ row, cell }: { row: GearRow; cell: GearCell }) {
   );
 }
 
-/** `would be short 2 if #2350 confirms`: what the pencilled jobs on this day would take if they were confirmed. */
-function RiskLine({ cell, pencilled }: { cell: GearCell; pencilled: GearClaim[] }) {
-  if (cell.unknown || cell.atRisk === 0) return null;
-  const who = pencilled.map((c) => c.projectNumber).join(", ");
+/** `would be short 2 if #2350 confirms`: the pencilled jobs the board says would not fit if they were confirmed. */
+function RiskLine({ cell, who }: { cell: GearCell; who: GearClaim[] }) {
+  if (cell.unknown || cell.atRisk === 0 || who.length === 0) return null;
   return (
     <p className={cn("text-ui-text", intentStyles.warning.text)}>
-      would be short {cell.atRisk} if {who} confirm{pencilled.length === 1 ? "s" : ""}
+      would be short {cell.atRisk} if {who.map((c) => c.projectNumber).join(", ")} confirm{who.length === 1 ? "s" : ""}
     </p>
   );
 }
@@ -106,24 +105,30 @@ function Verbs({ opened, canSubHire, canModel, onSubHire }: { opened: OpenedCell
 
 function SheetBody({ opened, onOpenJob, canSubHire, canModel }: Omit<Props, "opened" | "onClose"> & { opened: OpenedCell }) {
   const [subHire, setSubHire] = React.useState(false);
-  const on = claimsOnDay(opened.row, opened.dayStart);
+  const { row, cell, dayStart } = opened;
+  const on = claimsOnDay(row, dayStart);
+  const byId = new Map(row.claims.map((c) => [c.projectId, c]));
+  // Only the jobs the board's sweep leaves short, each with its own shortfall (never every held job of the day).
+  const short = shortfallsOn(row, dayStart).flatMap((o) => (byId.get(o.projectId) ? [{ claim: byId.get(o.projectId)!, qty: o.qty }] : []));
+  const risk = risksOn(row, dayStart).flatMap((o) => (byId.get(o.projectId) ? [byId.get(o.projectId)!] : []));
   return (
     <div className="flex flex-col gap-5 p-1">
       <SheetHeader>
-        <SheetTitle>{opened.row.name}</SheetTitle>
-        <SheetDescription>{formatWeekdayDayMonth(displayDate(keyOfMs(opened.dayStart)))}</SheetDescription>
+        <SheetTitle>{row.name}</SheetTitle>
+        <SheetDescription>{formatWeekdayDayMonth(displayDate(keyOfMs(dayStart)))}</SheetDescription>
       </SheetHeader>
-      <Numbers row={opened.row} cell={opened.cell} />
-      <RiskLine cell={opened.cell} pencilled={on.pencilled} />
-      <Claims title="Held by" claims={on.held} onOpenJob={onOpenJob} />
-      <Claims title="Pencilled, holds nothing" claims={on.pencilled} onOpenJob={onOpenJob} />
+      <Numbers row={row} cell={cell} />
+      <RiskLine cell={cell} who={risk} />
+      <Claims title={cell.unknown ? "Held by (may be incomplete)" : "Held by"} claims={on.held} onOpenJob={onOpenJob} />
+      <Claims title={cell.unknown ? "Pencilled, holds nothing (may be incomplete)" : "Pencilled, holds nothing"} claims={on.pencilled} onOpenJob={onOpenJob} />
       <Verbs opened={opened} canSubHire={canSubHire} canModel={canModel} onSubHire={() => setSubHire(true)} />
       <SubHireShortfallDialog
         open={subHire}
         onOpenChange={setSubHire}
-        modelName={opened.row.name}
-        shortfallQty={opened.cell.short}
-        projects={on.held.map((c) => ({ id: c.projectId, name: c.name, projectNumber: c.projectNumber }))}
+        modelName={row.name}
+        shortfallQty={cell.short}
+        projects={short.map((s) => ({ id: s.claim.projectId, name: s.claim.name, projectNumber: s.claim.projectNumber }))}
+        shortBy={Object.fromEntries(short.map((s) => [s.claim.projectId, s.qty]))}
       />
     </div>
   );

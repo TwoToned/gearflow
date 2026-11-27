@@ -378,4 +378,85 @@ describe("scheduleBoard.grid: the free count per model per day", () => {
     await t.run((ctx) => ctx.db.insert("members", { id: "m2", organizationId: ORG, userId: "user_2", role: NO_JOBS }));
     await expect(t.withIdentity({ subject: "user_2", orgId: ORG }).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow();
   });
+
+  test("a model whose stock is beyond the per-model unit cap is unknown in the grid and in the job words", async () => {
+    const t = makeT();
+    await seedBase(t, 3);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW, lines: [{ qty: 1 }] });
+    const r = await unknownCells(t, { perModelUnits: 2 });
+    expect(r.rows[0].every(Boolean)).toBe(true);
+    const facts = await load(t, { perModelUnits: 2 });
+    expect(facts.facts.a.state).toBe("unknown");
+    // within the cap the same job is a plain known cell
+    expect((await unknownCells(t, { perModelUnits: 5 })).rows[0].some(Boolean)).toBe(false);
+  });
+
+  test("a model the budget could not read has no doc to name: the row says Model not loaded and every cell is unknown", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW + 1 * DAY, lines: [{ qty: 1 }] });
+    const rows = await t.run(async (ctx) => {
+      const r = await loadSchedule(ctx, ORG, { start: START, end: START + 4 * DAY }, { ...SCHEDULE_LIMITS, reads: 5 });
+      return deriveGearGrid(r.inputs, dayStarts).map((g) => ({ name: g.name, unknown: g.unknown, cells: g.cells.map((c) => c.unknown) }));
+    });
+    expect(rows).toEqual([{ name: "Model not loaded", unknown: true, cells: [true, true, true, true, true] }]);
+  });
+
+  test("another org's units, lines and models never count: a foreign unit does not add stock, a foreign line holds nothing, a foreign model is not read", async () => {
+    const t = makeT();
+    await seedBase(t, 1);
+    await seedJob(t, { id: "a", status: "CONFIRMED", from: NOW, to: NOW, lines: [{ qty: 2 }] });
+    await t.run(async (ctx) => {
+      // five units of the SAME model id, owned by another org
+      for (let i = 0; i < 5; i++) await ctx.db.insert("assets", { id: `F${i}`, organizationId: "org_2", modelId: "mdl", assetTag: `F-${i}`, status: "AVAILABLE" });
+      // a foreign line planted on OUR job's live version
+      await ctx.db.insert("projectLineItems", { id: "FL", organizationId: "org_2", projectId: "a", modelId: "mdl", status: "CONFIRMED", quantity: 9, type: "EQUIPMENT", versionId: "v-a", lineageId: "FL" });
+      // a foreign model doc with a name that must never be shown
+      await ctx.db.insert("models", { id: "mdl_x", organizationId: "org_2", name: "Their secret model", assetType: "SERIALIZED" });
+      await ctx.db.insert("projectLineItems", { id: "XL", organizationId: ORG, projectId: "a", modelId: "mdl_x", status: "CONFIRMED", quantity: 1, type: "EQUIPMENT", versionId: "v-a", lineageId: "XL" });
+    });
+    const res = await gridOf(t);
+    const ours = res.rows.find((r) => r.modelId === "mdl")!;
+    // 1 own unit, 2 held: short 1 (the 5 foreign units and the 9 foreign units of demand count for nothing)
+    expect(ours).toMatchObject({ owned: 1, unknown: false });
+    expect(ours.cells[0]).toMatchObject({ held: 2, short: 1 });
+    // bulk stock is org-filtered too: 1 own unit, 5 foreign, 2 held
+    await t.run(async (ctx) => {
+      await ctx.db.insert("models", { id: "mb", organizationId: ORG, name: "Cable", assetType: "BULK" });
+      await ctx.db.insert("bulkAssets", { id: "B1", organizationId: ORG, modelId: "mb", assetTag: "B-1", totalQuantity: 1 });
+      await ctx.db.insert("bulkAssets", { id: "B2", organizationId: "org_2", modelId: "mb", assetTag: "B-2", totalQuantity: 5 });
+      await ctx.db.insert("projectLineItems", { id: "BL", organizationId: ORG, projectId: "a", modelId: "mb", status: "CONFIRMED", quantity: 2, type: "EQUIPMENT", versionId: "v-a", lineageId: "BL" });
+    });
+    const bulk = (await gridOf(t)).rows.find((r) => r.modelId === "mb")!;
+    expect(bulk).toMatchObject({ owned: 1 });
+    expect(bulk.cells[0]).toMatchObject({ held: 2, short: 1 });
+    // the foreign model is never read: no row carries its name
+    expect(JSON.stringify(res)).not.toContain("Their secret model");
+    expect(res.rows.find((r) => r.modelId === "mdl_x")).toMatchObject({ name: "Model not loaded", unknown: true });
+  });
+});
+
+describe("scheduleBoard: an API key reads only with project scope (requireOrgReadFor's scope intersection)", () => {
+  const KEY = "key_1";
+  const asAgent = { subject: USER, orgId: ORG, akid: KEY };
+  async function seedKey(t: T, scopes: string[]) {
+    await seedBase(t, 1);
+    await t.run((ctx) =>
+      ctx.db.insert("apiKeys", {
+        id: KEY, organizationId: ORG, name: "k", prefix: "gf_live_aaaaaa", tokenHash: "h",
+        scopes: JSON.stringify(scopes), isActive: true, actingUserId: USER, createdById: USER,
+      }),
+    );
+  }
+
+  test("a key without project scope is refused by jobs and by grid; a project:read key is served", async () => {
+    const t = makeT();
+    await seedKey(t, ["asset:read"]);
+    await expect(t.withIdentity(asAgent).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow(/scope/i);
+    await expect(t.withIdentity(asAgent).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: END })).rejects.toThrow(/scope/i);
+    const ok = makeT();
+    await seedKey(ok, ["project:read"]);
+    await expect(ok.withIdentity(asAgent).query(api.scheduleBoard.jobs, { orgId: ORG, startMs: START, endMs: END })).resolves.toBeTruthy();
+    await expect(ok.withIdentity(asAgent).query(api.scheduleBoard.grid, { orgId: ORG, startMs: START, endMs: END })).resolves.toBeTruthy();
+  });
 });

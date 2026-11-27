@@ -186,7 +186,7 @@ function JobsBody({ read, url, today, phone, menuFor, canCreate }: BodyProps & {
 function GearBody({ read, url, today, phone }: BodyProps) {
   const { data, shown } = read.gear;
   if (!data) return <ScheduleSkeleton />;
-  if (shown.length === 0) return <GearEmpty filtered={data.rows.length > 0} url={url} />;
+  if (shown.length === 0) return <GearEmpty filtered={data.rows.length > 0} url={url} cut={read.truncated} />;
   const open = (modelId: string, day: string) => url.openCell(`${modelId}:${day}`);
   if (phone) {
     const keys = data.dayStarts.map(keyOfMs);
@@ -205,7 +205,7 @@ function ScheduleSkeleton() {
   );
 }
 
-function GearEmpty({ filtered, url }: { filtered: boolean; url: ScheduleUrl }) {
+function GearEmpty({ filtered, url, cut }: { filtered: boolean; url: ScheduleUrl; cut: boolean }) {
   if (filtered) {
     return (
       <EmptyState
@@ -215,6 +215,8 @@ function GearEmpty({ filtered, url }: { filtered: boolean; url: ScheduleUrl }) {
       />
     );
   }
+  // A cut read can hide bookings: an empty grid then says it could not check, never "nothing is booked".
+  if (cut) return <EmptyState title="Couldn't check this range in full" description="Part of the read was cut, so an empty grid does not mean nothing is booked." />;
   return <EmptyState title="No gear is booked in this range" description="Models appear here once a job holds or pencils them." />;
 }
 

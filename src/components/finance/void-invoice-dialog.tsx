@@ -13,8 +13,7 @@ import { convexErrorMessage } from "@/lib/errors/convex-error-message";
 import { VOID_INVOICE_COPY } from "@/lib/row-actions/finance";
 
 /**
- * Void an invoice from the hub. The write is the existing `invoicesWrites.voidNative` (its own gate and
- * its own refusals: a recorded payment blocks it, the number stays used, the document stays); this only
+ * Void an invoice from the hub. The write is the existing `invoicesWrites.voidNative` (its own gate; the number stays used, the document stays, Xero is untouched); this only
  * collects the reason. A void has no Undo (the confirm says what stays), as on the job's Finance tab.
  */
 export function VoidInvoiceDialog({ target, onClose }: { target: { id: string; label: string } | null; onClose: () => void }) {

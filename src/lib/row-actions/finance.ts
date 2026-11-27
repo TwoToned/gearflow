@@ -27,6 +27,17 @@ export function pdfVerb(row: { hasPdf: boolean; draft: boolean }): "open" | "pre
   return row.draft ? "preview" : "generate";
 }
 
+/**
+ * The watermarked preview route for a DRAFT (never stored). A job can hold several drafts, so the exact
+ * document is named: an invoice by its id, a quote by the project version it was built from (absent on a
+ * draft that has none yet, which previews the live version, the one a send would freeze).
+ */
+export function hubPreviewHref(kind: "quote" | "invoice", projectId: string, target: { invoiceId?: string; versionId?: string | null }): string {
+  const base = `/api/documents/${projectId}?type=${kind}&preview=1`;
+  if (kind === "invoice") return target.invoiceId ? `${base}&invoiceId=${encodeURIComponent(target.invoiceId)}` : base;
+  return target.versionId ? `${base}&versionId=${encodeURIComponent(target.versionId)}` : base;
+}
+
 export interface QuoteMenuCtx {
   onOpenJob: () => void;
   /** Streams the STORED bytes (`/api/finance/quote/{id}/pdf`). */
@@ -72,7 +83,7 @@ export interface InvoiceMenuCtx {
 
 const UNSETTLED = new Set(["ISSUED", "PART_PAID", "OVERDUE"]);
 
-function invoiceFacts(i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber">) {
+function invoiceFacts(i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber" | "hasPayments">) {
   const draft = i.pill === "DRAFT";
   return {
     draft,
@@ -85,7 +96,7 @@ function invoiceFacts(i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero"
 }
 
 export function buildInvoiceHubActions(
-  i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber">,
+  i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber" | "hasPayments">,
   ctx: InvoiceMenuCtx,
 ): ActionMenuSpec {
   const { draft, voided, unsettled, pdf, needsXero, label } = invoiceFacts(i);
@@ -98,7 +109,7 @@ export function buildInvoiceHubActions(
       verb(ctx.onRecordPayment, [unsettled], { key: "pay", label: "Record payment…", group: "organise", icon: Wallet }),
       verb(ctx.onChase, [unsettled], { key: "chase", label: "Chase", group: "reporting", icon: Copy }),
       verb(ctx.onPushXero, [needsXero], { key: "xero", label: i.xero?.status === "ERROR" ? "Retry push to Xero" : "Push to Xero", group: "organise", icon: Send }),
-      verb(ctx.onVoid, [unsettled || i.pill === "PAID"], {
+      verb(ctx.onVoid, [unsettled, !i.hasPayments], {
         key: "void",
         label: "Void…",
         group: "danger",
@@ -121,11 +132,15 @@ export function buildInvoiceHubActions(
   };
 }
 
-/** What the Void dialog says (spec §9j.2): what stays, what changes, and what blocks it. */
+/**
+ * What the Void dialog says (spec §9j.2), and ONLY what `invoicesWrites.voidNative` does: the invoice goes VOID,
+ * the job's money is recounted, the number stays used and the document stays on record. It does not touch Xero
+ * and it does not check payments, so the hub offers Void only on an invoice with no recorded payment.
+ */
 export const VOID_INVOICE_COPY = {
   title: (label: string) => `Void ${label}?`,
   body:
-    "The number stays used and the document stays on record (the client may be holding it). If it is in Xero it is voided there too, and the job's money is recounted. A recorded payment blocks a void: void the payment first.",
+    "The invoice is marked void and the job's money is recounted. The number stays used and the document stays on record (the client may be holding it). This does not change Xero: if it was pushed there, void it in Xero yourself. This can't be undone.",
   confirmLabel: "Void invoice",
 };
 

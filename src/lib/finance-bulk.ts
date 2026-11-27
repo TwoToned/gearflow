@@ -21,6 +21,13 @@ export interface BulkOutcome {
   skipped: { name: string; why: string }[];
 }
 
+/**
+ * Xero allows 60 API calls a minute per organisation and one push makes up to ~4 (contact find/create,
+ * invoice upsert, reference reads), `xero-client` has no 429 retry: so a bulk push starts one invoice every
+ * 4 seconds, which stays at or under 60 calls a minute however many are ticked.
+ */
+export const XERO_PUSH_SPACING_MS = 4000;
+
 export function bulkCapMessage(count: number): string | null {
   return count > MAX_FINANCE_BULK ? `Select at most ${MAX_FINANCE_BULK} at a time (you have ${count}).` : null;
 }
@@ -33,14 +40,22 @@ export async function runBulk<R extends BulkRow>(
   rows: R[],
   eligible: (row: R) => string | null,
   run: (row: R) => Promise<void>,
+  /** Minimum gap between the START of one write and the next (a rate-limited integration). Skips cost nothing. */
+  paceMs = 0,
 ): Promise<BulkOutcome> {
   const out: BulkOutcome = { done: 0, skipped: [] };
+  let lastStart = 0;
   for (const row of rows.slice(0, MAX_FINANCE_BULK)) {
     const why = eligible(row);
     if (why) {
       out.skipped.push({ name: row.name, why });
       continue;
     }
+    if (paceMs > 0 && lastStart > 0) {
+      const wait = lastStart + paceMs - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
+    lastStart = Date.now();
     try {
       await run(row);
       out.done += 1;

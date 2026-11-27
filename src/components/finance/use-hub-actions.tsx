@@ -15,11 +15,11 @@ import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
 import { downloadCsv } from "@/lib/download-csv";
 import { invoiceChaseText, chaseSummary } from "@/lib/finance-chase";
-import { MAX_FINANCE_BULK, bulkCapMessage, bulkToastTitle, runBulk, type BulkRow } from "@/lib/finance-bulk";
+import { MAX_FINANCE_BULK, XERO_PUSH_SPACING_MS, bulkCapMessage, bulkToastTitle, runBulk, type BulkRow } from "@/lib/finance-bulk";
 import { invoicesCsv, quotesCsv } from "@/lib/finance-export";
 import type { InvoiceSource, QuoteSource } from "@/lib/list-views/finance";
 import type { ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
-import { buildInvoiceHubActions, buildQuoteHubActions, invoiceHubBulk, quoteHubBulk } from "@/lib/row-actions/finance";
+import { buildInvoiceHubActions, buildQuoteHubActions, hubPreviewHref, invoiceHubBulk, quoteHubBulk } from "@/lib/row-actions/finance";
 import { generateInvoiceArtifact, generateQuoteArtifact } from "@/server/finance-documents";
 import { pushInvoiceToXero } from "@/server/xero";
 import { useCanDo } from "@/lib/use-permissions";
@@ -39,6 +39,22 @@ function useHubGates() {
 const quoteName = (q: QuoteSource) => `${q.project?.projectNumber ?? "—"} v${q.version}`;
 const invoiceName = (i: InvoiceSource) => i.invoiceNumber ?? "Draft invoice";
 const toRow = <T extends { id: string }>(x: T, name: (t: T) => string): T & BulkRow => ({ ...x, name: name(x) });
+
+interface Picked<R> {
+  rows: R[];
+  /** How many ticks there were (the cap and the count are about this), and how many had no row data left. */
+  requested: number;
+  missing: number;
+}
+function pick<T extends { id: string }>(ids: string[], seen: Map<string, T>, name: (t: T) => string): Picked<T & BulkRow> {
+  const rows = ids.flatMap((id) => {
+    const r = seen.get(id);
+    return r ? [toRow(r, name)] : [];
+  });
+  return { rows, requested: ids.length, missing: ids.length - rows.length };
+}
+
+const noteMissing = (n: number) => n > 0 && toast.error(`${n} selected row${n === 1 ? "" : "s"} no longer in the list were left out`);
 
 /** The money in a chase text is present only when the row carries money (the server sent it). */
 function quoteChase(q: QuoteSource, now: number): string {
@@ -103,7 +119,7 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
     buildQuoteHubActions(q, {
       onOpenJob: () => q.project && router.push(`/projects/${q.project.id}?tab=finance`),
       onOpenPdf: () => open(`/api/finance/quote/${q.id}/pdf`),
-      onPreview: q.project ? () => open(`/api/documents/${q.project!.id}?type=quote&preview=1`) : undefined,
+      onPreview: q.project ? () => open(hubPreviewHref("quote", q.project!.id, { versionId: q.versionId })) : undefined,
       onGeneratePdf: when(g.publish, () => generate("quote", q.id)),
       onAccept: when(g.publish, () => setAccept({ id: q.id, version: q.version, expired: q.status === "EXPIRED" })),
       onAcknowledge: when(g.publish, () => acknowledge(q.id)),
@@ -114,7 +130,7 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
     buildInvoiceHubActions(i, {
       onOpenJob: () => i.project && router.push(`/projects/${i.project.id}?tab=finance`),
       onOpenPdf: () => open(`/api/finance/invoice/${i.id}/pdf`),
-      onPreview: i.project ? () => open(`/api/documents/${i.project!.id}?type=invoice&preview=1`) : undefined,
+      onPreview: i.project ? () => open(hubPreviewHref("invoice", i.project!.id, { invoiceId: i.id })) : undefined,
       onGeneratePdf: when(g.issue, () => generate("invoice", i.id)),
       onRecordPayment: when(g.recordPayment, () => setPay({ id: i.id, number: invoiceName(i), balance: i.outstanding ?? 0 })),
       onChase: () => setChase({ text: invoiceChase(i), count: 1 }),
@@ -124,24 +140,32 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
     });
 
   // ── Bulk: the existing per-row write, row by row, ONE announcement, no Undo (none has an exact reverse) ──
-  const bulkRun = async <R extends BulkRow>(rows: R[], verb: string, noun: string, eligible: (r: R) => string | null, run: (r: R) => Promise<void>) => {
-    const cap = bulkCapMessage(rows.length);
+  const bulkRun = async <R extends BulkRow>(picked: Picked<R>, verb: string, noun: string, eligible: (r: R) => string | null, run: (r: R) => Promise<void>, paceMs = 0) => {
+    const cap = bulkCapMessage(picked.requested);
     if (cap) {
       toast.error(cap);
       return;
     }
-    const outcome = await runBulk(rows, eligible, run);
+    const outcome = await runBulk(picked.rows, eligible, run, paceMs);
+    // A tick whose row data is gone (the list was refiltered under it) is named, never dropped.
+    if (picked.missing > 0) outcome.skipped.push({ name: `${picked.missing} selected row${picked.missing === 1 ? "" : "s"}`, why: "no longer in the list" });
     announceListWrite({ title: bulkToastTitle(verb, noun, outcome), undoneTitle: "" });
   };
 
-  const pickQuotes = (ids: string[]) => opts.quotes.filter((q) => ids.includes(q.id)).map((q) => toRow(q, quoteName));
-  const pickInvoices = (ids: string[]) => opts.invoices.filter((i) => ids.includes(i.id)).map((i) => toRow(i, invoiceName));
+  // Ticked ids resolve against EVERY row seen (a phone's "Show more" accumulates pages the current page's data no longer holds).
+  const seenQuotes = React.useRef(new Map<string, QuoteSource>());
+  const seenInvoices = React.useRef(new Map<string, InvoiceSource>());
+  for (const q of opts.quotes) seenQuotes.current.set(q.id, q);
+  for (const i of opts.invoices) seenInvoices.current.set(i.id, i);
+  const pickQuotes = (ids: string[]) => pick(ids, seenQuotes.current, quoteName);
+  const pickInvoices = (ids: string[]) => pick(ids, seenInvoices.current, invoiceName);
 
   const quoteBulk = (ids: string[]): BulkAction[] =>
     quoteHubBulk({
       onChaseMany: () => {
-        const rows = pickQuotes(ids).filter((q) => q.status === "SENT" || q.status === "EXPIRED");
+        const rows = pickQuotes(ids).rows.filter((q) => q.status === "SENT" || q.status === "EXPIRED");
         if (rows.length === 0) return void toast.error("Nothing selected can be chased: only sent or expired quotes.");
+        noteMissing(pickQuotes(ids).missing);
         setChase({ text: rows.map((q) => quoteChase(q, opts.now)).join("\n\n"), count: rows.length });
       },
       onAcknowledgeMany: when(g.publish, () =>
@@ -150,15 +174,18 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
       onExport: () => {
         const cap = bulkCapMessage(ids.length);
         if (cap) return void toast.error(cap);
-        downloadCsv(quotesCsv(pickQuotes(ids), opts.timeZone), "quotes.csv");
+        const p = pickQuotes(ids);
+        noteMissing(p.missing);
+        downloadCsv(quotesCsv(p.rows, opts.timeZone), "quotes.csv");
       },
     });
 
   const invoiceBulk = (ids: string[]): BulkAction[] =>
     invoiceHubBulk({
       onChaseMany: () => {
-        const rows = pickInvoices(ids).filter((i) => ["ISSUED", "PART_PAID", "OVERDUE"].includes(i.pill) && i.kind !== "CREDIT");
+        const rows = pickInvoices(ids).rows.filter((i) => ["ISSUED", "PART_PAID", "OVERDUE"].includes(i.pill) && i.kind !== "CREDIT");
         if (rows.length === 0) return void toast.error("Nothing selected can be chased: only unpaid, issued invoices.");
+        noteMissing(pickInvoices(ids).missing);
         setChase({ text: rows.map(invoiceChase).join("\n\n"), count: rows.length });
       },
       onSyncXeroMany: when(g.xeroPush && opts.xeroConnected, () =>
@@ -171,12 +198,15 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
             const r = await pushInvoiceToXero(i.id);
             if (!r.ok) throw new Error(r.error);
           },
+          XERO_PUSH_SPACING_MS,
         ),
       ),
       onExport: () => {
         const cap = bulkCapMessage(ids.length);
         if (cap) return void toast.error(cap);
-        downloadCsv(invoicesCsv(pickInvoices(ids), opts.timeZone), "invoices.csv");
+        const p = pickInvoices(ids);
+        noteMissing(p.missing);
+        downloadCsv(invoicesCsv(p.rows, opts.timeZone), "invoices.csv");
       },
       onDeleteDraftsMany: when(g.delete_, () =>
         bulkRun(pickInvoices(ids), "Deleted", "draft", (i) => (i.pill === "DRAFT" ? null : "only a draft can be deleted"), (i) => invoiceWrites.deleteDraft(i.id)),

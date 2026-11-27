@@ -111,8 +111,10 @@ export function hubSegments(tab: HubTab, counts: Record<string, number> | undefi
   return defs.map((s) => ({ key: s.key, label: s.label, count: (s.key === "depositdue" ? approx?.depositdue : approx?.tab) ? undefined : counts?.[s.key] }));
 }
 
-const known = (values: string[] | undefined, allowed: readonly string[]) => {
-  const kept = values?.filter((v) => allowed.includes(v));
+/** The server refuses more than 50 filter values (`MAX_FILTER_VALUES`); the Client picker never needs more. */
+const MAX_CLIENT_FILTER = 50;
+const known = <T extends string>(values: string[] | undefined, allowed: readonly T[]): T[] | undefined => {
+  const kept = values?.filter((v): v is T => (allowed as readonly string[]).includes(v));
   return kept && kept.length > 0 ? kept : undefined;
 };
 
@@ -127,17 +129,17 @@ export function hubQueryArgs(tab: HubTab, state: ListUrlState, now: number) {
     sortBy: state.sortBy,
     sortOrder: state.sortOrder,
     now,
-    clientIn: f.client?.length ? f.client : undefined,
+    clientIn: f.client?.length ? f.client.slice(0, MAX_CLIENT_FILTER) : undefined,
   };
   if (tab === "quotes") {
-    return { ...base, includeClosed: f.show?.[0] === "closed", sent: known(f.sent, ["7d", "30d", "90d"])?.[0], validity: known(f.validity, ["7d", "30d"])?.[0] };
+    return { ...base, includeClosed: f.show?.[0] === "closed", sent: known(f.sent, ["7d", "30d", "90d"] as const)?.[0], validity: known(f.validity, ["7d", "30d"] as const)?.[0] };
   }
   return {
     ...base,
     includeVoid: f.show?.[0] === "void",
-    kindIn: known(f.kind, KIND_OPTIONS.map((o) => o.value)),
-    issued: known(f.issued, ["month", "7d", "30d", "90d"])?.[0],
-    xeroIn: known(f.xero, XERO_OPTIONS.map((o) => o.value)),
+    kindIn: known(f.kind, ["FULL", "DEPOSIT", "BALANCE", "CREDIT"] as const),
+    issued: known(f.issued, ["month", "7d", "30d", "90d"] as const)?.[0],
+    xeroIn: known(f.xero, ["SYNCED", "NOT_SYNCED", "ERROR"] as const),
   };
 }
 
@@ -212,6 +214,7 @@ export interface QuoteSource {
   validUntil: number | null;
   daysLeft: number | null;
   hasPdf: boolean;
+  versionId?: string | null;
   project: HubProjectSource | null;
   total?: number | null;
 }
@@ -227,6 +230,7 @@ export interface InvoiceSource {
   dueDate: number | null;
   overdueDays: number | null;
   hasPdf: boolean;
+  hasPayments?: boolean;
   xero: { status: string; error: string | null } | null;
   project: HubProjectSource | null;
   total?: number;

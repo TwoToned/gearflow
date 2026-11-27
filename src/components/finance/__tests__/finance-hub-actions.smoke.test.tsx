@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { FinanceHub } from "@/components/finance/finance-hub";
+import { useHubActions } from "@/components/finance/use-hub-actions";
 
 beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
@@ -145,7 +146,7 @@ describe("Finance hub actions: existing paths only", () => {
     render(<FinanceHub />);
     await openMenu(user, /Draft invoice actions/i);
     fireEvent.click(await screen.findByText("Preview draft"));
-    expect(state.open).toHaveBeenCalledWith("/api/documents/p1?type=invoice&preview=1", "_blank", "noopener,noreferrer");
+    expect(state.open).toHaveBeenCalledWith("/api/documents/p1?type=invoice&preview=1&invoiceId=3", "_blank", "noopener,noreferrer");
     cleanup();
     vi.unstubAllGlobals();
     render(<FinanceHub />);
@@ -284,5 +285,53 @@ describe("Finance hub actions: existing paths only", () => {
     expect(within(dialog).getByRole("radio", { name: "Quote" })).toBeTruthy();
     await user.click(within(dialog).getByRole("button", { name: /#9 · Gala/ }));
     expect(state.push).toHaveBeenCalledWith("/projects/pX?tab=finance");
+  });
+});
+
+describe("bulk selection spans pages (a phone's Show more keeps earlier rows ticked)", () => {
+  const draft = (id: string) => inv(id, { pill: "DRAFT", pillLabel: "Draft", invoiceNumber: null, hasPdf: false, xero: null, issuedAt: null, dueDate: null });
+  const base = { xeroConnected: true, now: 0, timeZone: "UTC", quotes: [] };
+
+  it("a tick from an earlier page still resolves after the current page's rows changed, and the count matches what ran", async () => {
+    state.caps = ALL;
+    const { result, rerender } = renderHook((p: { invoices: ReturnType<typeof draft>[] }) => useHubActions({ ...base, invoices: p.invoices as never }), { initialProps: { invoices: [draft("a")] } });
+    rerender({ invoices: [draft("b")] });
+    const del = result.current.invoiceBulk(["a", "b"]).find((b) => b.key === "delete")!;
+    await del.onSelect();
+    await waitFor(() => expect(state.deleteDraft).toHaveBeenCalledTimes(2));
+    expect(state.deleteDraft).toHaveBeenCalledWith("a");
+    expect(state.deleteDraft).toHaveBeenCalledWith("b");
+    // No exact reverse exists, so the toast offers no Undo (the announce helper renders one only with a performUndo).
+    const opts = state.toastSuccess.mock.calls.at(-1)?.[1] as { action?: unknown };
+    expect(opts.action).toBeUndefined();
+  });
+
+  it("a tick with no row data at all is named in the toast, never dropped silently", async () => {
+    state.caps = ALL;
+    const { result } = renderHook(() => useHubActions({ ...base, invoices: [draft("a")] as never }));
+    const del = result.current.invoiceBulk(["a", "ghost"]).find((b) => b.key === "delete")!;
+    await del.onSelect();
+    await waitFor(() => expect(state.deleteDraft).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(state.toastSuccess.mock.calls.flat().join(" ")).toMatch(/1 selected row.*no longer in the list/));
+  });
+
+  it("the 50-row cap counts what was ticked, not what was found", async () => {
+    state.caps = ALL;
+    const { result } = renderHook(() => useHubActions({ ...base, invoices: [draft("a")] as never }));
+    const ids = Array.from({ length: 51 }, (_, i) => `x${i}`);
+    await result.current.invoiceBulk(ids).find((b) => b.key === "delete")!.onSelect();
+    expect(state.deleteDraft).not.toHaveBeenCalled();
+    expect(state.toastError).toHaveBeenCalledWith(expect.stringMatching(/at most 50/));
+  });
+
+  it("the Delete-draft verb is ABSENT without invoice:delete, in the row menu and in bulk", () => {
+    state.caps = { ...ALL, delete: false };
+    const { result } = renderHook(() => useHubActions({ ...base, invoices: [draft("a")] as never }));
+    const spec = result.current.invoiceMenu(draft("a") as never);
+    expect(spec.items.map((i) => i.key)).not.toContain("delete");
+    expect(result.current.invoiceBulk(["a"]).map((b) => b.key)).not.toContain("delete");
+    state.caps = ALL;
+    const withRights = renderHook(() => useHubActions({ ...base, invoices: [draft("a")] as never }));
+    expect(withRights.result.current.invoiceMenu(draft("a") as never).items.map((i) => i.key)).toContain("delete");
   });
 });

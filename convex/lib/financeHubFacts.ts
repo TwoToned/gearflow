@@ -43,6 +43,8 @@ export interface QuoteHubRow {
   validUntil: number | null;
   daysLeft: number | null;
   hasPdf: boolean;
+  /** The project version this quote was built from (stamped at send; absent on a draft or an old row): a draft preview targets it. */
+  versionId: string | null;
   project: HubProjectRef | null;
   /** The frozen total at send. ABSENT without job-cost visibility. */
   total?: number | null;
@@ -61,6 +63,8 @@ export interface InvoiceHubRow {
   overdueDays: number | null;
   hasPdf: boolean;
   xero: { status: string; error: string | null } | null;
+  /** Any payment is recorded against it (a fact, not an amount, so it is not behind the money line). The hub offers no Void then. */
+  hasPayments: boolean;
   project: HubProjectRef | null;
   /** Both ABSENT without job-cost visibility. */
   total?: number;
@@ -86,6 +90,7 @@ export function quoteHubRow(quote: Doc<"quotes">, project: HubProjectRef | null,
     validUntil: quote.validUntil ?? null,
     daysLeft: daysUntilValidUntil(quote.validUntil, now),
     hasPdf: quote.pdfFileId != null,
+    versionId: quote.versionId ?? null,
     project,
   };
   if (showMoney) row.total = snapshotTotal(quote.snapshot);
@@ -120,6 +125,7 @@ export function invoiceHubRow(inv: Doc<"invoices">, project: HubProjectRef | nul
     overdueDays: overdueDaysOf(pill, inv.dueDate, now),
     hasPdf: inv.pdfFileId != null,
     xero: xeroOf(inv),
+    hasPayments: (inv.amountPaid ?? 0) > 0,
     project,
   };
   if (showMoney) {

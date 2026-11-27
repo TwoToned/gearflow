@@ -1844,8 +1844,9 @@ Every verb calls an EXISTING write or route; the hub invents none, and a verb th
 - **Chase is copy-only (D54).** `ChaseDialog` builds text with `src/lib/finance-chase.ts` and copies it to the
   clipboard; Flow never emails a client. Money lines appear only when the row carried money. Proved at runtime
   (no mail function is called) and structurally (`finance-no-email.test.ts` scans the hub's modules).
+- **Draft previews name the exact document** (`hubPreviewHref`): an invoice by `invoiceId`, a quote by the `versionId` it was built from (a draft with none previews the live version).
 - **Record payment** (`RecordPaymentDialog`), **Mark accepted** (`AcceptQuoteDialog`, its gates and
-  justification), **Void** (`VoidInvoiceDialog`: reason, says what stays; a payment blocks it) and
+  justification), **Void** (`VoidInvoiceDialog`: a reason; the copy says exactly what `voidNative` does: the invoice goes VOID, the job's money is recounted, the number and document stay, and Xero is NOT touched. `voidNative` does not check payments, so the hub offers Void only on an invoice with no recorded payment, `hasPayments` on the row) and
   **Delete draft** run the existing mutations through `useHubActions`. Void and delete are confirmed `danger`
   verbs; none of them has an exact reverse, so none offers an Undo (documented, not omitted by accident).
 - **PDFs are stored bytes.** `Open PDF` streams `/api/finance/{quote,invoice}/[id]/pdf`; `Generate PDF` uses the
@@ -1860,3 +1861,7 @@ Every verb calls an EXISTING write or route; the hub invents none, and a verb th
   pages agree. `Invoiced this month` links to `?tab=invoices&seg=all&issued=month`.
 - **+ New…** opens `JobPickerDialog` (jobs via `projects.listPage`), then goes to that job's Finance tab; the hub
   creates no document itself.
+- **Filter args are bounded server-side** (`assertFilterBounds` in `convex/financeHub.ts`): at most 50 values per array, 64 characters per client id, 200 per search; `sent`/`validity`/`issued` are literal unions (`7d|30d|90d`, `issued` also `month`) and `kindIn`/`xeroIn` use the schema's own enums.
+- **Bulk ticks span pages.** Ticked ids resolve against every row the hook has seen (a phone's "Show more" keeps earlier pages ticked); a tick with no row data left is named in the toast ("N selected rows no longer in the list"), never dropped, and the 50-cap counts what was ticked.
+- **Bulk Xero push is paced** (`XERO_PUSH_SPACING_MS`, 4 s between starts): Xero allows 60 calls a minute per organisation, a push makes up to ~4, and `xero-client` has no 429 retry. A bulk push of n therefore takes about 4n seconds.
+

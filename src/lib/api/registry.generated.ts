@@ -22227,7 +22227,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       {
         "name": "issued",
         "optional": true,
-        "type": "string"
+        "type": "union"
       },
       {
         "name": "kindIn",
@@ -22281,7 +22281,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "a9ca3113b5b9e7a4",
+    "argsSha": "0ecefc530a4a18bf",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "A page of the org Finance hub's invoices by derived state (Draft, Issued, Paid, Overdue) or the jobs still to invoice a deposit for.",
@@ -22349,7 +22349,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       {
         "name": "sent",
         "optional": true,
-        "type": "string"
+        "type": "union"
       },
       {
         "name": "sortBy",
@@ -22364,11 +22364,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       {
         "name": "validity",
         "optional": true,
-        "type": "string"
+        "type": "union"
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "83b1d8e0a8510964",
+    "argsSha": "c62d5af7474b3327",
     "returnsSha": "74234e98afe7498f",
     "stability": "tracks-app",
     "summary": "A page of the org Finance hub's quotes, by derived status (Draft, Sent, Accepted, Expired), searchable and sortable.",

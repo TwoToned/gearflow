@@ -34,6 +34,8 @@ import { resolveOrgInvoiceConfig } from "./lib/orgSettings";
 import { collectCapped } from "./lib/pagination";
 import { startOfMonthInTimezone } from "./lib/quoteDates";
 import { ReadBudget } from "./lib/readBudget";
+import { assertArrayMax, assertStrLen } from "./lib/fieldGuards";
+import * as enums from "./lib/validators";
 import { resolveNow } from "./lib/projectSegments";
 
 /**
@@ -212,6 +214,20 @@ function sortAndPage<R extends { id: string }>(
 const knownSeg = <T extends string>(all: readonly T[], seg: string | undefined): T => (all.includes(seg as T) ? (seg as T) : all[0]);
 
 /** What a caller without invoice read gets: nothing (a role check on top of the org match, the navCounts pattern). */
+/** The ranges the Sent / Validity / Issued filters offer (`rangeDays`); `issued` also takes `month`. */
+const dayRange = v.union(v.literal("7d"), v.literal("30d"), v.literal("90d"));
+/** Filter bounds: a Client filter picks a handful of clients, and every id is a short cuid; a search is a few words. */
+export const MAX_FILTER_VALUES = 50;
+export const MAX_FILTER_ID_LEN = 64;
+export const MAX_SEARCH_LEN = 200;
+function assertFilterBounds(a: { clientIn?: string[]; kindIn?: string[]; xeroIn?: string[]; search?: string }): void {
+  assertArrayMax(a.clientIn, "clientIn", MAX_FILTER_VALUES);
+  assertArrayMax(a.kindIn, "kindIn", MAX_FILTER_VALUES);
+  assertArrayMax(a.xeroIn, "xeroIn", MAX_FILTER_VALUES);
+  for (const id of a.clientIn ?? []) assertStrLen(id, "clientIn", { max: MAX_FILTER_ID_LEN });
+  assertStrLen(a.search, "search", { max: MAX_SEARCH_LEN });
+}
+
 const NOTHING = { clients: [] as { id: string; name: string }[], items: [], total: 0, totalPages: 0, page: 1, pageSize: 25, truncated: false, moneyVisible: false, now: 0, timezone: null as string | null, kind: "invoices" as const };
 
 export const quotesPage = query({
@@ -222,8 +238,8 @@ export const quotesPage = query({
     search: v.optional(v.string()),
     includeClosed: v.optional(v.boolean()),
     clientIn: v.optional(v.array(v.string())),
-    sent: v.optional(v.string()),
-    validity: v.optional(v.string()),
+    sent: v.optional(dayRange),
+    validity: v.optional(dayRange),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -231,6 +247,7 @@ export const quotesPage = query({
   },
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "invoice");
+    assertFilterBounds(a);
     if (!(await callerMayRead(ctx, a.orgId, "invoice"))) return NOTHING;
     const now = resolveNow(a.now);
     const showMoney = await canSeeJobCost(ctx, a.orgId);
@@ -267,9 +284,9 @@ export const invoicesPage = query({
     search: v.optional(v.string()),
     includeVoid: v.optional(v.boolean()),
     clientIn: v.optional(v.array(v.string())),
-    kindIn: v.optional(v.array(v.string())),
-    issued: v.optional(v.string()),
-    xeroIn: v.optional(v.array(v.string())),
+    kindIn: v.optional(v.array(enums.InvoiceKind)),
+    issued: v.optional(v.union(dayRange, v.literal("month"))),
+    xeroIn: v.optional(v.array(enums.XeroSyncStatus)),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -277,6 +294,7 @@ export const invoicesPage = query({
   },
   handler: async (ctx, a) => {
     await requireOrgReadFor(ctx, a.orgId, "invoice");
+    assertFilterBounds(a);
     if (!(await callerMayRead(ctx, a.orgId, "invoice"))) return NOTHING;
     const now = resolveNow(a.now);
     const showMoney = await canSeeJobCost(ctx, a.orgId);

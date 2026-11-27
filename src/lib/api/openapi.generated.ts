@@ -18177,9 +18177,7 @@ export const OPENAPI_DOCUMENT = {
                       "includeVoid": {
                         "type": "boolean"
                       },
-                      "issued": {
-                        "type": "string"
-                      },
+                      "issued": {},
                       "kindIn": {
                         "type": "array"
                       },
@@ -18284,16 +18282,12 @@ export const OPENAPI_DOCUMENT = {
                       "segment": {
                         "type": "string"
                       },
-                      "sent": {
-                        "type": "string"
-                      },
+                      "sent": {},
                       "sortBy": {
                         "type": "string"
                       },
                       "sortOrder": {},
-                      "validity": {
-                        "type": "string"
-                      }
+                      "validity": {}
                     },
                     "additionalProperties": false
                   }

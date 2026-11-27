@@ -465,3 +465,34 @@ describe("a project's client is org-checked too (the cuid read is global)", () =
     expect(JSON.stringify(r)).not.toContain("Foreign");
   });
 });
+
+describe("filter args are bounded (they are caller-supplied)", () => {
+  test("too many clients, an over-long id, or an over-long search is refused", async () => {
+    const t = makeT();
+    await seed(t);
+    const m = await import("./financeHub");
+    const many = Array.from({ length: m.MAX_FILTER_VALUES + 1 }, (_, i) => `c${i}`);
+    await expect(page(t, asUser, "quotesPage", { clientIn: many })).rejects.toThrow(/at most/);
+    await expect(page(t, asUser, "invoicesPage", { clientIn: many })).rejects.toThrow(/at most/);
+    await expect(page(t, asUser, "invoicesPage", { clientIn: ["x".repeat(m.MAX_FILTER_ID_LEN + 1)] })).rejects.toThrow(/at most/);
+    await expect(page(t, asUser, "quotesPage", { search: "x".repeat(m.MAX_SEARCH_LEN + 1) })).rejects.toThrow(/at most/);
+    await expect(page(t, asUser, "invoicesPage", { clientIn: ["c1"], search: "INV" })).resolves.toBeTruthy();
+  });
+  test("the range and enum filters accept only their known values", async () => {
+    const t = makeT();
+    await seed(t);
+    await expect(page(t, asUser, "invoicesPage", { issued: "forever" })).rejects.toThrow();
+    await expect(page(t, asUser, "quotesPage", { sent: "month" })).rejects.toThrow();
+    await expect(page(t, asUser, "invoicesPage", { kindIn: ["NOPE"] })).rejects.toThrow();
+    await expect(page(t, asUser, "invoicesPage", { xeroIn: ["NOPE"] })).rejects.toThrow();
+    await expect(page(t, asUser, "invoicesPage", { issued: "month", kindIn: ["FULL"], xeroIn: ["SYNCED"] })).resolves.toBeTruthy();
+  });
+  test("rows carry the preview target and the payment fact", async () => {
+    const t = makeT();
+    await seed(t);
+    const q = await page(t, asUser, "quotesPage", { segment: "all" });
+    expect(q.items.every((r) => "versionId" in r)).toBe(true);
+    const i = await page(t, asUser, "invoicesPage", { segment: "all" });
+    expect(i.items.every((r) => typeof r.hasPayments === "boolean")).toBe(true);
+  });
+});

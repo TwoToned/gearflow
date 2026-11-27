@@ -43,3 +43,21 @@ describe("messages", () => {
     expect(bulkToastTitle("Deleted", "draft", { done: 2, skipped: [{ name: "INV-9", why: "x" }] })).toContain("INV-9");
   });
 });
+
+describe("pacing (Xero: 60 calls a minute, no 429 retry)", () => {
+  test("starts of consecutive writes are at least paceMs apart; skipped rows cost no wait", async () => {
+    const starts: number[] = [];
+    await runBulk(rows(3), (r) => (r.id === "r1" ? "skip" : null), async () => void starts.push(Date.now()), 40);
+    expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(35);
+  });
+  test("no pacing by default", async () => {
+    const t = Date.now();
+    await runBulk(rows(5), () => null, async () => {});
+    expect(Date.now() - t).toBeLessThan(30);
+  });
+  test("the Xero spacing keeps 4 calls a push under 60 a minute", async () => {
+    const { XERO_PUSH_SPACING_MS } = await import("./finance-bulk");
+    expect((60_000 / XERO_PUSH_SPACING_MS) * 4).toBeLessThanOrEqual(60);
+  });
+});

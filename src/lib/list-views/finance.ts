@@ -19,7 +19,8 @@ export type HubTab = "quotes" | "invoices";
 export const HUB_TABS: readonly HubTab[] = ["quotes", "invoices"];
 export const parseHubTab = (raw: string | null | undefined): HubTab => (raw === "invoices" ? "invoices" : "quotes");
 
-const dateLabel = (ms: number) => new Date(ms).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: "UTC" });
+/** `26 Nov` in the ORG's timezone (invoices and quotes are stamped in it, so a UTC label can print the wrong day). */
+const dateLabel = (ms: number, timeZone?: string | null) => new Date(ms).toLocaleDateString("en-AU", { day: "numeric", month: "short", timeZone: timeZone ?? undefined });
 const dollars = (n: number) => `$${Math.round(n).toLocaleString("en-AU")}`;
 const text = (label: string | null | undefined): Fact | undefined => (label ? { kind: "text", label } : undefined);
 
@@ -64,9 +65,14 @@ export const hubFilters = (tab: HubTab): ListFilterDef[] => [
   { key: "show", label: "Also show", single: true, options: [tab === "quotes" ? { value: "closed", label: "Declined and superseded" } : { value: "void", label: "Void invoices" }] },
 ];
 
-export function hubSegments(tab: HubTab, counts: Record<string, number> | undefined): ListSegment[] {
+/**
+ * The strip. A count derived from a CUT read is a floor, and a strip count is a bare number, so while the
+ * tab's read is cut its counts are left off (the head sub line says `at least`): never a confident figure
+ * that is too low. `Deposit due` is judged on its own (it has its own read).
+ */
+export function hubSegments(tab: HubTab, counts: Record<string, number> | undefined, approx?: { tab?: boolean; depositdue?: boolean }): ListSegment[] {
   const defs = tab === "quotes" ? QUOTE_SEGMENTS : INVOICE_SEGMENTS;
-  return defs.map((s) => ({ key: s.key, label: s.label, count: counts?.[s.key] }));
+  return defs.map((s) => ({ key: s.key, label: s.label, count: (s.key === "depositdue" ? approx?.depositdue : approx?.tab) ? undefined : counts?.[s.key] }));
 }
 
 /** The shared query contract: every hub list sends the same page / sort / search shape. */
@@ -96,20 +102,23 @@ export interface HubMoney {
 export interface MoneyWord {
   key: keyof HubMoney;
   label: string;
+  /** `$12,346`, or `at least $12,346` when the read behind it was cut. */
   amount: string;
   /** Each word is a link to the list it counts (`?tab=invoices&seg=overdue`). */
   href: string;
   tone: "error" | "neutral";
 }
 
+const floor = (n: number, approx: boolean | undefined) => `${approx ? "at least " : ""}${dollars(n)}`;
+
 /** The four words, or none: a caller below the job-cost line gets no `money` and so no words at all. */
-export function moneyWords(money: HubMoney | undefined): MoneyWord[] {
+export function moneyWords(money: HubMoney | undefined, approx?: Partial<Record<keyof HubMoney, boolean>>): MoneyWord[] {
   if (!money) return [];
   return [
-    { key: "quoted", label: "Quoted", amount: dollars(money.quoted), href: "/finance?tab=quotes&seg=sent", tone: "neutral" },
-    { key: "awaitingPayment", label: "Awaiting payment", amount: dollars(money.awaitingPayment), href: "/finance?tab=invoices&seg=issued", tone: "neutral" },
-    { key: "invoicedThisMonth", label: "Invoiced this month", amount: dollars(money.invoicedThisMonth), href: "/finance?tab=invoices&seg=all", tone: "neutral" },
-    { key: "overdue", label: "Overdue", amount: dollars(money.overdue), href: "/finance?tab=invoices&seg=overdue", tone: money.overdue > 0 ? "error" : "neutral" },
+    { key: "quoted", label: "Quoted", amount: floor(money.quoted, approx?.quoted), href: "/finance?tab=quotes&seg=sent", tone: "neutral" },
+    { key: "awaitingPayment", label: "Awaiting payment", amount: floor(money.awaitingPayment, approx?.awaitingPayment), href: "/finance?tab=invoices&seg=issued", tone: "neutral" },
+    { key: "invoicedThisMonth", label: "Invoiced this month", amount: floor(money.invoicedThisMonth, approx?.invoicedThisMonth), href: "/finance?tab=invoices&seg=all&issued=month", tone: "neutral" },
+    { key: "overdue", label: "Overdue", amount: floor(money.overdue, approx?.overdue), href: "/finance?tab=invoices&seg=overdue", tone: money.overdue > 0 ? "error" : "neutral" },
   ];
 }
 
@@ -206,7 +215,7 @@ function quoteFlags(q: QuoteSource): LineRowData["flags"] {
   return [];
 }
 
-export function quoteRow(q: QuoteSource, menu?: ActionMenuSpec): LineRowData {
+export function quoteRow(q: QuoteSource, menu?: ActionMenuSpec, timeZone?: string | null): LineRowData {
   const num = q.project?.projectNumber ?? "—";
   return {
     id: q.id,
@@ -215,7 +224,7 @@ export function quoteRow(q: QuoteSource, menu?: ActionMenuSpec): LineRowData {
     subtitle: q.project?.name,
     facts: defined({
       job: jobFact(q.project),
-      sent: text(q.sentAt == null ? undefined : dateLabel(q.sentAt)),
+      sent: text(q.sentAt == null ? undefined : dateLabel(q.sentAt, timeZone)),
       // Absent when the server did not send it; a sent quote's frozen total prints, a draft has none.
       total: q.total != null ? { kind: "money", amount: q.total } : undefined,
     }),
@@ -241,7 +250,7 @@ export function invoiceStatusLine(i: Pick<InvoiceSource, "pill" | "overdueDays" 
   return undefined;
 }
 
-export function invoiceRow(i: InvoiceSource, menu?: ActionMenuSpec): LineRowData {
+export function invoiceRow(i: InvoiceSource, menu?: ActionMenuSpec, timeZone?: string | null): LineRowData {
   return {
     id: i.id,
     kind: "job",
@@ -249,7 +258,7 @@ export function invoiceRow(i: InvoiceSource, menu?: ActionMenuSpec): LineRowData
     subtitle: invoiceKindLine(i),
     facts: defined({
       job: jobFact(i.project),
-      issued: text(i.issuedAt == null ? undefined : dateLabel(i.issuedAt)),
+      issued: text(i.issuedAt == null ? undefined : dateLabel(i.issuedAt, timeZone)),
       xero: i.xero ? text(XERO_WORDS[i.xero.status] ?? i.xero.status) : undefined,
       total: i.total != null ? { kind: "money", amount: i.total } : undefined,
     }),
@@ -277,11 +286,23 @@ export function toRaiseRow(r: ToRaiseSource): LineRowData {
   };
 }
 
-/** The head sub line: `27 quotes · 20 invoices`, with an `at least` when a read cap may have cut a count. */
-export function hubSubline(counts: { quotes?: { all?: number }; invoices?: { all?: number }; truncated?: boolean } | undefined): string | undefined {
+const atLeast = (cut: boolean | undefined) => (cut ? "at least " : "");
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+
+/** The head sub line: `27 quotes \u00b7 20 invoices`, with `at least` on whichever count a read cap may have cut. */
+export function hubSubline(counts: { quotes?: { all?: number }; invoices?: { all?: number }; approx?: { quotes?: boolean; invoices?: boolean } } | undefined): string | undefined {
   if (!counts) return undefined;
-  const lead = counts.truncated ? "at least " : "";
-  const q = counts.quotes?.all ?? 0;
-  const i = counts.invoices?.all ?? 0;
-  return `${lead}${q} quote${q === 1 ? "" : "s"} · ${lead}${i} invoice${i === 1 ? "" : "s"}`;
+  return `${atLeast(counts.approx?.quotes)}${plural(counts.quotes?.all ?? 0, "quote")} \u00b7 ${atLeast(counts.approx?.invoices)}${plural(counts.invoices?.all ?? 0, "invoice")}`;
+}
+
+/** The head words `Quotes 27` / `Invoices 20+` (a plus where the count is a floor). */
+export function hubHeadWords(
+  tab: HubTab,
+  counts: { quotes: { all: number }; invoices: { all: number }; approx: { quotes: boolean; invoices: boolean } } | null | undefined,
+) {
+  const word = { quotes: "Quotes", invoices: "Invoices" } as const;
+  return {
+    value: tab,
+    words: HUB_TABS.map((k) => ({ key: k, label: `${word[k]}${counts ? ` ${counts[k].all}${counts.approx[k] ? "+" : ""}` : ""}`, href: `/finance?tab=${k}` })),
+  };
 }

@@ -14,8 +14,8 @@ import { useStableNow } from "@/hooks/use-stable-now";
 import { useXeroIntegration } from "@/hooks/use-xero-linked";
 import { useActiveOrganization } from "@/lib/auth-client";
 import {
-  HUB_TABS,
   hubFilters,
+  hubHeadWords,
   hubQueryArgs,
   hubSegments,
   hubSubline,
@@ -39,8 +39,8 @@ import { useCanDo } from "@/lib/use-permissions";
 import { cn } from "@/lib/utils";
 
 /** The four money words, each a link to the list it counts; absent for a caller below the job-cost line. */
-function MoneyStrip({ money }: { money: HubMoney | undefined }) {
-  const words = moneyWords(money);
+function MoneyStrip({ money, approx }: { money: HubMoney | undefined; approx?: Partial<Record<keyof HubMoney, boolean>> }) {
+  const words = moneyWords(money, approx);
   if (words.length === 0) return null;
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:flex md:flex-wrap md:gap-x-10" aria-label="Money">
@@ -66,7 +66,7 @@ export function FinanceHub() {
   return <FinanceHubInner key={activeOrg?.id ?? "none"} orgId={activeOrg?.id} />;
 }
 
-type HubPage = { total?: number; truncated?: boolean; moneyVisible?: boolean; kind?: string; items?: unknown[] } | undefined;
+type HubPage = { total?: number; truncated?: boolean; moneyVisible?: boolean; kind?: string; items?: unknown[]; timezone?: string | null } | null | undefined;
 
 /** The page, strip counts and tab for the URL's current state: one place that knows which query feeds which tab. */
 function useHubData(orgId: string | undefined, tab: HubTab) {
@@ -101,11 +101,11 @@ function useRowMenus(canPublish: boolean) {
   return { quoteMenu, invoiceMenu };
 }
 
-function rowsOf(tab: HubTab, page: HubPage, menus: ReturnType<typeof useRowMenus>) {
+function rowsOf(tab: HubTab, page: HubPage, menus: ReturnType<typeof useRowMenus>, tz: string | null | undefined) {
   const items = (page?.items ?? []) as unknown[];
-  if (tab === "quotes") return (items as QuoteSource[]).map((q) => quoteRow(q, menus.quoteMenu(q)));
+  if (tab === "quotes") return (items as QuoteSource[]).map((q) => quoteRow(q, menus.quoteMenu(q), tz));
   if (page?.kind === "toRaise") return (items as ToRaiseSource[]).map((r) => toRaiseRow(r));
-  return (items as InvoiceSource[]).map((i) => invoiceRow(i, menus.invoiceMenu(i)));
+  return (items as InvoiceSource[]).map((i) => invoiceRow(i, menus.invoiceMenu(i), tz));
 }
 
 function hubNotice(page: HubPage, tab: HubTab, xeroKnown: boolean, xeroConnected: boolean): string | undefined {
@@ -127,45 +127,44 @@ const TAB_COPY: Record<HubTab, { word: string; noun: string; bulkNoun: string; s
   invoices: { word: "Invoices", noun: "invoices", bulkNoun: "invoice", search: "Search invoice number, job or client", itemHeader: "Invoice", empty: "No invoices here" },
 };
 
+/** Everything the list needs that depends on the tab and the server's counts, in one place. */
+function hubListProps(tab: HubTab, seg: string, counts: ReturnType<typeof useHubData>["counts"], page: HubPage, xero: { known: boolean; connected: boolean }) {
+  const copy = TAB_COPY[tab];
+  const moneyVisible = page?.moneyVisible === true;
+  return {
+    noun: copy.noun,
+    bulkNoun: copy.bulkNoun,
+    searchPlaceholder: copy.search,
+    itemHeader: copy.itemHeader,
+    segments: hubSegments(tab, counts?.[tab] as Record<string, number> | undefined, { tab: counts?.approx[tab], depositdue: counts?.approx.depositdue }),
+    filters: seg === "depositdue" ? [] : hubFilters(tab),
+    columns: columnsOf(tab, seg, moneyVisible, xero.connected),
+    subline: hubSubline(counts ? { quotes: counts.quotes, invoices: counts.invoices, approx: counts.approx } : undefined),
+    headWords: hubHeadWords(tab, counts),
+    notice: hubNotice(page, tab, xero.known, xero.connected),
+    empty: { title: copy.empty, description: "Quotes and invoices raised from a job appear here." },
+  };
+}
+
 function FinanceHubInner({ orgId }: { orgId: string | undefined }) {
   const tab: HubTab = parseHubTab(useSearchParams().get("tab"));
   const { state, counts, page } = useHubData(orgId, tab);
   const menus = useRowMenus(useCanDo("invoice", "publish"));
   const xero = useXeroIntegration();
-  const xeroConnected = xero?.isConnected === true;
-  const moneyVisible = page?.moneyVisible === true;
-  const rows = rowsOf(tab, page, menus);
-  const copy = TAB_COPY[tab];
-  const segments = hubSegments(tab, counts?.[tab] as Record<string, number> | undefined);
-  const subline = hubSubline(counts ? { quotes: counts.quotes, invoices: counts.invoices, truncated: counts.truncated } : undefined);
-
-  const headWords = {
-    value: tab,
-    words: HUB_TABS.map((k) => ({ key: k, label: `${TAB_COPY[k].word}${counts ? ` ${counts[k].all}` : ""}`, href: `/finance?tab=${k}` })),
-  };
+  const list = hubListProps(tab, state.seg, counts, page, { known: xero !== undefined, connected: xero?.isConnected === true });
 
   return (
     <div className="space-y-5">
-      <MoneyStrip money={counts?.money as HubMoney | undefined} />
+      <MoneyStrip money={counts?.money as HubMoney | undefined} approx={counts?.approx.words} />
       <ListPage
         key={tab}
         spec={specFor(tab)}
         title="Finance"
-        noun={copy.noun}
-        bulkNoun={copy.bulkNoun}
-        searchPlaceholder={copy.search}
-        segments={segments}
-        filters={state.seg === "depositdue" ? [] : hubFilters(tab)}
-        columns={columnsOf(tab, state.seg, moneyVisible, xeroConnected)}
-        rows={rows}
+        itemSortKey="number"
+        rows={rowsOf(tab, page, menus, page?.timezone)}
         total={page?.total ?? 0}
         loading={page === undefined}
-        itemHeader={copy.itemHeader}
-        itemSortKey="number"
-        subline={subline}
-        headWords={headWords}
-        notice={hubNotice(page, tab, xero !== undefined, xeroConnected)}
-        empty={{ title: copy.empty, description: "Quotes and invoices raised from a job appear here." }}
+        {...list}
       />
     </div>
   );

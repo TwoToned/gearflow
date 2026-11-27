@@ -182,7 +182,6 @@ describe("financeOrg.bundle", () => {
       ...result.quotesOut.map((r) => r.project.id),
       ...result.expiring.map((r) => r.project.id),
       ...result.neverSent.map((r) => r.project.id),
-      ...result.depositDue.map((r) => r.project.id),
       ...result.outstanding.map((r) => r.project.id),
     ];
     expect(allProjectIds).not.toContain("P_other");
@@ -259,16 +258,6 @@ describe("financeOrg.bundle", () => {
     ).rejects.toThrow();
   });
 
-  test("depositDue: DEPOSIT_BALANCE client with no issued DEPOSIT invoice, excluding one already issued", async () => {
-    const t = makeT();
-    await seedCoreFixture(t);
-    const result = await t.withIdentity(asUser).query(api.financeOrg.bundle, { orgId: ORG, now: NOW });
-    const ids = result.depositDue.map((r) => r.project.id);
-    expect(ids).toEqual(["P_deposit_due"]);
-    expect(ids).not.toContain("P_deposit_paid");
-    expect(ids).not.toContain("P_uninvoiced"); // FULL_UPFRONT client, not deposit-balance
-  });
-
   test("outstanding: the ISSUED+UNPAID invoice, excluding the PAID one", async () => {
     const t = makeT();
     await seedCoreFixture(t);
@@ -288,7 +277,6 @@ describe("financeOrg.bundle", () => {
       quotesOutCount: bundle.quotesOut.length,
       expiringCount: bundle.expiring.length,
       neverSentCount: bundle.neverSent.length,
-      depositDueCount: bundle.depositDue.length,
       outstandingCount: bundle.outstanding.length,
       overdueCount: 0, // INV_outstanding is due in 11 days
       overdueOutstanding: 0,

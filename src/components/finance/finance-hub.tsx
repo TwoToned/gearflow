@@ -1,15 +1,17 @@
 "use client";
 // use-client: URL-driven list, live queries, row menus (R-8.1.1)
 
+import * as React from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { api } from "../../../convex/_generated/api";
 
+import { JobPickerDialog } from "@/components/finance/job-picker-dialog";
+import { useHubActions } from "@/components/finance/use-hub-actions";
 import { ListPage } from "@/components/ui/list-page";
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useListUrlState } from "@/hooks/use-list-url-state";
-import { useQuoteWrites } from "@/hooks/use-quote-writes";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { useXeroIntegration } from "@/hooks/use-xero-linked";
 import { useActiveOrganization } from "@/lib/auth-client";
@@ -33,8 +35,6 @@ import {
   type QuoteSource,
   type ToRaiseSource,
 } from "@/lib/list-views/finance";
-import type { ActionMenuSpec } from "@/lib/primitives/types";
-import { showError } from "@/lib/show-error";
 import { useCanDo } from "@/lib/use-permissions";
 import { cn } from "@/lib/utils";
 
@@ -66,7 +66,7 @@ export function FinanceHub() {
   return <FinanceHubInner key={activeOrg?.id ?? "none"} orgId={activeOrg?.id} />;
 }
 
-type HubPage = { total?: number; truncated?: boolean; moneyVisible?: boolean; kind?: string; items?: unknown[]; timezone?: string | null } | null | undefined;
+type HubPage = { total?: number; truncated?: boolean; moneyVisible?: boolean; kind?: string; items?: unknown[]; timezone?: string | null; clients?: { id: string; name: string }[] } | null | undefined;
 
 /** The page, strip counts and tab for the URL's current state: one place that knows which query feeds which tab. */
 function useHubData(orgId: string | undefined, tab: HubTab) {
@@ -79,29 +79,7 @@ function useHubData(orgId: string | undefined, tab: HubTab) {
   return { state, counts, page: (tab === "quotes" ? quotes : invoices) as HubPage };
 }
 
-/** Each row's menu: `Open on the job`, plus `Acknowledge expired` on a fresh expired quote (invoice:publish). */
-function useRowMenus(canPublish: boolean) {
-  const router = useRouter();
-  const quoteWrites = useQuoteWrites();
-  const open = (projectId: string | undefined): ActionMenuSpec["items"] =>
-    projectId ? [{ key: "open", label: "Open on the job", group: "edit", onSelect: () => router.push(`/projects/${projectId}?tab=finance`) }] : [];
-  const acknowledge = async (id: string) => {
-    try {
-      await quoteWrites.acknowledgeExpired(id);
-    } catch (e) {
-      showError(e, { fallbackTitle: "Couldn't acknowledge that quote" });
-    }
-  };
-  const quoteMenu = (q: QuoteSource): ActionMenuSpec => {
-    const items = [...open(q.project?.id)];
-    if (q.status === "EXPIRED" && !q.dismissed && canPublish) items.push({ key: "ack", label: "Acknowledge expired", group: "organise", onSelect: () => acknowledge(q.id) });
-    return { items };
-  };
-  const invoiceMenu = (i: InvoiceSource): ActionMenuSpec => ({ items: open(i.project?.id) });
-  return { quoteMenu, invoiceMenu };
-}
-
-function rowsOf(tab: HubTab, page: HubPage, menus: ReturnType<typeof useRowMenus>, tz: string | null | undefined) {
+function rowsOf(tab: HubTab, page: HubPage, menus: Pick<ReturnType<typeof useHubActions>, "quoteMenu" | "invoiceMenu">, tz: string | null | undefined) {
   const items = (page?.items ?? []) as unknown[];
   if (tab === "quotes") return (items as QuoteSource[]).map((q) => quoteRow(q, menus.quoteMenu(q), tz));
   if (page?.kind === "toRaise") return (items as ToRaiseSource[]).map((r) => toRaiseRow(r));
@@ -137,7 +115,7 @@ function hubListProps(tab: HubTab, seg: string, counts: ReturnType<typeof useHub
     searchPlaceholder: copy.search,
     itemHeader: copy.itemHeader,
     segments: hubSegments(tab, counts?.[tab] as Record<string, number> | undefined, { tab: counts?.approx[tab], depositdue: counts?.approx.depositdue }),
-    filters: seg === "depositdue" ? [] : hubFilters(tab),
+    filters: seg === "depositdue" ? [] : hubFilters(tab, { clients: page?.clients, xeroConnected: xero.connected }),
     columns: columnsOf(tab, seg, moneyVisible, xero.connected),
     subline: hubSubline(counts ? { quotes: counts.quotes, invoices: counts.invoices, approx: counts.approx } : undefined),
     headWords: hubHeadWords(tab, counts),
@@ -149,9 +127,21 @@ function hubListProps(tab: HubTab, seg: string, counts: ReturnType<typeof useHub
 function FinanceHubInner({ orgId }: { orgId: string | undefined }) {
   const tab: HubTab = parseHubTab(useSearchParams().get("tab"));
   const { state, counts, page } = useHubData(orgId, tab);
-  const menus = useRowMenus(useCanDo("invoice", "publish"));
   const xero = useXeroIntegration();
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const canNewInvoice = useCanDo("invoice", "create");
+  const canNewQuote = useCanDo("invoice", "publish");
+  const now = useStableNow();
+  const actions = useHubActions({
+    quotes: (tab === "quotes" ? (page?.items ?? []) : []) as unknown as QuoteSource[],
+    invoices: (tab === "invoices" && page?.kind === "invoices" ? (page?.items ?? []) : []) as unknown as InvoiceSource[],
+    xeroConnected: xero?.isConnected === true,
+    now,
+    timeZone: page?.timezone,
+  });
   const list = hubListProps(tab, state.seg, counts, page, { known: xero !== undefined, connected: xero?.isConnected === true });
+  const kinds = ([canNewInvoice ? "invoice" : null, canNewQuote ? "quote" : null].filter(Boolean) as ("invoice" | "quote")[]);
+  const toRaise = page?.kind === "toRaise";
 
   return (
     <div className="space-y-5">
@@ -161,11 +151,15 @@ function FinanceHubInner({ orgId }: { orgId: string | undefined }) {
         spec={specFor(tab)}
         title="Finance"
         itemSortKey="number"
-        rows={rowsOf(tab, page, menus, page?.timezone)}
+        rows={rowsOf(tab, page, actions, page?.timezone)}
         total={page?.total ?? 0}
         loading={page === undefined}
+        primary={kinds.length > 0 ? { label: "New\u2026", onSelect: () => setPickerOpen(true) } : undefined}
+        bulk={toRaise ? undefined : tab === "quotes" ? actions.quoteBulk : actions.invoiceBulk}
         {...list}
       />
+      {actions.dialogs}
+      {kinds.length > 0 ? <JobPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} orgId={orgId} kinds={kinds} /> : null}
     </div>
   );
 }

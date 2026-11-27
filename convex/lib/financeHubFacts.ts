@@ -237,3 +237,63 @@ export function countBy<T, K extends string>(rows: T[], keys: readonly K[], test
   for (const r of rows) for (const k of keys) if (test(r, k)) out[k] += 1;
   return out;
 }
+
+// ─── Filters (the spec's Client / Sent / Validity / Kind / Issued / Xero words) ───────────────────
+
+const RANGE_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+/** `7d`, `30d`, `90d` as a day count; anything else is no range. */
+export function rangeDays(range: string | undefined): number | null {
+  return range != null && range in RANGE_DAYS ? RANGE_DAYS[range] : null;
+}
+
+export interface QuoteFilters {
+  clientIn?: string[];
+  /** Sent within the last N days. */
+  sent?: string;
+  /** Valid until within the next N days (a live sent quote). */
+  validity?: string;
+}
+
+export interface InvoiceFilters {
+  clientIn?: string[];
+  kindIn?: string[];
+  /** `month` (this org-local month) or the last N days. */
+  issued?: string;
+  /** Xero sync words: SYNCED, NOT_SYNCED, PENDING, ERROR. */
+  xeroIn?: string[];
+}
+
+const inClients = (ids: string[] | undefined, row: { project: HubProjectRef | null }) => !ids?.length || (row.project?.clientId != null && ids.includes(row.project.clientId));
+
+export function quotePassesFilters(row: QuoteHubRow, f: QuoteFilters, now: number): boolean {
+  if (!inClients(f.clientIn, row)) return false;
+  const sentDays = rangeDays(f.sent);
+  if (sentDays != null && (row.sentAt == null || row.sentAt < now - sentDays * DAY_MS)) return false;
+  const validDays = rangeDays(f.validity);
+  if (validDays != null && !(row.status === "SENT" && row.validUntil != null && row.validUntil <= now + validDays * DAY_MS)) return false;
+  return true;
+}
+
+function issuedInRange(issuedAt: number | null, range: string | undefined, now: number, monthStart: number): boolean {
+  if (!range) return true;
+  if (issuedAt == null) return false;
+  if (range === "month") return issuedAt >= monthStart;
+  const days = rangeDays(range);
+  return days == null || issuedAt >= now - days * DAY_MS;
+}
+
+export function invoicePassesFilters(row: InvoiceHubRow, f: InvoiceFilters, now: number, monthStart: number): boolean {
+  if (!inClients(f.clientIn, row)) return false;
+  if (f.kindIn?.length && !f.kindIn.includes(row.kind)) return false;
+  if (!issuedInRange(row.issuedAt, f.issued, now, monthStart)) return false;
+  if (f.xeroIn?.length && !(row.xero != null && f.xeroIn.includes(row.xero.status))) return false;
+  return true;
+}
+
+/** The distinct clients among the rows read, for the Client filter's options (never a separate scan). */
+export function clientFacets(rows: { project: HubProjectRef | null }[]): { id: string; name: string }[] {
+  const seen = new Map<string, string>();
+  for (const r of rows) if (r.project?.clientId && r.project.clientName) seen.set(r.project.clientId, r.project.clientName);
+  return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}

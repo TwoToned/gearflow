@@ -13,10 +13,13 @@ import {
   inInvoiceSegment,
   inQuoteSegment,
   invoiceHubRow,
+  invoicePassesFilters,
   invoiceSearchWords,
+  clientFacets,
   invoiceSortValue,
   moneyWords,
   quoteHubRow,
+  quotePassesFilters,
   quoteSearchWords,
   quoteSortValue,
   type HubProjectRef,
@@ -197,7 +200,7 @@ function sortAndPage<R extends { id: string }>(
 const knownSeg = <T extends string>(all: readonly T[], seg: string | undefined): T => (all.includes(seg as T) ? (seg as T) : all[0]);
 
 /** What a caller without invoice read gets: nothing (a role check on top of the org match, the navCounts pattern). */
-const NOTHING = { items: [], total: 0, totalPages: 0, page: 1, pageSize: 25, truncated: false, moneyVisible: false, now: 0, timezone: null as string | null, kind: "invoices" as const };
+const NOTHING = { clients: [] as { id: string; name: string }[], items: [], total: 0, totalPages: 0, page: 1, pageSize: 25, truncated: false, moneyVisible: false, now: 0, timezone: null as string | null, kind: "invoices" as const };
 
 export const quotesPage = query({
   args: {
@@ -206,6 +209,9 @@ export const quotesPage = query({
     segment: v.optional(v.string()),
     search: v.optional(v.string()),
     includeClosed: v.optional(v.boolean()),
+    clientIn: v.optional(v.array(v.string())),
+    sent: v.optional(v.string()),
+    validity: v.optional(v.string()),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -219,9 +225,11 @@ export const quotesPage = query({
     const budget = new ReadBudget(READ_BUDGET);
     const [{ rows, truncated }, { timezone }] = await Promise.all([loadQuoteRows(ctx, a.orgId, now, showMoney, budget), resolveOrgInvoiceConfig(ctx, a.orgId)]);
     const seg = knownSeg<QuoteSegment>(QUOTE_SEGMENTS, a.segment);
-    const filtered = rows.filter((r) => inQuoteSegment(r, seg, a.includeClosed === true) && (!a.search || matchesSearch(quoteSearchWords(r), a.search)));
+    const filtered = rows.filter(
+      (r) => inQuoteSegment(r, seg, a.includeClosed === true) && quotePassesFilters(r, a, now) && (!a.search || matchesSearch(quoteSearchWords(r), a.search)),
+    );
     const p = sortAndPage(filtered, a, QUOTE_SORTS, (r, k) => quoteSortValue(r, k, showMoney), showMoney);
-    return { ...p, truncated: truncated || budget.truncated, moneyVisible: showMoney, now, timezone: timezone ?? null, kind: "quotes" as const };
+    return { ...p, truncated: truncated || budget.truncated, moneyVisible: showMoney, now, timezone: timezone ?? null, kind: "quotes" as const, clients: clientFacets(rows) };
   },
 });
 
@@ -246,6 +254,10 @@ export const invoicesPage = query({
     segment: v.optional(v.string()),
     search: v.optional(v.string()),
     includeVoid: v.optional(v.boolean()),
+    clientIn: v.optional(v.array(v.string())),
+    kindIn: v.optional(v.array(v.string())),
+    issued: v.optional(v.string()),
+    xeroIn: v.optional(v.array(v.string())),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
     sortBy: v.optional(v.string()),
@@ -264,9 +276,12 @@ export const invoicesPage = query({
     if (seg === "depositdue") return await depositDuePage(ctx, a, showMoney, budget, now, timezone);
 
     const { rows, truncated } = await loadInvoiceRows(ctx, a.orgId, now, showMoney, budget);
-    const filtered = rows.filter((r) => inInvoiceSegment(r, seg, a.includeVoid === true) && (!a.search || matchesSearch(invoiceSearchWords(r), a.search)));
+    const monthStart = startOfMonthInTimezone(now, timezone);
+    const filtered = rows.filter(
+      (r) => inInvoiceSegment(r, seg, a.includeVoid === true) && invoicePassesFilters(r, a, now, monthStart) && (!a.search || matchesSearch(invoiceSearchWords(r), a.search)),
+    );
     const p = sortAndPage(filtered, a, INVOICE_SORTS, (r, k) => invoiceSortValue(r, k, showMoney), showMoney);
-    return { kind: "invoices" as const, ...p, truncated: truncated || budget.truncated, moneyVisible: showMoney, now, timezone: timezone ?? null };
+    return { kind: "invoices" as const, ...p, truncated: truncated || budget.truncated, moneyVisible: showMoney, now, timezone: timezone ?? null, clients: clientFacets(rows) };
   },
 });
 

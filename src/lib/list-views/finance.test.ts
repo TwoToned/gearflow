@@ -4,6 +4,7 @@ import { defaultListState, parseListState } from "@/lib/list-url-state";
 import {
   INVOICES_SPEC,
   QUOTES_SPEC,
+  hubFilters,
   hubQueryArgs,
   hubSegments,
   hubSubline,
@@ -128,6 +129,24 @@ describe("URL state and query args", () => {
     expect(hubQueryArgs("quotes", base, 1)).toMatchObject({ includeClosed: false });
     expect(hubQueryArgs("invoices", { ...defaultListState(INVOICES_SPEC), filters: { show: ["void"] } }, 1)).toMatchObject({ includeVoid: true });
     expect(hubQueryArgs("quotes", base, 7).now).toBe(7);
+  });
+
+  it("the spec's remaining filters ride the list URL schema and become typed query args", () => {
+    const qs = parseListState(new URLSearchParams("client=c1,c2&sent=30d&validity=7d&show=closed"), QUOTES_SPEC);
+    expect(hubQueryArgs("quotes", qs, 5)).toMatchObject({ clientIn: ["c1", "c2"], sent: "30d", validity: "7d", includeClosed: true });
+    const is = parseListState(new URLSearchParams("tab=invoices&kind=DEPOSIT,FULL&issued=month&xero=ERROR,SYNCED&client=c9"), INVOICES_SPEC);
+    expect(hubQueryArgs("invoices", is, 5)).toMatchObject({ kindIn: ["DEPOSIT", "FULL"], issued: "month", xeroIn: ["ERROR", "SYNCED"], clientIn: ["c9"], includeVoid: false });
+    // Junk values are dropped, not forwarded.
+    const bad = parseListState(new URLSearchParams("kind=BOGUS&issued=forever&xero=NOPE&sent=1y"), INVOICES_SPEC);
+    expect(hubQueryArgs("invoices", bad, 5)).toMatchObject({ kindIn: undefined, issued: undefined, xeroIn: undefined });
+    expect((hubQueryArgs("quotes", parseListState(new URLSearchParams("sent=1y"), QUOTES_SPEC), 5) as { sent?: string }).sent).toBeUndefined();
+  });
+
+  it("filter words: quotes Client/Sent/Validity; invoices Client/Kind/Issued, Xero only when connected", () => {
+    expect(hubFilters("quotes").map((f) => f.key)).toEqual(["client", "sent", "validity", "show"]);
+    expect(hubFilters("invoices").map((f) => f.key)).toEqual(["client", "kind", "issued", "show"]);
+    expect(hubFilters("invoices", { xeroConnected: true }).map((f) => f.key)).toEqual(["client", "kind", "issued", "xero", "show"]);
+    expect(hubFilters("quotes", { clients: [{ id: "c1", name: "Hilton" }] })[0].options).toEqual([{ value: "c1", label: "Hilton" }]);
   });
 
   it("segment counts come from the server's strip, and the sub line says `at least` when capped", () => {

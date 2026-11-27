@@ -181,6 +181,46 @@ describe("invoices: Overdue outranks Part paid (D56) through the one pill", () =
   });
 });
 
+describe("the spec's filters (Client / Sent / Validity / Kind / Issued / Xero)", () => {
+  test("quotes: client, sent window, validity window; the Client facet lists clients actually present", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("quotes", { id: "q_dep", organizationId: ORG, projectId: "p3", version: 1, status: "SENT", sentAt: NOW - 40 * DAY, validUntil: NOW + 3 * DAY, snapshot: { total: 9 } });
+    });
+    const byClient = await page(t, asUser, "quotesPage", { segment: "all", clientIn: ["c2"] });
+    expect(ids(byClient)).toEqual(["q_dep"]);
+    expect((byClient as unknown as { clients: { id: string; name: string }[] }).clients.map((c) => c.id)).toEqual(["c2", "c1"]);
+    expect(ids(await page(t, asUser, "quotesPage", { segment: "all", sent: "7d" }))).toEqual(["q_legacy", "q_sent"]); // sent 5 days ago
+    expect(ids(await page(t, asUser, "quotesPage", { segment: "all", validity: "7d" }))).toEqual(["q_dep"]); // valid until within 7 days
+    expect(ids(await page(t, asUser, "quotesPage", { segment: "all", validity: "30d" }))).toEqual(["q_dep", "q_legacy", "q_sent"]);
+  });
+
+  test("invoices: kind, issued (this org-local month / last N days) and Xero", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", { id: "i_dep", organizationId: ORG, projectId: "p2", clientId: "c1", kind: "DEPOSIT", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 5, invoiceNumber: "D-5", issuedAt: NOW - 50 * DAY, dueDate: NOW + DAY, xeroSyncStatus: "SYNCED" } as never);
+      await ctx.db.insert("invoices", { id: "i_err", organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 6, invoiceNumber: "E-6", issuedAt: NOW - DAY, dueDate: NOW + DAY, xeroSyncStatus: "ERROR", lastSyncError: "nope" } as never);
+    });
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", kindIn: ["DEPOSIT"] }))).toEqual(["i_dep"]);
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", xeroIn: ["ERROR"] }))).toEqual(["i_err"]);
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", xeroIn: ["SYNCED", "ERROR"] }))).toEqual(["i_dep", "i_err"]);
+    // Issued: last 7 days excludes the 50-day-old deposit; month covers 1 Nov..NOW (24 Nov).
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", issued: "7d" }))).not.toContain("i_dep");
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", issued: "month" }))).not.toContain("i_dep");
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", issued: "90d" }))).toContain("i_dep");
+    // A draft (no issuedAt) never matches an Issued window.
+    expect(ids(await page(t, asUser, "invoicesPage", { segment: "all", issued: "90d" }))).not.toContain("i_draft");
+  });
+
+  test("a client filter for ANOTHER org's client matches nothing (it can't widen the read)", async () => {
+    const t = makeT();
+    await seed(t);
+    expect((await page(t, asUser, "invoicesPage", { segment: "all", clientIn: ["cx"] })).total).toBe(0);
+  });
+});
+
 describe("hubCounts: the strip, the head words and the money words", () => {
   test("counts agree with the pages, and the money words are derived", async () => {
     const t = makeT();

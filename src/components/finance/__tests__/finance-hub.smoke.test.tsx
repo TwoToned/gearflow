@@ -34,6 +34,10 @@ vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id
 vi.mock("@/lib/use-permissions", () => ({ useCanDo: () => state.canPublish }));
 vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => Date.UTC(2026, 10, 24, 12) }));
 vi.mock("@/hooks/use-xero-linked", () => ({ useXeroIntegration: () => state.xero }));
+vi.mock("@/server/finance-documents", () => ({ generateQuoteArtifact: vi.fn(), generateInvoiceArtifact: vi.fn() }));
+vi.mock("@/server/xero", () => ({ pushInvoiceToXero: vi.fn() }));
+vi.mock("@/hooks/use-invoice-writes", () => ({ useInvoiceWrites: () => ({ void: vi.fn(), deleteDraft: vi.fn() }) }));
+vi.mock("@/hooks/use-payment-writes", () => ({ usePaymentWrites: () => ({ record: vi.fn() }) }));
 vi.mock("@/hooks/use-quote-writes", () => ({ useQuoteWrites: () => ({ acknowledgeExpired: state.ack }) }));
 vi.mock("@/hooks/use-authed-query", () => ({
   useAuthedQuery: (ref: { _name?: string } | string, args: unknown) => {

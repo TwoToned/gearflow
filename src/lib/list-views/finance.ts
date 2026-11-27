@@ -48,37 +48,78 @@ const INVOICE_SEGMENTS = [
 
 export const QUOTES_SPEC: ListUrlSpec = {
   segments: QUOTE_SEGMENTS.map((s) => s.key),
-  filters: ["show"],
+  filters: ["show", "client", "sent", "validity"],
   sorts: ["number", "job", "client", "status", "sent", "total"],
   defaultSort: "sent:desc",
 };
 export const INVOICES_SPEC: ListUrlSpec = {
   segments: INVOICE_SEGMENTS.map((s) => s.key),
-  filters: ["show"],
+  filters: ["show", "client", "kind", "issued", "xero"],
   sorts: ["number", "job", "client", "status", "issued", "due", "total"],
   defaultSort: "issued:desc",
 };
 export const specFor = (tab: HubTab): ListUrlSpec => (tab === "quotes" ? QUOTES_SPEC : INVOICES_SPEC);
 
-/** Declined and superseded quotes, or void invoices, are under All only after asking (the Jobs `cancelled` idiom). */
-export const hubFilters = (tab: HubTab): ListFilterDef[] => [
-  { key: "show", label: "Also show", single: true, options: [tab === "quotes" ? { value: "closed", label: "Declined and superseded" } : { value: "void", label: "Void invoices" }] },
+const KIND_OPTIONS = [
+  { value: "FULL", label: "Full" },
+  { value: "DEPOSIT", label: "Deposit" },
+  { value: "BALANCE", label: "Balance" },
+  { value: "CREDIT", label: "Credit note" },
 ];
+const XERO_OPTIONS = [
+  { value: "SYNCED", label: "Synced" },
+  { value: "NOT_SYNCED", label: "Not in Xero" },
+  { value: "ERROR", label: "Failed" },
+];
+const SENT_OPTIONS = [
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+];
+const VALIDITY_OPTIONS = [
+  { value: "7d", label: "Within 7 days" },
+  { value: "30d", label: "Within 30 days" },
+];
+const ISSUED_OPTIONS = [{ value: "month", label: "This month" }, ...SENT_OPTIONS];
 
 /**
- * The strip. A count derived from a CUT read is a floor, and a strip count is a bare number, so while the
- * tab's read is cut its counts are left off (the head sub line says `at least`): never a confident figure
- * that is too low. `Deposit due` is judged on its own (it has its own read).
+ * The spec's filter words. `Also show` opts declined/superseded quotes or void invoices back in under All (the
+ * Jobs `cancelled` idiom); `Client` takes the clients present in the rows the server read (its `clients` facet,
+ * never a separate scan). The Xero word is offered only when Xero is connected.
  */
+export function hubFilters(tab: HubTab, opts: { clients?: { id: string; name: string }[]; xeroConnected?: boolean } = {}): ListFilterDef[] {
+  const client: ListFilterDef = { key: "client", label: "Client", options: (opts.clients ?? []).map((c) => ({ value: c.id, label: c.name })) };
+  if (tab === "quotes") {
+    return [
+      client,
+      { key: "sent", label: "Sent", single: true, options: SENT_OPTIONS },
+      { key: "validity", label: "Validity", single: true, options: VALIDITY_OPTIONS },
+      { key: "show", label: "Also show", single: true, options: [{ value: "closed", label: "Declined and superseded" }] },
+    ];
+  }
+  return [
+    client,
+    { key: "kind", label: "Kind", options: KIND_OPTIONS },
+    { key: "issued", label: "Issued", single: true, options: ISSUED_OPTIONS },
+    ...(opts.xeroConnected ? [{ key: "xero", label: "Xero", options: XERO_OPTIONS }] : []),
+    { key: "show", label: "Also show", single: true, options: [{ value: "void", label: "Void invoices" }] },
+  ];
+}
+
 export function hubSegments(tab: HubTab, counts: Record<string, number> | undefined, approx?: { tab?: boolean; depositdue?: boolean }): ListSegment[] {
   const defs = tab === "quotes" ? QUOTE_SEGMENTS : INVOICE_SEGMENTS;
   return defs.map((s) => ({ key: s.key, label: s.label, count: (s.key === "depositdue" ? approx?.depositdue : approx?.tab) ? undefined : counts?.[s.key] }));
 }
 
-/** The shared query contract: every hub list sends the same page / sort / search shape. */
+const known = (values: string[] | undefined, allowed: readonly string[]) => {
+  const kept = values?.filter((v) => allowed.includes(v));
+  return kept && kept.length > 0 ? kept : undefined;
+};
+
+/** The shared query contract: every hub list sends the same page / sort / search shape, plus its own filter words. */
 export function hubQueryArgs(tab: HubTab, state: ListUrlState, now: number) {
-  const show = state.filters.show?.[0];
-  return {
+  const f = state.filters;
+  const base = {
     segment: state.seg,
     search: state.q.trim() || undefined,
     page: state.page,
@@ -86,7 +127,17 @@ export function hubQueryArgs(tab: HubTab, state: ListUrlState, now: number) {
     sortBy: state.sortBy,
     sortOrder: state.sortOrder,
     now,
-    ...(tab === "quotes" ? { includeClosed: show === "closed" } : { includeVoid: show === "void" }),
+    clientIn: f.client?.length ? f.client : undefined,
+  };
+  if (tab === "quotes") {
+    return { ...base, includeClosed: f.show?.[0] === "closed", sent: known(f.sent, ["7d", "30d", "90d"])?.[0], validity: known(f.validity, ["7d", "30d"])?.[0] };
+  }
+  return {
+    ...base,
+    includeVoid: f.show?.[0] === "void",
+    kindIn: known(f.kind, KIND_OPTIONS.map((o) => o.value)),
+    issued: known(f.issued, ["month", "7d", "30d", "90d"])?.[0],
+    xeroIn: known(f.xero, XERO_OPTIONS.map((o) => o.value)),
   };
 }
 

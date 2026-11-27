@@ -72,22 +72,29 @@ export interface InvoiceMenuCtx {
 
 const UNSETTLED = new Set(["ISSUED", "PART_PAID", "OVERDUE"]);
 
+function invoiceFacts(i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber">) {
+  const draft = i.pill === "DRAFT";
+  return {
+    draft,
+    voided: i.pill === "VOID",
+    unsettled: UNSETTLED.has(i.pill) && i.kind !== "CREDIT",
+    pdf: pdfVerb({ hasPdf: i.hasPdf, draft }),
+    needsXero: i.xero != null && (i.xero.status === "NOT_SYNCED" || i.xero.status === "ERROR"),
+    label: i.invoiceNumber ?? "this draft",
+  };
+}
+
 export function buildInvoiceHubActions(
   i: Pick<InvoiceSource, "pill" | "hasPdf" | "kind" | "xero" | "invoiceNumber">,
   ctx: InvoiceMenuCtx,
 ): ActionMenuSpec {
-  const draft = i.pill === "DRAFT";
-  const void_ = i.pill === "VOID";
-  const unsettled = UNSETTLED.has(i.pill) && i.kind !== "CREDIT";
-  const pdf = pdfVerb({ hasPdf: i.hasPdf, draft });
-  const needsXero = i.xero != null && (i.xero.status === "NOT_SYNCED" || i.xero.status === "ERROR");
-  const label = i.invoiceNumber ?? "this draft";
+  const { draft, voided, unsettled, pdf, needsXero, label } = invoiceFacts(i);
   return {
     items: compact([
       { key: "open", label: "Open on the job", group: "edit", icon: ExternalLink, onSelect: ctx.onOpenJob },
       pdf === "open" && verb(ctx.onOpenPdf, [true], { key: "pdf", label: "Open PDF", group: "documents", icon: FileText }),
       pdf === "preview" && verb(ctx.onPreview, [true], { key: "preview", label: "Preview draft", group: "documents", icon: Eye }),
-      pdf === "generate" && verb(ctx.onGeneratePdf, [!draft, !void_], { key: "generate", label: "Generate PDF", group: "documents", icon: FilePlus }),
+      pdf === "generate" && verb(ctx.onGeneratePdf, [!draft, !voided], { key: "generate", label: "Generate PDF", group: "documents", icon: FilePlus }),
       verb(ctx.onRecordPayment, [unsettled], { key: "pay", label: "Record payment…", group: "organise", icon: Wallet }),
       verb(ctx.onChase, [unsettled], { key: "chase", label: "Chase", group: "reporting", icon: Copy }),
       verb(ctx.onPushXero, [needsXero], { key: "xero", label: i.xero?.status === "ERROR" ? "Retry push to Xero" : "Push to Xero", group: "organise", icon: Send }),

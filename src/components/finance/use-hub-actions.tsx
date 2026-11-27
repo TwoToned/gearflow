@@ -41,10 +41,10 @@ const invoiceName = (i: InvoiceSource) => i.invoiceNumber ?? "Draft invoice";
 const toRow = <T extends { id: string }>(x: T, name: (t: T) => string): T & BulkRow => ({ ...x, name: name(x) });
 
 /** The money in a chase text is present only when the row carries money (the server sent it). */
-export function quoteChase(q: QuoteSource, now: number): string {
+function quoteChase(q: QuoteSource, now: number): string {
   return chaseSummary(q.project?.projectNumber ?? "—", { version: q.version, sentAt: q.sentAt, validUntil: q.validUntil }, { subtotal: null, taxAmount: null, total: q.total ?? null }, now);
 }
-export function invoiceChase(i: InvoiceSource): string {
+function invoiceChase(i: InvoiceSource): string {
   return invoiceChaseText(
     { invoiceNumber: i.invoiceNumber, projectNumber: i.project?.projectNumber ?? "—", issuedAt: i.issuedAt, dueDate: i.dueDate, overdueDays: i.overdueDays },
     { total: i.total ?? null, outstanding: i.outstanding ?? null },

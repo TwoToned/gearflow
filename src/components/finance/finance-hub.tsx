@@ -1,7 +1,6 @@
 "use client";
 // use-client: URL-driven list, live queries, row menus (R-8.1.1)
 
-import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -67,94 +66,106 @@ export function FinanceHub() {
   return <FinanceHubInner key={activeOrg?.id ?? "none"} orgId={activeOrg?.id} />;
 }
 
-function FinanceHubInner({ orgId }: { orgId: string | undefined }) {
-  const router = useRouter();
-  const tab: HubTab = parseHubTab(useSearchParams().get("tab"));
-  const spec = specFor(tab);
-  const now = useStableNow();
-  const { state } = useListUrlState(spec);
-  const quoteWrites = useQuoteWrites();
-  const canPublish = useCanDo("invoice", "publish");
-  const xero = useXeroIntegration();
-  const xeroConnected = xero?.isConnected === true;
+type HubPage = { total?: number; truncated?: boolean; moneyVisible?: boolean; kind?: string; items?: unknown[] } | undefined;
 
+/** The page, strip counts and tab for the URL's current state: one place that knows which query feeds which tab. */
+function useHubData(orgId: string | undefined, tab: HubTab) {
+  const now = useStableNow();
+  const { state } = useListUrlState(specFor(tab));
   const counts = useAuthedQuery(api.financeHub.hubCounts, orgId ? { orgId, now } : "skip");
   const args = orgId ? { orgId, ...hubQueryArgs(tab, state, now) } : "skip";
   const quotes = useAuthedQuery(api.financeHub.quotesPage, tab === "quotes" ? args : "skip");
   const invoices = useAuthedQuery(api.financeHub.invoicesPage, tab === "invoices" ? args : "skip");
-  const page = tab === "quotes" ? quotes : invoices;
-  const moneyVisible = page?.moneyVisible === true;
+  return { state, counts, page: (tab === "quotes" ? quotes : invoices) as HubPage };
+}
 
+/** Each row's menu: `Open on the job`, plus `Acknowledge expired` on a fresh expired quote (invoice:publish). */
+function useRowMenus(canPublish: boolean) {
+  const router = useRouter();
+  const quoteWrites = useQuoteWrites();
   const open = (projectId: string | undefined): ActionMenuSpec["items"] =>
     projectId ? [{ key: "open", label: "Open on the job", group: "edit", onSelect: () => router.push(`/projects/${projectId}?tab=finance`) }] : [];
-
-  const rows = React.useMemo(() => {
-    if (!page) return [];
-    if (tab === "quotes") {
-      return (quotes?.items as unknown as QuoteSource[] | undefined)?.map((q) => {
-        const items = [...open(q.project?.id)];
-        if (q.status === "EXPIRED" && !q.dismissed && canPublish) {
-          items.push({
-            key: "ack",
-            label: "Acknowledge expired",
-            group: "organise",
-            onSelect: async () => {
-              try {
-                await quoteWrites.acknowledgeExpired(q.id);
-              } catch (e) {
-                showError(e, { fallbackTitle: "Couldn't acknowledge that quote" });
-              }
-            },
-          });
-        }
-        return quoteRow(q, { items });
-      }) ?? [];
+  const acknowledge = async (id: string) => {
+    try {
+      await quoteWrites.acknowledgeExpired(id);
+    } catch (e) {
+      showError(e, { fallbackTitle: "Couldn't acknowledge that quote" });
     }
-    const inv = invoices as unknown as { kind?: string; items: unknown[] } | undefined;
-    if (inv?.kind === "toRaise") return (inv.items as ToRaiseSource[]).map((r) => toRaiseRow(r));
-    return (inv?.items as InvoiceSource[] | undefined)?.map((i) => invoiceRow(i, { items: open(i.project?.id) })) ?? [];
-    // `open` only reads `router`; the rows depend on the page and the viewer's rights.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, quotes, invoices, tab, canPublish]);
+  };
+  const quoteMenu = (q: QuoteSource): ActionMenuSpec => {
+    const items = [...open(q.project?.id)];
+    if (q.status === "EXPIRED" && !q.dismissed && canPublish) items.push({ key: "ack", label: "Acknowledge expired", group: "organise", onSelect: () => acknowledge(q.id) });
+    return { items };
+  };
+  const invoiceMenu = (i: InvoiceSource): ActionMenuSpec => ({ items: open(i.project?.id) });
+  return { quoteMenu, invoiceMenu };
+}
 
-  const wordCounts = counts ? { quotes: counts.quotes, invoices: counts.invoices, truncated: counts.truncated } : undefined;
+function rowsOf(tab: HubTab, page: HubPage, menus: ReturnType<typeof useRowMenus>) {
+  const items = (page?.items ?? []) as unknown[];
+  if (tab === "quotes") return (items as QuoteSource[]).map((q) => quoteRow(q, menus.quoteMenu(q)));
+  if (page?.kind === "toRaise") return (items as ToRaiseSource[]).map((r) => toRaiseRow(r));
+  return (items as InvoiceSource[]).map((i) => invoiceRow(i, menus.invoiceMenu(i)));
+}
+
+function hubNotice(page: HubPage, tab: HubTab, xeroKnown: boolean, xeroConnected: boolean): string | undefined {
+  const parts = [
+    page?.truncated ? "Showing the newest documents: older ones are left out of this view." : null,
+    tab === "invoices" && xeroKnown && !xeroConnected ? "Xero isn't connected. Open Settings › Xero to connect it." : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+function columnsOf(tab: HubTab, seg: string, moneyVisible: boolean, xeroConnected: boolean) {
+  if (tab === "quotes") return quoteColumns(moneyVisible);
+  if (seg === "depositdue") return [{ id: "job", header: "Client" }, ...(moneyVisible ? [{ id: "total", header: "Deposit", align: "end" as const }] : [])];
+  return invoiceColumns(moneyVisible, xeroConnected);
+}
+
+const TAB_COPY: Record<HubTab, { word: string; noun: string; bulkNoun: string; search: string; itemHeader: string; empty: string }> = {
+  quotes: { word: "Quotes", noun: "quotes", bulkNoun: "quote", search: "Search job, client or quote number", itemHeader: "Quote", empty: "No quotes here" },
+  invoices: { word: "Invoices", noun: "invoices", bulkNoun: "invoice", search: "Search invoice number, job or client", itemHeader: "Invoice", empty: "No invoices here" },
+};
+
+function FinanceHubInner({ orgId }: { orgId: string | undefined }) {
+  const tab: HubTab = parseHubTab(useSearchParams().get("tab"));
+  const { state, counts, page } = useHubData(orgId, tab);
+  const menus = useRowMenus(useCanDo("invoice", "publish"));
+  const xero = useXeroIntegration();
+  const xeroConnected = xero?.isConnected === true;
+  const moneyVisible = page?.moneyVisible === true;
+  const rows = rowsOf(tab, page, menus);
+  const copy = TAB_COPY[tab];
+  const segments = hubSegments(tab, counts?.[tab] as Record<string, number> | undefined);
+  const subline = hubSubline(counts ? { quotes: counts.quotes, invoices: counts.invoices, truncated: counts.truncated } : undefined);
+
   const headWords = {
     value: tab,
-    words: HUB_TABS.map((k) => ({
-      key: k,
-      label: `${k === "quotes" ? "Quotes" : "Invoices"}${counts ? ` ${counts[k].all}` : ""}`,
-      href: `/finance?tab=${k}`,
-    })),
+    words: HUB_TABS.map((k) => ({ key: k, label: `${TAB_COPY[k].word}${counts ? ` ${counts[k].all}` : ""}`, href: `/finance?tab=${k}` })),
   };
-  const notice = [
-    page?.truncated ? "Showing the newest documents: older ones are left out of this view." : null,
-    tab === "invoices" && xero !== undefined && !xeroConnected ? "Xero isn't connected. Open Settings › Xero to connect it." : null,
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return (
     <div className="space-y-5">
       <MoneyStrip money={counts?.money as HubMoney | undefined} />
       <ListPage
         key={tab}
-        spec={spec}
+        spec={specFor(tab)}
         title="Finance"
-        noun={tab === "quotes" ? "quotes" : "invoices"}
-        bulkNoun={tab === "quotes" ? "quote" : "invoice"}
-        searchPlaceholder={tab === "quotes" ? "Search job, client or quote number" : "Search invoice number, job or client"}
-        segments={hubSegments(tab, counts?.[tab] as Record<string, number> | undefined)}
+        noun={copy.noun}
+        bulkNoun={copy.bulkNoun}
+        searchPlaceholder={copy.search}
+        segments={segments}
         filters={state.seg === "depositdue" ? [] : hubFilters(tab)}
-        columns={tab === "quotes" ? quoteColumns(moneyVisible) : state.seg === "depositdue" ? [{ id: "job", header: "Client" }, ...(moneyVisible ? [{ id: "total", header: "Deposit", align: "end" as const }] : [])] : invoiceColumns(moneyVisible, xeroConnected)}
+        columns={columnsOf(tab, state.seg, moneyVisible, xeroConnected)}
         rows={rows}
         total={page?.total ?? 0}
         loading={page === undefined}
-        itemHeader={tab === "quotes" ? "Quote" : "Invoice"}
+        itemHeader={copy.itemHeader}
         itemSortKey="number"
-        subline={hubSubline(wordCounts)}
+        subline={subline}
         headWords={headWords}
-        notice={notice || undefined}
-        empty={{ title: tab === "quotes" ? "No quotes here" : "No invoices here", description: "Quotes and invoices raised from a job appear here." }}
+        notice={hubNotice(page, tab, xero !== undefined, xeroConnected)}
+        empty={{ title: copy.empty, description: "Quotes and invoices raised from a job appear here." }}
       />
     </div>
   );

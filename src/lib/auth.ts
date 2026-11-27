@@ -22,6 +22,8 @@ import { shouldUseSecureCookies } from "./cookie-security";
 import { verifyOrgCreationCode } from "./org-creation-gate";
 import { getAnyOrgForAudit } from "./audit-org";
 import { logActivity } from "./activity-log";
+import { DISABLED_AUTH_PATHS } from "./auth-disabled-paths";
+import { ASSIGNABLE_ROLE_OPTIONS } from "./role-descriptions";
 
 /** Shared by `allowUserToCreateOrganization` and `beforeCreateOrganization`
  *  below — the one-time bootstrap (no org exists anywhere yet) always skips
@@ -124,6 +126,9 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
   },
+  // Org member/invitation/org writes the app never calls are switched off; the app's own
+  // gated server actions are the only writers (see auth-disabled-paths.ts).
+  disabledPaths: [...DISABLED_AUTH_PATHS],
   plugins: [
     organization({
       // Phase B (#1067), B3 (#1095, D6): the one-time bootstrap (no
@@ -155,6 +160,16 @@ export const auth = betterAuth({
         });
       },
       organizationHooks: {
+        // Defence in depth on the one invitation path that stays open: an invitation's
+        // role is only ever written by the app's gated invite actions, but accepting one
+        // refuses any role that isn't EXACTLY an assignable role (never owner, never a
+        // compound like "admin,owner"), so an altered row can't mint a membership.
+        beforeAcceptInvitation: async ({ invitation }) => {
+          const role = invitation.role;
+          if (typeof role !== "string" || !ASSIGNABLE_ROLE_OPTIONS.some((r) => r.value === role)) {
+            throw new APIError("FORBIDDEN", { message: "This invitation can't be accepted." });
+          }
+        },
         // Verifies the signup code submitted as `metadata.orgCreationCode` on
         // the `organization.create()` call — src/app/(auth)/setup/page.tsx
         // (C1, #1098), reached via the "Set up a new company" card on

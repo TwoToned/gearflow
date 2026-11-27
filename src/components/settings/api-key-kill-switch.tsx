@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { useServerMutation } from "@/hooks/use-server-mutation";
 import { setOrgApiKillSwitch } from "@/server/api-keys";
 import { formatDate } from "@/lib/formatters";
-import { SettingsCard, FormSection } from "@/components/layout/page-layouts";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,12 +49,16 @@ export function KillSwitchCard({
   });
 
   return (
-    <SettingsCard className={enabled ? "border border-t-out/30" : undefined}>
-      <FormSection
-        title="Emergency kill switch"
-        description="Instantly disables every API key for this org — the next request any of them makes fails with ORG_KILL_SWITCH, no matter which key or scope it holds."
-      >
-        <div className="sm:col-span-2 flex items-center justify-between gap-4">
+    <section aria-labelledby="kill-switch-title" className="space-y-3">
+      <div>
+        <h2 id="kill-switch-title" className="t-heading text-ink">Emergency kill switch</h2>
+        <p className="mt-1 t-micro text-muted">
+          Instantly disables every API key for this org — the next request any of them makes fails with
+          ORG_KILL_SWITCH, no matter which key or scope it holds.
+        </p>
+      </div>
+      <div className="border-y border-line py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-sm">
             <ShieldAlert className={enabled ? "h-4 w-4 text-t-out" : "h-4 w-4 text-fg-3"} />
             {enabled ? (
@@ -76,7 +79,7 @@ export function KillSwitchCard({
             {enabled ? "Re-enable API access" : "Disable all API access"}
           </Button>
         </div>
-      </FormSection>
+      </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
@@ -105,6 +108,6 @@ export function KillSwitchCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </SettingsCard>
+    </section>
   );
 }

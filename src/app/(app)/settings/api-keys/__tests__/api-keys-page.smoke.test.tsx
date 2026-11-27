@@ -162,12 +162,13 @@ describe("ApiKeysSettingsPage smoke", () => {
     await waitFor(() => expect(screen.getByText("No calls yet")).toBeTruthy());
   });
 
-  it("opens the kill-switch confirmation dialog", async () => {
+  it("points at the Danger zone while the kill switch is on (D61: the switch itself moved)", async () => {
+    mocks.listApiKeys.mockResolvedValue({ keys: [existingKey], apiKillSwitchAt: new Date("2026-01-02") });
     render(<ApiKeysSettingsPage />);
     await waitForKeyRow();
-
-    fireEvent.click(firstButton(/disable all api access/i));
-    await waitFor(() => expect(screen.getByText("Disable API access for this org?")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: /disable all api access/i })).toBeNull();
+    const link = await waitFor(() => screen.getByRole("link", { name: /open danger zone/i }));
+    expect(link.getAttribute("href")).toBe("/settings/danger-zone");
   });
 
   it("an OAuth-issued grant (#1003) shows an OAuth badge + connected-app name, and hides Rotate", async () => {

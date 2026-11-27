@@ -28,6 +28,7 @@ import { getLatestInvoiceNumberForProject } from "@/lib/invoices-read";
 import { computeOverbookedStatus } from "@/lib/availability";
 import { getFileAsDataUri } from "@/lib/storage";
 import { getProjectWindow, getProjectWindowDates } from "@/lib/project-window";
+import { invoiceRowTaxRate } from "@/lib/invoice-tax-rate";
 import { formatDateInTimezone, documentDueDateText } from "./plugins/helpers";
 import {
   structureLineItems,
@@ -93,6 +94,26 @@ export function invoiceLineToDocumentLineItem(line: {
     asset: null,
     bulkAsset: null,
   };
+}
+
+/**
+ * The document's tax rows. A specific invoice describes ITS OWN row: one
+ * COMPUTED row whose rate is derived from that row's frozen `taxAmount` over
+ * its taxable base (`invoiceRowTaxRate`), never the org's current default. A
+ * live render reads the project's own stored breakdown.
+ */
+export function resolveTaxBreakdown(
+  invoice: { subtotal: number; taxAmount: number; total?: number } | null,
+  storedProjectBreakdown: string | null | undefined,
+): { rate: number; amount: number }[] {
+  if (invoice) {
+    return invoice.taxAmount > 0 ? [{ rate: invoiceRowTaxRate(invoice), amount: invoice.taxAmount }] : [];
+  }
+  try {
+    return JSON.parse(storedProjectBreakdown || "[]");
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -931,17 +952,7 @@ export async function buildDocumentData(
   const taxStatus: "EXEMPT" | "UNSET" | "COMPUTED" = invoiceContext
     ? "COMPUTED"
     : (serialized.taxStatus as "EXEMPT" | "UNSET" | "COMPUTED" | null) ?? "COMPUTED";
-  const taxBreakdown: { rate: number; amount: number }[] = invoiceContext
-    ? invoiceContext.taxAmount > 0
-      ? [{ rate: Number(orgSettings.taxRate) || 0, amount: invoiceContext.taxAmount }]
-      : []
-    : (() => {
-        try {
-          return JSON.parse(serialized.taxBreakdown || "[]");
-        } catch {
-          return [];
-        }
-      })();
+  const taxBreakdown = resolveTaxBreakdown(invoiceContext, serialized.taxBreakdown);
 
   return {
     // Org
@@ -954,7 +965,6 @@ export async function buildDocumentData(
     org_business_number_label: country?.businessNumberLabel ?? "ABN",
     org_logo: logoData,
     org_icon: iconData,
-    org_tax_rate: (orgSettings.taxRate as number) || 10,
     org_tax_label: (orgSettings.taxLabel as string) || (country?.taxLabel ?? "GST"),
     org_invoice_heading: country?.invoiceHeading ?? "TAX INVOICE",
     org_branding: branding,

@@ -29,7 +29,7 @@ import { CreateApiKeyDialog } from "@/components/settings/api-key-create-dialog"
 import { TokenRevealDialog } from "@/components/settings/api-key-token-reveal-dialog";
 import { RequestLogDialog } from "@/components/settings/api-key-request-log-dialog";
 import { ConnectAgentCard } from "@/components/settings/api-key-connect-agent";
-import { KillSwitchCard } from "@/components/settings/api-key-kill-switch";
+import Link from "next/link";
 
 export interface ApiKeyRow {
   id: string;
@@ -128,7 +128,15 @@ export default function ApiKeysSettingsPage() {
           onCreateClick={() => setCreateOpen(true)}
         />
 
-        {canManage && <KillSwitchCard orgId={orgId} apiKillSwitchAt={apiKillSwitchAt} onToggled={refetch} />}
+        {canManage && apiKillSwitchAt ? (
+          <p className="t-small font-medium text-t-out">
+            API access is switched off for every key.{" "}
+            <Link href="/settings/danger-zone" className="underline">
+              Open Danger zone to turn it back on
+            </Link>
+            .
+          </p>
+        ) : null}
       </div>
 
       <ApiKeyDialogs

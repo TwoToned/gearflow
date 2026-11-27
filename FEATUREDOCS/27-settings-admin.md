@@ -2,6 +2,26 @@
 
 > _Owner: Jayden Nawotka · Last reviewed: 2026-07-23 (review quarterly — POLICY.md R-5.5)_
 
+## The settings index (UX Phase 17, D57, D60, D61)
+
+`/settings` is an INDEX, not a page: one list grouped under Organisation, People & access,
+Operations, Money, Integrations, Developer and Danger zone, each row a name, one line, a derived
+status word (Team `5 members · 2 invited`, Xero `Connected`, Mira `On · read-only`; `settingsStatus`,
+never stored) and a chevron. It replaced the second rail and the phone jump-select. Search is `?q=`
+and matches names, descriptions AND the parts inside pages (`tax` finds Billing, Services, Xero). A
+row the role can't open is absent (never greyed) with one muted footer line naming them.
+
+**One registry, `src/lib/settings-registry.ts`.** The rows, the search haystack, the per-route
+gate (`settingsGateOpen`, read by the layout AND the index) and the status key all come from it;
+`settings-registry.test.ts` fails if a `settings/<x>/page.tsx` has no row. Adding a settings page
+= one row there. A section page is a record page without tabs: back link, title, identity line
+(`settings/layout.tsx`); flat sections and the sticky dirty bar are `settings-section.tsx`.
+
+Moves: **General** is `/settings/general` (the old `/settings` content); **invoice numbering and
+the default tax rate** live on **Billing** (the old Billing "Tax rate" box wrote `settings.taxRate`,
+which nothing reads, so it was dropped, not moved); the **API kill switch** lives on
+**Danger zone** (`/settings/danger-zone`, same `setOrgApiKillSwitch`, `orgSettings:update`).
+
 ## Org Settings (`Organization.metadata` JSON)
 ```json
 {
@@ -30,7 +50,7 @@ Abbreviated — the real, current shape is `OrgSettings` in
 + its `showTermsAndConditionsOnInvoice` invoice toggle, `paymentDetails`,
 `quoteValidityDays`, `paymentTermsDays`; plus branding/invoice-numbering/SSO —
 see FEATUREDOCS/13 for what each `documents` field renders on which PDF doc
-type). `abn` is edited on the General settings page (`/settings`, next to
+type). `abn` is edited on the General settings page (`/settings/general`, next to
 address/email/phone); the `documents` fields are edited on the "Documents"
 card at `/settings/branding` (`document-settings.tsx`).
 

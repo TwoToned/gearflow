@@ -8,8 +8,7 @@ import type { ListPrimary } from "@/components/ui/list-page-parts";
 import { downloadCsv } from "@/lib/download-csv";
 import type { ActionItem, ActionMenuSpec } from "@/lib/primitives/types";
 import { buildScheduleJobActions } from "@/lib/row-actions/schedule-job";
-import { scheduleCsv, type ScheduleJob } from "@/lib/schedule";
-import { projectStatusLabels } from "@/lib/status-labels";
+import type { ScheduleJob } from "@/lib/schedule";
 import { useCanDo } from "@/lib/use-permissions";
 import { jobHref } from "./schedule-sheets";
 import type { ScheduleUrl } from "./use-schedule-url";
@@ -29,7 +28,7 @@ function mineItem(url: ScheduleUrl, userId: string | undefined): ActionItem[] {
  * and `+ New job`. Each verb is absent, never disabled, when the caller cannot
  * use it (the crew planner needs `crew:read`, the primary `project:create`).
  */
-export function useScheduleActions(url: ScheduleUrl, userId: string | undefined, shown: ScheduleJob[]) {
+export function useScheduleActions(url: ScheduleUrl, userId: string | undefined, exportCsv: () => string) {
   const router = useRouter();
   const canCrew = useCanDo("crew", "read");
   const canCreate = useCanDo("project", "create");
@@ -44,7 +43,7 @@ export function useScheduleActions(url: ScheduleUrl, userId: string | undefined,
         label: "Export this range (CSV)",
         group: "reporting",
         icon: Download,
-        onSelect: () => downloadCsv(scheduleCsv(shown, (s) => projectStatusLabels[s] ?? s), `schedule-${url.range.start}.csv`),
+        onSelect: () => downloadCsv(exportCsv(), `schedule-${url.mode}-${url.range.start}.csv`),
       },
       { key: "copy", label: "Copy link", group: "organise", icon: Link2, onSelect: () => copy(window.location.href) },
     ],

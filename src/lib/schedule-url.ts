@@ -14,11 +14,23 @@ import type { ListUrlSpec } from "@/lib/list-url-state";
 import { defaultAnchor, monthStart, type ScheduleZoom } from "@/lib/schedule";
 
 export const SCHEDULE_SPEC: ListUrlSpec = {
-  segments: ["all", "confirmed", "pencilled", "clashes"],
+  // Jobs: all / confirmed / pencilled / clashes. Gear: all / short / atrisk (a seg from the other view reads as `all`).
+  segments: ["all", "confirmed", "pencilled", "clashes", "short", "atrisk"],
   filters: ["status", "pm", "category", "model"],
   sorts: ["start"],
   defaultSort: "start:asc",
+  views: ["jobs", "gear"],
 };
+
+export type ScheduleViewKey = "jobs" | "gear";
+
+const SEGS: Record<ScheduleViewKey, readonly string[]> = {
+  jobs: ["all", "confirmed", "pencilled", "clashes"],
+  gear: ["all", "short", "atrisk"],
+};
+
+/** The strip segment this view understands: one that belongs to the other view reads as `all`. */
+export const segmentFor = (view: string, seg: string): string => (SEGS[view as ScheduleViewKey] ?? SEGS.jobs).includes(seg) ? seg : "all";
 
 const DayKey = z
   .string()
@@ -31,9 +43,10 @@ const ScheduleParamsSchema = z.object({
   date: DayKey.optional().catch(undefined),
   day: DayKey.optional().catch(undefined),
   job: z.string().min(1).max(64).optional().catch(undefined),
+  cell: z.string().regex(/^[A-Za-z0-9_-]{1,64}:\d{4}-\d{2}-\d{2}$/).optional().catch(undefined),
 });
 
-const SCHEDULE_PARAM_KEYS = ["zoom", "date", "day", "job"] as const;
+const SCHEDULE_PARAM_KEYS = ["zoom", "date", "day", "job", "cell"] as const;
 
 export interface ScheduleView {
   zoom: ScheduleZoom;
@@ -41,6 +54,15 @@ export interface ScheduleView {
   anchor: string;
   day: string | null;
   job: string | null;
+  /** The Gear cell whose sheet is open, `modelId:YYYY-MM-DD`. */
+  cell: string | null;
+}
+
+/** `modelId:day` as its two parts; null when there is none. */
+export function parseCell(cell: string | null): { modelId: string; day: string } | null {
+  if (!cell) return null;
+  const i = cell.lastIndexOf(":");
+  return { modelId: cell.slice(0, i), day: cell.slice(i + 1) };
 }
 
 /** The view the params describe. A legacy `?search=` (global-search deep link) is read as `q` by the caller. */
@@ -48,7 +70,7 @@ export function parseScheduleView(params: URLSearchParams, todayKey: string, sta
   const raw = ScheduleParamsSchema.parse(Object.fromEntries(SCHEDULE_PARAM_KEYS.map((k) => [k, params.get(k) ?? undefined])));
   const p = forceZoom ? { ...raw, zoom: forceZoom } : raw;
   const anchor = p.date ? (p.zoom === "month" ? monthStart(p.date) : weekOf(p.date, startsOn)) : defaultAnchor(p.zoom, todayKey, startsOn);
-  return { zoom: p.zoom, anchor, day: p.day ?? null, job: p.job ?? null };
+  return { zoom: p.zoom, anchor, day: p.day ?? null, job: p.job ?? null, cell: p.cell ?? null };
 }
 
 /**
@@ -64,5 +86,6 @@ export function viewPatch(next: Partial<ScheduleView>, current: ScheduleView, to
   out.date = anchor === defaultAnchor(merged.zoom, todayKey, startsOn) ? null : anchor;
   out.day = merged.day;
   out.job = merged.job;
+  out.cell = merged.cell;
   return out;
 }

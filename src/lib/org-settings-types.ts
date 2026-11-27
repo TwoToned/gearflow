@@ -84,7 +84,6 @@ export interface OrgSettings {
   country?: string;
   timezone?: string;
   currency?: string;
-  taxRate?: number;
   taxLabel?: string;
   assetTagPrefix?: string;
   assetTagCounter?: number;

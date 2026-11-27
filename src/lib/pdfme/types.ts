@@ -262,7 +262,6 @@ export interface DocumentData {
   org_business_number_label: string;
   org_logo: string | null;
   org_icon: string | null;
-  org_tax_rate: number;
   org_tax_label: string;
   /** I4 (#1083) — country-derived invoice document heading ("TAX INVOICE"
    *  for AU/NZ, "INVOICE" elsewhere — "Tax Invoice" is an Australian/NZ

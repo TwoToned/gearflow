@@ -123,3 +123,13 @@ lockstep — see the codebase's existing duplicate-mapper pattern for `discount`
 `src/components/projects/equipment-row-types.ts`. Documents: `src/lib/pdfme/types.ts`,
 `src/lib/pdfme/build-document-data.ts`, `src/lib/react-pdf/components/totals-block.tsx`,
 `src/lib/react-pdf/fixture.ts`.
+
+## A specific invoice's tax row comes from the row (UX Phase 17 review)
+
+`OrgSettings.taxRate` is gone (nothing writes it since Billing moved to the org's `defaultTaxRate`).
+A DEPOSIT / BALANCE / CREDIT / FULL invoice render takes its one tax row from THAT invoice's own frozen
+`subtotal` and `taxAmount`: `invoiceRowTaxRate` (`src/lib/invoice-tax-rate.ts`) derives the rate, and
+`resolveTaxBreakdown` (`build-document-data.ts`) is the single place the document's tax rows are decided.
+Never read the org's current default for an issued document: it changes later and the document would
+contradict itself. A single rate prints as `GST $amount` (no suffix); the rate is carried in
+`tax_breakdown` and prints as `GST (n%)` only when a document has more than one rate.

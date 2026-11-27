@@ -137,13 +137,47 @@ describe("invoices: Overdue outranks Part paid (D56) through the one pill", () =
     expect(row.outstanding).toBe(70);
   });
 
-  test("Deposit due lists the jobs still to invoice, with the deposit to raise", async () => {
+  test("Deposit due is the job page's own rule: agreed jobs whose invoicing has NOT started; the client's profile does not gate it", async () => {
     const t = makeT();
     await seed(t);
     const r = (await page(t, asUser, "invoicesPage", { segment: "depositdue" })) as unknown as { kind: string; items: { id: string; amount?: number; depositPercent: number }[] };
     expect(r.kind).toBe("toRaise");
+    // p3 (deposit client, 30%) and p2... p2 already carries invoices so is NOT due; p1 is only QUOTED (not agreed).
     expect(r.items.map((i) => i.id)).toEqual(["p3"]);
     expect(r.items[0].amount).toBe(3000); // 30% of 10,000
+    // A FULL_UPFRONT (no profile) client's agreed, uninvoiced job is due too: the profile only supplies the default %.
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p4", organizationId: ORG, projectNumber: "#1004", name: "Job #1004", clientId: "c1", status: "CONFIRMED", isTemplate: false, total: 4000, revision: 1 });
+    });
+    const again = (await page(t, asUser, "invoicesPage", { segment: "depositdue" })) as unknown as { items: { id: string; depositPercent: number; amount?: number }[] };
+    expect(again.items.map((i) => i.id).sort()).toEqual(["p3", "p4"]);
+    expect(again.items.find((i) => i.id === "p4")).toMatchObject({ depositPercent: 25, amount: 1000 }); // the default 25%
+  });
+
+  test("a job with MORE invoices than the read covers is unknown, never shown as a confident Deposit due, and the count is a floor", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p_many", organizationId: ORG, projectNumber: "#2000", name: "Busy", clientId: "c1", status: "CONFIRMED", isTemplate: false, total: 100, revision: 1 });
+      for (let i = 0; i < 9; i++) {
+        await ctx.db.insert("invoices", { id: `many_${i}`, organizationId: ORG, projectId: "p_many", clientId: "c1", kind: "DEPOSIT", status: "DRAFT", subtotal: 1, taxAmount: 0, total: 1 } as never);
+      }
+    });
+    const r = (await page(t, asUser, "invoicesPage", { segment: "depositdue" })) as unknown as { items: { id: string }[]; truncated: boolean };
+    expect(r.items.map((i) => i.id)).not.toContain("p_many");
+    expect(r.truncated).toBe(true);
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.approx.depositdue).toBe(true);
+  });
+
+  test("an invoice belonging to ANOTHER org's job is not used to decide this org's Deposit due", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("invoices", { id: "i_foreign_p3", organizationId: OTHER, projectId: "p3", clientId: "cx", kind: "DEPOSIT", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 1 } as never);
+    });
+    const r = (await page(t, asUser, "invoicesPage", { segment: "depositdue" })) as unknown as { items: { id: string }[] };
+    expect(r.items.map((i) => i.id)).toContain("p3");
   });
 });
 
@@ -151,13 +185,14 @@ describe("hubCounts: the strip, the head words and the money words", () => {
   test("counts agree with the pages, and the money words are derived", async () => {
     const t = makeT();
     await seed(t);
-    const c = await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
     expect(c.quotes).toEqual({ all: 6, draft: 1, sent: 2, accepted: 1, expired: 1 });
     expect(c.invoices).toEqual({ all: 5, draft: 1, depositdue: 1, issued: 2, paid: 1, overdue: 1 });
     // Quoted = live SENT quotes (2 x 5000); Awaiting = owed on issued, not overdue (110 + 70); Overdue = owed past due (70);
     // Invoiced this month = issued this month (4 non-draft, non-void invoices x 110).
     expect(c.money).toEqual({ quoted: 10000, awaitingPayment: 180, overdue: 70, invoicedThisMonth: 440 });
     expect(c.truncated).toBe(false);
+    expect(c.approx.words).toEqual({ quoted: false, awaitingPayment: false, overdue: false, invoicedThisMonth: false });
   });
 });
 
@@ -172,7 +207,7 @@ describe("money is ABSENT below the job-cost line, never zero and never a sort k
       expect("total" in row).toBe(false);
       expect("outstanding" in row).toBe(false);
     }
-    const c = await t.withIdentity(asAgent).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW });
+    const c = (await t.withIdentity(asAgent).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
     expect("money" in c).toBe(false);
     const raw = JSON.stringify([q, i, c]);
     expect(raw).not.toMatch(/"(outstanding|amount|money)"/);
@@ -235,19 +270,115 @@ describe("bounds", () => {
     await t.run(async (ctx) => {
       for (let i = 0; i < 320; i++) {
         await ctx.db.insert("invoices", {
-          id: `bulk_${i}`, organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 1,
-          invoiceNumber: `B-${i}`, issuedAt: NOW - DAY, dueDate: NOW + DAY,
+          id: `bulk_${i}`, organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "DRAFT", subtotal: 1, taxAmount: 0, total: 1,
+          invoiceNumber: `B-${i}`,
         } as never);
       }
     });
-    const r = await page(t, asUser, "invoicesPage", { segment: "issued", pageSize: 100 });
+    const r = await page(t, asUser, "invoicesPage", { segment: "draft", pageSize: 100 });
     expect(r.truncated).toBe(true);
-    expect(r.total).toBeLessThanOrEqual(302 + 2); // the cap (300) plus nothing else issued-and-open
+    expect(r.total).toBeLessThanOrEqual(300 + 1); // the cap (300) plus the one seeded draft
     // The cap keeps the NEWEST (org and order in the index, then the cap): the last one inserted is in, the first is out.
-    const all = await page(t, asUser, "invoicesPage", { segment: "issued", pageSize: 100, search: "B-319" });
+    const all = await page(t, asUser, "invoicesPage", { segment: "draft", pageSize: 100, search: "B-319" });
     expect(all.total).toBe(1);
-    expect((await page(t, asUser, "invoicesPage", { segment: "issued", pageSize: 100, search: "B-0" })).items.some((i) => i.invoiceNumber === "B-0")).toBe(false);
-    const c = await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW });
+    expect((await page(t, asUser, "invoicesPage", { segment: "draft", pageSize: 100, search: "B-0" })).items.some((i) => i.invoiceNumber === "B-0")).toBe(false);
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
     expect(c.truncated).toBe(true);
+  });
+});
+
+describe("the ISSUED read is capped, and a cut one never prints a confident number", () => {
+  test("301+ issued: the OLDEST (long-overdue) rows are cut, so overdue / awaiting are flagged as a floor", async () => {
+    const t = makeT();
+    await seed(t);
+    const { ISSUED_CAP } = await import("./financeHub");
+    await t.run(async (ctx) => {
+      // The oldest rows are the overdue ones; newer ones are paid (paid invoices stay ISSUED forever).
+      for (let i = 0; i < ISSUED_CAP + 5; i++) {
+        const overdue = i < 5;
+        await ctx.db.insert("invoices", {
+          id: `cap_${i}`, organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 100,
+          invoiceNumber: `C-${i}`, issuedAt: NOW - 60 * DAY, dueDate: overdue ? NOW - 30 * DAY : NOW + DAY,
+          ...(overdue ? {} : { paymentStatus: "PAID", amountPaid: 100 }),
+        } as never);
+      }
+    });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.truncated).toBe(true);
+    expect(c.approx.invoices).toBe(true);
+    expect(c.approx.words.overdue).toBe(true);
+    expect(c.approx.words.awaitingPayment).toBe(true);
+    // The five overdue ones are the oldest and were cut: the figure is too low, and it says so rather than being confident.
+    expect(c.invoices.overdue).toBeLessThan(5 + 1);
+    const r = await page(t, asUser, "invoicesPage", { segment: "overdue" });
+    expect(r.truncated).toBe(true);
+  });
+
+  test("an uncut read is NOT flagged", async () => {
+    const t = makeT();
+    await seed(t);
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.approx.invoices).toBe(false);
+    expect(c.approx.quotes).toBe(false);
+  });
+
+  test("the quote cap is flagged the same way", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 160; i++) {
+        await ctx.db.insert("quotes", { id: `qcap_${i}`, organizationId: ORG, projectId: "p1", version: 1, status: "SENT", snapshot: { total: 1 }, validUntil: NOW + 20 * DAY });
+      }
+    });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.approx.quotes).toBe(true);
+    expect(c.approx.words.quoted).toBe(true);
+  });
+});
+
+describe("Invoiced this month uses the ORG's timezone", () => {
+  test("at an AU month boundary, 00:10 on 1 Dec Sydney counts as December though it is 30 Nov in UTC", async () => {
+    const NOW_AU = Date.UTC(2026, 10, 30, 13, 30); // 00:30 on 1 Dec in Sydney
+    vi.setSystemTime(NOW_AU);
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("orgSettings", { organizationId: ORG, settings: JSON.stringify({ timezone: "Australia/Sydney" }), updatedAt: 0 } as never);
+      await ctx.db.insert("invoices", { id: "i_dec", organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 1000, invoiceNumber: "DEC-1", issuedAt: Date.UTC(2026, 10, 30, 13, 10), dueDate: NOW_AU + 9 * DAY } as never);
+      await ctx.db.insert("invoices", { id: "i_nov", organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 7, invoiceNumber: "NOV-1", issuedAt: Date.UTC(2026, 10, 30, 12, 50), dueDate: NOW_AU + 9 * DAY } as never);
+    });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW_AU }))!;
+    expect(c.timezone).toBe("Australia/Sydney");
+    // Only the invoice issued after local midnight is "this month"; the other seeded ones (issued days ago) are November.
+    expect(c.money!.invoicedThisMonth).toBe(1000);
+  });
+});
+
+describe("a role without invoice read gets nothing (callerMayRead on top of the org match)", () => {
+  test("pages are empty and the counts are null, with no money", async () => {
+    const t = makeT();
+    await seed(t, "nobody-role");
+    const q = await page(t, asUser, "quotesPage", { segment: "all" });
+    const i = await page(t, asUser, "invoicesPage", { segment: "all" });
+    expect(q.total).toBe(0);
+    expect(i.total).toBe(0);
+    expect(q.moneyVisible).toBe(false);
+    expect(await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW })).toBeNull();
+  });
+});
+
+describe("a project's client is org-checked too (the cuid read is global)", () => {
+  test("a job whose clientId points at ANOTHER org's client shows no client name", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("projects", { id: "p_x", organizationId: ORG, projectNumber: "#7000", name: "Cross", clientId: "cx", status: "QUOTED", isTemplate: false, total: 1, revision: 1 });
+      await ctx.db.insert("quotes", { id: "q_x", organizationId: ORG, projectId: "p_x", version: 1, status: "SENT", snapshot: { total: 1 }, validUntil: NOW + DAY });
+    });
+    const r = await page(t, asUser, "quotesPage", { segment: "sent" });
+    const row = r.items.find((x) => x.id === "q_x") as { project: { clientName: string | null; projectNumber: string } };
+    expect(row.project.projectNumber).toBe("#7000");
+    expect(row.project.clientName).toBeNull();
+    expect(JSON.stringify(r)).not.toContain("Foreign");
   });
 });

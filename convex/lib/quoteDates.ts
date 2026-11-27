@@ -106,6 +106,14 @@ export function startOfDayInTimezone(instantMs: number, timezone?: string): numb
   return zonedWallClockToUtc(parts, { hour: 0, minute: 0, second: 0, ms: 0 }, timezone);
 }
 
+/** First instant (00:00:00.000 local, day 1) of the calendar MONTH `instantMs` falls in, in `timezone`.
+ *  The Finance hub's `Invoiced this month` boundary: invoices are stamped in the org's timezone, so the
+ *  month they belong to is too (a UTC month would put 1 Dec 09:00 AEDT in November). */
+export function startOfMonthInTimezone(instantMs: number, timezone?: string): number {
+  const parts = datePartsInTimezone(new Date(instantMs), timezone);
+  return zonedWallClockToUtc({ year: parts.year, month: parts.month, day: 1 }, { hour: 0, minute: 0, second: 0, ms: 0 }, timezone);
+}
+
 /**
  * Start of the org-local day `days` BUSINESS days after the day `instantMs`
  * falls on, in `timezone` (follow-up automation, docs/designs/follow-up-automation.md

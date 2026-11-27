@@ -35,11 +35,14 @@ describe("the hub's money words", () => {
     expect(words.map((w) => [w.label, w.amount, w.href])).toEqual([
       ["Quoted", "$12,346", "/finance?tab=quotes&seg=sent"],
       ["Awaiting payment", "$800", "/finance?tab=invoices&seg=issued"],
-      ["Invoiced this month", "$0", "/finance?tab=invoices&seg=all"],
+      ["Invoiced this month", "$0", "/finance?tab=invoices&seg=all&issued=month"],
       ["Overdue", "$70", "/finance?tab=invoices&seg=overdue"],
     ]);
     expect(words[3].tone).toBe("error");
     expect(moneyWords(undefined)).toEqual([]);
+    // A figure behind a cut read reads `at least`, never a confident number.
+    const approx = moneyWords({ quoted: 1000, awaitingPayment: 800, invoicedThisMonth: 0, overdue: 70 }, { overdue: true, awaitingPayment: true });
+    expect(approx.map((w) => w.amount)).toEqual(["$1,000", "at least $800", "$0", "at least $70"]);
   });
 });
 
@@ -87,6 +90,13 @@ describe("rows read the DERIVED words the server sent", () => {
     expect(invoiceStatusLine({ pill: "PART_PAID", overdueDays: null, outstanding: undefined })).toBeUndefined(); // no money, no "to go"
   });
 
+  it("dates print in the ORG timezone, not UTC (00:10 on 1 Dec Sydney is 1 Dec, not 30 Nov)", () => {
+    const at = Date.UTC(2026, 10, 30, 13, 10);
+    expect(invoiceRow(invoice({ issuedAt: at }), undefined, "Australia/Sydney").facts.issued).toEqual({ kind: "text", label: "1 Dec" });
+    expect(invoiceRow(invoice({ issuedAt: at }), undefined, "UTC").facts.issued).toEqual({ kind: "text", label: "30 Nov" });
+    expect(quoteRow(quote({ sentAt: at }), undefined, "Australia/Sydney").facts.sent).toEqual({ kind: "text", label: "1 Dec" });
+  });
+
   it("kind and Xero words", () => {
     expect(invoiceRow(invoice()).subtitle).toBe("Deposit 30%");
     expect(invoiceRow(invoice()).facts.xero).toEqual({ kind: "text", label: "Synced" });
@@ -122,8 +132,12 @@ describe("URL state and query args", () => {
 
   it("segment counts come from the server's strip, and the sub line says `at least` when capped", () => {
     expect(hubSegments("quotes", { all: 6, sent: 2 }).find((s) => s.key === "sent")?.count).toBe(2);
+    // A cut read leaves the counts OFF the strip (they would be a confident floor).
+    expect(hubSegments("invoices", { all: 6, overdue: 1, depositdue: 2 }, { tab: true }).map((s) => s.count)).toEqual([undefined, undefined, 2, undefined, undefined, undefined]);
+    expect(hubSegments("invoices", { all: 6, depositdue: 2 }, { depositdue: true }).find((s) => s.key === "depositdue")?.count).toBeUndefined();
     expect(hubSubline({ quotes: { all: 27 }, invoices: { all: 20 } })).toBe("27 quotes · 20 invoices");
-    expect(hubSubline({ quotes: { all: 1 }, invoices: { all: 1 }, truncated: true })).toBe("at least 1 quote · at least 1 invoice");
+    expect(hubSubline({ quotes: { all: 1 }, invoices: { all: 1 }, approx: { quotes: true, invoices: true } })).toBe("at least 1 quote \u00b7 at least 1 invoice");
+    expect(hubSubline({ quotes: { all: 1 }, invoices: { all: 4 }, approx: { invoices: true } })).toBe("1 quote \u00b7 at least 4 invoices");
     expect(hubSubline(undefined)).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { inInvoiceSegment, inQuoteSegment, invoiceSortValue, monthStartUtc, quoteSortValue, type InvoiceHubRow, type QuoteHubRow } from "./financeHubFacts";
+import { startOfMonthInTimezone } from "./quoteDates";
+import { inInvoiceSegment, inQuoteSegment, invoiceSortValue, quoteSortValue, type InvoiceHubRow, type QuoteHubRow } from "./financeHubFacts";
 
 const q = { id: "q", version: 1, status: "SENT", dismissed: false, sentAt: 1, validUntil: 2, daysLeft: 1, hasPdf: false, project: null, total: 5000 } as QuoteHubRow;
 const i = { id: "i", invoiceNumber: "INV-1", kind: "FULL", depositPercent: null, pill: "ISSUED", pillLabel: "Issued", issuedAt: 1, dueDate: 2, overdueDays: null, hasPdf: false, xero: null, project: null, total: 110, outstanding: 110 } as InvoiceHubRow;
@@ -26,7 +27,13 @@ describe("segments", () => {
     expect(inInvoiceSegment({ pill: "OVERDUE" }, "overdue", false)).toBe(true);
     expect(inInvoiceSegment({ pill: "VOID" }, "all", false)).toBe(false);
   });
-  test("the month starts at 00:00 UTC on the 1st", () => {
-    expect(monthStartUtc(Date.UTC(2026, 10, 24, 12))).toBe(Date.UTC(2026, 10, 1));
+  test("the month starts at 00:00 on the 1st in the ORG timezone (an AU month boundary is not the UTC one)", () => {
+    expect(startOfMonthInTimezone(Date.UTC(2026, 10, 24, 12), "UTC")).toBe(Date.UTC(2026, 10, 1));
+    // 00:30 on 1 Dec in Sydney (AEDT, UTC+11) is still 30 Nov in UTC; the month is December.
+    const at = Date.UTC(2026, 10, 30, 13, 30);
+    expect(startOfMonthInTimezone(at, "Australia/Sydney")).toBe(Date.UTC(2026, 10, 30, 13, 0));
+    expect(startOfMonthInTimezone(at, "UTC")).toBe(Date.UTC(2026, 10, 1));
+    // Across the DST change (Oct): 1 Oct 00:00 in Sydney is AEST (+10), 14:00 UTC the day before.
+    expect(startOfMonthInTimezone(Date.UTC(2026, 9, 15), "Australia/Sydney")).toBe(Date.UTC(2026, 8, 30, 14, 0));
   });
 });

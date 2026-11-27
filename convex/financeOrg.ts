@@ -10,7 +10,7 @@ import { invoiceOutstanding, isInvoiceOverdue } from "./lib/invoiceOverdue";
 /**
  * The org-level Finance section (#992, Phase F) — "what's chaseable across
  * every project, without opening them one at a time": quotes out, expiring,
- * never sent, deposit due, outstanding.
+ * never sent, outstanding (deposit due moved to the Finance hub, `financeHub.ts`: one rule with the job page).
  *
  * Perf constraint (design doc §6.7, learned from #942's 77%-of-org-I/O
  * incident): this MUST be a bounded, indexed aggregation, never a per-project
@@ -33,9 +33,7 @@ const DAY_MS = 86_400_000;
  *  runaway org can never turn the read into an unbounded scan; `capped` in the
  *  response tells the UI (and the regression test) when it was hit. */
 export const SECTION_CAP = 200;
-
-/** Statuses at or after CONFIRMED (excluding CANCELLED) — the candidate set
- *  for "deposit due". */
+/** Statuses at or after CONFIRMED (excluding CANCELLED): seeds the shared project map. */
 const CONFIRMED_OR_LATER_STATUSES = [
   "CONFIRMED",
   "PREPPING",
@@ -45,7 +43,6 @@ const CONFIRMED_OR_LATER_STATUSES = [
   "COMPLETED",
   "INVOICED",
 ] as const;
-const CONFIRMED_OR_LATER_SET = new Set<string>(CONFIRMED_OR_LATER_STATUSES);
 
 interface OrgFinanceProjectRef {
   id: string;
@@ -87,9 +84,9 @@ async function fetchQuotesByRawStatus(ctx: QueryCtx, orgId: string, status: "SEN
 }
 
 /** Projects at CONFIRMED-or-later, one capped scan per status (same idiom as
- *  dashboardStats.ts's OPEN_MAINTENANCE_STATUSES loop) — feeds "deposit due",
- *  plus seeds the shared project map. */
-export async function fetchConfirmedOrLaterProjects(ctx: QueryCtx, orgId: string) {
+ *  dashboardStats.ts's OPEN_MAINTENANCE_STATUSES loop) — seeds
+ *  the shared project map. */
+async function fetchConfirmedOrLaterProjects(ctx: QueryCtx, orgId: string) {
   const projectDocsById = new Map<string, Doc<"projects">>();
   let hitCap = false;
   for (const status of CONFIRMED_OR_LATER_STATUSES) {
@@ -133,16 +130,6 @@ async function fetchReferencedClients(ctx: QueryCtx, orgId: string, projectDocsB
     [...clientIds].map((cid) => ctx.db.query("clients").withIndex("by_cuid", (q) => q.eq("id", cid)).unique()),
   );
   return new Map(clientDocs.filter((c): c is NonNullable<typeof c> => !!c && c.organizationId === orgId).map((c) => [c.id, c]));
-}
-
-function groupByProjectId(invoices: Doc<"invoices">[]): Map<string, Doc<"invoices">[]> {
-  const byProjectId = new Map<string, Doc<"invoices">[]>();
-  for (const inv of invoices) {
-    const list = byProjectId.get(inv.projectId) ?? [];
-    list.push(inv);
-    byProjectId.set(inv.projectId, list);
-  }
-  return byProjectId;
 }
 
 /** A quote on a cancelled job is dead — the client is no longer being quoted
@@ -251,33 +238,6 @@ function buildNeverSent(
     .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 }
 
-/** Deposit due: DEPOSIT_BALANCE clients whose deposit invoice hasn't issued —
- *  the per-project nudge chip (project-finance-panel.tsx), lifted to org
- *  scope over the same CONFIRMED+ candidate set. */
-export function buildDepositDue(
-  projectDocsById: Map<string, Doc<"projects">>,
-  issuedByProjectId: Map<string, Doc<"invoices">[]>,
-  clientsById: Map<string, Doc<"clients">>,
-) {
-  return [...projectDocsById.values()]
-    .filter((p) => {
-      if (!CONFIRMED_OR_LATER_SET.has(p.status ?? "")) return false;
-      const client = p.clientId ? clientsById.get(p.clientId) : undefined;
-      if (client?.paymentProfile !== "DEPOSIT_BALANCE") return false;
-      const issued = issuedByProjectId.get(p.id) ?? [];
-      return !issued.some((inv) => inv.kind === "DEPOSIT");
-    })
-    .map((p) => {
-      const client = p.clientId ? clientsById.get(p.clientId) : undefined;
-      return {
-        project: projectRef(p, clientsById),
-        depositPercent: client?.profileDepositPercent ?? 25,
-        total: Number(p.total) || 0,
-      };
-    })
-    .sort((a, b) => a.project.projectNumber.localeCompare(b.project.projectNumber));
-}
-
 /** Outstanding: issued invoices not (yet) marked PAID. `paymentStatus` is now
  *  real for any org recording payments in Flow (#1055, paymentsWrites.ts) —
  *  the remaining gap is Xero-side payments Flow doesn't know about, since the
@@ -339,7 +299,6 @@ async function computeFinanceBundle(ctx: QueryCtx, orgId: string, now: number) {
   await fillReferencedProjects(ctx, orgId, projectDocsById, neededProjectIds);
 
   const clientsById = await fetchReferencedClients(ctx, orgId, projectDocsById);
-  const issuedByProjectId = groupByProjectId(issuedInvoices);
 
   const capped =
     sentRaw.length >= SECTION_CAP ||
@@ -352,7 +311,6 @@ async function computeFinanceBundle(ctx: QueryCtx, orgId: string, now: number) {
     quotesOut: buildQuotesOut(liveQuotes, now, projectDocsById, clientsById),
     expiring: buildExpiring(liveQuotes, now, projectDocsById, clientsById),
     neverSent: buildNeverSent(draftQuotes, projectDocsById, clientsById),
-    depositDue: buildDepositDue(projectDocsById, issuedByProjectId, clientsById),
     outstanding: buildOutstanding(issuedInvoices, projectDocsById, clientsById),
     overdue: buildOverdue(issuedInvoices, projectDocsById, now),
     // The ISSUED scan alone hit its cap: the overdue figures are a lower bound.
@@ -438,7 +396,6 @@ export const counts = query({
       quotesOutCount: b.quotesOut.length,
       expiringCount: b.expiring.length,
       neverSentCount: b.neverSent.length,
-      depositDueCount: b.depositDue.length,
       outstandingCount: b.outstanding.length,
       // D88 (additive): overdue invoices and what is still owed on them, derived on read.
       overdueCount: b.overdue.length,
@@ -451,7 +408,7 @@ export const counts = query({
 // ─── agentOps annotations (Phase 5 domain slice, #1001) ──────────────────────
 export const agentOps: AgentOpsAnnotations = {
   bundle: {
-    summary: "The org's chaseable finance rows: quotes out, expiring, never sent, deposit due, outstanding.",
+    summary: "The org's chaseable finance rows: quotes out, expiring, never sent, outstanding (deposit due moved to the Finance hub, `financeHub.ts`: one rule with the job page).",
     danger: "low",
     mcpTier: 2,
   },

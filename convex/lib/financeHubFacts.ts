@@ -209,12 +209,6 @@ export interface MoneyWords {
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-/** Start of the calendar month (UTC) containing `now`. The hub's month is UTC, like every date the lists stamp. */
-export function monthStartUtc(now: number): number {
-  const d = new Date(now);
-  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
-}
-
 const sumInto = (w: MoneyWords, i: InvoiceHubRow, monthStart: number): void => {
   if (i.pill === "ISSUED" || i.pill === "PART_PAID") w.awaitingPayment += i.outstanding ?? 0;
   if (i.pill === "OVERDUE") w.overdue += i.outstanding ?? 0;
@@ -228,10 +222,10 @@ const isInvoicedThisMonth = (i: InvoiceHubRow, monthStart: number): boolean =>
  * The four money words, derived on read from rows that carry money (so a caller without job-cost
  * visibility never gets here). Quoted = live SENT quotes; Awaiting payment = what is still owed on
  * issued invoices that are NOT yet overdue; Overdue = what is still owed past the due day;
- * Invoiced this month = issued invoices stamped this month.
+ * Invoiced this month = issued invoices stamped this month. `monthStart` is the first instant of the
+ * month in the ORG's timezone (`startOfMonthInTimezone`), because invoices are stamped in it.
  */
-export function moneyWords(quotes: QuoteHubRow[], invoices: InvoiceHubRow[], now: number): MoneyWords {
-  const monthStart = monthStartUtc(now);
+export function moneyWords(quotes: QuoteHubRow[], invoices: InvoiceHubRow[], monthStart: number): MoneyWords {
   const w: MoneyWords = { quoted: 0, awaitingPayment: 0, invoicedThisMonth: 0, overdue: 0 };
   for (const q of quotes) if (q.status === "SENT") w.quoted += q.total ?? 0;
   for (const i of invoices) sumInto(w, i, monthStart);

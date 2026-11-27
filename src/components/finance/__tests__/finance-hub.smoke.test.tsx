@@ -16,6 +16,7 @@ beforeAll(() => {
 const state = vi.hoisted(() => ({
   search: "tab=quotes",
   money: true,
+  approxInvoices: false,
   canPublish: true,
   xero: { isConnected: true } as { isConnected: boolean } | null | undefined,
   push: vi.fn(),
@@ -51,6 +52,12 @@ function setData() {
       quotes: { all: 3, draft: 0, sent: 1, accepted: 1, expired: 1 },
       invoices: { all: 2, draft: 0, depositdue: 1, issued: 0, paid: 0, overdue: 1 },
       truncated: false,
+      approx: {
+        quotes: false,
+        invoices: state.approxInvoices,
+        depositdue: false,
+        words: { quoted: false, awaitingPayment: state.approxInvoices, overdue: state.approxInvoices, invoicedThisMonth: false },
+      },
       ...(m ? { money: { quoted: 5000, awaitingPayment: 0, invoicedThisMonth: 330, overdue: 70 } } : {}),
     },
     "financeHub:quotesPage": {
@@ -74,6 +81,7 @@ afterEach(() => {
   cleanup();
   state.search = "tab=quotes";
   state.money = true;
+  state.approxInvoices = false;
   state.canPublish = true;
   state.xero = { isConnected: true };
   state.push.mockClear();
@@ -92,6 +100,17 @@ describe("Finance hub", () => {
     expect(screen.getAllByText("Sent", { selector: "td span span" }).length).toBe(1);
     expect(screen.getByText("Expired", { selector: "span span" })).toBeTruthy();
     expect(screen.getAllByText("#2341 v3").length).toBeGreaterThan(0);
+  });
+
+  it("a cut invoice read never prints a confident number: `at least` on the head count, the money words, and no strip counts", () => {
+    state.approxInvoices = true;
+    setData();
+    render(<FinanceHub />);
+    expect(screen.getByRole("link", { name: "Invoices 2+" })).toBeTruthy();
+    const money = screen.getByLabelText("Money");
+    expect(within(money).getByText("at least $70")).toBeTruthy(); // Overdue
+    expect(within(money).getByText("$5,000")).toBeTruthy(); // Quoted is from the (uncut) quotes read
+    expect(screen.getByText(/1 quote.*at least 2 invoices|3 quotes · at least 2 invoices/)).toBeTruthy();
   });
 
   it("a caller without job-cost visibility gets no money words and no Total column", () => {

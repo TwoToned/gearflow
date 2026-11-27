@@ -1811,15 +1811,27 @@ and `hubCounts`, so the strip, the head counts, the money words and the table ar
   older ones are under All only; declined and superseded are under All only after `Also show`). An invoice's word is
   the ONE pill, `invoicePillState` (D56: Overdue outranks Part paid; Paid outranks Overdue); `Issued` is Issued plus
   Part paid, `Overdue` is its own. `Deposit due` lists the JOBS still to invoice (a project row with the deposit to
-  raise), not invoice rows.
+  raise), and is the JOB PAGE's own rule: `depositDueForJob` (`convex/lib/invoicingState.ts`, built on
+  `deriveInvoicingState`, re-exported by `src/lib/project-invoicing-state.ts`) says an agreed job whose invoicing has
+  NOT started and which still has something to raise is due; the client's `paymentProfile` does not gate it (it only
+  supplies the default %). The old org-board copy (`financeOrg`'s DEPOSIT_BALANCE rule, `depositDue` /
+  `depositDueCount`) is gone. Each candidate job's invoices are read through `invoices.by_projectId` (org-checked,
+  from the budget); a job the budget can't cover is counted as unknown, never shown as a confident Deposit due.
 - **Money is behind `canSeeJobCost`** (invoice:read and not a `noFinancials` key): totals, owed amounts, the
   deposit to raise and the four money words are ABSENT (no column, no words, never zero), and `total` is not a
   sort key for such a caller (a refused key is the default order, ascending). The role/key sentinel sweep is in
   `convex/financeHub.test.ts`.
-- **Bounds.** Each raw status is read newest-first from `by_organizationId_status` (org and order in the index,
-  then the cap: 150 quotes / 300 invoices per status), and the referenced projects and clients are read by cuid
-  (org-checked) from ONE `ReadBudget`. When any cap bites the response says `truncated` and the page prints
-  "Showing the newest documents" and `at least n` on the head counts.
+- **Bounds, and "at least".** Each raw status is read newest-first from `by_organizationId_status` (org and order in
+  the index, then the cap: 150 quotes, 300 draft/void and 1,500 ISSUED invoices), and the referenced projects and
+  clients come from ONE `ReadBudget`. A paid invoice stays ISSUED, and no index reaches "unpaid" or "overdue" without
+  the settled ones, so a cut ISSUED read drops the OLDEST rows: exactly the long-overdue ones. Every figure or count
+  derived from a cut read is therefore a floor and the server flags it (`hubCounts.approx`): the head count prints
+  `27+`, the sub line and the money words print `at least`, and the tab's strip counts are left off (a bare number
+  would be a confident floor). Never a confident number that is too low.
+- **Org timezone.** `Invoiced this month` starts at the first instant of the month in the ORG's timezone
+  (`startOfMonthInTimezone`; invoices are stamped in it) and the row dates print in it (`timezone` is returned with
+  every page), so 00:10 on 1 Dec in Sydney is December.
+- A caller without invoice read (`callerMayRead`) gets empty pages and `null` counts, on top of the org match.
 - A row opens the job's Finance tab, where the STORED PDF lives; the hub renders no finance document. The row ⋯
   carries `Open on the job` and, for a fresh expired quote with `invoice:publish`, `Acknowledge expired` (the
   live write the old Expiring card had). The Xero column and a one-line "Xero isn't connected" note follow the

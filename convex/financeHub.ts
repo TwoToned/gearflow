@@ -54,13 +54,26 @@ import { resolveNow } from "./lib/projectSegments";
  * every doc fetched through them here is re-checked against `organizationId`.
  */
 
-const QUOTE_STATUS_CAP = 150; // quote docs carry a frozen snapshot: keep the byte volume bounded too
+export const QUOTE_STATUS_CAP = 150; // quote docs carry a frozen snapshot: keep the byte volume bounded too
 /** ISSUED is the big one (paid invoices stay ISSUED forever), so it gets the most room; invoice docs are light. */
 export const ISSUED_CAP = 1500;
-const OTHER_INVOICE_CAP = 300;
-const CANDIDATE_JOB_CAP = 150;
-const READ_BUDGET = 9000;
+export const OTHER_INVOICE_CAP = 300;
+export const CANDIDATE_JOB_CAP = 150;
 const JOB_INVOICES_READ = 8;
+/** What one job's invoice read can actually scan (`take(n + 1)` reads one past the cap), and so what is reserved first. */
+export const JOB_INVOICES_TAKE = JOB_INVOICES_READ + 1;
+/**
+ * Worst-case documents ONE query scans (Convex's limit is 16,384), `hubCounts` being the heaviest:
+ *   quotes      6 statuses x (150 + 1)                      =   906
+ *   invoices    ISSUED (1,500 + 1) + DRAFT/VOID 2 x (300+1) = 2,103
+ *   candidates  8 statuses x (150 + 1) jobs                 = 1,208
+ *   orgSettings 1                                           =     1
+ *   subtotal (the fixed scans)                              = 4,218
+ *   + READ_BUDGET: referenced projects, clients and each candidate job's invoices, every one reserved
+ *     BEFORE it is read (`JOB_INVOICES_READ + 1` per job: `take()` can read one past the cap)  = 7,500
+ *   worst case                                                     = 11,718 (< 12,000, with headroom under 16,384)
+ */
+export const READ_BUDGET = 7500;
 const MAX_PAGE = 100;
 
 const QUOTE_RAW_STATUSES = ["DRAFT", "SENT", "PUBLISHED", "ACCEPTED", "DECLINED", "SUPERSEDED"] as const;
@@ -120,10 +133,9 @@ async function loadInvoiceRows(ctx: QueryCtx, orgId: string, now: number, showMo
   const invoices = scans.flatMap((s) => s.rows);
   const { ref } = await loadRefs(ctx, orgId, new Set(invoices.map((i) => i.projectId)), budget);
   const rows = invoices.map((i) => invoiceHubRow(i, ref(i.projectId), now, showMoney));
-  // The oldest ISSUED row we read: anything older was cut, and that decides which figures are a floor.
-  const issuedScan = scans[1];
-  const oldestIssuedAt = issuedScan.truncated ? Math.min(...issuedScan.rows.map((i) => i.issuedAt ?? Infinity)) : null;
-  return { rows, truncated: scans.some((s) => s.truncated), issuedTruncated: issuedScan.truncated, oldestIssuedAt };
+  // The scan is ordered by `_creationTime`, NOT by `issuedAt` (an old draft can be issued today), so a cut ISSUED
+  // scan says nothing about which issue dates were lost: every figure from it, "this month" included, is a floor.
+  return { rows, truncated: scans.some((s) => s.truncated), issuedTruncated: scans[1].truncated };
 }
 
 /**
@@ -165,9 +177,9 @@ async function jobDepositVerdict(
   showMoney: boolean,
   budget: ReadBudget,
 ): Promise<DepositDueRow | null | "unknown"> {
-  if (budget.take(JOB_INVOICES_READ) < JOB_INVOICES_READ) return "unknown";
-  const inv = await ctx.db.query("invoices").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).take(JOB_INVOICES_READ + 1);
-  if (inv.length > JOB_INVOICES_READ) return "unknown"; // more invoices than we read: whether invoicing has started is not known
+  if (budget.take(JOB_INVOICES_TAKE) < JOB_INVOICES_TAKE) return "unknown"; // reserve what take() can actually read
+  const inv = await ctx.db.query("invoices").withIndex("by_projectId", (q) => q.eq("projectId", p.id)).take(JOB_INVOICES_TAKE);
+  if (inv.length >= JOB_INVOICES_TAKE) return "unknown"; // more invoices than we read: whether invoicing has started is not known
   const client = p.clientId ? (clients.get(p.clientId) ?? null) : null;
   const d = depositDueForJob(inv.filter((i) => i.organizationId === orgId), client, Number(p.total) || 0);
   if (!d.due) return null;
@@ -307,7 +319,7 @@ export const hubCounts = query({
     const monthStart = startOfMonthInTimezone(now, timezone);
     const quotesApprox = quotes.truncated || budget.truncated;
     const invoicesApprox = invoices.truncated || budget.truncated;
-    // A cut ISSUED scan drops the OLDEST rows: unpaid/overdue (and Paid) are floors; "this month" only if the cut reached into the month.
+    // A cut ISSUED scan drops the OLDEST-CREATED rows: unpaid/overdue and Paid are floors, and so is "this month" (creation order is not issue order).
     const issuedApprox = invoices.issuedTruncated || budget.truncated;
     return {
       quotes: quoteCounts,
@@ -322,7 +334,7 @@ export const hubCounts = query({
           quoted: quotesApprox,
           awaitingPayment: issuedApprox,
           overdue: issuedApprox,
-          invoicedThisMonth: invoices.issuedTruncated ? (invoices.oldestIssuedAt ?? 0) >= monthStart : budget.truncated,
+          invoicedThisMonth: issuedApprox,
         },
       },
       // The money words are ABSENT (not zero) for a caller who can't see job cost.

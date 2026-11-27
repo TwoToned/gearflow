@@ -376,6 +376,49 @@ describe("the ISSUED read is capped, and a cut one never prints a confident numb
   });
 });
 
+describe("creation order is not issue order: a cut ISSUED scan flags 'this month' too", () => {
+  test("an old-created invoice issued THIS month can be among the cut rows, so invoicedThisMonth is a floor whenever the scan is cut", async () => {
+    const t = makeT();
+    await seed(t);
+    const { ISSUED_CAP } = await import("./financeHub");
+    await t.run(async (ctx) => {
+      // Inserted FIRST (so oldest `_creationTime`, the first to be cut) but issued today.
+      await ctx.db.insert("invoices", { id: "old_created", organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 5000, invoiceNumber: "OLD-1", issuedAt: NOW - 1000, dueDate: NOW + DAY } as never);
+      for (let i = 0; i < ISSUED_CAP + 2; i++) {
+        await ctx.db.insert("invoices", { id: `later_${i}`, organizationId: ORG, projectId: "p2", clientId: "c1", kind: "FULL", status: "ISSUED", subtotal: 1, taxAmount: 0, total: 1, invoiceNumber: `L-${i}`, issuedAt: NOW - 90 * DAY, dueDate: NOW - 60 * DAY, paymentStatus: "PAID", amountPaid: 1 } as never);
+      }
+    });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.approx.words.invoicedThisMonth).toBe(true);
+  });
+});
+
+describe("read margin: the worst case stays well under Convex's 16,384 doc-scan limit", () => {
+  test("fixed scans + the budget, and the per-job reserve matches what take() can read", async () => {
+    const m = await import("./financeHub");
+    const fixed = 6 * (m.QUOTE_STATUS_CAP + 1) + (m.ISSUED_CAP + 1) + 2 * (m.OTHER_INVOICE_CAP + 1) + 8 * (m.CANDIDATE_JOB_CAP + 1) + 1;
+    expect(fixed + m.READ_BUDGET).toBeLessThan(12_000);
+    // take(n + 1) can scan n + 1 docs, so the reserve is n + 1 (it was n: an over-read of one per job).
+    expect(m.JOB_INVOICES_TAKE).toBe(9);
+  });
+});
+
+describe("the candidate-job cap is flagged", () => {
+  test("more agreed jobs than the per-status cap: Deposit due is a floor", async () => {
+    const t = makeT();
+    await seed(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 152; i++) {
+        await ctx.db.insert("projects", { id: `cj_${i}`, organizationId: ORG, projectNumber: `#C${i}`, name: `Cand ${i}`, clientId: "c1", status: "CONFIRMED", isTemplate: false, total: 10, revision: 1 });
+      }
+    });
+    const c = (await t.withIdentity(asUser).query(api.financeHub.hubCounts, { orgId: ORG, now: NOW }))!;
+    expect(c.approx.depositdue).toBe(true);
+    const r = (await page(t, asUser, "invoicesPage", { segment: "depositdue", pageSize: 100 })) as unknown as { truncated: boolean };
+    expect(r.truncated).toBe(true);
+  });
+});
+
 describe("Invoiced this month uses the ORG's timezone", () => {
   test("at an AU month boundary, 00:10 on 1 Dec Sydney counts as December though it is 30 Nov in UTC", async () => {
     const NOW_AU = Date.UTC(2026, 10, 30, 13, 30); // 00:30 on 1 Dec in Sydney

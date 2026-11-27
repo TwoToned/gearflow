@@ -30,6 +30,8 @@ const state = vi.hoisted(() => ({
   sendEmail: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastLoading: vi.fn(),
+  toastDismiss: vi.fn(),
   csv: vi.fn(),
   clip: vi.fn(async () => {}),
   open: vi.fn(),
@@ -41,7 +43,8 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/finance",
   useSearchParams: () => new URLSearchParams(state.search),
 }));
-vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => state.toastSuccess(...a), error: (...a: unknown[]) => state.toastError(...a) } }));
+vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => state.toastSuccess(...a), error: (...a: unknown[]) => state.toastError(...a), loading: (...a: unknown[]) => state.toastLoading(...a), dismiss: (...a: unknown[]) => state.toastDismiss(...a) } }));
+vi.mock("@/lib/finance-bulk", async (orig) => ({ ...(await orig<typeof import("@/lib/finance-bulk")>()), XERO_PUSH_SPACING_MS: 40 }));
 vi.mock("@/lib/auth-client", () => ({ useActiveOrganization: () => ({ data: { id: "org_1" } }), useSession: () => ({ data: { user: { id: "u", name: "U" } } }) }));
 vi.mock("@/lib/use-permissions", () => ({ useCanDo: (_r: string, a: string) => state.caps[a] === true }));
 vi.mock("@/hooks/use-stable-now", () => ({ useStableNow: () => Date.UTC(2026, 10, 24, 12) }));
@@ -93,7 +96,7 @@ afterEach(() => {
   state.caps = {};
   state.xero = { isConnected: true };
   state.search = "tab=invoices";
-  for (const f of [state.push, state.voidInv, state.deleteDraft, state.record, state.ack, state.generateInvoice, state.generateQuote, state.pushXero, state.sendEmail, state.toastSuccess, state.toastError, state.csv, state.clip, state.open]) f.mockClear();
+  for (const f of [state.push, state.voidInv, state.deleteDraft, state.record, state.ack, state.generateInvoice, state.generateQuote, state.pushXero, state.sendEmail, state.toastSuccess, state.toastError, state.toastLoading, state.toastDismiss, state.csv, state.clip, state.open]) f.mockClear();
 });
 
 async function openMenu(user: ReturnType<typeof userEvent.setup>, label: RegExp) {
@@ -335,3 +338,62 @@ describe("bulk selection spans pages (a phone's Show more keeps earlier rows tic
     expect(withRights.result.current.invoiceMenu(draft("a") as never).items.map((i) => i.key)).toContain("delete");
   });
 });
+
+describe("bulk Xero push: paced, visible, cancellable, one batch at a time", () => {
+  const issued = (id: string) => inv(id, {});
+  const base = { xeroConnected: true, now: 0, timeZone: "UTC", quotes: [] };
+  const xeroVerb = (ids: string[]) => {
+    state.caps = ALL;
+    const { result } = renderHook(() => useHubActions({ ...base, invoices: ids.map(issued) as never }));
+    return result.current.invoiceBulk(ids).find((b) => b.key === "xero")!;
+  };
+
+  it("starts pushes at least the spacing apart (the spacing is wired into the run)", async () => {
+    const starts: number[] = [];
+    state.pushXero.mockImplementation(async () => {
+      starts.push(Date.now());
+      return { ok: true };
+    });
+    await xeroVerb(["a", "b", "c"]).onSelect();
+    expect(starts).toHaveLength(3);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(35);
+    expect(starts[2] - starts[1]).toBeGreaterThanOrEqual(35);
+  });
+
+  it("shows a progress toast that updates as it goes, then dismisses it", async () => {
+    state.pushXero.mockImplementation(async () => ({ ok: true }));
+    await xeroVerb(["a", "b"]).onSelect();
+    expect(state.toastLoading.mock.calls.map((c) => c[0])).toEqual(["Pushing 1 of 2 to Xero…", "Pushing 2 of 2 to Xero…"]);
+    expect(state.toastLoading.mock.calls[0][1]).toMatchObject({ id: "finance-xero-push", action: { label: "Cancel" } });
+    expect(state.toastDismiss).toHaveBeenCalledWith("finance-xero-push");
+  });
+
+  it("refuses a second batch while one is running (no interleaving), and allows one afterwards", async () => {
+    let release!: () => void;
+    state.pushXero.mockImplementation(() => new Promise((r) => (release = () => r({ ok: true }))));
+    const verb = xeroVerb(["a"]);
+    const first = verb.onSelect();
+    await waitFor(() => expect(state.pushXero).toHaveBeenCalledTimes(1));
+    await verb.onSelect();
+    expect(state.toastError).toHaveBeenCalledWith(expect.stringMatching(/already running/));
+    expect(state.pushXero).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    state.pushXero.mockImplementation(async () => ({ ok: true }));
+    await verb.onSelect();
+    expect(state.pushXero).toHaveBeenCalledTimes(2);
+  });
+
+  it("Cancel stops starting new pushes and reports what ran", async () => {
+    state.pushXero.mockImplementation(async () => {
+      const cancel = (state.toastLoading.mock.calls.at(-1)?.[1] as { action: { onClick: () => void } }).action.onClick;
+      cancel(); // the operator clicks Cancel during the first push
+      return { ok: true };
+    });
+    await xeroVerb(["a", "b", "c"]).onSelect();
+    expect(state.pushXero).toHaveBeenCalledTimes(1);
+    expect(state.toastSuccess.mock.calls.flat().join(" ")).toMatch(/Synced 1 invoice.*cancelled, 2 not started/);
+    expect(state.toastDismiss).toHaveBeenCalledWith("finance-xero-push");
+  });
+});
+

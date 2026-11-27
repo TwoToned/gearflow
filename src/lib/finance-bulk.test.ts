@@ -39,15 +39,15 @@ describe("messages", () => {
     expect(bulkCapMessage(51)).toContain("at most 50");
   });
   test("nothing done names the first skip; partial names it via the list-write title", () => {
-    expect(bulkToastTitle("Deleted", "draft", { done: 0, skipped: [{ name: "INV-9", why: "x" }] })).toBe("Nothing changed · INV-9: x");
-    expect(bulkToastTitle("Deleted", "draft", { done: 2, skipped: [{ name: "INV-9", why: "x" }] })).toContain("INV-9");
+    expect(bulkToastTitle("Deleted", "draft", { done: 0, notStarted: 0, skipped: [{ name: "INV-9", why: "x" }] })).toBe("Nothing changed · INV-9: x");
+    expect(bulkToastTitle("Deleted", "draft", { done: 2, notStarted: 0, skipped: [{ name: "INV-9", why: "x" }] })).toContain("INV-9");
   });
 });
 
 describe("pacing (Xero: 60 calls a minute, no 429 retry)", () => {
   test("starts of consecutive writes are at least paceMs apart; skipped rows cost no wait", async () => {
     const starts: number[] = [];
-    await runBulk(rows(3), (r) => (r.id === "r1" ? "skip" : null), async () => void starts.push(Date.now()), 40);
+    await runBulk(rows(3), (r) => (r.id === "r1" ? "skip" : null), async () => void starts.push(Date.now()), { paceMs: 40 });
     expect(starts).toHaveLength(2);
     expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(35);
   });
@@ -59,5 +59,32 @@ describe("pacing (Xero: 60 calls a minute, no 429 retry)", () => {
   test("the Xero spacing keeps 4 calls a push under 60 a minute", async () => {
     const { XERO_PUSH_SPACING_MS } = await import("./finance-bulk");
     expect((60_000 / XERO_PUSH_SPACING_MS) * 4).toBeLessThanOrEqual(60);
+  });
+});
+
+describe("cancel and progress", () => {
+  test("shouldStop halts before the next write and counts what never started", async () => {
+    let stop = false;
+    const run = vi.fn(async () => {
+      stop = true; // cancelled during the first write
+    });
+    const out = await runBulk(rows(4), () => null, run, { shouldStop: () => stop });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ done: 1, notStarted: 3 });
+    expect(bulkToastTitle("Synced", "invoice", out)).toMatch(/cancelled, 3 not started/);
+  });
+  test("a cancel during the pacing wait stops before that write starts", async () => {
+    let stop = false;
+    const run = vi.fn(async () => {
+      setTimeout(() => (stop = true), 10);
+    });
+    const out = await runBulk(rows(2), () => null, run, { paceMs: 60, shouldStop: () => stop });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(out.notStarted).toBe(1);
+  });
+  test("onProgress reports n of the rows that will be written (skips not counted)", async () => {
+    const seen: string[] = [];
+    await runBulk(rows(3), (r) => (r.id === "r1" ? "no" : null), async () => {}, { onProgress: (n, t) => seen.push(`${n}/${t}`) });
+    expect(seen).toEqual(["1/2", "2/2"]);
   });
 });

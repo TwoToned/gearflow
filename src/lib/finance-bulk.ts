@@ -19,6 +19,17 @@ export interface BulkRow {
 export interface BulkOutcome {
   done: number;
   skipped: { name: string; why: string }[];
+  /** Eligible rows never started because the run was cancelled. */
+  notStarted: number;
+}
+
+export interface BulkRunOptions {
+  /** Minimum gap between the START of one write and the next (a rate-limited integration). Skips cost nothing. */
+  paceMs?: number;
+  /** Checked before each write starts: true stops the run (nothing in flight is interrupted). */
+  shouldStop?: () => boolean;
+  /** Called before each write starts: `n` is this write's position among the rows that will be written. */
+  onProgress?: (n: number, total: number) => void;
 }
 
 /**
@@ -40,34 +51,62 @@ export async function runBulk<R extends BulkRow>(
   rows: R[],
   eligible: (row: R) => string | null,
   run: (row: R) => Promise<void>,
-  /** Minimum gap between the START of one write and the next (a rate-limited integration). Skips cost nothing. */
-  paceMs = 0,
+  opts: BulkRunOptions = {},
 ): Promise<BulkOutcome> {
-  const out: BulkOutcome = { done: 0, skipped: [] };
-  let lastStart = 0;
-  for (const row of rows.slice(0, MAX_FINANCE_BULK)) {
+  const out: BulkOutcome = { done: 0, skipped: [], notStarted: 0 };
+  const capped = rows.slice(0, MAX_FINANCE_BULK);
+  const total = capped.filter((r) => eligible(r) == null).length;
+  const pacer = makePacer(opts.paceMs ?? 0);
+  let started = 0;
+  for (const row of capped) {
     const why = eligible(row);
     if (why) {
       out.skipped.push({ name: row.name, why });
       continue;
     }
-    if (paceMs > 0 && lastStart > 0) {
-      const wait = lastStart + paceMs - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (await cancelled(opts, pacer)) {
+      out.notStarted += 1;
+      continue;
     }
-    lastStart = Date.now();
-    try {
-      await run(row);
-      out.done += 1;
-    } catch (e) {
-      out.skipped.push({ name: row.name, why: e instanceof Error ? e.message : "Couldn't be done" });
-    }
+    started += 1;
+    opts.onProgress?.(started, total);
+    await writeOne(row, run, out);
   }
   return out;
 }
 
+/** Checked before the pacing wait AND after it: the wait can span a Cancel click. */
+async function cancelled(opts: BulkRunOptions, pacer: { wait: () => Promise<void> }): Promise<boolean> {
+  const stop = opts.shouldStop ?? (() => false);
+  if (stop()) return true;
+  await pacer.wait();
+  return stop();
+}
+
+async function writeOne<R extends BulkRow>(row: R, run: (row: R) => Promise<void>, out: BulkOutcome): Promise<void> {
+  try {
+    await run(row);
+    out.done += 1;
+  } catch (e) {
+    out.skipped.push({ name: row.name, why: e instanceof Error ? e.message : "Couldn't be done" });
+  }
+}
+
+/** Waits until `paceMs` after the previous write STARTED, and stamps this start. The first call never waits. */
+function makePacer(paceMs: number) {
+  let lastStart = 0;
+  return {
+    async wait() {
+      const wait = paceMs > 0 && lastStart > 0 ? lastStart + paceMs - Date.now() : 0;
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      lastStart = Date.now();
+    },
+  };
+}
+
 /** `Deleted 3 drafts · skipped INV-0041, INV-0042: only a draft can be deleted`, or `Nothing changed · ...`. */
 export function bulkToastTitle(verb: string, noun: string, o: BulkOutcome): string {
-  if (o.done === 0 && o.skipped.length > 0) return `Nothing changed · ${o.skipped[0].name}: ${o.skipped[0].why}`;
-  return listWriteTitle(`${verb} ${plural(o.done, noun)}`, o.skipped);
+  if (o.done === 0 && o.skipped.length > 0 && o.notStarted === 0) return `Nothing changed · ${o.skipped[0].name}: ${o.skipped[0].why}`;
+  const base = listWriteTitle(`${verb} ${plural(o.done, noun)}`, o.skipped);
+  return o.notStarted > 0 ? `${base} · cancelled, ${o.notStarted} not started` : base;
 }

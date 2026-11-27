@@ -492,7 +492,12 @@ describe("filter args are bounded (they are caller-supplied)", () => {
     await seed(t);
     const q = await page(t, asUser, "quotesPage", { segment: "all" });
     expect(q.items.every((r) => "versionId" in r)).toBe(true);
-    const i = await page(t, asUser, "invoicesPage", { segment: "all" });
-    expect(i.items.every((r) => typeof r.hasPayments === "boolean")).toBe(true);
+    const i = await page(t, asUser, "invoicesPage", { segment: "all", includeVoid: true });
+    const paid = (id: string) => i.items.find((r) => r.id === id)?.hasPayments;
+    expect(paid("i_part_ok")).toBe(true); // part-paid
+    expect(paid("i_overdue_part")).toBe(true); // overdue AND part-paid: the pill says Overdue, the fact is still true
+    expect(paid("i_paid")).toBe(true);
+    expect(paid("i_issued")).toBe(false); // unpaid
+    expect(paid("i_draft")).toBe(false);
   });
 });

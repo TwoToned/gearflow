@@ -15,7 +15,7 @@ import { announceListWrite } from "@/lib/list-write-toast";
 import { showError } from "@/lib/show-error";
 import { downloadCsv } from "@/lib/download-csv";
 import { invoiceChaseText, chaseSummary } from "@/lib/finance-chase";
-import { MAX_FINANCE_BULK, XERO_PUSH_SPACING_MS, bulkCapMessage, bulkToastTitle, runBulk, type BulkRow } from "@/lib/finance-bulk";
+import { MAX_FINANCE_BULK, XERO_PUSH_SPACING_MS, bulkCapMessage, bulkToastTitle, runBulk, type BulkRow, type BulkRunOptions } from "@/lib/finance-bulk";
 import { invoicesCsv, quotesCsv } from "@/lib/finance-export";
 import type { InvoiceSource, QuoteSource } from "@/lib/list-views/finance";
 import type { ActionMenuSpec, BulkAction } from "@/lib/primitives/types";
@@ -140,16 +140,43 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
     });
 
   // ── Bulk: the existing per-row write, row by row, ONE announcement, no Undo (none has an exact reverse) ──
-  const bulkRun = async <R extends BulkRow>(picked: Picked<R>, verb: string, noun: string, eligible: (r: R) => string | null, run: (r: R) => Promise<void>, paceMs = 0) => {
+  const bulkRun = async <R extends BulkRow>(picked: Picked<R>, verb: string, noun: string, eligible: (r: R) => string | null, run: (r: R) => Promise<void>, runOpts: BulkRunOptions = {}) => {
     const cap = bulkCapMessage(picked.requested);
     if (cap) {
       toast.error(cap);
       return;
     }
-    const outcome = await runBulk(picked.rows, eligible, run, paceMs);
+    const outcome = await runBulk(picked.rows, eligible, run, runOpts);
     // A tick whose row data is gone (the list was refiltered under it) is named, never dropped.
     if (picked.missing > 0) outcome.skipped.push({ name: `${picked.missing} selected row${picked.missing === 1 ? "" : "s"}`, why: "no longer in the list" });
     announceListWrite({ title: bulkToastTitle(verb, noun, outcome), undoneTitle: "" });
+  };
+
+  // A bulk Xero push takes about 4 s a row, so it reports progress, can be cancelled, and refuses a second batch.
+  const xeroBatch = React.useRef<{ running: boolean; cancelled: boolean }>({ running: false, cancelled: false });
+  const syncXeroMany = async (picked: Picked<InvoiceSource & BulkRow>) => {
+    const batch = xeroBatch.current;
+    if (batch.running) return void toast.error("A Xero push is already running. Wait for it to finish, or cancel it.");
+    batch.running = true;
+    batch.cancelled = false;
+    const progressId = "finance-xero-push";
+    const show = (text: string) => toast.loading(text, { id: progressId, duration: Infinity, action: { label: "Cancel", onClick: () => (batch.cancelled = true) } });
+    try {
+      await bulkRun(
+        picked,
+        "Synced",
+        "invoice",
+        (i) => (i.xero && (i.xero.status === "NOT_SYNCED" || i.xero.status === "ERROR") ? null : "already in Xero or not issued"),
+        async (i) => {
+          const r = await pushInvoiceToXero(i.id);
+          if (!r.ok) throw new Error(r.error);
+        },
+        { paceMs: XERO_PUSH_SPACING_MS, shouldStop: () => batch.cancelled, onProgress: (n, total) => show(`Pushing ${n} of ${total} to Xero…`) },
+      );
+    } finally {
+      batch.running = false;
+      toast.dismiss(progressId);
+    }
   };
 
   // Ticked ids resolve against EVERY row seen (a phone's "Show more" accumulates pages the current page's data no longer holds).
@@ -188,19 +215,7 @@ export function useHubActions(opts: { quotes: QuoteSource[]; invoices: InvoiceSo
         noteMissing(pickInvoices(ids).missing);
         setChase({ text: rows.map(invoiceChase).join("\n\n"), count: rows.length });
       },
-      onSyncXeroMany: when(g.xeroPush && opts.xeroConnected, () =>
-        bulkRun(
-          pickInvoices(ids),
-          "Synced",
-          "invoice",
-          (i) => (i.xero && (i.xero.status === "NOT_SYNCED" || i.xero.status === "ERROR") ? null : "already in Xero or not issued"),
-          async (i) => {
-            const r = await pushInvoiceToXero(i.id);
-            if (!r.ok) throw new Error(r.error);
-          },
-          XERO_PUSH_SPACING_MS,
-        ),
-      ),
+      onSyncXeroMany: when(g.xeroPush && opts.xeroConnected, () => syncXeroMany(pickInvoices(ids))),
       onExport: () => {
         const cap = bulkCapMessage(ids.length);
         if (cap) return void toast.error(cap);

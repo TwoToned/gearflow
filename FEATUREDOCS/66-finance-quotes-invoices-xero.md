@@ -1863,5 +1863,5 @@ Every verb calls an EXISTING write or route; the hub invents none, and a verb th
   creates no document itself.
 - **Filter args are bounded server-side** (`assertFilterBounds` in `convex/financeHub.ts`): at most 50 values per array, 64 characters per client id, 200 per search; `sent`/`validity`/`issued` are literal unions (`7d|30d|90d`, `issued` also `month`) and `kindIn`/`xeroIn` use the schema's own enums.
 - **Bulk ticks span pages.** Ticked ids resolve against every row the hook has seen (a phone's "Show more" keeps earlier pages ticked); a tick with no row data left is named in the toast ("N selected rows no longer in the list"), never dropped, and the 50-cap counts what was ticked.
-- **Bulk Xero push is paced** (`XERO_PUSH_SPACING_MS`, 4 s between starts): Xero allows 60 calls a minute per organisation, a push makes up to ~4, and `xero-client` has no 429 retry. A bulk push of n therefore takes about 4n seconds.
+- **Bulk Xero push is paced** (`XERO_PUSH_SPACING_MS`, 4 s between starts): Xero allows 60 calls a minute per organisation, a push makes up to ~4, and `xero-client` has no 429 retry. A bulk push of n therefore takes about 4n seconds. It shows a progress toast (`Pushing 12 of 50 to Xero…`) with a Cancel that stops starting new pushes and reports what ran (`cancelled, N not started`), and refuses a second batch while one is running.
 

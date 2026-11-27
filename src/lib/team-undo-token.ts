@@ -4,9 +4,9 @@
  * an "ids only, read your own audit row" Undo has nowhere reliable to read from
  * and a schema change is not on the table. Instead the forward write returns a
  * SERVER-SIGNED token: the prior state, the state the write left, the actor, the
- * org and the server clock, sealed with HMAC-SHA256 (same primitive and key as
- * `xero-oauth-state.ts`). The client holds it opaquely and sends nothing else —
- * it cannot forge or edit a "restore to" value.
+ * org and the server clock, sealed with HMAC-SHA256 under a purpose-separated key (`hmac-purpose.ts`,
+ * purpose `team-undo:v1`, so it can never verify as another token type). The client
+ * holds it opaquely and sends nothing else: it cannot forge or edit a "restore to" value.
  *
  * Replay (the "once" rule) is enforced by `claimTeamUndo` in `team-writes.ts`
  * (an `undo:<id>` marker row), and every reverse is compare-and-set against the
@@ -14,8 +14,10 @@
  */
 import crypto from "crypto";
 import { z } from "zod";
-import { env } from "@/env";
+import { signForPurpose, verifyForPurpose } from "@/lib/hmac-purpose";
 import { UNDO_WINDOW_MS } from "../../convex/lib/undoWindow";
+
+const PURPOSE = "team-undo:v1";
 
 const roleItem = z.object({ memberId: z.string().min(1).max(64), from: z.string().min(1).max(32), to: z.string().min(1).max(32) });
 const revokeItem = z.object({ invitationId: z.string().min(1).max(64), expiresAt: z.number().int() });
@@ -43,11 +45,6 @@ export type TeamUndoEnvelope = z.infer<typeof envelopeSchema>;
 
 class TeamUndoTokenError extends Error {}
 
-// HMAC-SHA256 over a token payload, not a password hash (see xero-oauth-state.ts).
-function sign(encoded: string): string {
-  return crypto.createHmac("sha256", env.BETTER_AUTH_SECRET).update(encoded).digest("base64url"); // codeql[js/insufficient-password-hash]
-}
-
 export function createTeamUndoToken(input: { orgId: string; actorId: string; body: TeamUndoPayload; now?: number }): {
   token: string;
   id: string;
@@ -55,7 +52,7 @@ export function createTeamUndoToken(input: { orgId: string; actorId: string; bod
   const id = crypto.randomBytes(12).toString("hex");
   const envelope: TeamUndoEnvelope = { id, orgId: input.orgId, actorId: input.actorId, iat: input.now ?? Date.now(), body: input.body };
   const encoded = Buffer.from(JSON.stringify(envelope)).toString("base64url");
-  return { token: `${encoded}.${sign(encoded)}`, id };
+  return { token: `${encoded}.${signForPurpose(PURPOSE, encoded)}`, id };
 }
 
 /** Verify signature, shape and the server-clock window. Throws on any problem. */
@@ -63,11 +60,7 @@ export function verifyTeamUndoToken(token: string, now: number = Date.now()): Te
   const parts = token.split(".");
   if (parts.length !== 2) throw new TeamUndoTokenError("That Undo is no longer valid.");
   const [encoded, signature] = parts;
-  const sigBuf = Buffer.from(signature!, "base64url");
-  const expBuf = Buffer.from(sign(encoded!), "base64url");
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-    throw new TeamUndoTokenError("That Undo is no longer valid.");
-  }
+  if (!verifyForPurpose(PURPOSE, encoded!, signature!)) throw new TeamUndoTokenError("That Undo is no longer valid.");
   let envelope: TeamUndoEnvelope;
   try {
     envelope = envelopeSchema.parse(JSON.parse(Buffer.from(encoded!, "base64url").toString("utf8")));

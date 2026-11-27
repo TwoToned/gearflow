@@ -8,6 +8,8 @@ import { invitationEmail } from "@/lib/email-templates";
 import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { canAssignRole } from "@/lib/member-role-policy";
+import { inviteSchema } from "@/lib/validations/team";
+import { UserFacingError } from "@/lib/errors/user-facing-error";
 import {
   readOrgSettings,
   readOrgSettingsBlob,
@@ -249,17 +251,21 @@ export async function addMemberByEmail(email: string, role: string) {
   // can't invite another Admin, and `owner` is never assignable.
   const { organizationId, userId, userName } = await requirePermission("orgMembers", "invite");
   const actorMember = await prisma.member.findFirst({ where: { organizationId, userId }, select: { role: true } });
-  const verdict = canAssignRole(actorMember?.role, role);
-  if (!verdict.ok) throw new Error(verdict.reason);
+  const parsed = inviteSchema.safeParse({ email, role });
+  if (!parsed.success) {
+    throw new UserFacingError({ code: "INVALID_INVITE", title: "Invalid invite", message: parsed.error.issues[0]?.message ?? "Invalid invite" });
+  }
+  const verdict = canAssignRole(actorMember?.role, parsed.data.role);
+  if (!verdict.ok) throw new UserFacingError({ code: "ROLE_NOT_ALLOWED", title: "Can't give that role", message: verdict.reason });
 
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = parsed.data.email;
 
   // Check for existing pending invitation
   const existingInvite = await prisma.invitation.findFirst({
     where: { organizationId, email: normalizedEmail, status: "pending" },
   });
   if (existingInvite) {
-    throw new Error("An invitation has already been sent to this email.");
+    throw new UserFacingError({ code: "ALREADY_INVITED", title: "Already invited", message: "An invitation has already been sent to this email." });
   }
 
   // Every membership requires the recipient to accept (#1073, A3) — no
@@ -276,7 +282,7 @@ export async function addMemberByEmail(email: string, role: string) {
       },
     });
     if (existingMember) {
-      throw new Error("This person is already a member of your organization.");
+      throw new UserFacingError({ code: "ALREADY_MEMBER", title: "Already a member", message: "This person is already a member of your organization." });
     }
   }
 
@@ -289,7 +295,7 @@ export async function addMemberByEmail(email: string, role: string) {
     data: {
       organizationId,
       email: normalizedEmail,
-      role,
+      role: parsed.data.role,
       status: "pending",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
       inviterId: userId,
@@ -305,7 +311,7 @@ export async function addMemberByEmail(email: string, role: string) {
     ...invitationEmail({
       orgName: org?.name || "an organization",
       inviterName: userName,
-      role,
+      role: parsed.data.role,
       acceptUrl,
       platformName: pName,
     }),

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ASSIGNABLE_ROLES,
   canAssignRole,
+  makeRolePolicy,
   canManageMember,
   removeMemberVerdict,
   roleChangeVerdict,
@@ -45,6 +46,41 @@ describe("member role policy", () => {
     expect(canManageMember("admin", "admin").ok).toBe(false);
     for (const r of ["manager", "member", "warehouse", "viewer"]) expect(canManageMember("admin", r).ok).toBe(true);
     expect(canManageMember("owner", "admin").ok).toBe(true);
+  });
+
+  it("FAILS CLOSED on unknown, empty and compound roles (as target, actor and assigned)", () => {
+    for (const bad of ["bogus", "", "admin,member", "admin, member", "Admin", "constructor", "__proto__"]) {
+      expect(canManageMember("owner", bad).ok).toBe(false);
+      expect(canManageMember("admin", bad).ok).toBe(false);
+      expect(canAssignRole("owner", bad).ok).toBe(false);
+      expect(canAssignRole(bad, "viewer").ok).toBe(false);
+      expect(canManageMember(bad, "viewer").ok).toBe(false);
+      expect(removeMemberVerdict({ actorRole: "owner", targetRole: bad, isSelf: false }).ok).toBe(false);
+    }
+  });
+
+  it("any compound role that names the owner is the owner: never a target, for anyone", () => {
+    for (const compound of ["owner,admin", "admin,owner", "member, owner", " owner "]) {
+      expect(canManageMember("owner", compound).ok).toBe(false);
+      expect(canManageMember("admin", compound).ok).toBe(false);
+      expect(canManageMember("owner", compound)).toMatchObject({ reason: expect.stringMatching(/owner can't be changed/i) });
+    }
+  });
+
+  it("a smaller role that is NOT a subset of the actor's rights is refused (the subset check is load-bearing)", () => {
+    const table = {
+      boss: { asset: ["read", "update", "delete"], project: ["read", "update"] },
+      // fewer rights than boss (2 < 5) but holds one boss does not: not "within" boss.
+      sidekick: { asset: ["read"], client: ["read"] },
+      junior: { asset: ["read"] },
+    };
+    const p = makeRolePolicy(table, ["boss", "sidekick", "junior"]);
+    expect(p.canAssignRole("boss", "sidekick").ok).toBe(false);
+    expect(p.canManageMember("boss", "sidekick").ok).toBe(false);
+    expect(p.canAssignRole("boss", "junior").ok).toBe(true);
+    expect(p.canManageMember("boss", "junior").ok).toBe(true);
+    // equal rights are not "strictly within" either
+    expect(makeRolePolicy({ a: { asset: ["read"] }, b: { asset: ["read"] } }, ["a", "b"]).canAssignRole("a", "b").ok).toBe(false);
   });
 
   it("you can't change or remove yourself", () => {

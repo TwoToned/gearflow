@@ -3,13 +3,23 @@
  * revoke, each as a single-or-many core that the thin `"use server"` actions in
  * `src/server/team.ts` call after `requirePermission`. Every row is checked
  * against the ONE policy (`member-role-policy.ts`), org-scoped in the query,
- * and reports what it changed and what it skipped (with the reason) — a bulk
- * call never fails as a whole because one row was off limits.
+ * and reports what it changed and what it skipped (with the reason). A bulk
+ * call never fails as a whole: a row that is off limits, changed under us, or
+ * hits an infrastructure error is SKIPPED with its reason, and the Undo covers
+ * exactly the rows that DID change (never thrown away with the failure).
  *
- * Restrictive writes mirror to Convex FIRST (strict), then commit Prisma
- * (§3.3.4), as the single-member actions always did.
+ * Order of writes. Prisma (Better Auth's tables) is the source of truth, so a
+ * role change writes it FIRST with a compare-and-set on the role we read
+ * (`where: { id, role: expected }`, count checked), then mirrors to Convex
+ * (strict). If the mirror fails the Prisma write is compensated (CAS back) so the
+ * two stores never disagree, and the row is reported, never hidden. Removal is the
+ * one exception, deliberately Convex-FIRST: a revocation whose mirror write failed
+ * after Prisma committed would leave a stale grant in Convex (RBAC reads it);
+ * removing the mirror first fails CLOSED, and is compensated (re-upserted) if the
+ * Prisma delete then loses its compare-and-set.
  */
 import { env } from "@/env";
+import { UserFacingError } from "@/lib/errors/user-facing-error";
 import { api } from "../../convex/_generated/api";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -27,6 +37,8 @@ import {
 } from "@/lib/team-undo-token";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** At most one resend per invitation in this window, enforced here on the server. */
+const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 
 export interface TeamActor {
   organizationId: string;
@@ -77,7 +89,37 @@ function result(changed: number, skipped: TeamSkip[], undo: { actor: TeamActor; 
   return { changed, skipped, undoToken: token };
 }
 
+/** Run one row's write; an unexpected error skips THAT row with its message and the batch carries on. */
+async function safely(skipped: TeamSkip[], id: string, label: string, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (e) {
+    logger.error("team write row failed", { error: e });
+    skipped.push({ id, label, reason: e instanceof Error ? e.message : "Unexpected error" });
+  }
+}
+
 // ─── Roles ─────────────────────────────────────────────────────────────────
+
+/** Prisma first with a compare-and-set, then the Convex mirror; compensate Prisma if the mirror fails. */
+async function writeRole(actor: TeamActor, target: { id: string; userId: string; role: string; createdAt: Date }, newRole: string): Promise<string | null> {
+  const where = { id: target.id, organizationId: actor.organizationId };
+  const cas = await prisma.member.updateMany({ where: { ...where, role: target.role }, data: { role: newRole } });
+  if (cas.count !== 1) return "Changed while saving";
+  try {
+    await upsertMemberMirror(
+      { id: target.id, organizationId: actor.organizationId, userId: target.userId, role: newRole, createdAt: target.createdAt },
+      { strict: true },
+    );
+  } catch (e) {
+    logger.error("member mirror failed; reverting the role", { error: e });
+    const back = await prisma.member.updateMany({ where: { ...where, role: newRole }, data: { role: target.role } });
+    return back.count === 1
+      ? "Couldn't sync permissions, so nothing was changed. Try again."
+      : "Permissions may be out of sync. Try the change again.";
+  }
+  return null;
+}
 
 export async function changeMemberRoles(actor: TeamActor, memberIds: string[], newRole: string): Promise<TeamWriteResult> {
   const members = await prisma.member.findMany({
@@ -96,39 +138,26 @@ export async function changeMemberRoles(actor: TeamActor, memberIds: string[], n
       continue;
     }
     const label = labelOf(target.user);
-    const verdict = roleChangeVerdict({
-      actorRole: actor.role,
-      targetRole: target.role,
-      newRole,
-      isSelf: target.userId === actor.userId,
+    await safely(skipped, id, label, async () => {
+      const verdict = roleChangeVerdict({ actorRole: actor.role, targetRole: target.role, newRole, isSelf: target.userId === actor.userId });
+      if (!verdict.ok) return void skipped.push({ id, label, reason: verdict.reason });
+      if (target.role === newRole) return void skipped.push({ id, label, reason: `Already ${newRole}` });
+      const failure = await writeRole(actor, target, newRole);
+      if (failure) return void skipped.push({ id, label, reason: failure });
+      items.push({ memberId: id, from: target.role, to: newRole });
+      await logActivity({
+        organizationId: actor.organizationId,
+        userId: actor.userId,
+        userName: actor.userName,
+        action: "UPDATE",
+        entityType: "member",
+        entityId: id,
+        entityName: label,
+        summary: `Changed role of ${label} from ${target.role} to ${newRole}`,
+        details: { changes: [{ field: "role", from: target.role, to: newRole }] },
+      });
+      if (name) mailLater(target.user.email, roleChangedEmail({ orgName: name, newRole }));
     });
-    if (!verdict.ok) {
-      skipped.push({ id, label, reason: verdict.reason });
-      continue;
-    }
-    if (target.role === newRole) {
-      skipped.push({ id, label, reason: `Already ${newRole}` });
-      continue;
-    }
-    // Restrictive (a change may reduce permissions): Convex first, strict.
-    await upsertMemberMirror(
-      { id, organizationId: actor.organizationId, userId: target.userId, role: newRole, createdAt: target.createdAt },
-      { strict: true },
-    );
-    await prisma.member.update({ where: { id }, data: { role: newRole } });
-    items.push({ memberId: id, from: target.role, to: newRole });
-    await logActivity({
-      organizationId: actor.organizationId,
-      userId: actor.userId,
-      userName: actor.userName,
-      action: "UPDATE",
-      entityType: "member",
-      entityId: id,
-      entityName: label,
-      summary: `Changed role of ${label} from ${target.role} to ${newRole}`,
-      details: { changes: [{ field: "role", from: target.role, to: newRole }] },
-    });
-    if (name) mailLater(target.user.email, roleChangedEmail({ orgName: name, newRole }));
   }
   return result(items.length, skipped, { actor, body: { kind: "role", items } });
 }
@@ -150,26 +179,32 @@ export async function removeMembers(actor: TeamActor, memberIds: string[]): Prom
       continue;
     }
     const label = labelOf(target.user);
-    const verdict = removeMemberVerdict({ actorRole: actor.role, targetRole: target.role, isSelf: target.userId === actor.userId });
-    if (!verdict.ok) {
-      skipped.push({ id, label, reason: verdict.reason });
-      continue;
-    }
-    // Restrictive (revocation): Convex first, strict, then Prisma.
-    await removeMemberMirror({ organizationId: actor.organizationId, userId: target.userId }, { strict: true });
-    await prisma.member.delete({ where: { id } });
-    removed += 1;
-    await logActivity({
-      organizationId: actor.organizationId,
-      userId: actor.userId,
-      userName: actor.userName,
-      action: "DELETE",
-      entityType: "member",
-      entityId: id,
-      entityName: target.user.email || label,
-      summary: `Removed member ${target.user.email ?? label} from organization`,
+    await safely(skipped, id, label, async () => {
+      const verdict = removeMemberVerdict({ actorRole: actor.role, targetRole: target.role, isSelf: target.userId === actor.userId });
+      if (!verdict.ok) return void skipped.push({ id, label, reason: verdict.reason });
+      // Revocation fails CLOSED: drop the mirror first, then Prisma with a compare-and-set.
+      await removeMemberMirror({ organizationId: actor.organizationId, userId: target.userId }, { strict: true });
+      const del = await prisma.member.deleteMany({ where: { id, organizationId: actor.organizationId, role: target.role } });
+      if (del.count !== 1) {
+        await upsertMemberMirror(
+          { id, organizationId: actor.organizationId, userId: target.userId, role: target.role, createdAt: target.createdAt },
+          { strict: false },
+        );
+        return void skipped.push({ id, label, reason: "Changed while removing" });
+      }
+      removed += 1;
+      await logActivity({
+        organizationId: actor.organizationId,
+        userId: actor.userId,
+        userName: actor.userName,
+        action: "DELETE",
+        entityType: "member",
+        entityId: id,
+        entityName: target.user.email || label,
+        summary: `Removed member ${target.user.email ?? label} from organization`,
+      });
+      if (name) mailLater(target.user.email, removedFromOrgEmail({ orgName: name }));
     });
-    if (name) mailLater(target.user.email, removedFromOrgEmail({ orgName: name }));
   }
   // No Undo: a removal emails the person and ends their access; re-adding creates a
   // new membership (new id, new joined date), not the one that was removed.
@@ -185,10 +220,46 @@ async function pendingInvites(actor: TeamActor, ids: string[]) {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/** An id that is claimed at most once, shared by the Undo marker and the resend cooldown. */
+async function claimMarker(actor: TeamActor, id: string, entityType: string, entityName: string, summary: string): Promise<boolean> {
+  const convex = await getConvexClient();
+  const { created } = await convex.mutation(api.activityLogWrites.record, {
+    id,
+    organizationId: actor.organizationId,
+    action: entityType === "teamUndo" ? "UNDO" : "UPDATE",
+    entityType,
+    entityId: id,
+    entityName,
+    userId: actor.userId,
+    userName: actor.userName,
+    summary,
+    createdAt: Date.now(),
+  });
+  return created;
+}
+
 /**
- * Resend = extend the SAME invitation and email the same link. One row means
- * one live token, never two. Its Undo puts the prior expiry back (compare-and-
- * set); the email that already went out cannot be recalled, and says so.
+ * The invitation was last sent at `expiresAt - TTL` (a send sets expiry = now + TTL),
+ * so the cooldown needs no stored field. A marker per invitation per cooldown window
+ * also holds across an Undo (which puts the old expiry back), so resend -> Undo ->
+ * resend can't be used to mail someone in a loop.
+ */
+async function resendCooldownReason(actor: TeamActor, inv: { id: string; expiresAt: Date }, now: number): Promise<string | null> {
+  const lastSent = inv.expiresAt.getTime() - INVITE_TTL_MS;
+  const since = now - lastSent;
+  if (since >= 0 && since < RESEND_COOLDOWN_MS) {
+    const wait = Math.max(1, Math.ceil((RESEND_COOLDOWN_MS - since) / 60_000));
+    return `Sent just now. Try again in ${wait} minute${wait === 1 ? "" : "s"}.`;
+  }
+  const bucket = Math.floor(now / RESEND_COOLDOWN_MS);
+  const first = await claimMarker(actor, `resend:${inv.id}:${bucket}`, "teamResend", inv.id, "Resent an invitation");
+  return first ? null : "Sent just now. Try again in a few minutes.";
+}
+
+/**
+ * Resend = extend the SAME invitation and email the same link. One row means one
+ * live token, never two. Its Undo puts the prior expiry back (compare-and-set); the
+ * email that already went out cannot be recalled, and the toast says so.
  */
 export async function resendInvitations(actor: TeamActor, ids: string[]): Promise<TeamWriteResult> {
   const rows = await pendingInvites(actor, ids);
@@ -202,52 +273,49 @@ export async function resendInvitations(actor: TeamActor, ids: string[]): Promis
       skipped.push({ id, label: "Unknown invitation", reason: "Invitation not found or no longer pending" });
       continue;
     }
-    const verdict = canManageMember(actor.role, inv.role ?? "member");
-    if (!verdict.ok) {
-      skipped.push({ id, label: inv.email, reason: verdict.reason });
-      continue;
-    }
-    const prev = inv.expiresAt.getTime();
-    const next = Date.now() + INVITE_TTL_MS;
-    const claimed = await prisma.invitation.updateMany({
-      where: { id, organizationId: actor.organizationId, status: "pending", expiresAt: inv.expiresAt },
-      data: { expiresAt: new Date(next) },
-    });
-    if (claimed.count !== 1) {
-      skipped.push({ id, label: inv.email, reason: "Changed while resending" });
-      continue;
-    }
-    try {
-      await sendEmail({
-        to: inv.email,
-        ...invitationEmail({
-          orgName: name || "an organization",
-          inviterName: actor.userName,
-          role: inv.role ?? "member",
-          acceptUrl: `${env.NEXT_PUBLIC_APP_URL}/invite/${inv.id}`,
-          platformName: pName,
-        }),
+    await safely(skipped, id, inv.email, async () => {
+      const verdict = canManageMember(actor.role, inv.role ?? "member");
+      if (!verdict.ok) return void skipped.push({ id, label: inv.email, reason: verdict.reason });
+      const now = Date.now();
+      const cooldown = await resendCooldownReason(actor, inv, now);
+      if (cooldown) return void skipped.push({ id, label: inv.email, reason: cooldown });
+      const next = now + INVITE_TTL_MS;
+      const claimed = await prisma.invitation.updateMany({
+        where: { id, organizationId: actor.organizationId, status: "pending", expiresAt: inv.expiresAt },
+        data: { expiresAt: new Date(next) },
       });
-    } catch (e) {
-      logger.error("resend invitation email failed", { error: e });
-      await prisma.invitation.updateMany({
-        where: { id, organizationId: actor.organizationId, status: "pending", expiresAt: new Date(next) },
-        data: { expiresAt: inv.expiresAt },
+      if (claimed.count !== 1) return void skipped.push({ id, label: inv.email, reason: "Changed while resending" });
+      try {
+        await sendEmail({
+          to: inv.email,
+          ...invitationEmail({
+            orgName: name || "an organization",
+            inviterName: actor.userName,
+            role: inv.role ?? "member",
+            acceptUrl: `${env.NEXT_PUBLIC_APP_URL}/invite/${inv.id}`,
+            platformName: pName,
+          }),
+        });
+      } catch (e) {
+        logger.error("resend invitation email failed", { error: e });
+        await prisma.invitation.updateMany({
+          where: { id, organizationId: actor.organizationId, status: "pending", expiresAt: new Date(next) },
+          data: { expiresAt: inv.expiresAt },
+        });
+        return void skipped.push({ id, label: inv.email, reason: "The email could not be sent" });
+      }
+      items.push({ invitationId: id, prevExpiresAt: inv.expiresAt.getTime(), newExpiresAt: next });
+      await logActivity({
+        organizationId: actor.organizationId,
+        userId: actor.userId,
+        userName: actor.userName,
+        action: "UPDATE",
+        entityType: "invitation",
+        entityId: id,
+        entityName: inv.email,
+        summary: `Resent invitation to ${inv.email}`,
+        details: { changes: [{ field: "expiresAt", from: inv.expiresAt.getTime(), to: next }] },
       });
-      skipped.push({ id, label: inv.email, reason: "The email could not be sent" });
-      continue;
-    }
-    items.push({ invitationId: id, prevExpiresAt: prev, newExpiresAt: next });
-    await logActivity({
-      organizationId: actor.organizationId,
-      userId: actor.userId,
-      userName: actor.userName,
-      action: "UPDATE",
-      entityType: "invitation",
-      entityId: id,
-      entityName: inv.email,
-      summary: `Resent invitation to ${inv.email}`,
-      details: { changes: [{ field: "expiresAt", from: prev, to: next }] },
     });
   }
   return result(items.length, skipped, { actor, body: { kind: "resend", items } });
@@ -264,29 +332,25 @@ export async function revokeInvitations(actor: TeamActor, ids: string[]): Promis
       skipped.push({ id, label: "Unknown invitation", reason: "Invitation not found or no longer pending" });
       continue;
     }
-    const verdict = canManageMember(actor.role, inv.role ?? "member");
-    if (!verdict.ok) {
-      skipped.push({ id, label: inv.email, reason: verdict.reason });
-      continue;
-    }
-    const claimed = await prisma.invitation.updateMany({
-      where: { id, organizationId: actor.organizationId, status: "pending" },
-      data: { status: "cancelled" },
-    });
-    if (claimed.count !== 1) {
-      skipped.push({ id, label: inv.email, reason: "Changed while revoking" });
-      continue;
-    }
-    items.push({ invitationId: id, expiresAt: inv.expiresAt.getTime() });
-    await logActivity({
-      organizationId: actor.organizationId,
-      userId: actor.userId,
-      userName: actor.userName,
-      action: "DELETE",
-      entityType: "invitation",
-      entityId: id,
-      entityName: inv.email,
-      summary: `Revoked invitation to ${inv.email}`,
+    await safely(skipped, id, inv.email, async () => {
+      const verdict = canManageMember(actor.role, inv.role ?? "member");
+      if (!verdict.ok) return void skipped.push({ id, label: inv.email, reason: verdict.reason });
+      const claimed = await prisma.invitation.updateMany({
+        where: { id, organizationId: actor.organizationId, status: "pending", expiresAt: inv.expiresAt },
+        data: { status: "cancelled" },
+      });
+      if (claimed.count !== 1) return void skipped.push({ id, label: inv.email, reason: "Changed while revoking" });
+      items.push({ invitationId: id, expiresAt: inv.expiresAt.getTime() });
+      await logActivity({
+        organizationId: actor.organizationId,
+        userId: actor.userId,
+        userName: actor.userName,
+        action: "DELETE",
+        entityType: "invitation",
+        entityId: id,
+        entityName: inv.email,
+        summary: `Revoked invitation to ${inv.email}`,
+      });
     });
   }
   return result(items.length, skipped, { actor, body: { kind: "revoke", items } });
@@ -294,29 +358,32 @@ export async function revokeInvitations(actor: TeamActor, ids: string[]): Promis
 
 // ─── Undo ──────────────────────────────────────────────────────────────────
 
-class TeamUndoRefused extends Error {}
-
-/** The `undo:<id>` marker: written once, so a token can never be replayed. */
-async function claimTeamUndo(actor: TeamActor, tokenId: string, kind: string): Promise<void> {
-  const convex = await getConvexClient();
-  const { created } = await convex.mutation(api.activityLogWrites.record, {
-    id: `undo:${tokenId}`,
-    organizationId: actor.organizationId,
-    action: "UNDO",
-    entityType: "teamUndo",
-    entityId: tokenId,
-    entityName: kind,
-    userId: actor.userId,
-    userName: actor.userName,
-    summary: `Undid a team change (${kind})`,
-    createdAt: Date.now(),
-  });
-  if (!created) throw new TeamUndoRefused("That change was already undone.");
+class TeamUndoRefused extends UserFacingError {
+  constructor(message: string) {
+    super({ code: "UNDO_REFUSED", title: "Can't undo", message });
+  }
 }
 
 const CHANGED_SINCE = "Can't undo: it changed since.";
+const OUT_OF_SYNC = "Can't undo: permissions are out of sync. Ask an admin to check them.";
 
-async function undoRoles(actor: TeamActor, items: { memberId: string; from: string; to: string }[]) {
+/**
+ * The `undo:<id>` marker: claimed once, so a token can't be replayed. It is claimed
+ * only AFTER every pre-check has passed, so a refused Undo never burns the token.
+ */
+async function claimTeamUndo(actor: TeamActor, tokenId: string, kind: string): Promise<void> {
+  const created = await claimMarker(actor, `undo:${tokenId}`, "teamUndo", kind, `Undid a team change (${kind})`);
+  if (!created) throw new TeamUndoRefused("That change was already undone.");
+}
+
+async function mirrorRoleOf(organizationId: string, userId: string): Promise<string | null> {
+  const convex = await getConvexClient();
+  const row = await convex.query(api.members.getByOrgAndUser, { organizationId, userId });
+  return row?.role ?? null;
+}
+
+/** Pre-check EVERY role row against BOTH stores before anything is written. */
+async function precheckRoles(actor: TeamActor, items: { memberId: string; from: string; to: string }[]) {
   const members = await prisma.member.findMany({
     where: { organizationId: actor.organizationId, id: { in: items.map((i) => i.memberId) } },
   });
@@ -324,10 +391,48 @@ async function undoRoles(actor: TeamActor, items: { memberId: string; from: stri
   for (const i of items) {
     const m = byId.get(i.memberId);
     if (!m || m.role !== i.to) throw new TeamUndoRefused(CHANGED_SINCE);
+    const mirror = await mirrorRoleOf(actor.organizationId, m.userId);
+    if (mirror !== m.role) throw new TeamUndoRefused(OUT_OF_SYNC);
     const v = roleChangeVerdict({ actorRole: actor.role, targetRole: m.role, newRole: i.from, isSelf: m.userId === actor.userId });
     if (!v.ok) throw new TeamUndoRefused(v.reason);
   }
   return byId;
+}
+
+/** Every update or none: an interactive transaction that throws if any compare-and-set misses. */
+async function roleTransaction(actor: TeamActor, items: { memberId: string; from: string; to: string }[], direction: "undo" | "redo") {
+  await prisma.$transaction(async (tx) => {
+    for (const i of items) {
+      const [expected, next] = direction === "undo" ? [i.to, i.from] : [i.from, i.to];
+      const done = await tx.member.updateMany({ where: { id: i.memberId, organizationId: actor.organizationId, role: expected }, data: { role: next } });
+      if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+    }
+  });
+}
+
+async function undoRoleChanges(actor: TeamActor, tokenId: string, items: { memberId: string; from: string; to: string }[]) {
+  const byId = await precheckRoles(actor, items);
+  await claimTeamUndo(actor, tokenId, "role");
+  await roleTransaction(actor, items, "undo");
+  try {
+    for (const i of items) {
+      const m = byId.get(i.memberId)!;
+      await upsertMemberMirror(
+        { id: i.memberId, organizationId: actor.organizationId, userId: m.userId, role: i.from, createdAt: m.createdAt },
+        { strict: true },
+      );
+    }
+  } catch (e) {
+    logger.error("undo: member mirror failed; reverting", { error: e });
+    try {
+      await roleTransaction(actor, items, "redo");
+    } catch (inner) {
+      logger.error("undo: could not revert Prisma after mirror failure", { error: inner });
+      throw new TeamUndoRefused("Permissions may be out of sync after this Undo. Check Team and try again.");
+    }
+    throw new TeamUndoRefused("Couldn't sync permissions, so nothing was restored.");
+  }
+  return { restored: items.length };
 }
 
 type Invitation = Awaited<ReturnType<typeof prisma.invitation.findMany>>[number];
@@ -359,13 +464,15 @@ async function undoRevoke(actor: TeamActor, tokenId: string, items: { invitation
   const byId = await loadInvitesForUndo(actor, items.map((i) => i.invitationId));
   for (const i of items) await assertRevokeUndoable(actor, byId.get(i.invitationId)!, i.expiresAt);
   await claimTeamUndo(actor, tokenId, "revoke");
-  for (const i of items) {
-    const done = await prisma.invitation.updateMany({
-      where: { id: i.invitationId, organizationId: actor.organizationId, status: "cancelled" },
-      data: { status: "pending" },
-    });
-    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
-  }
+  await prisma.$transaction(async (tx) => {
+    for (const i of items) {
+      const done = await tx.invitation.updateMany({
+        where: { id: i.invitationId, organizationId: actor.organizationId, status: "cancelled", expiresAt: new Date(i.expiresAt) },
+        data: { status: "pending" },
+      });
+      if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+    }
+  });
   return { restored: items.length };
 }
 
@@ -380,31 +487,15 @@ async function undoResend(
     if (inv.status !== "pending" || inv.expiresAt.getTime() !== i.newExpiresAt) throw new TeamUndoRefused(CHANGED_SINCE);
   }
   await claimTeamUndo(actor, tokenId, "resend");
-  for (const i of items) {
-    const done = await prisma.invitation.updateMany({
-      where: { id: i.invitationId, organizationId: actor.organizationId, status: "pending", expiresAt: new Date(i.newExpiresAt) },
-      data: { expiresAt: new Date(i.prevExpiresAt) },
-    });
-    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
-  }
-  return { restored: items.length };
-}
-
-async function undoRoleChanges(actor: TeamActor, tokenId: string, items: { memberId: string; from: string; to: string }[]) {
-  const byId = await undoRoles(actor, items);
-  await claimTeamUndo(actor, tokenId, "role");
-  for (const i of items) {
-    const m = byId.get(i.memberId)!;
-    await upsertMemberMirror(
-      { id: i.memberId, organizationId: actor.organizationId, userId: m.userId, role: i.from, createdAt: m.createdAt },
-      { strict: true },
-    );
-    const done = await prisma.member.updateMany({
-      where: { id: i.memberId, organizationId: actor.organizationId, role: i.to },
-      data: { role: i.from },
-    });
-    if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
-  }
+  await prisma.$transaction(async (tx) => {
+    for (const i of items) {
+      const done = await tx.invitation.updateMany({
+        where: { id: i.invitationId, organizationId: actor.organizationId, status: "pending", expiresAt: new Date(i.newExpiresAt) },
+        data: { expiresAt: new Date(i.prevExpiresAt) },
+      });
+      if (done.count !== 1) throw new TeamUndoRefused(CHANGED_SINCE);
+    }
+  });
   return { restored: items.length };
 }
 

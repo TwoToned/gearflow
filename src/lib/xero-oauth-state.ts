@@ -13,6 +13,9 @@
  */
 import crypto from "crypto";
 import { env } from "@/env";
+import { signForPurpose, verifyForPurpose } from "@/lib/hmac-purpose";
+
+const PURPOSE = "xero-oauth-state:v1";
 
 const TTL_MS = 10 * 60 * 1000;
 
@@ -23,11 +26,22 @@ interface StatePayload {
   iat: number;
 }
 
-// HMAC-SHA256 signature over a token payload, not a password hash — same
-// primitive JWT's HS256 uses; verified with timingSafeEqual + a 10-min TTL.
-// See file header + PR #973 review thread for the full analysis.
-function sign(payload: string): string {
+// New states are signed with the purpose-separated key (hmac-purpose.ts). A state issued
+// BEFORE this change was signed with the raw secret; they live 10 minutes (TTL_MS), so the
+// legacy form is accepted for one release only (delete `legacySign` and its branch after it).
+function legacySign(payload: string): string {
   return crypto.createHmac("sha256", env.BETTER_AUTH_SECRET).update(payload).digest("base64url"); // codeql[js/insufficient-password-hash]
+}
+
+function sign(payload: string): string {
+  return signForPurpose(PURPOSE, payload);
+}
+
+function signatureValid(payload: string, signature: string): boolean {
+  if (verifyForPurpose(PURPOSE, payload, signature)) return true;
+  const sigBuf = Buffer.from(signature, "base64url");
+  const legacy = Buffer.from(legacySign(payload), "base64url");
+  return sigBuf.length === legacy.length && crypto.timingSafeEqual(sigBuf, legacy);
 }
 
 export function createXeroOAuthState(orgId: string, userId: string): string {
@@ -45,10 +59,7 @@ export function verifyXeroOAuthState(token: string): { orgId: string; userId: st
   const parts = token.split(".");
   if (parts.length !== 2) throw new XeroOAuthStateError("Malformed state token.");
   const [encoded, signature] = parts;
-  const expected = sign(encoded!);
-  const sigBuf = Buffer.from(signature!, "base64url");
-  const expBuf = Buffer.from(expected, "base64url");
-  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+  if (!signatureValid(encoded!, signature!)) {
     throw new XeroOAuthStateError("State signature mismatch.");
   }
   let payload: StatePayload;

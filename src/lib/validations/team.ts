@@ -19,3 +19,9 @@ export const memberIdsSchema = z.object({ memberIds: idList });
 export const invitationIdsSchema = z.object({ invitationIds: idList });
 
 export const undoTeamSchema = z.object({ token: z.string().min(10).max(4000) });
+
+/** The invite body (R-8.6.2): a real address, and a role that is exactly one of the assignable roles. */
+export const inviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email("That doesn't look like an email address.").max(254),
+  role: z.string().refine((r) => ASSIGNABLE_ROLES.includes(r), { message: "Invalid role" }),
+});

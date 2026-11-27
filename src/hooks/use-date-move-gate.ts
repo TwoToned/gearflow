@@ -18,6 +18,13 @@ export interface ProjectWindowMs {
   end: number | null;
 }
 
+/** The job a request is about, when ONE gate instance serves many jobs (the Schedule's bulk Move dates). */
+export interface DateMoveTarget {
+  projectId: string;
+  status: string | undefined;
+  window: ProjectWindowMs;
+}
+
 /**
  * Date-move impact preview gate (#1227, Q3 of the QOL sweep): non-blocking,
  * same shape as `useConfirmStatusGate`. Before a project edit save actually
@@ -42,9 +49,11 @@ export function useDateMoveGate<TData>(
   const [checking, setChecking] = useState(false);
   const [pending, setPending] = useState<{ data: TData; rows: DateMoveImpactRow[] } | null>(null);
 
-  const requestSave = async (newWindow: ProjectWindowMs, data: TData) => {
-    const windowMoved = newWindow.start !== currentWindow.start || newWindow.end !== currentWindow.end;
-    if (!windowMoved || !orgId || newWindow.start == null || newWindow.end == null || !isConfirmedOrLater(currentStatus)) {
+  // `target` (additive): which job this request is about, so ONE gate and ONE onProceed can serve a batch.
+  const requestSave = async (newWindow: ProjectWindowMs, data: TData, target?: DateMoveTarget) => {
+    const t = target ?? { projectId, status: currentStatus, window: currentWindow };
+    const windowMoved = newWindow.start !== t.window.start || newWindow.end !== t.window.end;
+    if (!windowMoved || !orgId || newWindow.start == null || newWindow.end == null || !isConfirmedOrLater(t.status)) {
       onProceed(data);
       return;
     }
@@ -52,7 +61,7 @@ export function useDateMoveGate<TData>(
     try {
       const impact = await convex.query(api.overbookingBoard.dateMoveImpact, {
         orgId,
-        projectId,
+        projectId: t.projectId,
         start: newWindow.start,
         end: newWindow.end,
       });

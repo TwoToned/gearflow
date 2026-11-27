@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ActionMenu } from "@/components/ui/action-menu";
+import { Checkbox } from "@/components/ui/checkbox";
 import { StatusWord } from "@/components/ui/status-word";
 import { displayDate, isWeekend } from "@/lib/crew-planner";
 import { formatWeekday } from "@/lib/formatters";
@@ -23,7 +24,15 @@ import { cn } from "@/lib/utils";
  */
 const LABEL_PX = 264;
 
+/** The ticked jobs (always-on checkboxes, shift-click for a range): what the bulk bar acts on. */
+export interface JobSelection {
+  ids: ReadonlySet<string>;
+  onToggle: (id: string, shift: boolean) => void;
+  onToggleAll: (on: boolean) => void;
+}
+
 interface Props {
+  selection: JobSelection;
   jobs: ScheduleJob[];
   range: ScheduleRange;
   today: string;
@@ -38,12 +47,19 @@ function dayCellClass(day: string, today: string): string {
   return cn("min-h-11 border-l border-line", isWeekend(day) && "bg-paper-2/50", day === today && "border-x border-x-ink/40");
 }
 
-function Header({ range, today, jobs, onOpenDay, cols }: { range: ScheduleRange; today: string; jobs: ScheduleJob[]; onOpenDay: (d: string) => void; cols: string }) {
+function Header({ range, today, jobs, onOpenDay, cols, selection }: { range: ScheduleRange; today: string; jobs: ScheduleJob[]; onOpenDay: (d: string) => void; cols: string; selection: JobSelection }) {
   const month = range.zoom === "month";
   const facts = dayFacts(jobs, range.days);
   return (
     <div role="row" className="grid border-b border-line-2" style={{ gridTemplateColumns: cols }}>
-      <div className="sticky left-0 z-20 bg-card px-3 py-2 text-caption text-muted">{jobsWord(jobs.length)}</div>
+      <div className="sticky left-0 z-20 flex items-center gap-2.5 bg-card px-3 py-2 text-caption text-muted">
+        <Checkbox
+          aria-label="Select every job shown"
+          checked={jobs.length > 0 && jobs.every((j) => selection.ids.has(j.id))}
+          onCheckedChange={(v) => selection.onToggleAll(v === true)}
+        />
+        {jobsWord(jobs.length)}
+      </div>
       {facts.map((f) => {
         const d = displayDate(f.day);
         return (
@@ -115,10 +131,11 @@ function Bar({ job, range, onOpen }: { job: ScheduleJob; range: ScheduleRange; o
   );
 }
 
-function Label({ job, onOpen, menu }: { job: ScheduleJob; onOpen: () => void; menu: ActionMenuSpec }) {
+function Label({ job, onOpen, menu, ticked, onTick }: { job: ScheduleJob; onOpen: () => void; menu: ActionMenuSpec; ticked: boolean; onTick: (shift: boolean) => void }) {
   const pencilled = jobHold(job) === "pencilled";
   return (
     <div className="sticky left-0 z-20 flex items-center gap-1 bg-card pl-3 pr-1" style={{ gridRow: 1, gridColumn: 1 }}>
+      <Checkbox aria-label={`Select ${job.projectNumber}`} className="mr-1.5 min-h-6 min-w-6 [&>span]:size-3.5 [&>span]:rounded-[4px]" checked={ticked} onClick={(e) => onTick(e.shiftKey)} />
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red">
         <span className="flex min-w-0 items-center gap-1.5 text-ui-text text-ink">
           <span className="font-mono font-medium">{job.projectNumber}</span>
@@ -135,15 +152,15 @@ function Label({ job, onOpen, menu }: { job: ScheduleJob; onOpen: () => void; me
   );
 }
 
-export function JobsTimeline({ jobs, range, today, onOpenJob, onOpenDay, menuFor }: Props) {
+export function JobsTimeline({ jobs, range, today, onOpenJob, onOpenDay, menuFor, selection }: Props) {
   const cols = `${LABEL_PX}px repeat(${range.days.length}, minmax(${range.zoom === "month" ? 34 : 88}px, 1fr))`;
   return (
     <div className="overflow-x-auto rounded-[var(--r-lg)] border border-line-2 bg-card" data-testid="schedule-timeline">
       <div role="table" aria-label="Jobs by day" style={{ minWidth: LABEL_PX + range.days.length * (range.zoom === "month" ? 34 : 88) }}>
-        <Header range={range} today={today} jobs={jobs} onOpenDay={onOpenDay} cols={cols} />
+        <Header range={range} today={today} jobs={jobs} onOpenDay={onOpenDay} cols={cols} selection={selection} />
         {jobs.map((job) => (
           <div key={job.id} role="row" className="grid border-b border-line last:border-b-0" style={{ gridTemplateColumns: cols }}>
-            <Label job={job} onOpen={() => onOpenJob(job.id)} menu={menuFor(job)} />
+            <Label job={job} onOpen={() => onOpenJob(job.id)} menu={menuFor(job)} ticked={selection.ids.has(job.id)} onTick={(shift) => selection.onToggle(job.id, shift)} />
             {range.days.map((d, i) => (
               <div key={d} role="cell" aria-hidden="true" className={dayCellClass(d, today)} style={{ gridRow: 1, gridColumn: i + 2 }} />
             ))}

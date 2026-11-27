@@ -28,8 +28,10 @@ const state = vi.hoisted(() => ({
     revoke: vi.fn(),
   },
   addMember: vi.fn(async () => ({ invited: true })),
+  toastSuccess: vi.fn(),
 }));
 
+vi.mock("sonner", () => ({ toast: { success: (...a: unknown[]) => state.toastSuccess(...a), error: vi.fn() } }));
 vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("@/lib/auth-client", () => ({
   useActiveOrganization: () => ({ data: { id: "org_1", name: "Acme" } }),
@@ -71,6 +73,7 @@ afterEach(() => {
   state.can = { invite: true, policy: true };
   Object.values(state.writes).forEach((f) => f.mockClear());
   state.addMember.mockClear();
+  state.toastSuccess.mockClear();
 });
 
 describe("Settings → Team", () => {
@@ -141,6 +144,19 @@ describe("Settings → Team", () => {
     await user.click(within(dialog).getByLabelText(/warehouse/i));
     await user.click(within(dialog).getByRole("button", { name: /send invite/i }));
     await waitFor(() => expect(state.addMember).toHaveBeenCalledWith("fresh@x.co", "warehouse"));
+  });
+
+  it("the E2E harness's invite path (e2e/harness-helpers.ts) works with its exact locators and toast text", async () => {
+    const user = userEvent.setup();
+    render(<TeamPage />);
+    // Same locators as `inviteAndGetInvitationId`: the primary, the named dialog, the labelled field, Send invite.
+    await user.click(screen.getByRole("button", { name: "Invite member" }));
+    const dialog = await screen.findByRole("dialog", { name: "Invite a member" });
+    await user.type(within(dialog).getByLabelText("Email address"), "invitee@x.co");
+    await user.click(within(dialog).getByRole("button", { name: "Send invite" }));
+    // The default role is Member, and the toast text the harness waits for is unchanged.
+    await waitFor(() => expect(state.addMember).toHaveBeenCalledWith("invitee@x.co", "member"));
+    await waitFor(() => expect(state.toastSuccess).toHaveBeenCalledWith("Invitation sent to invitee@x.co"));
   });
 
   it("an admin's invite dialog offers four roles, never Admin", async () => {

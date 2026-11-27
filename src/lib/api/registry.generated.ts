@@ -51634,6 +51634,11 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
         "type": "string"
       },
       {
+        "name": "lockDates",
+        "optional": true,
+        "type": "boolean"
+      },
+      {
         "name": "now",
         "optional": false,
         "type": "number"
@@ -51650,7 +51655,7 @@ export const API_REGISTRY: readonly RegistryOperation[] = [
       }
     ],
     "privilegedArgs": [],
-    "argsSha": "c74c200bca1acf46",
+    "argsSha": "284181badfb7f0ec",
     "returnsSha": "8b114161049d5d20",
     "stability": "tracks-app",
     "summary": null,

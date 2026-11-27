@@ -153,8 +153,11 @@ export async function addModelViaAddBar(page: Page, modelName: string): Promise<
  *  already have reset for a later file. */
 export async function inviteAndGetInvitationId(page: Page, email: string): Promise<string> {
   await page.goto("/settings/team");
-  await page.getByLabel("Email address").fill(email);
-  await page.getByRole("button", { name: "Invite" }).click();
+  // The Team page's primary opens the invite dialog (UX Phase 17); the role defaults to Member.
+  await page.getByRole("button", { name: "Invite member" }).click();
+  const dialog = page.getByRole("dialog", { name: "Invite a member" });
+  await dialog.getByLabel("Email address").fill(email);
+  await dialog.getByRole("button", { name: "Send invite" }).click();
   await expect(page.getByText(`Invitation sent to ${email}`)).toBeVisible({ timeout: 20000 });
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });

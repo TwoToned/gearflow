@@ -42705,6 +42705,9 @@ export const OPENAPI_DOCUMENT = {
                       "id": {
                         "type": "string"
                       },
+                      "lockDates": {
+                        "type": "boolean"
+                      },
                       "set": {}
                     },
                     "required": [

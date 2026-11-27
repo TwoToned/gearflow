@@ -36,7 +36,7 @@ describe("the hub's money words", () => {
     expect(words.map((w) => [w.label, w.amount, w.href])).toEqual([
       ["Quoted", "$12,346", "/finance?tab=quotes&seg=sent"],
       ["Awaiting payment", "$800", "/finance?tab=invoices&seg=issued"],
-      ["Invoiced this month", "$0", "/finance?tab=invoices&seg=all"],
+      ["Invoiced this month", "$0", "/finance?tab=invoices&seg=all&issued=month"],
       ["Overdue", "$70", "/finance?tab=invoices&seg=overdue"],
     ]);
     expect(words[3].tone).toBe("error");

@@ -1341,6 +1341,11 @@ word is `effectiveQuoteStatus`, an invoice's is the one `invoicePillState` (Over
 stored column; every money figure and the four money words are behind `canSeeJobCost` (absent, never zero, never
 a sort key); reads are newest-first per status with the cap after the index and a `ReadBudget` for the
 project/client lookups, with `truncated` surfaced as "at least". FEATUREDOCS/66.
+Its verbs (slice 4) are pure builders in `src/lib/row-actions/finance.ts` (absent-not-disabled) over EXISTING
+writes: **Chase is copy-only (D54), Flow never emails a client** (`finance-no-email.test.ts` fails on a mail
+import); `Open PDF` streams the stored bytes and `Generate PDF` is attach-once, never a re-render; bulk is
+`runBulk` (`finance-bulk.ts`, cap 50, names its skips, no Undo because none of the writes has an exact
+reverse); export is `toCsv` only and a money column exists only when the server sent money.
 
 ### Design System
 Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, component patterns, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.

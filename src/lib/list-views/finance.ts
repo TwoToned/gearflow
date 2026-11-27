@@ -168,7 +168,7 @@ export function moneyWords(money: HubMoney | undefined, approx?: Partial<Record<
   return [
     { key: "quoted", label: "Quoted", amount: floor(money.quoted, approx?.quoted), href: "/finance?tab=quotes&seg=sent", tone: "neutral" },
     { key: "awaitingPayment", label: "Awaiting payment", amount: floor(money.awaitingPayment, approx?.awaitingPayment), href: "/finance?tab=invoices&seg=issued", tone: "neutral" },
-    { key: "invoicedThisMonth", label: "Invoiced this month", amount: floor(money.invoicedThisMonth, approx?.invoicedThisMonth), href: "/finance?tab=invoices&seg=all", tone: "neutral" },
+    { key: "invoicedThisMonth", label: "Invoiced this month", amount: floor(money.invoicedThisMonth, approx?.invoicedThisMonth), href: "/finance?tab=invoices&seg=all&issued=month", tone: "neutral" },
     { key: "overdue", label: "Overdue", amount: floor(money.overdue, approx?.overdue), href: "/finance?tab=invoices&seg=overdue", tone: money.overdue > 0 ? "error" : "neutral" },
   ];
 }

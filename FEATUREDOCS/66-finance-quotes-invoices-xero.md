@@ -1836,3 +1836,27 @@ and `hubCounts`, so the strip, the head counts, the money words and the table ar
   carries `Open on the job` and, for a fresh expired quote with `invoice:publish`, `Acknowledge expired` (the
   live write the old Expiring card had). The Xero column and a one-line "Xero isn't connected" note follow the
   integration's state. Chase, Record payment, Void, bulk verbs and `+ New` land in slice 4.
+
+### Hub actions, bulk and filters (UX Phase 17 slice 4, spec §9j.2)
+
+Every verb calls an EXISTING write or route; the hub invents none, and a verb the caller may not do is ABSENT
+(`src/lib/row-actions/finance.ts`, pure builders: a handler is passed only when the permission holds).
+- **Chase is copy-only (D54).** `ChaseDialog` builds text with `src/lib/finance-chase.ts` and copies it to the
+  clipboard; Flow never emails a client. Money lines appear only when the row carried money. Proved at runtime
+  (no mail function is called) and structurally (`finance-no-email.test.ts` scans the hub's modules).
+- **Record payment** (`RecordPaymentDialog`), **Mark accepted** (`AcceptQuoteDialog`, its gates and
+  justification), **Void** (`VoidInvoiceDialog`: reason, says what stays; a payment blocks it) and
+  **Delete draft** run the existing mutations through `useHubActions`. Void and delete are confirmed `danger`
+  verbs; none of them has an exact reverse, so none offers an Undo (documented, not omitted by accident).
+- **PDFs are stored bytes.** `Open PDF` streams `/api/finance/{quote,invoice}/[id]/pdf`; `Generate PDF` uses the
+  attach-once `generate*Artifact` (never overwrites); a draft only `Preview`s (watermarked, never stored).
+- **Bulk** (`src/lib/finance-bulk.ts`): capped at 50 (`MAX_FINANCE_BULK`), each row checked for eligibility and then
+  written by the existing mutation, which gates it server-side; a refusal is that row's skip. The toast names
+  what was skipped and why. No bulk verb has an exact reverse, so none offers Undo.
+- **Export** (`src/lib/finance-export.ts`) goes through `toCsv` (formula guard) and prints a money column only
+  when the server sent money for the rows.
+- **Filters** (Client, Kind, Issued, Xero, Show) are list-URL params on `QUOTES_SPEC`/`INVOICES_SPEC`, resolved
+  server-side in `convex/lib/financeHubFacts.ts` (`quotePassesFilters` / `invoicePassesFilters`), so counts and
+  pages agree. `Invoiced this month` links to `?tab=invoices&seg=all&issued=month`.
+- **+ New…** opens `JobPickerDialog` (jobs via `projects.listPage`), then goes to that job's Finance tab; the hub
+  creates no document itself.

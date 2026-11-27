@@ -157,8 +157,8 @@ describe("Finance hub actions: existing paths only", () => {
   it("Chase is COPY-ONLY: the dialog shows the text and Copy; no mail function is ever called", async () => {
     state.caps = ALL;
     setData();
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: state.clip }, configurable: true });
     const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: state.clip }, configurable: true });
     render(<FinanceHub />);
     await openMenu(user, /INV-1 actions/i);
     fireEvent.click(await screen.findByText("Chase"));

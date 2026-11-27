@@ -20,6 +20,7 @@
  */
 import { env } from "@/env";
 import { UserFacingError } from "@/lib/errors/user-facing-error";
+import { INVITE_TTL_MS } from "@/lib/invite-ttl";
 import { api } from "../../convex/_generated/api";
 import { prisma } from "@/lib/prisma";
 import { logger } from "@/lib/logger";
@@ -36,7 +37,6 @@ import {
   type TeamUndoPayload,
 } from "@/lib/team-undo-token";
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** At most one resend per invitation in this window, enforced here on the server. */
 const RESEND_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -162,6 +162,25 @@ export async function changeMemberRoles(actor: TeamActor, memberIds: string[], n
   return result(items.length, skipped, { actor, body: { kind: "role", items } });
 }
 
+/**
+ * After a removal lost its compare-and-set, put the Convex mirror back to EXACTLY what Prisma now says:
+ * re-read the row (never re-use the role we read earlier, which is stale by definition). Gone in Prisma
+ * -> no mirror row (a concurrent removal must not leave a grant behind); present -> mirror its actual
+ * current role (a concurrent role change must not leave the old, possibly higher, role).
+ */
+async function reconcileMirrorToPrisma(organizationId: string, memberId: string, userId: string): Promise<void> {
+  try {
+    const now = await prisma.member.findFirst({ where: { id: memberId, organizationId } });
+    if (!now) {
+      await removeMemberMirror({ organizationId, userId }, { strict: false });
+      return;
+    }
+    await upsertMemberMirror({ id: now.id, organizationId, userId: now.userId, role: now.role, createdAt: now.createdAt }, { strict: false });
+  } catch (e) {
+    logger.error("could not reconcile the member mirror after a lost removal", { error: e });
+  }
+}
+
 export async function removeMembers(actor: TeamActor, memberIds: string[]): Promise<TeamWriteResult> {
   const members = await prisma.member.findMany({
     where: { organizationId: actor.organizationId, id: { in: memberIds } },
@@ -186,10 +205,7 @@ export async function removeMembers(actor: TeamActor, memberIds: string[]): Prom
       await removeMemberMirror({ organizationId: actor.organizationId, userId: target.userId }, { strict: true });
       const del = await prisma.member.deleteMany({ where: { id, organizationId: actor.organizationId, role: target.role } });
       if (del.count !== 1) {
-        await upsertMemberMirror(
-          { id, organizationId: actor.organizationId, userId: target.userId, role: target.role, createdAt: target.createdAt },
-          { strict: false },
-        );
+        await reconcileMirrorToPrisma(actor.organizationId, id, target.userId);
         return void skipped.push({ id, label, reason: "Changed while removing" });
       }
       removed += 1;

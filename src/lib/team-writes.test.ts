@@ -25,6 +25,9 @@ const db = vi.hoisted(() => ({
   onMirrorRead: null as null | ((userId: string) => void),
   /** Throw from the next Prisma member write for this id (an infrastructure error). */
   failMemberWriteFor: null as null | string,
+  /** A concurrent writer acts while we are inside the mirror call (after our Prisma read, before our next write). */
+  onMirrorRemove: null as null | (() => void),
+  onMirrorUpsert: null as null | (() => void),
 }));
 
 const { table } = vi.hoisted(() => {
@@ -85,11 +88,13 @@ vi.mock("@/lib/prisma", () => {
 vi.mock("@/lib/member-mirror", () => ({
   upsertMemberMirror: vi.fn(async (row: Row, opts: Row) => {
     db.calls.push(`mirror.upsert:${row.id}:${row.role}:${opts?.strict ? "strict" : "lax"}`);
+    db.onMirrorUpsert?.();
     if (db.failMirror) throw new Error("convex down");
     db.mirror[row.userId as string] = row.role as string;
   }),
   removeMemberMirror: vi.fn(async (a: Row, opts: Row) => {
     db.calls.push(`mirror.remove:${a.userId}:${opts?.strict ? "strict" : "lax"}`);
+    db.onMirrorRemove?.();
     if (db.failMirror) throw new Error("convex down");
     delete db.mirror[a.userId as string];
   }),
@@ -161,6 +166,8 @@ function seed() {
   db.failMirror = false;
   db.onMirrorRead = null;
   db.failMemberWriteFor = null;
+  db.onMirrorRemove = null;
+  db.onMirrorUpsert = null;
   db.mirror = Object.fromEntries(db.members.map((m) => [m.userId as string, m.role as string]));
 }
 const role = (id: string) => db.members.find((m) => m.id === id)?.role;
@@ -207,6 +214,18 @@ describe("bulk role change, enforced server-side", () => {
     expect(r.skipped[0].reason).toMatch(/couldn't sync permissions/i);
     expect(role("m-mgr")).toBe("manager");
     expect(role("m-view")).toBe("viewer");
+  });
+
+  it("the mirror-failure revert is itself a compare-and-set: a colleague's newer role is NOT clobbered", async () => {
+    // Our mirror write fails, and meanwhile a colleague moves the member again.
+    db.failMirror = true;
+    db.onMirrorUpsert = () => {
+      db.members.find((m) => m.id === "m-mgr")!.role = "warehouse";
+    };
+    const r = await changeMemberRoles(owner, ["m-mgr"], "member");
+    expect(r.changed).toBe(0);
+    expect(r.skipped[0].reason).toMatch(/out of sync/i);
+    expect(role("m-mgr")).toBe("warehouse"); // the colleague's change survives; we did not revert over it
   });
 
   it("a later row that throws is skipped with its message; the rows that DID change keep their Undo", async () => {
@@ -284,6 +303,30 @@ describe("bulk role change, enforced server-side", () => {
     expect(r.undoToken).toBeNull();
     expect(db.members.some((m) => m.id === "m-view")).toBe(false);
     expect(db.calls[0]).toBe("mirror.remove:u-view:strict");
+  });
+
+  it("lost CAS because someone else REMOVED the member: the mirror ends with NO grant (never re-created)", async () => {
+    // While we drop the mirror, a concurrent removal deletes the Prisma row.
+    db.onMirrorRemove = () => {
+      db.members = db.members.filter((m) => m.id !== "m-view");
+    };
+    const r = await removeMembers(owner, ["m-view"]);
+    expect(r.changed).toBe(0);
+    expect(r.skipped[0].reason).toMatch(/changed while removing/i);
+    expect(db.members.some((m) => m.id === "m-view")).toBe(false);
+    expect(db.mirror["u-view"]).toBeUndefined();
+    expect(db.calls.some((c) => c.startsWith("mirror.upsert:m-view"))).toBe(false);
+  });
+
+  it("lost CAS because someone else CHANGED the role: the mirror ends on the ACTUAL current role, never the stale one", async () => {
+    // We read the manager; a concurrent change makes them a viewer while we drop the mirror.
+    db.onMirrorRemove = () => {
+      db.members.find((m) => m.id === "m-mgr")!.role = "viewer";
+    };
+    const r = await removeMembers(owner, ["m-mgr"]);
+    expect(r.changed).toBe(0);
+    expect(role("m-mgr")).toBe("viewer");
+    expect(db.mirror["u-mgr"]).toBe("viewer"); // not "manager"
   });
 
   it("a revocation fails CLOSED: if the mirror can't be removed nothing is deleted", async () => {

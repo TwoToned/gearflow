@@ -9,6 +9,7 @@ import { getPlatformName } from "@/lib/platform";
 import { logActivity } from "@/lib/activity-log";
 import { canAssignRole } from "@/lib/member-role-policy";
 import { inviteSchema } from "@/lib/validations/team";
+import { INVITE_TTL_MS } from "@/lib/invite-ttl";
 import { UserFacingError } from "@/lib/errors/user-facing-error";
 import {
   readOrgSettings,
@@ -297,7 +298,7 @@ export async function addMemberByEmail(email: string, role: string) {
       email: normalizedEmail,
       role: parsed.data.role,
       status: "pending",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + INVITE_TTL_MS),
       inviterId: userId,
     },
   });

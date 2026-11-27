@@ -35,12 +35,15 @@ export function SubHireShortfallDialog({
   modelName,
   shortfallQty,
   projects,
+  shortBy,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   modelName: string;
   shortfallQty: number;
   projects: OverbookingProjectRef[];
+  /** Optional: each listed job's own shortfall (the Schedule's Gear sheet, when several jobs are short). */
+  shortBy?: Record<string, number>;
 }) {
   const router = useRouter();
 
@@ -72,7 +75,7 @@ export function SubHireShortfallDialog({
                   router.push(`/projects/${p.id}`);
                 }}
               >
-                <span className="truncate">{p.projectNumber} — {p.name}</span>
+                <span className="truncate">{p.projectNumber} — {p.name}{shortBy?.[p.id] ? ` · short ${shortBy[p.id]}` : ""}</span>
                 <ExternalLink className="h-4 w-4 shrink-0" />
               </Button>
             ))

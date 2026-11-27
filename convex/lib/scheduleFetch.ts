@@ -129,7 +129,8 @@ async function scanProjects(ctx: QueryCtx, s: Scan): Promise<void> {
     .order("desc");
   // 0. Every alive job overlapping the window (claims); 1. everything that STARTS inside the window, by either date (complete first); 2. older jobs, nearest first, under their own allowance.
   const all = () => true;
-  const aliveStatuses = [...HARD_PROJECT_STATUSES, ...PENCILLED_PROJECT_STATUSES] as ProjectStatus[];
+  // `status` is optional and the board reads a status-less job as alive (pencilled), so it is scanned too: `undefined` is its own index value.
+  const aliveStatuses: (ProjectStatus | undefined)[] = [...(HARD_PROJECT_STATUSES as Set<ProjectStatus>), ...(PENCILLED_PROJECT_STATUSES as Set<ProjectStatus>), undefined];
   const alive = aliveStatuses.map((status) => () =>
     drain(s, ctx.db.query("projects").withIndex("by_organizationId_status", (q) => q.eq("organizationId", orgId).eq("status", status)), false, (p) => p.isTemplate !== true && hasWindow(p)),
   );
@@ -176,6 +177,7 @@ async function readStock(ctx: QueryCtx, orgId: string, modelIds: string[], budge
       out.unknown.add(modelId);
       continue;
     }
+    out.models.push(model); // kept even when its units are not (the Gear grid still names the row)
     const assets = await ctx.db.query("assets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(want);
     const bulks = await ctx.db.query("bulkAssets").withIndex("by_modelId", (q) => q.eq("modelId", modelId)).take(want);
     budget.take(assets.length + bulks.length);
@@ -183,7 +185,6 @@ async function readStock(ctx: QueryCtx, orgId: string, modelIds: string[], budge
       out.unknown.add(modelId);
       continue;
     }
-    out.models.push(model);
     out.assets.push(...assets.filter((a) => a.organizationId === orgId));
     out.bulkAssets.push(...bulks.filter((b) => b.organizationId === orgId));
   }
@@ -228,7 +229,7 @@ export async function loadSchedule(ctx: QueryCtx, orgId: string, range: DateRang
 
   const all = [...scan.found.values()];
   const visible = all.filter((p) => isVisible(p, range)).sort(byWindowStart);
-  const wide = widen(range, visible.filter((p) => ALIVE.has(p.status ?? "")));
+  const wide = widen(range, visible.filter((p) => p.status == null || ALIVE.has(p.status)));
   const alive = candidateBoardProjects(all, wide);
   const aliveDocs = alive.map((b) => scan.found.get(b.id)!).sort(byWindowStart);
 

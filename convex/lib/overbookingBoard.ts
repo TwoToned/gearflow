@@ -356,13 +356,17 @@ export function groupByModelId<T extends { modelId?: string | null; isActive?: b
 }
 
 /** Effective (bookable) stock for one model, mirroring overbooking-core.ts. */
-export function effectiveStockForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]): number {
+export function stockBreakdownForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]) {
   const assetType = resolveModelAssetType(model.assetType, bulksForModel.length > 0, assetsForModel.length > 0);
   return computeStockBreakdown({
     assetType,
     assets: assetsForModel.map((a) => ({ status: a.status ?? "AVAILABLE" })),
     bulkAssets: bulksForModel.map((b) => ({ totalQuantity: b.totalQuantity ?? 0 })),
-  }).effectiveStock;
+  });
+}
+
+export function effectiveStockForModel(model: BoardModel, assetsForModel: BoardAsset[], bulksForModel: BoardBulkAsset[]): number {
+  return stockBreakdownForModel(model, assetsForModel, bulksForModel).effectiveStock;
 }
 
 function projectRef(p: BoardProject | undefined): { id: string; name: string; projectNumber: string } {

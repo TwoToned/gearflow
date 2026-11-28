@@ -199,10 +199,10 @@ All four are exposed on `useFormatters()` too. Migrated in #1082: the
 concrete month-first-vs-day-first contradiction (`activity/page.tsx`,
 `maintenance/page.tsx` ×2, `maintenance/due/page.tsx` ×2, `dashboard/page.tsx`
 ×2) — the Maintenance section + Activity log were the month-first outliers
-against day-first everywhere else. **Not migrated**: the remaining ~15 inline
-`format()` calls with word-based date tokens (booking calendar, availability
-page, `range-calendar.tsx`, `project-wizard.tsx`, `my-work-section.tsx`) —
-left for incremental follow-up. `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats
+against day-first everywhere else. The remaining inline
+`format()` calls with word-based date tokens (booking calendar,
+`range-calendar.tsx`, `project-fields.tsx`, and earlier the availability page,
+wizard and My work) have since all been migrated (ratchet now 0). `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats
 (keys, query params, filenames, ical) are correctly locale-independent and
 were never in scope.
 
@@ -226,7 +226,7 @@ the next sweep is a grep for `toLocale(Date|Time)?String\(("en-|undefined)`.
 date-format-ratchet`, wired into CI's `hygiene` job): counts inline `format(x,
 "…")` calls whose format string contains a word-based month/weekday token
 (`MMM`/`MMMM`/`EEE`/`EEEE` — the exact axis that reorders per locale). The
-count is a ratchet baseline (`.date-format-ratchet-baseline`, currently 15)
+count is a ratchet baseline (`.date-format-ratchet-baseline`, currently 0 — every word-token `format()` display call is migrated, so any new one fails CI)
 like `any-ratchet`/`knip-ratchet`/`complexity-ratchet` — it can only go down;
 a new inline display-date format string fails CI, forcing new dates through a
 named role instead.

@@ -51,6 +51,7 @@ import {
   revokeAllOtherSessions,
 } from "@/server/user-profile";
 import { FadeIn } from "@/components/ui/motion";
+import { useFormatters } from "@/components/providers/format-provider";
 
 // ─── Local layout primitives ────────────────────────────────────────────────
 
@@ -145,6 +146,7 @@ export default function AccountPage() {
   const { data: session } = useSession();
   const userId = session?.user?.id;
   const { name: platformName } = usePlatformBranding();
+  const { formatMonthYear } = useFormatters();
   const [name, setName] = useState("");
   const [nameLoaded, setNameLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -366,10 +368,7 @@ export default function AccountPage() {
   const displayName = profile?.name || "Your account";
   const nameDirty = nameLoaded && name.trim() !== (profile?.name || "").trim();
   const memberSince = profile?.createdAt
-    ? new Date(profile.createdAt).toLocaleDateString(undefined, {
-        month: "long",
-        year: "numeric",
-      })
+    ? formatMonthYear(profile.createdAt)
     : null;
   const roleLabel = isSiteAdminRole(profile?.role) ? "Site admin" : "Member";
 

@@ -4,16 +4,7 @@ import Link from "next/link";
 import { useEntityActivityLog } from "@/hooks/use-activity-log";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { EmptyState } from "@/components/ui/empty-state";
-
-function formatDate(date: string | Date) {
-  return new Date(date).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+import { useFormatters } from "@/components/providers/format-provider";
 
 interface ActivityTimelineProps {
   entityType: string;
@@ -23,6 +14,7 @@ interface ActivityTimelineProps {
 }
 
 export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTimelineProps) {
+  const { formatDateWithTime } = useFormatters();
   const { data, isLoading } = useEntityActivityLog(entityType, entityId, limit);
 
   const items = (data?.items ?? []) as Record<string, unknown>[];
@@ -66,7 +58,7 @@ export function ActivityTimeline({ entityType, entityId, limit = 5 }: ActivityTi
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusIndicator category="activity" value={action} label={action.replace(/_/g, " ")} variant="pill" />
                 <span className="text-fg-3 text-xs">
-                  {formatDate(log.createdAt as string)}
+                  {formatDateWithTime(log.createdAt as string)}
                 </span>
               </div>
               <p className="mt-0.5">{String(log.summary)}</p>

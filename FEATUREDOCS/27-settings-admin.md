@@ -206,6 +206,22 @@ left for incremental follow-up. `"yyyy-MM-dd"`/`"yyyy-MM"` MACHINE formats
 (keys, query params, filenames, ical) are correctly locale-independent and
 were never in scope.
 
+**Client surfaces on the org locale (second sweep).** These formerly hardcoded
+`"en-AU"` (or the viewer's browser locale via `undefined`) and now call
+`useFormatters()`: the activity timeline and asset check history
+(`formatDateWithTime`), the call-sheet day picker (`formatWeekdayDayMonth`), the
+job board card (`formatDateDayMonth` + `formatCurrency(…, { cents: false })`),
+custom-field DATE values (`formatDate`), the account "Member since"
+(`formatMonthYear`), display-token "Last seen" (`formatDateWithTime`) and the job
+version drift line (`formatCurrency`). **Still hard-coded, deliberately left**
+(they have no `useFormatters()` or need a timezone/number-only role): the UTC-pinned
+day labels (`logistics/people-view.tsx`, `maintenance/record/parts-tab.tsx`),
+the pure `src/lib/list-views/*.ts` row builders, the printed test-tag label,
+number-grouping `toLocaleString("en-AU")` calls, the warehouse display board
+(token page, no org context), and server-side e-mail / PDF / export renderers.
+The ratchet pattern does not see these (it matches `format(…, "…MMM…")` only), so
+the next sweep is a grep for `toLocale(Date|Time)?String\(("en-|undefined)`.
+
 **The ratchet** (`scripts/date-format-ratchet.sh`, `pnpm run
 date-format-ratchet`, wired into CI's `hygiene` job): counts inline `format(x,
 "…")` calls whose format string contains a word-based month/weekday token

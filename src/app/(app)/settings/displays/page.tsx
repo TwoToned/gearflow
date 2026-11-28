@@ -35,6 +35,7 @@ import {
 import { useCanDo } from "@/lib/use-permissions";
 import { FadeIn } from "@/components/ui/motion";
 import { SettingsCard } from "@/components/layout/page-layouts";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   getDisplayTokens,
   createDisplayToken,
@@ -60,16 +61,6 @@ const LAYOUTS = [
   { value: "compact", label: "Compact", description: "Dispatch + returns only, larger text" },
   { value: "dispatch-only", label: "Dispatch Only", description: "Today's dispatch with prep status" },
 ] as const;
-
-function formatDate(date: string | Date | null) {
-  if (!date) return "Never";
-  return new Date(date).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function getDisplayUrl(token: string) {
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
@@ -161,6 +152,7 @@ export default function DisplaySettingsPage() {
   const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
 
   // Create form state
+  const { formatDateWithTime } = useFormatters();
   const [name, setName] = useState("");
   const [locationId, setLocationId] = useState("");
   const [layout, setLayout] = useState("standard");
@@ -325,7 +317,7 @@ export default function DisplaySettingsPage() {
                         )}
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          Last seen: {formatDate(t.lastAccessedAt)}
+                          Last seen: {t.lastAccessedAt ? formatDateWithTime(t.lastAccessedAt) : "Never"}
                         </span>
                         <span>Created by {t.createdBy.name}</span>
                       </div>

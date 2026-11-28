@@ -141,7 +141,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^4.1.10",
-    "convex-test": "0.0.73",
+    "convex-test": "0.0.60",
     "dependency-cruiser": "^18.8.0",
     "dotenv": "^18.0.9",
     "eslint": "^10.15.0",

@@ -373,7 +373,7 @@ Server-side origin allow-listing still uses env (`trustedOrigins` in `src/lib/au
 All site-admin checks (`User.role === "admin"`) go through exactly one module — no call site re-queries `role` directly:
 - `requireSiteAdmin()` — throws if not a site admin, returns the session. Used by server actions in `src/server/site-admin.ts`.
 - `requireSiteAdminApi()` — for API routes; returns `{ userId }`.
-- `isSiteAdmin()` — boolean check, never throws. `src/server/site-admin.ts` and `src/server/invitations.ts` (`checkIsSiteAdmin()`) both delegate to this; `src/app/(admin)/layout.tsx` uses it directly to redirect non-admins.
+- `isSiteAdmin()` — boolean check, never throws. `src/server/site-admin.ts` delegates to this; `src/app/(admin)/layout.tsx` uses it directly to redirect non-admins.
 
 ## Resource-Action Matrix (`src/lib/permissions.ts`)
 16 resources: `asset, bulkAsset, model, kit, project, client, supplier, warehouse, testTag, maintenance, location, document, orgSettings, orgMembers, crew, reports`
@@ -434,7 +434,7 @@ consumer of this same identity kind — **FEATUREDOCS/68**.
 ### Invitations
 - **Invite-only registration**: Site admin can set registration policy to INVITE_ONLY.
 - **Invite signup**: Registration page prefills and locks email when `invite` query param is present.
-- **Server actions**: `src/server/invitations.ts` — `getMyPendingInvitations()`, `getInvitationEmail()`, `checkIsSiteAdmin()`, `getInvitationOrganizationId()`.
+- **Server actions**: `src/server/invitations.ts` — `getInvitationEmail()`, `getInvitationOrganizationId()`.
 - Each invitation targets a specific org (`Invitation.organizationId`) — the invite-accept page resolves which org to activate from the invitation row itself via `getInvitationOrganizationId()`, not a single-org assumption.
 - **Membership always requires the recipient's consent (#1073, A3).** `addMemberByEmail` (`src/server/settings.ts`, the "Invite" control on `/settings/team`) creates an `Invitation` and emails an accept link (`/invite/[id]`) for EVERY case — including an email that already has an account. There is no direct-add path: under multi-tenancy, silently creating a `Member` row for a known email would let any org owner pull a stranger's account into their org with no consent, putting an unwanted org in that person's switcher. `/invite/[id]` itself branches on whether the recipient is already signed in (accept immediately) or needs to sign in/register first — the invite email is the same either way (`invitationEmail`, not a register-specific template).
 - **Per-org join policy (#1073/A3's deferred half, shipped in #1094/B2)**: `OrgSettings.joinPolicy` (`INVITE_ONLY` | `DOMAIN_REQUEST` | `CLOSED`, `src/lib/org-join-policy.ts`), distinct from the platform-global `registrationPolicy` above — set in Settings → Team, default `INVITE_ONLY` (byte-identical to every pre-B2 org). Only `DOMAIN_REQUEST` orgs are discoverable by `/welcome`'s domain search; `CLOSED` is invite-only and not even shown as a match. See the "Membership creation" section above for the full request/approve/reject flow.

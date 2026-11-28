@@ -44,6 +44,14 @@ describe("middleware — session redirect gating", () => {
     expect(redirectsToLogin(middleware(req("/api/v1/oauth/revoke")))).toBe(false);
   });
 
+  it("lets the public agent docs through without a login redirect (/llms.txt, /docs/api)", () => {
+    // /llms.txt is advertised as `service_documentation` in the OAuth
+    // authorization-server metadata — an MCP client discovering the server is
+    // pointed straight at it, before it has any session or key.
+    expect(redirectsToLogin(middleware(req("/llms.txt")))).toBe(false);
+    expect(redirectsToLogin(middleware(req("/docs/api")))).toBe(false);
+  });
+
   it("STILL gates /oauth/authorize (the consent screen) on a session — it is NOT a public/bearer route (#1003)", () => {
     expect(redirectsToLogin(middleware(req("/oauth/authorize?client_id=abc")))).toBe(true);
   });

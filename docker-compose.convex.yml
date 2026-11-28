@@ -16,7 +16,10 @@
 #   4. docker compose -f docker-compose.convex.yml exec backend ./generate_admin_key.sh
 #   5. Put the URL + admin key in .env.local (gitignored), then: npx convex dev
 #
-# Images are PINNED to release precompiled-2026-06-03-7eff2e7. Bump deliberately;
+# Images are PINNED to the 2026-11-20 build (3d58575). Bump deliberately —
+# the CLI pushing to it must not be newer than the backend understands
+# (after the #1448 deps sweep, convex 1.51 et al. failed on the 2026-06-03 build:
+# "Invalid JSON returned from worker.js:getBatch.exportArgs()");
 # :latest drifts ahead of tagged releases.
 
 # Fixed project name so the stack is one-per-machine (stable container names),
@@ -25,7 +28,7 @@ name: gearflow-convex
 
 services:
   backend:
-    image: ghcr.io/convex/convex-backend:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    image: ghcr.io/convex/convex-backend:3d585751a2de8c9066dc3fc5ac18340c1ef48810
     stop_grace_period: 10s
     stop_signal: SIGINT
     ports:
@@ -68,7 +71,7 @@ services:
       retries: 10
 
   dashboard:
-    image: ghcr.io/convex/convex-dashboard:7eff2e7c87f3f9dd9e513c253ae8987e7f90345e
+    image: ghcr.io/convex/convex-dashboard:3d585751a2de8c9066dc3fc5ac18340c1ef48810
     stop_grace_period: 10s
     stop_signal: SIGINT
     ports:

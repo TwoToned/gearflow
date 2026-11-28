@@ -8,6 +8,7 @@ import {
   formatDate as baseFormatDate,
   formatDateDayMonth as baseFormatDateDayMonth,
   formatDateLong as baseFormatDateLong,
+  formatWeekdayDayMonth as baseFormatWeekdayDayMonth,
   formatDateWithTime as baseFormatDateWithTime,
   formatMonthYear as baseFormatMonthYear,
   formatConfigFromOrgSettings,
@@ -52,6 +53,8 @@ export interface Formatters {
   formatDateDayMonth: (date: DateArg) => string;
   /** Weekday + full month + year — a page-header-style date. */
   formatDateLong: (date: DateArg) => string;
+  /** Short weekday + day + short month, no year — a date-range endpoint label. */
+  formatWeekdayDayMonth: (date: DateArg) => string;
   /** The "short" role plus a 24-hour clock time. */
   formatDateWithTime: (date: DateArg) => string;
   /** Month + year only — calendar headers. */
@@ -75,6 +78,7 @@ export function useFormatters(): Formatters {
       formatDate: (date: DateArg) => baseFormatDate(date, config),
       formatDateDayMonth: (date: DateArg) => baseFormatDateDayMonth(date, config),
       formatDateLong: (date: DateArg) => baseFormatDateLong(date, config),
+      formatWeekdayDayMonth: (date: DateArg) => baseFormatWeekdayDayMonth(date, config),
       formatDateWithTime: (date: DateArg) => baseFormatDateWithTime(date, config),
       formatMonthYear: (date: DateArg) => baseFormatMonthYear(date, config),
       config,

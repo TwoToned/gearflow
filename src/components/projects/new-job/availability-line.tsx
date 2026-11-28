@@ -4,6 +4,7 @@ import { eachDayOfInterval, endOfMonth, endOfWeek, format, startOfMonth, startOf
 import { useAuthedQuery } from "@/hooks/use-authed-query";
 import { useStableNow } from "@/hooks/use-stable-now";
 import { fromDateStr } from "@/lib/project-form-dates";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 import { api } from "../../../../convex/_generated/api";
 
 /**
@@ -20,11 +21,13 @@ export interface Overlap { total: number; truncated: boolean; jobs: OverlapJob[]
 /** The one read's window as ms: the visible month's grid, widened to take in the rental dates. Args change only when the month or the dates do. */
 function useReadWindow(month: Date | undefined, rentalStart: string | undefined, rentalEnd: string | undefined) {
   const now = useStableNow();
+  // The same week start the calendar grid lays out, or the read would miss a leading/trailing day.
+  const weekStartsOn = useOrgWeekStartsOn();
   const start = fromDateStr(rentalStart);
   const end = fromDateStr(rentalEnd) ?? start;
   const visible = month ?? start ?? new Date(now);
-  const from = startOfWeek(startOfMonth(visible), { weekStartsOn: 1 }).getTime();
-  const to = endOfWeek(endOfMonth(visible), { weekStartsOn: 1 }).getTime();
+  const from = startOfWeek(startOfMonth(visible), { weekStartsOn }).getTime();
+  const to = endOfWeek(endOfMonth(visible), { weekStartsOn }).getTime();
   const rental = start && end ? { start: start.getTime(), end: end.getTime() + DAY_MS - 1 } : null;
   return { rental, window: { start: Math.min(from, rental?.start ?? from), end: Math.max(to, rental?.end ?? to) } };
 }

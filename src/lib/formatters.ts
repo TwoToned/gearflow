@@ -197,6 +197,24 @@ export function formatMonthYear(
   return formatDateWithOptions(date, config, { month: "long", year: "numeric" });
 }
 
+/**
+ * Short weekday names for a calendar header row, in the org's locale, ordered
+ * from the org's first day of the week (`weekStartsOn`: 0 = Sunday, 1 =
+ * Monday — the same value `useOrgWeekStartsOn()` returns and `date-fns`
+ * takes). Derived with `Intl` from a fixed reference week, so the header can
+ * never disagree with the day cells `startOfWeek(…, { weekStartsOn })` lays
+ * out under it (I6, #1086).
+ */
+export function weekdayLabels(
+  weekStartsOn: 0 | 1,
+  config: FormatConfig = DEFAULT_FORMAT_CONFIG,
+  weekday: "short" | "narrow" = "short",
+): string[] {
+  const fmt = new Intl.DateTimeFormat(config.locale, { weekday, timeZone: "UTC" });
+  // 2024-07-07 is a Sunday.
+  return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(Date.UTC(2024, 6, 7 + weekStartsOn + i))));
+}
+
 export function formatLabel(value: string): string {
   return value
     .replace(/_/g, " ")

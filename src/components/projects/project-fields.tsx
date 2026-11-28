@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Path, UseFormReturn } from "react-hook-form";
 import { Controller } from "react-hook-form";
-import { format } from "date-fns";
 import { X, Truck } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   RangeCalendar, DURATION_PRESETS, presetRange, rangeLengthLabel, type DateRange,
 } from "@/components/ui/range-calendar";
@@ -479,10 +479,10 @@ function PresetChips({ range, onPick }: { range: DateRange; onPick: (r: DateRang
   );
 }
 
-function rangeSummary(r: DateRange, empty: string): string {
+function rangeSummary(r: DateRange, empty: string, fmt: (d: Date) => string): string {
   if (!r.start) return empty;
-  const from = format(r.start, "EEE d MMM");
-  return r.end ? `${from} → ${format(r.end, "EEE d MMM")}` : `${from} — pick an end date`;
+  const from = fmt(r.start);
+  return r.end ? `${from} → ${fmt(r.end)}` : `${from} — pick an end date`;
 }
 
 /** Soft (non-blocking) hint: a diverging project window is expected to CONTAIN
@@ -499,6 +499,7 @@ function windowWarning(range: DateRange, projectRange: DateRange): string | unde
 
 function ScheduleFields({ form, extras }: { form: UseFormReturn<ProjectFormValues>; extras?: ScheduleExtras }) {
   const { busyDays, footer, onMonthChange } = extras ?? {};
+  const { formatWeekdayDayMonth } = useFormatters();
   const v = form.watch();
   const range: DateRange = { start: fromDateStr(v.rentalStartDate), end: fromDateStr(v.rentalEndDate) };
   const projectRange: DateRange = { start: fromDateStr(v.projectStartDate), end: fromDateStr(v.projectEndDate) };
@@ -510,9 +511,9 @@ function ScheduleFields({ form, extras }: { form: UseFormReturn<ProjectFormValue
   };
 
   const lenLabel = rangeLengthLabel(range);
-  const summary = rangeSummary(range, "No dates yet");
+  const summary = rangeSummary(range, "No dates yet", formatWeekdayDayMonth);
   const projectLenLabel = rangeLengthLabel(projectRange);
-  const projectSummary = rangeSummary(projectRange, "Same as rental window");
+  const projectSummary = rangeSummary(projectRange, "Same as rental window", formatWeekdayDayMonth);
   const softWarning = windowWarning(range, projectRange);
 
   return (

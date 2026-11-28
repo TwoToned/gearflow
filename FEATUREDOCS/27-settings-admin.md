@@ -244,6 +244,16 @@ replaces already assumed. Wired into:
   header and the day cells would have visibly misaligned. Both now derive
   from the same `weekStartsOn` via `weekdayLabels()`.
 
+Second sweep (post-redesign): the shared `RangeCalendar` (job wizard / filters),
+the wizard's availability read window (`new-job/availability-line.tsx`, which
+must widen over the SAME grid the calendar draws) and the Bookings calendar
+(`bookings/booking-calendar.tsx`) now take `useOrgWeekStartsOn()` instead of a
+hardcoded `{ weekStartsOn: 1 }`. Their weekday header rows come from
+`weekdayLabels(weekStartsOn, config)` (`src/lib/formatters.ts`, `Intl`-derived
+and locale-aware) so header and cells cannot disagree. Any new calendar grid
+MUST use the hook + `weekdayLabels`, never a literal week start or a literal
+`["Mon", …]` array.
+
 Address-bias (`AddressInput`'s `countryCode` prop via `useOrgCountry()`) was
 already wired everywhere except `services-panel.tsx`'s delivery/pickup
 address field — the one gap, now closed. See FEATUREDOCS/30 for the full

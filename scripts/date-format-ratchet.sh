@@ -20,8 +20,11 @@ cd "$(dirname "$0")/.."
 
 BASELINE_FILE=".date-format-ratchet-baseline"
 PATTERN='format\([^)]*,[[:space:]]*"[^"]*(MMM|EEE)[^"]*"'
+# `grep -c ... || true` (not `grep | wc -l`): under `pipefail`, a zero-match grep (exit 1)
+# inside the pipeline would abort the script before it ever reports a 0 count.
 current=$(grep -rInE "$PATTERN" src --include='*.ts' --include='*.tsx' 2>/dev/null \
-  | grep -vE '\.test\.|\.spec\.|__tests__|src/lib/formatters\.ts' | wc -l | tr -d ' ')
+  | grep -cE -v '\.test\.|\.spec\.|__tests__|src/lib/formatters\.ts' || true)
+current=${current:-0}
 baseline=$(cat "$BASELINE_FILE" 2>/dev/null || echo 0)
 
 echo "inline display-date-format count: current=$current baseline=$baseline"

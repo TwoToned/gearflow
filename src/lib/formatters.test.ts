@@ -8,6 +8,7 @@ import {
   formatDateLong,
   formatDateWithTime,
   formatMonthYear,
+  weekdayLabels,
   formatLabel,
   roundCurrency,
   formatConfigFromOrgSettings,
@@ -294,5 +295,27 @@ describe("documentDueDateText \u2014 invoice-only due date", () => {
   });
   it("prints nothing for a quote (it has an expiry, not a due date)", () => {
     expect(documentDueDateText("quote", due, "Australia/Sydney")).toBe("");
+  });
+});
+
+describe("weekdayLabels — calendar header follows the org's week start (I6)", () => {
+  it("starts on Monday for weekStartsOn 1 and Sunday for 0", () => {
+    const mon = weekdayLabels(1);
+    const sun = weekdayLabels(0);
+    expect(mon).toHaveLength(7);
+    expect(mon[0]).toMatch(/^Mon/);
+    expect(mon[6]).toMatch(/^Sun/);
+    expect(sun[0]).toMatch(/^Sun/);
+    expect(sun[6]).toMatch(/^Sat/);
+  });
+
+  it("is the same seven days in a different rotation", () => {
+    expect([...weekdayLabels(0)].sort()).toEqual([...weekdayLabels(1)].sort());
+  });
+
+  it("localises the names to the org locale", () => {
+    const de = weekdayLabels(1, { locale: "de-DE", currency: "EUR" });
+    expect(de[0]).toMatch(/^Mo/);
+    expect(de[6]).toMatch(/^So/);
   });
 });

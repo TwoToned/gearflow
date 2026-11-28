@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { intentStyles, type ColorIntent } from "@/lib/status-colors";
 import { cn, focusRing } from "@/lib/utils";
+import { useFormatters } from "@/components/providers/format-provider";
 
 type ContextFilter = "ALL" | "PREP" | "RETURN" | "AD_HOC";
 
@@ -38,6 +39,7 @@ const RESULT_CONFIG: Record<string, { icon: typeof CheckCircle2; intent: ColorIn
 export function AssetChecksTab({ assetId }: { assetId: string }) {
   const { data: activeOrg } = useActiveOrganization();
   const orgId = activeOrg?.id;
+  const { formatDateWithTime } = useFormatters();
   const [filter, setFilter] = useState<ContextFilter>("ALL");
 
   const { data: records = [], isLoading } = useServerQuery({
@@ -102,13 +104,7 @@ export function AssetChecksTab({ assetId }: { assetId: string }) {
                 </div>
                 <div className="text-caption text-muted">
                   {session.performedBy && <span>{session.performedBy} · </span>}
-                  {new Date(session.performedAt).toLocaleDateString("en-AU", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatDateWithTime(session.performedAt)}
                 </div>
               </div>
 

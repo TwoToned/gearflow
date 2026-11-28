@@ -1,13 +1,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { useFormatters } from "@/components/providers/format-provider";
 import { CanDo } from "@/components/auth/permission-gate";
 import { useProjectVersion, type ProjectVersionSummary } from "@/components/projects/project-version-context";
 
 /** `+$1,240.00` / `-$1,240.00`: the drift sign convention used elsewhere on this page. */
-function formatDriftAmount(amount: number): string {
-  const abs = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `${amount >= 0 ? "+" : "-"}$${abs}`;
+function formatDriftAmount(amount: number, formatCurrency: (v: number) => string): string {
+  return `${amount >= 0 ? "+" : "-"}${formatCurrency(Math.abs(amount))}`;
 }
 
 /**
@@ -21,6 +21,7 @@ function formatDriftAmount(amount: number): string {
  * Returns null when there is nothing to say (live).
  */
 export function JobVersionStrip({ onMakeLive }: { onMakeLive: (target: ProjectVersionSummary) => void }) {
+  const { formatCurrency } = useFormatters();
   const { isViewingVersion, viewingVersion, liveVersion, viewingQuoteDrift, setViewingNumber, openCompare } = useProjectVersion();
   if (!isViewingVersion || !viewingVersion) return null;
   const drift = viewingQuoteDrift && viewingQuoteDrift.driftAmount !== 0 ? viewingQuoteDrift : null;
@@ -47,7 +48,7 @@ export function JobVersionStrip({ onMakeLive }: { onMakeLive: (target: ProjectVe
                 )
               }
             >
-              Quote total has moved {formatDriftAmount(drift.driftAmount)} since {drift.quoteLabel} was sent.
+              Quote total has moved {formatDriftAmount(drift.driftAmount, formatCurrency)} since {drift.quoteLabel} was sent.
             </button>
           </>
         ) : null}

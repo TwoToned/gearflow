@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FlowMascot } from "@/components/ui/flow-mascot";
 import { ProjectLockGlyph } from "@/components/projects/project-lock-glyph";
 import { toast } from "sonner";
+import { useFormatters } from "@/components/providers/format-provider";
 import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
 } from "@/components/ui/tooltip";
@@ -69,12 +70,11 @@ const ROTTING_STATUSES = new Set(["QUOTING", "QUOTED"]);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyProject = Record<string, any>;
 
-function dateLine(p: AnyProject): { text: string; tone: "error" | "warning" | "muted" } | null {
+function dateLine(p: AnyProject, fmt: (d: number) => string): { text: string; tone: "error" | "warning" | "muted" } | null {
   const now = Date.now();
   const start = p.rentalStartDate as number | null;
   const end = p.rentalEndDate as number | null;
   const out = p.status === "CHECKED_OUT" || p.status === "ON_SITE";
-  const fmt = (d: number) => new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
   if (out && end) {
     const days = Math.round((end - now) / DAY);
     if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: "error" };
@@ -463,8 +463,9 @@ function ProjectCard({
   // hook-returned object as a ref access during render.
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({ id: project.id, disabled: overlay });
   const client = project.client as { name?: string } | null;
-  const dl = dateLine(project);
-  const total = project.total != null ? `$${Number(project.total).toLocaleString("en-AU", { maximumFractionDigits: 0 })}` : null;
+  const { formatDateDayMonth, formatCurrency } = useFormatters();
+  const dl = dateLine(project, (d) => formatDateDayMonth(new Date(d)));
+  const total = project.total != null ? formatCurrency(Number(project.total), { cents: false }) : null;
 
   const cardBody = (
     <>

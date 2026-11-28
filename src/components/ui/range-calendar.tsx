@@ -20,15 +20,17 @@ import {
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, focusRing } from "@/lib/utils";
+import { weekdayLabels } from "@/lib/formatters";
+import { useFormatters } from "@/components/providers/format-provider";
+import { useOrgWeekStartsOn } from "@/lib/use-org-country";
 
 export type DateRange = { start?: Date; end?: Date };
-
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 /**
  * Inline range calendar (date-fns, no external calendar dep). Two-click range
  * selection with live hover preview. RVLT-tokenised: endpoints fill --red,
- * the in-between span fills --red-soft. Week starts Monday (en-AU).
+ * the in-between span fills --red-soft. The week starts on the org's week start
+ * (`useOrgWeekStartsOn`) and the month title follows the org locale.
  */
 export function RangeCalendar({
   value,
@@ -47,6 +49,8 @@ export function RangeCalendar({
    *  so a caller can load per-day facts (busy dots) for exactly what is on screen. */
   onViewMonthChange?: (month: Date) => void;
 }) {
+  const weekStartsOn = useOrgWeekStartsOn();
+  const { formatMonthYear, config } = useFormatters();
   const [viewMonth, setViewMonth] = React.useState<Date>(
     () => startOfMonth(value.start ?? new Date()),
   );
@@ -70,8 +74,8 @@ export function RangeCalendar({
     }
   }
 
-  const gridStart = startOfWeek(startOfMonth(viewMonth), { weekStartsOn: 1 });
-  const gridEnd = endOfWeek(endOfMonth(viewMonth), { weekStartsOn: 1 });
+  const gridStart = startOfWeek(startOfMonth(viewMonth), { weekStartsOn });
+  const gridEnd = endOfWeek(endOfMonth(viewMonth), { weekStartsOn });
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
 
   // Preview end while choosing the second endpoint.
@@ -102,7 +106,7 @@ export function RangeCalendar({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="text-[14px] font-semibold text-ink">{format(viewMonth, "MMMM yyyy")}</span>
+        <span className="text-[14px] font-semibold text-ink">{formatMonthYear(viewMonth)}</span>
         <button
           type="button"
           onClick={() => setViewMonth((m) => addMonths(m, 1))}
@@ -114,8 +118,8 @@ export function RangeCalendar({
       </div>
 
       <div className="grid grid-cols-7 gap-y-1">
-        {WEEKDAYS.map((d) => (
-          <div key={d} className="pb-1 text-center text-[11px] font-medium text-muted">{d}</div>
+        {weekdayLabels(weekStartsOn, config).map((d) => (
+          <div key={d} className="pb-1 text-center text-[11px] font-medium text-muted">{d.slice(0, 2)}</div>
         ))}
         {days.map((day) => {
           const inMonth = isSameMonth(day, viewMonth);
